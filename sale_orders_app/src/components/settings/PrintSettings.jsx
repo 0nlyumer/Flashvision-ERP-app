@@ -289,8 +289,55 @@ export default function PrintSettings() {
   // Mock data for live paper preview
   const mockData = useMemo(() => {
     const fromState = getSampleRecordFromState ? getSampleRecordFromState(selectedDocId, state) : null;
-    return fromState || getMockPreviewData(selectedDocId);
-  }, [selectedDocId, state]);
+    const baseMock = getMockPreviewData(selectedDocId) || { header: {}, items: [], totals: {} };
+
+    const companyAddr = state?.adminSetup?.address || 'Plot 42-B, Industrial Zone Phase III, Karachi, Pakistan';
+    const companyPh = state?.adminSetup?.phone || '+92-21-34567890';
+    const companyEm = state?.adminSetup?.email || 'operations@flashvision.com';
+
+    if (!fromState) {
+      return {
+        ...baseMock,
+        header: {
+          address: companyAddr,
+          phone: companyPh,
+          email: companyEm,
+          ...(baseMock.header || {})
+        }
+      };
+    }
+
+    const rawItems = Array.isArray(fromState.items) ? fromState.items :
+                     Array.isArray(fromState.lineItems) ? fromState.lineItems :
+                     Array.isArray(fromState.rows) ? fromState.rows : (baseMock.items || []);
+
+    const header = {
+      address: companyAddr,
+      phone: companyPh,
+      email: companyEm,
+      ...(baseMock.header || {}),
+      ...(fromState.header || {}),
+      so_number: fromState.id || fromState.so_number || `${currentDocMeta?.code || 'DOC'}-2026-001`,
+      grn_number: fromState.id || fromState.grn_number || `${currentDocMeta?.code || 'DOC'}-2026-001`,
+      invoice_no: fromState.id || fromState.invoice_no || `${currentDocMeta?.code || 'DOC'}-2026-001`,
+      ref_no: fromState.id || fromState.ref_no || `${currentDocMeta?.code || 'DOC'}-2026-001`,
+      date: fromState.date || fromState.created_at || new Date().toISOString().split('T')[0],
+      customer: fromState.customerName || fromState.customer || 'Al-Haq Enterprises',
+      contact: fromState.contactPerson || fromState.contact || 'N/A'
+    };
+
+    Object.keys(fromState).forEach(k => {
+      if (k !== 'items' && k !== 'lineItems' && k !== 'rows') {
+        header[k] = fromState[k];
+      }
+    });
+
+    return {
+      header,
+      items: rawItems.length > 0 ? rawItems : (baseMock.items || []),
+      totals: fromState.totals || baseMock.totals || { subtotal: 0, tax: 0, grandTotal: 0 }
+    };
+  }, [selectedDocId, state, currentDocMeta]);
 
   return (
     <>
@@ -849,7 +896,7 @@ export default function PrintSettings() {
                           {companyName}
                         </h2>
                         <p className="text-[10px] text-slate-600 leading-tight mt-0.5">
-                          {mockData.header.address} | Tel: {mockData.header.phone}
+                          {(mockData?.header?.address || 'Plot 42-B, Industrial Zone Phase III, Karachi')} | Tel: {(mockData?.header?.phone || '+92-21-34567890')}
                         </p>
                       </div>
                     )}
@@ -860,7 +907,7 @@ export default function PrintSettings() {
                       {currentDocMeta.name}
                     </h3>
                     <span className="inline-block mt-1 px-2.5 py-0.5 rounded bg-slate-100 font-mono text-xs font-bold text-slate-700">
-                      {mockData.header.so_number || mockData.header.grn_number || mockData.header.invoice_no || mockData.header.ref_no || `${currentDocMeta.code}-2026-001`}
+                      {mockData?.header?.so_number || mockData?.header?.grn_number || mockData?.header.invoice_no || mockData?.header.ref_no || `${currentDocMeta.code}-2026-001`}
                     </span>
                   </div>
                 </div>
@@ -870,7 +917,7 @@ export default function PrintSettings() {
               <div className="grid grid-cols-3 gap-3 mb-6 bg-slate-50 border border-slate-200 p-3.5 rounded-xl text-xs">
                 {(activeLayout.headerFields || []).map((field) => {
                   if (field.enabled === false) return null;
-                  const val = mockData.header[field.key] || 'N/A';
+                  const val = mockData?.header?.[field.key] || mockData?.[field.key] || 'N/A';
                   const isSelected = selectedElement?.key === field.key;
                   return (
                     <div
@@ -954,20 +1001,20 @@ export default function PrintSettings() {
                     {mockData.totals.subtotal !== undefined && (
                       <div className="flex justify-between text-slate-600">
                         <span>Subtotal:</span>
-                        <span className="font-mono font-bold">${mockData.totals.subtotal.toFixed(2)}</span>
+                        <span className="font-mono font-bold">${Number(mockData.totals.subtotal || 0).toLocaleString()}</span>
                       </div>
                     )}
                     {mockData.totals.tax !== undefined && (
                       <div className="flex justify-between text-slate-600">
                         <span>Tax:</span>
-                        <span className="font-mono font-bold">${mockData.totals.tax.toFixed(2)}</span>
+                        <span className="font-mono font-bold">${Number(mockData.totals.tax || 0).toLocaleString()}</span>
                       </div>
                     )}
                     {mockData.totals.grandTotal !== undefined && (
                       <div className="flex justify-between text-slate-900 font-black text-sm pt-1 border-t border-slate-300">
                         <span>Grand Total:</span>
                         <span className="font-mono" style={{ color: activeLayout.primaryColor || '#004277' }}>
-                          ${mockData.totals.grandTotal.toFixed(2)}
+                          ${Number(mockData.totals.grandTotal || 0).toLocaleString()}
                         </span>
                       </div>
                     )}
