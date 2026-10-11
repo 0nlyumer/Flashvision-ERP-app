@@ -8,6 +8,8 @@ import { useApp } from '../context/AppContext';
 import { useDialog } from '../context/DialogContext';
 import ResizableHeader from '../components/ui/ResizableHeader';
 import PrintLayout from '../components/ui/PrintLayout';
+import UniversalPrintStudioModal from '../components/ui/UniversalPrintStudioModal';
+import { exportDocumentToPdf, exportDocumentToImage, exportDocumentToCsv } from '../utils/printExportUtils';
 
 const PAPER_DIMENSIONS = {
   A4: { width: '210mm', height: '297mm', widthLandscape: '297mm', heightLandscape: '210mm' },
@@ -513,6 +515,8 @@ export default function SaleOrderModule() {
   };
 
   const [printOrder, setPrintOrder] = useState(null);
+  const [showPrintStudio, setShowPrintStudio] = useState(false);
+  const [studioDocData, setStudioDocData] = useState(null);
 
   // Sync body class for print isolation
   useEffect(() => {
@@ -833,7 +837,13 @@ export default function SaleOrderModule() {
     {/* PRINT ONLY UI & PREVIEW MODAL */}
     {printOrder && (() => {
         const printSettings = state.adminSetup?.printSettings || {};
-        const salesLayout = printSettings.documentLayouts?.sale_order || DEFAULT_SALE_ORDER_LAYOUT;
+        const localSavedLayout = (() => {
+            try {
+              const item = localStorage.getItem('fv_print_layout_sale_order');
+              return item ? JSON.parse(item) : null;
+            } catch(e) { return null; }
+          })();
+          const salesLayout = localSavedLayout || printSettings.documentLayouts?.sale_order || DEFAULT_SALE_ORDER_LAYOUT;
         
         // Load layout options with fallbacks
         const headerTheme = salesLayout.headerTheme || DEFAULT_SALE_ORDER_LAYOUT.headerTheme;
@@ -924,8 +934,15 @@ export default function SaleOrderModule() {
             }
             case 'qty':
               return `${item.quantity || item.qty} ${state.items?.find(p => p.id === item.itemId)?.unit === 'Meters' ? 'm' : ''}`;
-            case 'rule':
-              return item.rolls || '1';
+            case 'rolls':
+              case 'roll_qty':
+              case 'rule':
+                return item.rolls || item.rollQty || item.rollsCount || '-';
+              case 'uom':
+              case 'unit': {
+                const prod = state.items?.find(p => p.id === item.itemId);
+                return prod?.unit || item.uom || 'Meters';
+              }
             case 'rate':
               return Number(item.price || 0).toLocaleString();
             case 'discount':
@@ -1103,8 +1120,8 @@ export default function SaleOrderModule() {
         // Chunk items list dynamically based on height constraints
         const getPagesForPrint = (itemsList) => {
           const pages = [];
-          const maxOnFirstPage = repeatHeader ? 6 : 8;
-          const maxOnSubsequentPages = repeatHeader ? 6 : 14;
+          const maxOnFirstPage = Number(salesLayout.firstPageRows || (repeatHeader ? 6 : 8));
+            const maxOnSubsequentPages = Number(salesLayout.continuationPageRows || (repeatHeader ? 6 : 14));
 
           let remainingItems = [...itemsList];
           
@@ -2425,6 +2442,15 @@ export default function SaleOrderModule() {
             </div>
           </div>
         </div>
+      )}
+      {showPrintStudio && (
+        <UniversalPrintStudioModal
+          isOpen={showPrintStudio}
+          onClose={() => setShowPrintStudio(false)}
+          documentType="sale_order"
+          documentData={studioDocData || printOrder}
+          documentTitle="Sale Order Print Designer"
+        />
       )}
     </Layout>
     </div>

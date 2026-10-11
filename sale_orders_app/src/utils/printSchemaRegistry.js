@@ -65,6 +65,15 @@ export const DEFAULT_LAYOUT_SETTINGS = {
   bodyFontSize: '11px',
   tableHeaderBgColor: '#004277',
   tableHeaderTextColor: '#ffffff',
+  // Multi-Page Pagination Engine Rules (pdfme & jsreport style)
+  firstPageRows: 8,
+  continuationPageRows: 14,
+  rowsPerPage: 10,
+  repeatHeader: false,
+  repeatTableHeader: true,
+  totalsPosition: 'last_page',
+  pageBreakRule: 'smart_row_count',
+
   marginTop: '15mm',
   marginBottom: '15mm',
   marginLeft: '15mm',
@@ -112,7 +121,8 @@ export const DEFAULT_DOCUMENT_SCHEMAS = {
       { key: 'serial_no', label: 'Sr #', enabled: true, width: '8%', align: 'center' },
       { key: 'item_code', label: 'Item Code', enabled: true, width: '15%', align: 'left' },
       { key: 'item_name', label: 'Item Name / Description', enabled: true, width: '30%', align: 'left' },
-      { key: 'qty', label: 'Quantity', enabled: true, width: '12%', align: 'right' },
+      { key: 'rolls', label: 'Rolls Qty', enabled: true, width: '9%', align: 'center' },
+      { key: 'qty', label: 'Quantity / Meters', enabled: true, width: '12%', align: 'right' },
       { key: 'uom', label: 'UOM', enabled: true, width: '8%', align: 'center' },
       { key: 'rate', label: 'Unit Rate ($)', enabled: true, width: '12%', align: 'right' },
       { key: 'discount', label: 'Discount', enabled: true, width: '8%', align: 'right' },
@@ -678,9 +688,73 @@ export const DEFAULT_DOCUMENT_SCHEMAS = {
  * Scans runtime data structures and returns a complete layout schema.
  * Future-proofs system when developers add new fields to database objects.
  */
-export function discoverDocumentSchema(docType, sampleRecord = null, existingLayout = null) {
+
+/**
+ * Map document type to real collection in AppContext state
+ */
+export function getSampleRecordFromState(docType, state) {
+  if (!state) return null;
+  const map = {
+    sale_order: state.saleOrders?.[0] ? {
+      ...state.saleOrders[0],
+      customer: state.customers?.find(c => c.id === state.saleOrders[0].customerId)?.name || state.saleOrders[0].customerName || 'Customer',
+      contact: state.customers?.find(c => c.id === state.saleOrders[0].customerId)?.contactPerson || 'N/A',
+      shipping_address: state.saleOrders[0].shippingAddress || 'Factory Gate, Industrial Estate'
+    } : null,
+    planning_history: state.productionPlans?.[0],
+    bom_master: state.boms?.[0],
+    batch_closing_history: state.productionOutputs?.[0],
+    delivery_challan: state.deliveries?.[0] ? {
+      ...state.deliveries[0],
+      customer: state.deliveries[0].customerName || 'Consignee Party',
+      contact: state.deliveries[0].consignee?.contactNumber || 'N/A',
+      shipping_address: state.deliveries[0].consignee?.address || 'Site Delivery',
+      items: state.deliveries[0].items || []
+    } : null,
+    inventory_ledger: state.items?.[0] ? {
+      id: 'INV-LEDGER-01',
+      date: new Date().toISOString(),
+      department: state.items[0].department || 'Raw Material Department',
+      items: (state.items || []).slice(0, 15).map((it, idx) => ({
+        serial_no: idx + 1,
+        item_code: it.itemCode || it.sku || `ITEM-${idx + 1}`,
+        item_name: it.name || it.description || 'Inventory Item',
+        category: it.category || 'General',
+        department: it.department || 'Warehouse',
+        stock_level: it.stockLevel || it.quantity || 0,
+        rolls: it.rolls || '-',
+        uom: it.uom || 'Meters'
+      }))
+    } : null,
+    inventory_adjustment: (state.inventoryAdjustments || state.adjustments)?.[0],
+    inventory_return: state.returns?.[0],
+    purchase_demand: state.purchaseDemands?.[0],
+    purchase_order: state.purchaseOrders?.[0],
+    inward_gate_pass: state.gatePassActivities?.[0],
+    grn_note: state.approvals?.find(a => a.type === 'GRN Log') || state.stockReceiving?.[0],
+    sale_invoice: state.salesInvoices?.[0],
+    purchase_invoice: state.purchaseInvoices?.[0],
+    voucher_receipt: state.paymentVouchers?.[0],
+    voucher_payment: state.paymentVouchers?.[0],
+    voucher_journal: state.paymentVouchers?.[0],
+    hr_payslip: state.hr_generated_salaries?.[0],
+    hr_overtime_request: state.hr_overtime_requests?.[0],
+    hr_leave_request: state.hr_leave_requests?.[0],
+    hr_loan_request: state.hr_loan_requests?.[0]
+  };
+  return map[docType] || null;
+}
+
+export function discoverDocumentSchema(docType, sampleRecord = null, existingLayout = null, state = null) {
   const baseSchema = existingLayout || DEFAULT_DOCUMENT_SCHEMAS[docType] || DEFAULT_LAYOUT_SETTINGS;
-  if (!sampleRecord || typeof sampleRecord !== 'object') {
+  let record = sampleRecord;
+  if ((!record || typeof record !== 'object') && state) {
+    record = getSampleRecordFromState(docType, state);
+  }
+  if (!record || typeof record !== 'object') {
+    record = getMockPreviewData(docType);
+  }
+  if (!record || typeof record !== 'object') {
     return baseSchema;
   }
 

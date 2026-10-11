@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import UniversalPrintStudioModal from '../ui/UniversalPrintStudioModal';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
 import { useDialog } from '../../context/DialogContext';
@@ -9,7 +10,8 @@ import {
   DEFAULT_DOCUMENT_SCHEMAS,
   DEFAULT_LAYOUT_SETTINGS,
   discoverDocumentSchema,
-  getMockPreviewData
+  getMockPreviewData,
+  getSampleRecordFromState
 } from '../../utils/printSchemaRegistry';
 
 const PAPER_DIMENSIONS = {
@@ -67,6 +69,7 @@ export default function PrintSettings() {
   const [saving, setSaving] = useState(false);
   const [showSaveSuccess, setShowSaveSuccess] = useState(false);
   const [showPrintPreview, setShowPrintPreview] = useState(false);
+  const [showStudioModal, setShowStudioModal] = useState(false);
 
   // Local state for layout configurations of all 26 documents
   const [documentLayouts, setDocumentLayouts] = useState({});
@@ -129,8 +132,8 @@ export default function PrintSettings() {
   // Get active layout with schema discovery
   const activeLayout = useMemo(() => {
     const raw = documentLayouts[selectedDocId] || DEFAULT_DOCUMENT_SCHEMAS[selectedDocId] || DEFAULT_LAYOUT_SETTINGS;
-    const sampleRecord = state?.[selectedDocId] || null;
-    return discoverDocumentSchema(selectedDocId, sampleRecord, raw);
+    const sampleRecord = getSampleRecordFromState ? getSampleRecordFromState(selectedDocId, state) : (state?.[selectedDocId] || null);
+    return discoverDocumentSchema(selectedDocId, sampleRecord, raw, state);
   }, [documentLayouts, selectedDocId, state]);
 
   // Updater helper
@@ -285,10 +288,20 @@ export default function PrintSettings() {
 
   // Mock data for live paper preview
   const mockData = useMemo(() => {
-    return getMockPreviewData(selectedDocId);
-  }, [selectedDocId]);
+    const fromState = getSampleRecordFromState ? getSampleRecordFromState(selectedDocId, state) : null;
+    return fromState || getMockPreviewData(selectedDocId);
+  }, [selectedDocId, state]);
 
   return (
+    <>
+      {showStudioModal && (
+        <UniversalPrintStudioModal
+          isOpen={showStudioModal}
+          onClose={() => setShowStudioModal(false)}
+          documentType={selectedDocId}
+          documentTitle={currentDocMeta?.name}
+        />
+      )}
     <div className="w-full bg-[#f8f9fb] text-slate-800 font-sans p-4 md:p-6 rounded-3xl min-h-[calc(100vh-6rem)] flex flex-col space-y-6 animate-fade-in border border-slate-200/80 shadow-sm">
       {/* ============================================================== */}
       {/* 1. TOP HEADER & DOCUMENT SELECTION BAR                        */}
@@ -1008,5 +1021,6 @@ export default function PrintSettings() {
         </div>
       )}
     </div>
+    </>
   );
 }
