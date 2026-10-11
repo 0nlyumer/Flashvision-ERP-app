@@ -1215,6 +1215,19 @@ export default function SaleOrderModule() {
                   <div className="flex items-center gap-3 font-sans">
                     <button
                       type="button"
+                      onClick={() => {
+                        setStudioDocData(printOrder);
+                        setShowPrintStudio(true);
+                      }}
+                      className="px-4 py-2 border border-primary/30 bg-primary/10 hover:bg-primary/20 text-primary font-bold text-xs rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
+                      title="Customize Print Layout (Gear Studio)"
+                    >
+                      <span className="material-symbols-outlined text-[18px]">settings</span>
+                      <span>Customize Layout (⚙️)</span>
+                    </button>
+
+                    <button
+                      type="button"
                       onClick={() => setPrintOrder(null)}
                       className="px-4 py-2 border border-slate-300 rounded-xl text-slate-600 font-bold text-xs hover:bg-slate-50 transition-all cursor-pointer"
                     >
@@ -1695,10 +1708,11 @@ export default function SaleOrderModule() {
                            <StatusBadgeWithAction orderId={order.id} itemCode={null} status={order.status} updateStatus={updateSaleOrderItemStatus} />
                         </td>
                         <td className="px-6 py-5 text-right">
-                          <div className="flex items-center justify-end space-x-1 opacity-40 group-hover:opacity-100 transition-opacity">
+                          <div className="flex items-center justify-end space-x-1 opacity-90 group-hover:opacity-100 transition-opacity">
                             <button onClick={() => { setTimelineOrderInfo({ orderId: order.id, itemCode: null, type: 'order' }); setShowTimelineModal(true); }} className="p-2 hover:text-primary transition-colors hover:bg-primary/10 rounded-lg" title="Timeline View"><span className="material-symbols-outlined text-[20px]">history</span></button>
                             <button onClick={() => handleEditOrder(order)} className="p-2 hover:text-primary transition-colors hover:bg-primary/10 rounded-lg" title="Modify"><span className="material-symbols-outlined text-[20px]">edit</span></button>
-                            <button onClick={() => setPrintOrder(order)} className="p-2 hover:text-primary transition-colors hover:bg-primary/10 rounded-lg" title="Print"><span className="material-symbols-outlined text-[20px]">print</span></button>
+                            <button onClick={() => { setStudioDocData(order); setShowPrintStudio(true); }} className="p-2 text-primary hover:text-primary-dark transition-colors hover:bg-primary/10 rounded-lg cursor-pointer" title="Customize Print Layout (Gear Studio)"><span className="material-symbols-outlined text-[20px]">settings</span></button>
+                              <button onClick={() => setPrintOrder(order)} className="p-2 hover:text-primary transition-colors hover:bg-primary/10 rounded-lg" title="Print"><span className="material-symbols-outlined text-[20px]">print</span></button>
                           </div>
                         </td>
                       </tr>
@@ -2315,7 +2329,14 @@ export default function SaleOrderModule() {
                                 <td className="px-6 py-6 overflow-visible"><StatusBadgeWithAction orderId={order.id} itemCode={null} status={order.status} updateStatus={updateSaleOrderItemStatus} /></td>
                                 <td className="px-8 py-6 text-right">
                                    <div className="flex items-center justify-end gap-2">
-                                     <button onClick={() => setPrintOrder(order)} className="text-primary hover:bg-primary/10 p-2 rounded-lg transition-colors flex items-center justify-center" title="Print Record">
+                                     <button 
+                                        onClick={() => { setStudioDocData(order); setShowPrintStudio(true); }} 
+                                        className="text-primary hover:bg-primary/10 p-2 rounded-lg transition-colors flex items-center justify-center cursor-pointer" 
+                                        title="Customize Print Layout (Gear Studio)"
+                                      >
+                                         <span className="material-symbols-outlined text-[20px]">settings</span>
+                                      </button>
+                                      <button onClick={() => setPrintOrder(order)} className="text-primary hover:bg-primary/10 p-2 rounded-lg transition-colors flex items-center justify-center" title="Print Record">
                                         <span className="material-symbols-outlined text-[20px]">print</span>
                                      </button>
                                      <button onClick={() => handleEditOrder(order)} title="Edit Order" className="text-on-surface-variant hover:text-primary hover:bg-surface-container-high p-2 rounded-lg transition-colors flex items-center justify-center">

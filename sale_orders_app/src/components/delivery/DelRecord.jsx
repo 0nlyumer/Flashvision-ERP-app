@@ -21,10 +21,10 @@ export default function DelRecord() {
   const itemsPerPage = 10;
 
   useEffect(() => {
-      if (printData) {
-          window.print();
-      }
-  }, [printData]);
+    if (printData && !showStudio) {
+      window.print();
+    }
+  }, [printData, showStudio]);
 
   const handlePrint = (dc) => {
       setPrintData(dc);
@@ -238,9 +238,16 @@ export default function DelRecord() {
                                 <button onClick={() => appAlert('Edit is not permitted for finalized delivery challans. Please delete and recreate if needed.')} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-tertiary/10 text-tertiary transition-colors outline-none focus:ring-2 focus:ring-tertiary/20" title="Edit">
                                   <span className="material-symbols-outlined text-lg" style={{ fontVariationSettings: "'FILL' 0" }}>edit</span>
                                 </button>
-                                <button onClick={() => handlePrint(dc)} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-surface-container text-on-surface-variant transition-colors outline-none focus:ring-2 focus:ring-primary/20" title="Print">
-                                  <span className="material-symbols-outlined text-lg" style={{ fontVariationSettings: "'FILL' 0" }}>print</span>
-                                </button>
+                                <button 
+                                   onClick={() => { setPrintData(dc); setShowStudio(true); }} 
+                                   className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-primary/10 text-primary transition-colors outline-none focus:ring-2 focus:ring-primary/20 cursor-pointer" 
+                                   title="Customize Print Layout (Gear Studio)"
+                                 >
+                                   <span className="material-symbols-outlined text-lg">settings</span>
+                                 </button>
+                                 <button onClick={() => handlePrint(dc)} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-surface-container text-on-surface-variant transition-colors outline-none focus:ring-2 focus:ring-primary/20 cursor-pointer" title="Print">
+                                   <span className="material-symbols-outlined text-lg" style={{ fontVariationSettings: "'FILL' 0" }}>print</span>
+                                 </button>
                                 <button onClick={async () => { if(await appConfirm('Are you sure you want to delete this delivery challan? Stock will be reverted.')) { deleteDelivery?.(dc.id) } }} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-error/10 text-error transition-colors outline-none focus:ring-2 focus:ring-error/20" title="Delete">
                                   <span className="material-symbols-outlined text-lg" style={{ fontVariationSettings: "'FILL' 0" }}>delete</span>
                                 </button>

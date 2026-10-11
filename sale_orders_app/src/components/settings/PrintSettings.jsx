@@ -154,12 +154,21 @@ export default function PrintSettings() {
     return SYSTEM_DOCUMENTS.filter((d) => d.module === activeModuleFilter);
   }, [activeModuleFilter]);
 
-  const handleSelectDocument = (docId) => {
+      const handleSelectDocument = (docId) => {
     setSelectedDocId(docId);
     setSelectedElement(null);
     const docMeta = SYSTEM_DOCUMENTS.find((d) => d.id === docId);
     if (docMeta) {
-      setSearchParams({ module: docMeta.module, doc: docId });
+      if (activeModuleFilter !== 'all' && activeModuleFilter !== docMeta.module) {
+        setActiveModuleFilter(docMeta.module);
+      }
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev);
+        next.set('tab', 'print_settings');
+        next.set('module', docMeta.module);
+        next.set('doc', docId);
+        return next;
+      });
     }
   };
 
@@ -394,7 +403,7 @@ export default function PrintSettings() {
         {/* Module Filter Tabs */}
         <div className="flex items-center gap-1.5 overflow-x-auto w-full md:w-auto pb-2 md:pb-0">
           <button
-            onClick={() => setActiveModuleFilter('all')}
+            onClick={() => { setActiveModuleFilter('all'); setSearchParams(prev => { const n = new URLSearchParams(prev); n.set('tab', 'print_settings'); n.set('module', 'all'); return n; }); }}
             className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap ${
               activeModuleFilter === 'all'
                 ? 'bg-blue-600 text-white shadow-sm'
@@ -402,13 +411,33 @@ export default function PrintSettings() {
             }`}
           >
             <span className="material-symbols-outlined text-sm">grid_view</span>
-            All (26)
+            All ({SYSTEM_DOCUMENTS.length})
           </button>
 
           {DOCUMENT_MODULES.map((mod) => (
             <button
               key={mod.id}
-              onClick={() => setActiveModuleFilter(mod.id)}
+              onClick={() => {
+                setActiveModuleFilter(mod.id);
+                const firstDocOfMod = SYSTEM_DOCUMENTS.find((d) => d.module === mod.id);
+                if (firstDocOfMod) {
+                  setSelectedDocId(firstDocOfMod.id);
+                  setSearchParams((prev) => {
+                    const n = new URLSearchParams(prev);
+                    n.set('tab', 'print_settings');
+                    n.set('module', mod.id);
+                    n.set('doc', firstDocOfMod.id);
+                    return n;
+                  });
+                } else {
+                  setSearchParams((prev) => {
+                    const n = new URLSearchParams(prev);
+                    n.set('tab', 'print_settings');
+                    n.set('module', mod.id);
+                    return n;
+                  });
+                }
+              }}
               className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap ${
                 activeModuleFilter === mod.id
                   ? 'bg-blue-600 text-white shadow-sm'

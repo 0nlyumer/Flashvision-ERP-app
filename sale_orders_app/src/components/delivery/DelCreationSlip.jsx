@@ -1,3 +1,4 @@
+import UniversalPrintStudioModal from '../ui/UniversalPrintStudioModal';
 import React, { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useDialog } from '../../context/DialogContext';
