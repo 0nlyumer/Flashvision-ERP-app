@@ -131,9 +131,14 @@ export default function PrintSettings() {
 
   // Get active layout with schema discovery
   const activeLayout = useMemo(() => {
-    const raw = documentLayouts[selectedDocId] || DEFAULT_DOCUMENT_SCHEMAS[selectedDocId] || DEFAULT_LAYOUT_SETTINGS;
-    const sampleRecord = getSampleRecordFromState ? getSampleRecordFromState(selectedDocId, state) : (state?.[selectedDocId] || null);
-    return discoverDocumentSchema(selectedDocId, sampleRecord, raw, state);
+    try {
+      const raw = documentLayouts[selectedDocId] || DEFAULT_DOCUMENT_SCHEMAS[selectedDocId] || DEFAULT_LAYOUT_SETTINGS;
+      const sampleRecord = getSampleRecordFromState ? getSampleRecordFromState(selectedDocId, state) : (state?.[selectedDocId] || null);
+      return discoverDocumentSchema(selectedDocId, sampleRecord, raw, state);
+    } catch (e) {
+      console.error('Error computing active layout:', e);
+      return DEFAULT_DOCUMENT_SCHEMAS[selectedDocId] || DEFAULT_LAYOUT_SETTINGS;
+    }
   }, [documentLayouts, selectedDocId, state]);
 
   // Updater helper
@@ -297,7 +302,8 @@ export default function PrintSettings() {
 
   // Mock data for live paper preview
   const mockData = useMemo(() => {
-    const fromState = getSampleRecordFromState ? getSampleRecordFromState(selectedDocId, state) : null;
+    try {
+      const fromState = getSampleRecordFromState ? getSampleRecordFromState(selectedDocId, state) : null;
     const baseMock = getMockPreviewData(selectedDocId) || { header: {}, items: [], totals: {} };
 
     const companyAddr = state?.adminSetup?.address || 'Plot 42-B, Industrial Zone Phase III, Karachi, Pakistan';
@@ -346,6 +352,10 @@ export default function PrintSettings() {
       items: rawItems.length > 0 ? rawItems : (baseMock.items || []),
       totals: fromState.totals || baseMock.totals || { subtotal: 0, tax: 0, grandTotal: 0 }
     };
+    } catch (e) {
+      console.error('Error computing mock data:', e);
+      return getMockPreviewData(selectedDocId) || { header: {}, items: [], totals: {} };
+    }
   }, [selectedDocId, state, currentDocMeta]);
 
   return (

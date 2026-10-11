@@ -761,41 +761,45 @@ export function discoverDocumentSchema(docType, sampleRecord = null, existingLay
   const discoveredHeaderFields = [...(baseSchema.headerFields || [])];
   const discoveredColumns = [...(baseSchema.gridColumns || [])];
 
-  // Inspect sample record keys for new header fields
-  Object.keys(sampleRecord).forEach((key) => {
-    if (key === 'items' || key === 'lineItems' || key === 'rows' || Array.isArray(sampleRecord[key])) {
-      return; // line items array handled separately below
-    }
+  // Inspect resolved record keys for new header fields
+  if (record && typeof record === 'object') {
+    Object.keys(record).forEach((key) => {
+      if (key === 'items' || key === 'lineItems' || key === 'rows' || Array.isArray(record[key])) {
+        return; // line items array handled separately below
+      }
 
-    const exists = discoveredHeaderFields.some((f) => f.key === key);
-    if (!exists && typeof sampleRecord[key] !== 'object') {
-      const formattedLabel = key.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
-      discoveredHeaderFields.push({
-        key,
-        label: formattedLabel,
-        enabled: true,
-        width: 'span-1'
-      });
-    }
-  });
-
-  // Inspect line items array for new table columns
-  const lineItems = sampleRecord.items || sampleRecord.lineItems || sampleRecord.rows || [];
-  if (Array.isArray(lineItems) && lineItems.length > 0) {
-    const itemSample = lineItems[0];
-    Object.keys(itemSample).forEach((colKey) => {
-      const colExists = discoveredColumns.some((c) => c.key === colKey);
-      if (!colExists && typeof itemSample[colKey] !== 'object') {
-        const formattedLabel = colKey.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
-        discoveredColumns.push({
-          key: colKey,
+      const exists = discoveredHeaderFields.some((f) => f.key === key);
+      if (!exists && typeof record[key] !== 'object' && record[key] !== null && record[key] !== undefined) {
+        const formattedLabel = key.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
+        discoveredHeaderFields.push({
+          key,
           label: formattedLabel,
           enabled: true,
-          width: '12%',
-          align: typeof itemSample[colKey] === 'number' ? 'right' : 'left'
+          width: 'span-1'
         });
       }
     });
+
+    // Inspect line items array for new table columns
+    const lineItems = record.items || record.lineItems || record.rows || [];
+    if (Array.isArray(lineItems) && lineItems.length > 0) {
+      const itemSample = lineItems[0];
+      if (itemSample && typeof itemSample === 'object') {
+        Object.keys(itemSample).forEach((colKey) => {
+          const colExists = discoveredColumns.some((c) => c.key === colKey);
+          if (!colExists && typeof itemSample[colKey] !== 'object') {
+            const formattedLabel = colKey.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
+            discoveredColumns.push({
+              key: colKey,
+              label: formattedLabel,
+              enabled: true,
+              width: '12%',
+              align: typeof itemSample[colKey] === 'number' ? 'right' : 'left'
+            });
+          }
+        });
+      }
+    }
   }
 
   return {
