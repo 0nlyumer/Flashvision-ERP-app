@@ -66,14 +66,6 @@ const greetingsList = [
   "Connecting teams, empowering results. Welcome back."
 ];
 
-// Authorized quick-demo profiles for authorized review & testing
-const DEMO_PROFILES = [
-  { role: 'Super Admin', username: 'admin', password: 'admin1', name: 'System Admin', badge: 'Full Access' },
-  { role: 'Operations', username: 'arfan_jameel', password: '12345', name: 'Arfan Jameel', badge: 'Executive' },
-  { role: 'Manager', username: 'umair_shabir', password: '123456', name: 'Umair Shabir', badge: 'Management' },
-  { role: 'Architect', username: 'only.umer', password: '123456', name: 'Omer Khan', badge: 'Lead Arch' }
-];
-
 // Reusable component to make sections freely movable
 const DraggablePanel = ({ id, defaultOffset, children, className, style, isLocked }) => {
   const [offset, setOffset] = useState(() => {
@@ -163,7 +155,6 @@ export default function Login() {
   const [remainingAttempts, setRemainingAttempts] = useState(null);
   const [lockoutSeconds, setLockoutSeconds] = useState(0);
   const [sessionExpiredNotice, setSessionExpiredNotice] = useState(false);
-  const [showDemoDrawer, setShowDemoDrawer] = useState(false);
 
   // Appearance State
   const [theme, setTheme] = useState('dark');
@@ -260,13 +251,6 @@ export default function Login() {
     if (e.getModifierState) {
       setIsCapsLockOn(e.getModifierState('CapsLock'));
     }
-  };
-
-  const handleQuickFill = (profile) => {
-    setIdentifier(profile.username);
-    setPassword(profile.password);
-    setErrorMessage('');
-    setShowDemoDrawer(false);
   };
 
   const handleLogin = async (e) => {
@@ -438,7 +422,7 @@ export default function Login() {
       {/* Main Container */}
       <div className="relative z-10 w-full max-w-5xl flex flex-col lg:flex-row items-center justify-center gap-8 lg:gap-14 py-6">
         
-        {/* Left Column: Brand & Security Guarantee */}
+        {/* Left Column: Brand & Top Core ERP Features */}
         {showCompanyInfo && (
           <DraggablePanel 
             id="login_branding_panel" 
@@ -446,12 +430,6 @@ export default function Login() {
             isLocked={isLayoutLocked}
             className="w-full lg:w-1/2 flex flex-col items-center lg:items-start text-center lg:text-left space-y-6"
           >
-            {/* Enterprise Security Shield Pill */}
-            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-semibold tracking-wide border backdrop-blur-md transition-all duration-300 bg-cyan-500/10 border-cyan-500/30 text-cyan-400 shadow-sm">
-              <span className="material-symbols-outlined text-[16px] text-cyan-400">verified_user</span>
-              <span>256-Bit SSL Encrypted Enterprise Portal</span>
-            </div>
-
             {/* Logo and Brand Title */}
             <div>
               <div className="flex items-center justify-center lg:justify-start gap-3 mb-2">
@@ -473,76 +451,55 @@ export default function Login() {
               </p>
             </div>
 
-            {/* Enterprise Security Badges */}
-            <div className="grid grid-cols-2 gap-3 w-full max-w-md pt-2">
-              <div className={`p-3 rounded-xl border flex items-center gap-3 ${isDark ? 'bg-slate-900/60 border-slate-800' : 'bg-white/80 border-slate-200'}`}>
-                <span className="material-symbols-outlined text-cyan-400 text-2xl">lock_clock</span>
+            {/* Top Core Enterprise Capabilities of the Whole ERP */}
+            <div className="grid grid-cols-2 gap-3.5 w-full max-w-md pt-2">
+              
+              {/* Feature 1: Production & OMS */}
+              <div className={`p-3.5 rounded-xl border flex items-start gap-3 transition-all hover:scale-[1.01] ${isDark ? 'bg-slate-900/60 border-slate-800/80 hover:border-cyan-500/30' : 'bg-white/80 border-slate-200 hover:border-blue-400/50'}`}>
+                <div className="p-2 rounded-lg bg-cyan-500/10 text-cyan-400 shrink-0 mt-0.5">
+                  <span className="material-symbols-outlined text-xl">precision_manufacturing</span>
+                </div>
                 <div className="text-left">
-                  <p className={`text-xs font-bold ${textClass}`}>HMAC Signature</p>
-                  <p className={`text-[10px] ${textMutedClass}`}>Anti-tamper tokens</p>
+                  <p className={`text-xs font-bold leading-tight ${textClass}`}>Production & OMS</p>
+                  <p className={`text-[10px] mt-1 leading-snug ${textMutedClass}`}>Multi-phase line tracking, casting & dynamic BOM</p>
                 </div>
               </div>
-              <div className={`p-3 rounded-xl border flex items-center gap-3 ${isDark ? 'bg-slate-900/60 border-slate-800' : 'bg-white/80 border-slate-200'}`}>
-                <span className="material-symbols-outlined text-indigo-400 text-2xl">shield_person</span>
+
+              {/* Feature 2: Sales & Order Fulfillment */}
+              <div className={`p-3.5 rounded-xl border flex items-start gap-3 transition-all hover:scale-[1.01] ${isDark ? 'bg-slate-900/60 border-slate-800/80 hover:border-emerald-500/30' : 'bg-white/80 border-slate-200 hover:border-emerald-400/50'}`}>
+                <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400 shrink-0 mt-0.5">
+                  <span className="material-symbols-outlined text-xl">local_shipping</span>
+                </div>
                 <div className="text-left">
-                  <p className={`text-xs font-bold ${textClass}`}>Role Security</p>
-                  <p className={`text-[10px] ${textMutedClass}`}>Granular access control</p>
+                  <p className={`text-xs font-bold leading-tight ${textClass}`}>Sales & Dispatch</p>
+                  <p className={`text-[10px] mt-1 leading-snug ${textMutedClass}`}>Order lifecycle, delivery notes & gate passes</p>
                 </div>
               </div>
-              <div className={`p-3 rounded-xl border flex items-center gap-3 ${isDark ? 'bg-slate-900/60 border-slate-800' : 'bg-white/80 border-slate-200'}`}>
-                <span className="material-symbols-outlined text-emerald-400 text-2xl">timer</span>
+
+              {/* Feature 3: Smart Inventory Control */}
+              <div className={`p-3.5 rounded-xl border flex items-start gap-3 transition-all hover:scale-[1.01] ${isDark ? 'bg-slate-900/60 border-slate-800/80 hover:border-amber-500/30' : 'bg-white/80 border-slate-200 hover:border-amber-400/50'}`}>
+                <div className="p-2 rounded-lg bg-amber-500/10 text-amber-400 shrink-0 mt-0.5">
+                  <span className="material-symbols-outlined text-xl">inventory_2</span>
+                </div>
                 <div className="text-left">
-                  <p className={`text-xs font-bold ${textClass}`}>Idle Guard</p>
-                  <p className={`text-[10px] ${textMutedClass}`}>60m inactivity timeout</p>
+                  <p className={`text-xs font-bold leading-tight ${textClass}`}>Smart Inventory</p>
+                  <p className={`text-[10px] mt-1 leading-snug ${textMutedClass}`}>Roll-level yardage, GRN audits & stock transfer</p>
                 </div>
               </div>
-              <div className={`p-3 rounded-xl border flex items-center gap-3 ${isDark ? 'bg-slate-900/60 border-slate-800' : 'bg-white/80 border-slate-200'}`}>
-                <span className="material-symbols-outlined text-amber-400 text-2xl">policy</span>
+
+              {/* Feature 4: Financial Ledger & Accounting */}
+              <div className={`p-3.5 rounded-xl border flex items-start gap-3 transition-all hover:scale-[1.01] ${isDark ? 'bg-slate-900/60 border-slate-800/80 hover:border-indigo-500/30' : 'bg-white/80 border-slate-200 hover:border-indigo-400/50'}`}>
+                <div className="p-2 rounded-lg bg-indigo-500/10 text-indigo-400 shrink-0 mt-0.5">
+                  <span className="material-symbols-outlined text-xl">account_balance</span>
+                </div>
                 <div className="text-left">
-                  <p className={`text-xs font-bold ${textClass}`}>Audit Trails</p>
-                  <p className={`text-[10px] ${textMutedClass}`}>Tamper-proof log capture</p>
+                  <p className={`text-xs font-bold leading-tight ${textClass}`}>Finance & Ledger</p>
+                  <p className={`text-[10px] mt-1 leading-snug ${textMutedClass}`}>Invoicing, payment vouchers & double-entry audit</p>
                 </div>
               </div>
+
             </div>
 
-            {/* Authorized Roles Drawer Trigger */}
-            <div className="w-full max-w-md pt-2">
-              <button
-                type="button"
-                onClick={() => setShowDemoDrawer(!showDemoDrawer)}
-                className={`w-full py-2.5 px-4 rounded-xl border text-xs font-semibold flex items-center justify-between transition-all duration-300 ${isDark ? 'bg-slate-800/60 hover:bg-slate-800 border-slate-700 text-slate-300' : 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-700'}`}
-              >
-                <span className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-sm text-cyan-400">badge</span>
-                  Authorized Operator Profiles ({DEMO_PROFILES.length})
-                </span>
-                <span className={`material-symbols-outlined text-sm transition-transform duration-300 ${showDemoDrawer ? 'rotate-180' : ''}`}>
-                  expand_more
-                </span>
-              </button>
-
-              {showDemoDrawer && (
-                <div className={`mt-2 p-3 rounded-xl border space-y-2 animate-in fade-in slide-in-from-top-2 duration-200 ${isDark ? 'bg-slate-900/90 border-slate-700' : 'bg-white border-slate-200 shadow-lg'}`}>
-                  <p className={`text-[11px] font-medium ${textMutedClass}`}>Click any role to auto-populate credentials for validation:</p>
-                  <div className="grid grid-cols-2 gap-2">
-                    {DEMO_PROFILES.map((p) => (
-                      <button
-                        key={p.username}
-                        type="button"
-                        onClick={() => handleQuickFill(p)}
-                        className={`p-2 rounded-lg border text-left flex flex-col justify-between transition-colors ${isDark ? 'bg-slate-800/80 hover:bg-cyan-950/40 hover:border-cyan-500/50 border-slate-700' : 'bg-slate-50 hover:bg-blue-50 hover:border-blue-300 border-slate-200'}`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="text-[11px] font-bold text-cyan-400 truncate">{p.name}</span>
-                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-cyan-500/10 text-cyan-400 font-semibold">{p.badge}</span>
-                        </div>
-                        <span className={`text-[10px] mt-1 font-mono ${textMutedClass}`}>@{p.username}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
           </DraggablePanel>
         )}
 
@@ -557,14 +514,10 @@ export default function Login() {
             
             {/* Card Header */}
             <div className="mb-6 text-center sm:text-left">
-              <div className="flex items-center justify-between mb-1">
+              <div className="mb-1">
                 <h2 className={`text-2xl font-bold font-manrope tracking-tight ${textClass}`}>
                   Sign In
                 </h2>
-                <div className="flex items-center gap-1.5 text-[11px] text-emerald-400 font-semibold bg-emerald-500/10 px-2.5 py-1 rounded-full border border-emerald-500/20">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                  Security Active
-                </div>
               </div>
               <p className={`text-xs ${textMutedClass}`}>
                 Enter your authorized credentials to access your enterprise dashboard.
@@ -717,11 +670,11 @@ export default function Login() {
             {/* Footer */}
             <div className={`mt-8 text-center border-t pt-5 transition-colors duration-700 ${isDark ? 'border-slate-800' : 'border-slate-200'}`}>
               <div className="flex items-center justify-center gap-2 text-[11px] text-slate-400">
-                <span className="material-symbols-outlined text-xs text-emerald-400">shield</span>
-                <span>Protected by FlashVision Zero-Trust Architecture</span>
+                <span className="material-symbols-outlined text-xs text-cyan-400">lock</span>
+                <span>Protected Enterprise Gateway</span>
               </div>
               <p className={`text-[10px] mt-2 ${textMutedClass}`}>
-                Synthetic Leather ERP • Architected by <span className="font-bold text-slate-300">Omer Khan</span>
+                Synthetic Leather Manufacturing ERP
               </p>
             </div>
 
