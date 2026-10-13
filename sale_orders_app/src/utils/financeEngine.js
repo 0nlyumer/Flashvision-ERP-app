@@ -2,11 +2,15 @@
  * FlashVision Synthetic Leather ERP - Enterprise Finance Engine
  * Benchmarked against ERPNext & SAP Accounting Standard
  * 
- * Golden Rules:
- * 1. Double-Entry Invariant: SUM(Debits) === SUM(Credits)
- * 2. Fixed-Point Precision: Math.round((val + Number.EPSILON) * 100) / 100
- * 3. 5-Tier Chart of Accounts: Assets, Liabilities, Equity, Income, Expenses
- * 4. Zero Hardcoded Numbers: Everything calculated dynamically from actual transactions
+ * 100% REAL TRANSACTION DRIVEN - ZERO DUMMY/MOCK DATA
+ * Integrates directly with:
+ * - Sales Invoices (salesInvoices)
+ * - Purchase Invoices (purchaseInvoices)
+ * - Multi-line Vouchers (vouchers, paymentVouchers)
+ * - Sales Returns (returns)
+ * - HR Generated Salaries (hr_generated_salaries)
+ * - Inventory Material Consumptions (otherConsumptions)
+ * - Customers & Suppliers Masters
  */
 
 export const round2 = (num) => {
@@ -22,53 +26,54 @@ export const formatMoney = (val, currencyCode = 'PKR') => {
 
 // ----------------------------------------------------------------------------
 // 1. STANDARD 5-TIER CHART OF ACCOUNTS FOR SYNTHETIC LEATHER MANUFACTURING
+// (Clean zero opening balances - user can configure opening balances as needed)
 // ----------------------------------------------------------------------------
 export const DEFAULT_CHART_OF_ACCOUNTS = [
   // 100000 - ASSETS
   { id: '100000', code: '100000', name: 'Application of Funds (Assets)', rootType: 'Asset', category: 'Root', isGroup: true, parentId: null, isDebitNormal: true },
   { id: '110000', code: '110000', name: 'Current Assets', rootType: 'Asset', category: 'Current Asset', isGroup: true, parentId: '100000', isDebitNormal: true },
-  { id: '111010', code: '111010', name: 'Cash in Hand - Factory Floor', rootType: 'Asset', category: 'Current Asset', isGroup: false, parentId: '110000', isDebitNormal: true, openingDebit: 850000, openingCredit: 0 },
-  { id: '111020', code: '111020', name: 'Petty Cash - Head Office & Admin', rootType: 'Asset', category: 'Current Asset', isGroup: false, parentId: '110000', isDebitNormal: true, openingDebit: 250000, openingCredit: 0 },
-  { id: '112010', code: '112010', name: 'HBL Main Operations A/C 0019284', rootType: 'Asset', category: 'Current Asset', isGroup: false, parentId: '110000', isDebitNormal: true, openingDebit: 18450000, openingCredit: 0 },
-  { id: '112020', code: '112020', name: 'Meezan Bank Industrial A/C 099214', rootType: 'Asset', category: 'Current Asset', isGroup: false, parentId: '110000', isDebitNormal: true, openingDebit: 9800000, openingCredit: 0 },
-  { id: '112030', code: '112030', name: 'MCB Foreign Exchange A/C 772109', rootType: 'Asset', category: 'Current Asset', isGroup: false, parentId: '110000', isDebitNormal: true, openingDebit: 4200000, openingCredit: 0 },
-  { id: '113010', code: '113010', name: 'Accounts Receivable (Debtors Control)', rootType: 'Asset', category: 'Current Asset', isGroup: false, parentId: '110000', isDebitNormal: true, openingDebit: 24500000, openingCredit: 0 },
-  { id: '114010', code: '114010', name: 'Stock in Hand - PVC & PU Resins', rootType: 'Asset', category: 'Current Asset', isGroup: false, parentId: '110000', isDebitNormal: true, openingDebit: 28500000, openingCredit: 0 },
-  { id: '114020', code: '114020', name: 'Stock in Hand - Backing Fabric & Scrim', rootType: 'Asset', category: 'Current Asset', isGroup: false, parentId: '110000', isDebitNormal: true, openingDebit: 14200000, openingCredit: 0 },
-  { id: '114030', code: '114030', name: 'Stock in Hand - Plasticizers (DOP) & Pigments', rootType: 'Asset', category: 'Current Asset', isGroup: false, parentId: '110000', isDebitNormal: true, openingDebit: 8750000, openingCredit: 0 },
-  { id: '114040', code: '114040', name: 'Work in Progress (WIP Coating Lines)', rootType: 'Asset', category: 'Current Asset', isGroup: false, parentId: '110000', isDebitNormal: true, openingDebit: 11300000, openingCredit: 0 },
-  { id: '114050', code: '114050', name: 'Finished Synthetic Leather Rolls Warehouse', rootType: 'Asset', category: 'Current Asset', isGroup: false, parentId: '110000', isDebitNormal: true, openingDebit: 34600000, openingCredit: 0 },
-  { id: '115010', code: '115010', name: 'Advances to Chemical & Raw Material Suppliers', rootType: 'Asset', category: 'Current Asset', isGroup: false, parentId: '110000', isDebitNormal: true, openingDebit: 3500000, openingCredit: 0 },
-  { id: '116010', code: '116010', name: 'Sales Tax Input / Claimable (FBR)', rootType: 'Asset', category: 'Current Asset', isGroup: false, parentId: '110000', isDebitNormal: true, openingDebit: 1250000, openingCredit: 0 },
-  { id: '116020', code: '116020', name: 'Advance Income Tax Deducted (Sec 147/236)', rootType: 'Asset', category: 'Current Asset', isGroup: false, parentId: '110000', isDebitNormal: true, openingDebit: 1450000, openingCredit: 0 },
+  { id: '111010', code: '111010', name: 'Cash in Hand - Factory Floor', rootType: 'Asset', category: 'Current Asset', isGroup: false, parentId: '110000', isDebitNormal: true, openingDebit: 0, openingCredit: 0 },
+  { id: '111020', code: '111020', name: 'Petty Cash - Head Office & Admin', rootType: 'Asset', category: 'Current Asset', isGroup: false, parentId: '110000', isDebitNormal: true, openingDebit: 0, openingCredit: 0 },
+  { id: '112010', code: '112010', name: 'HBL Main Operations A/C 0019284', rootType: 'Asset', category: 'Current Asset', isGroup: false, parentId: '110000', isDebitNormal: true, openingDebit: 0, openingCredit: 0 },
+  { id: '112020', code: '112020', name: 'Meezan Bank Industrial A/C 099214', rootType: 'Asset', category: 'Current Asset', isGroup: false, parentId: '110000', isDebitNormal: true, openingDebit: 0, openingCredit: 0 },
+  { id: '112030', code: '112030', name: 'MCB Foreign Exchange A/C 772109', rootType: 'Asset', category: 'Current Asset', isGroup: false, parentId: '110000', isDebitNormal: true, openingDebit: 0, openingCredit: 0 },
+  { id: '113010', code: '113010', name: 'Accounts Receivable (Debtors Control)', rootType: 'Asset', category: 'Current Asset', isGroup: false, parentId: '110000', isDebitNormal: true, openingDebit: 0, openingCredit: 0 },
+  { id: '114010', code: '114010', name: 'Stock in Hand - PVC & PU Resins', rootType: 'Asset', category: 'Current Asset', isGroup: false, parentId: '110000', isDebitNormal: true, openingDebit: 0, openingCredit: 0 },
+  { id: '114020', code: '114020', name: 'Stock in Hand - Backing Fabric & Scrim', rootType: 'Asset', category: 'Current Asset', isGroup: false, parentId: '110000', isDebitNormal: true, openingDebit: 0, openingCredit: 0 },
+  { id: '114030', code: '114030', name: 'Stock in Hand - Plasticizers (DOP) & Pigments', rootType: 'Asset', category: 'Current Asset', isGroup: false, parentId: '110000', isDebitNormal: true, openingDebit: 0, openingCredit: 0 },
+  { id: '114040', code: '114040', name: 'Work in Progress (WIP Coating Lines)', rootType: 'Asset', category: 'Current Asset', isGroup: false, parentId: '110000', isDebitNormal: true, openingDebit: 0, openingCredit: 0 },
+  { id: '114050', code: '114050', name: 'Finished Synthetic Leather Rolls Warehouse', rootType: 'Asset', category: 'Current Asset', isGroup: false, parentId: '110000', isDebitNormal: true, openingDebit: 0, openingCredit: 0 },
+  { id: '115010', code: '115010', name: 'Advances to Chemical & Raw Material Suppliers', rootType: 'Asset', category: 'Current Asset', isGroup: false, parentId: '110000', isDebitNormal: true, openingDebit: 0, openingCredit: 0 },
+  { id: '116010', code: '116010', name: 'Sales Tax Input / Claimable (FBR)', rootType: 'Asset', category: 'Current Asset', isGroup: false, parentId: '110000', isDebitNormal: true, openingDebit: 0, openingCredit: 0 },
+  { id: '116020', code: '116020', name: 'Advance Income Tax Deducted (Sec 147/236)', rootType: 'Asset', category: 'Current Asset', isGroup: false, parentId: '110000', isDebitNormal: true, openingDebit: 0, openingCredit: 0 },
   
   { id: '120000', code: '120000', name: 'Non-Current / Fixed Assets', rootType: 'Asset', category: 'Fixed Asset', isGroup: true, parentId: '100000', isDebitNormal: true },
-  { id: '121010', code: '121010', name: 'Synthetic Leather Coating & Foaming Line', rootType: 'Asset', category: 'Fixed Asset', isGroup: false, parentId: '120000', isDebitNormal: true, openingDebit: 85000000, openingCredit: 0 },
-  { id: '121020', code: '121020', name: 'Coagulation & Wet Treatment Facility', rootType: 'Asset', category: 'Fixed Asset', isGroup: false, parentId: '120000', isDebitNormal: true, openingDebit: 48000000, openingCredit: 0 },
-  { id: '121030', code: '121030', name: 'Embossing, Lacquering & Printing Machinery', rootType: 'Asset', category: 'Fixed Asset', isGroup: false, parentId: '120000', isDebitNormal: true, openingDebit: 32000000, openingCredit: 0 },
-  { id: '122010', code: '122010', name: 'Factory Land & Industrial Sheds', rootType: 'Asset', category: 'Fixed Asset', isGroup: false, parentId: '120000', isDebitNormal: true, openingDebit: 120000000, openingCredit: 0 },
-  { id: '123010', code: '123010', name: 'Commercial Transport & Forklifts', rootType: 'Asset', category: 'Fixed Asset', isGroup: false, parentId: '120000', isDebitNormal: true, openingDebit: 14500000, openingCredit: 0 },
-  { id: '124010', code: '124010', name: 'Factory Lab Equipment & Spectrophotometers', rootType: 'Asset', category: 'Fixed Asset', isGroup: false, parentId: '120000', isDebitNormal: true, openingDebit: 6800000, openingCredit: 0 },
-  { id: '129010', code: '129010', name: 'Accumulated Depreciation - Plant & Machinery', rootType: 'Asset', category: 'Fixed Asset', isGroup: false, parentId: '120000', isDebitNormal: false, openingDebit: 0, openingCredit: 38500000 },
+  { id: '121010', code: '121010', name: 'Synthetic Leather Coating & Foaming Line', rootType: 'Asset', category: 'Fixed Asset', isGroup: false, parentId: '120000', isDebitNormal: true, openingDebit: 0, openingCredit: 0 },
+  { id: '121020', code: '121020', name: 'Coagulation & Wet Treatment Facility', rootType: 'Asset', category: 'Fixed Asset', isGroup: false, parentId: '120000', isDebitNormal: true, openingDebit: 0, openingCredit: 0 },
+  { id: '121030', code: '121030', name: 'Embossing, Lacquering & Printing Machinery', rootType: 'Asset', category: 'Fixed Asset', isGroup: false, parentId: '120000', isDebitNormal: true, openingDebit: 0, openingCredit: 0 },
+  { id: '122010', code: '122010', name: 'Factory Land & Industrial Sheds', rootType: 'Asset', category: 'Fixed Asset', isGroup: false, parentId: '120000', isDebitNormal: true, openingDebit: 0, openingCredit: 0 },
+  { id: '123010', code: '123010', name: 'Commercial Transport & Forklifts', rootType: 'Asset', category: 'Fixed Asset', isGroup: false, parentId: '120000', isDebitNormal: true, openingDebit: 0, openingCredit: 0 },
+  { id: '124010', code: '124010', name: 'Factory Lab Equipment & Spectrophotometers', rootType: 'Asset', category: 'Fixed Asset', isGroup: false, parentId: '120000', isDebitNormal: true, openingDebit: 0, openingCredit: 0 },
+  { id: '129010', code: '129010', name: 'Accumulated Depreciation - Plant & Machinery', rootType: 'Asset', category: 'Fixed Asset', isGroup: false, parentId: '120000', isDebitNormal: false, openingDebit: 0, openingCredit: 0 },
 
   // 200000 - LIABILITIES
   { id: '200000', code: '200000', name: 'Source of Funds (Liabilities)', rootType: 'Liability', category: 'Root', isGroup: true, parentId: null, isDebitNormal: false },
   { id: '210000', code: '210000', name: 'Current Liabilities', rootType: 'Liability', category: 'Current Liability', isGroup: true, parentId: '200000', isDebitNormal: false },
-  { id: '211010', code: '211010', name: 'Accounts Payable (Creditors Control)', rootType: 'Liability', category: 'Current Liability', isGroup: false, parentId: '210000', isDebitNormal: false, openingDebit: 0, openingCredit: 19500000 },
-  { id: '212010', code: '212010', name: 'Sales Tax Output / Payable (FBR 18%)', rootType: 'Liability', category: 'Current Liability', isGroup: false, parentId: '210000', isDebitNormal: false, openingDebit: 0, openingCredit: 3200000 },
-  { id: '213010', code: '213010', name: 'Withholding Tax (WHT) Payable (Sec 153)', rootType: 'Liability', category: 'Current Liability', isGroup: false, parentId: '210000', isDebitNormal: false, openingDebit: 0, openingCredit: 980000 },
-  { id: '214010', code: '214010', name: 'Accrued Factory Wages & Admin Salaries', rootType: 'Liability', category: 'Current Liability', isGroup: false, parentId: '210000', isDebitNormal: false, openingDebit: 0, openingCredit: 4200000 },
-  { id: '215010', code: '215010', name: 'Customer Advances & Booking Deposits', rootType: 'Liability', category: 'Current Liability', isGroup: false, parentId: '210000', isDebitNormal: false, openingDebit: 0, openingCredit: 3100000 },
-  { id: '216010', code: '216010', name: 'Accrued Electricity (LESCO/K-Electric) & Gas Bills', rootType: 'Liability', category: 'Current Liability', isGroup: false, parentId: '210000', isDebitNormal: false, openingDebit: 0, openingCredit: 5600000 },
+  { id: '211010', code: '211010', name: 'Accounts Payable (Creditors Control)', rootType: 'Liability', category: 'Current Liability', isGroup: false, parentId: '210000', isDebitNormal: false, openingDebit: 0, openingCredit: 0 },
+  { id: '212010', code: '212010', name: 'Sales Tax Output / Payable (FBR 18%)', rootType: 'Liability', category: 'Current Liability', isGroup: false, parentId: '210000', isDebitNormal: false, openingDebit: 0, openingCredit: 0 },
+  { id: '213010', code: '213010', name: 'Withholding Tax (WHT) Payable (Sec 153)', rootType: 'Liability', category: 'Current Liability', isGroup: false, parentId: '210000', isDebitNormal: false, openingDebit: 0, openingCredit: 0 },
+  { id: '214010', code: '214010', name: 'Accrued Factory Wages & Admin Salaries', rootType: 'Liability', category: 'Current Liability', isGroup: false, parentId: '210000', isDebitNormal: false, openingDebit: 0, openingCredit: 0 },
+  { id: '215010', code: '215010', name: 'Customer Advances & Booking Deposits', rootType: 'Liability', category: 'Current Liability', isGroup: false, parentId: '210000', isDebitNormal: false, openingDebit: 0, openingCredit: 0 },
+  { id: '216010', code: '216010', name: 'Accrued Electricity (LESCO/K-Electric) & Gas Bills', rootType: 'Liability', category: 'Current Liability', isGroup: false, parentId: '210000', isDebitNormal: false, openingDebit: 0, openingCredit: 0 },
   
   { id: '220000', code: '220000', name: 'Non-Current Liabilities', rootType: 'Liability', category: 'Non-Current Liability', isGroup: true, parentId: '200000', isDebitNormal: false },
-  { id: '221010', code: '221010', name: 'Long-Term Industrial Expansion Facility', rootType: 'Liability', category: 'Non-Current Liability', isGroup: false, parentId: '220000', isDebitNormal: false, openingDebit: 0, openingCredit: 45000000 },
-  { id: '222010', code: '222010', name: 'Directors Subordinated Loan', rootType: 'Liability', category: 'Non-Current Liability', isGroup: false, parentId: '220000', isDebitNormal: false, openingDebit: 0, openingCredit: 25000000 },
+  { id: '221010', code: '221010', name: 'Long-Term Industrial Expansion Facility', rootType: 'Liability', category: 'Non-Current Liability', isGroup: false, parentId: '220000', isDebitNormal: false, openingDebit: 0, openingCredit: 0 },
+  { id: '222010', code: '222010', name: 'Directors Subordinated Loan', rootType: 'Liability', category: 'Non-Current Liability', isGroup: false, parentId: '220000', isDebitNormal: false, openingDebit: 0, openingCredit: 0 },
 
   // 300000 - EQUITY
   { id: '300000', code: '300000', name: 'Capital & Reserves (Equity)', rootType: 'Equity', category: 'Root', isGroup: true, parentId: null, isDebitNormal: false },
-  { id: '310000', code: '310000', name: 'Paid-Up Share Capital', rootType: 'Equity', category: 'Equity', isGroup: false, parentId: '300000', isDebitNormal: false, openingDebit: 0, openingCredit: 220000000 },
-  { id: '320000', code: '320000', name: 'Retained Earnings / General Reserves', rootType: 'Equity', category: 'Equity', isGroup: false, parentId: '300000', isDebitNormal: false, openingDebit: 0, openingCredit: 102820000 },
+  { id: '310000', code: '310000', name: 'Paid-Up Share Capital', rootType: 'Equity', category: 'Equity', isGroup: false, parentId: '300000', isDebitNormal: false, openingDebit: 0, openingCredit: 0 },
+  { id: '320000', code: '320000', name: 'Retained Earnings / General Reserves', rootType: 'Equity', category: 'Equity', isGroup: false, parentId: '300000', isDebitNormal: false, openingDebit: 0, openingCredit: 0 },
   { id: '330000', code: '330000', name: 'Current Period Retained Profit / Loss', rootType: 'Equity', category: 'Equity', isGroup: false, parentId: '300000', isDebitNormal: false, openingDebit: 0, openingCredit: 0 },
 
   // 400000 - INCOME / REVENUE
@@ -118,179 +123,7 @@ export const DEFAULT_COST_CENTERS = [
 ];
 
 // ----------------------------------------------------------------------------
-// 3. SEED TRANSACTION DATA (When ERP has empty lists)
-// ----------------------------------------------------------------------------
-export const SEED_FINANCE_DATA = {
-  salesInvoices: [
-    {
-      id: 'INV-8901',
-      date: new Date(Date.now() - 86400000 * 5).toISOString(),
-      customerId: 'CUST-001',
-      customerName: 'Al-Haq Leather Traders',
-      subtotal: 12500000,
-      tax: 2250000,
-      grandTotal: 14750000,
-      status: 'Settled',
-      remarks: 'Automotive grade PU leather 0.8mm - Dispatch Batch #BT-902',
-      items: [
-        { itemCode: 'FG-PU-08-BLK', productName: 'Black Matte Automotive PU Leather', quantity: 5000, unitPrice: 2500, subtotal: 12500000, uom: 'Meters' }
-      ]
-    },
-    {
-      id: 'INV-8902',
-      date: new Date(Date.now() - 86400000 * 18).toISOString(),
-      customerId: 'CUST-002',
-      customerName: 'Pak Footwear Industries',
-      subtotal: 8400000,
-      tax: 1512000,
-      grandTotal: 9912000,
-      status: 'Settled',
-      remarks: 'Shoe Upper Synthetic Leather Rolls 1.2mm Brown Embossed',
-      items: [
-        { itemCode: 'FG-SH-12-BRN', productName: 'Shoe Upper Embossed Synthetic Roll', quantity: 3500, unitPrice: 2400, subtotal: 8400000, uom: 'Meters' }
-      ]
-    },
-    {
-      id: 'INV-8903',
-      date: new Date(Date.now() - 86400000 * 42).toISOString(),
-      customerId: 'CUST-003',
-      customerName: 'Apex Upholstery & Furniture',
-      subtotal: 14200000,
-      tax: 2556000,
-      grandTotal: 16756000,
-      status: 'Pending',
-      remarks: 'Sofa & Upholstery Heavy PVC Rexine 1.4mm Cognac',
-      items: [
-        { itemCode: 'FG-UP-14-COG', productName: 'Upholstery Heavy Rexine Cognac', quantity: 7100, unitPrice: 2000, subtotal: 14200000, uom: 'Meters' }
-      ]
-    },
-    {
-      id: 'INV-8904',
-      date: new Date(Date.now() - 86400000 * 75).toISOString(),
-      customerId: 'CUST-004',
-      customerName: 'Prime Bag Manufacturers',
-      subtotal: 6200000,
-      tax: 1116000,
-      grandTotal: 7316000,
-      status: 'Pending',
-      remarks: 'Luggage / Handbag Soft Touch PU 0.9mm Textured Navy',
-      items: [
-        { itemCode: 'FG-BG-09-NVY', productName: 'Luggage Soft Touch PU Navy', quantity: 3100, unitPrice: 2000, subtotal: 6200000, uom: 'Meters' }
-      ]
-    }
-  ],
-  purchaseInvoices: [
-    {
-      id: 'PINV-7801',
-      date: new Date(Date.now() - 86400000 * 8).toISOString(),
-      vendorId: 'VND-001',
-      vendorName: 'Nexis Chem-Corp International',
-      subtotal: 9200000,
-      tax: 1656000,
-      grandTotal: 10856000,
-      status: 'Posted',
-      remarks: 'Polyurethane Resin Grade A & DMF Solvent 200L Drums',
-      items: [
-        { itemCode: 'RM-PU-RESIN', productName: 'Polyurethane Coating Resin Grade A', quantity: 15, unitPrice: 500000, subtotal: 7500000, uom: 'Metric Ton' },
-        { itemCode: 'RM-DMF-SOLV', productName: 'Dimethylformamide (DMF) Solvent', quantity: 34, unitPrice: 50000, subtotal: 1700000, uom: 'Drums' }
-      ]
-    },
-    {
-      id: 'PINV-7802',
-      date: new Date(Date.now() - 86400000 * 22).toISOString(),
-      vendorId: 'VND-002',
-      vendorName: 'National Yarn & Backing Mills',
-      subtotal: 6800000,
-      tax: 1224000,
-      grandTotal: 8024000,
-      status: 'Posted',
-      remarks: 'Polyester Knitted Scrim & Circular Backing Cloth',
-      items: [
-        { itemCode: 'RM-FAB-KNIT', productName: 'Polyester Knitted Backing Cloth Roll', quantity: 17000, unitPrice: 400, subtotal: 6800000, uom: 'Meters' }
-      ]
-    },
-    {
-      id: 'PINV-7803',
-      date: new Date(Date.now() - 86400000 * 55).toISOString(),
-      vendorId: 'VND-003',
-      vendorName: 'Alpha Tech Chemical Supplies',
-      subtotal: 4500000,
-      tax: 810000,
-      grandTotal: 5310000,
-      status: 'Posted',
-      remarks: 'Dioctyl Phthalate (DOP Plasticizer) & Release Paper Spools',
-      items: [
-        { itemCode: 'RM-DOP-PLAST', productName: 'Dioctyl Phthalate (DOP) Plasticizer', quantity: 12, unitPrice: 300000, subtotal: 3600000, uom: 'Metric Ton' },
-        { itemCode: 'RM-REL-PAPER', productName: 'Textured Casting Release Paper Rolls', quantity: 6, unitPrice: 150000, subtotal: 900000, uom: 'Rolls' }
-      ]
-    }
-  ],
-  vouchers: [
-    {
-      id: 'VOUCH-1001',
-      date: new Date(Date.now() - 86400000 * 4).toISOString(),
-      type: 'Bank Receipt',
-      reference: 'CHQ-88201 Al-Haq Payment',
-      narration: 'Customer clearance received in HBL Operations Account',
-      status: 'Posted',
-      costCenter: 'CC-ADMIN-07',
-      totalDebit: 14750000,
-      totalCredit: 14750000,
-      lines: [
-        { accountId: '112010', accountName: 'HBL Main Operations A/C 0019284', narration: 'Bank deposit received from Al-Haq Leather Traders', debit: 14750000, credit: 0 },
-        { accountId: '113010', accountName: 'Accounts Receivable (Debtors Control)', narration: 'Receipt against INV-8901', debit: 0, credit: 14750000 }
-      ]
-    },
-    {
-      id: 'VOUCH-1002',
-      date: new Date(Date.now() - 86400000 * 6).toISOString(),
-      type: 'Bank Payment Voucher',
-      reference: 'FT-9941 Nexis Vendor Bill',
-      narration: 'Vendor partial payment to Nexis Chem-Corp via Meezan Bank',
-      status: 'Posted',
-      costCenter: 'CC-DRY-01',
-      totalDebit: 8000000,
-      totalCredit: 8000000,
-      lines: [
-        { accountId: '211010', accountName: 'Accounts Payable (Creditors Control)', narration: 'Payment towards PINV-7801 (Nexis Chem-Corp)', debit: 8000000, credit: 0 },
-        { accountId: '112020', accountName: 'Meezan Bank Industrial A/C 099214', narration: 'Online Bank Transfer to Nexis Chem-Corp', debit: 0, credit: 8000000 }
-      ]
-    },
-    {
-      id: 'VOUCH-1003',
-      date: new Date(Date.now() - 86400000 * 12).toISOString(),
-      type: 'Cash Payment Voucher',
-      reference: 'CPV-402 Factory Spares',
-      narration: 'Emergency line maintenance bearings and drive belts purchase',
-      status: 'Posted',
-      costCenter: 'CC-MAINT-06',
-      totalDebit: 185000,
-      totalCredit: 185000,
-      lines: [
-        { accountId: '524010', accountName: 'Plant Repairs, Maintenance & Lubrication', narration: 'Bearing assembly for Embossing Line Roll', debit: 185000, credit: 0 },
-        { accountId: '111010', accountName: 'Cash in Hand - Factory Floor', narration: 'Cash disbursed from factory vault', debit: 0, credit: 185000 }
-      ]
-    },
-    {
-      id: 'VOUCH-1004',
-      date: new Date(Date.now() - 86400000 * 15).toISOString(),
-      type: 'Journal Voucher',
-      reference: 'JV-882 Monthly Power Accrual',
-      narration: 'Industrial electricity bill accrual for Synthetic Leather Plant',
-      status: 'Posted',
-      costCenter: 'CC-MAINT-06',
-      totalDebit: 4850000,
-      totalCredit: 4850000,
-      lines: [
-        { accountId: '513010', accountName: 'High-Tension Industrial Electricity & Gas', narration: 'LESCO 132kV industrial bill charges', debit: 4850000, credit: 0 },
-        { accountId: '216010', accountName: 'Accrued Electricity (LESCO/K-Electric) & Gas Bills', narration: 'Provision for unpaid power tariff', debit: 0, credit: 4850000 }
-      ]
-    }
-  ]
-};
-
-// ----------------------------------------------------------------------------
-// 4. GENERAL LEDGER GENERATOR (Double-Entry Core)
+// 3. GENERAL LEDGER GENERATOR (100% Real Transaction Powered)
 // ----------------------------------------------------------------------------
 export const generateGeneralLedger = (state = {}, filters = {}) => {
   const chart = (state.chartOfAccounts && state.chartOfAccounts.length > 0)
@@ -300,24 +133,23 @@ export const generateGeneralLedger = (state = {}, filters = {}) => {
   const accountMap = new Map();
   chart.forEach(acc => accountMap.set(acc.id || acc.code, acc));
 
-  const salesInvoices = (state.salesInvoices && state.salesInvoices.length > 0)
-    ? state.salesInvoices
-    : SEED_FINANCE_DATA.salesInvoices;
-
-  const purchaseInvoices = (state.purchaseInvoices && state.purchaseInvoices.length > 0)
-    ? state.purchaseInvoices
-    : SEED_FINANCE_DATA.purchaseInvoices;
-
-  const vouchers = (state.vouchers && state.vouchers.length > 0)
+  // Purely actual ERP transactions - ZERO dummy records
+  const salesInvoices = Array.isArray(state.salesInvoices) ? state.salesInvoices : [];
+  const purchaseInvoices = Array.isArray(state.purchaseInvoices) ? state.purchaseInvoices : [];
+  
+  // Vouchers can be in state.vouchers or state.paymentVouchers
+  const rawVouchers = Array.isArray(state.vouchers) && state.vouchers.length > 0
     ? state.vouchers
-    : (state.paymentVouchers && state.paymentVouchers.length > 0)
-      ? state.paymentVouchers
-      : SEED_FINANCE_DATA.vouchers;
+    : (Array.isArray(state.paymentVouchers) ? state.paymentVouchers : []);
+
+  const returns = Array.isArray(state.returns) ? state.returns : [];
+  const hrSalaries = Array.isArray(state.hr_generated_salaries) ? state.hr_generated_salaries : [];
+  const otherConsumptions = Array.isArray(state.otherConsumptions) ? state.otherConsumptions : [];
 
   const rawEntries = [];
   let seq = 1;
 
-  // A. Sales Invoices -> Post GL
+  // A. Actual Sales Invoices -> Post to GL
   salesInvoices.forEach(inv => {
     const invDate = inv.date || new Date().toISOString();
     const invId = inv.id || `INV-${seq}`;
@@ -326,61 +158,63 @@ export const generateGeneralLedger = (state = {}, filters = {}) => {
     const subtotal = round2(inv.subtotal || (grandTotal - (inv.tax || 0)));
     const tax = round2(inv.tax || (grandTotal - subtotal));
 
-    // Entry 1: Debit Debtors / Accounts Receivable (113010)
-    rawEntries.push({
-      id: `GLE-${seq++}`,
-      date: invDate,
-      voucherType: 'Sales Invoice',
-      voucherNo: invId,
-      sourceDocId: invId,
-      accountId: '113010',
-      accountName: accountMap.get('113010')?.name || 'Accounts Receivable (Debtors Control)',
-      party: custName,
-      partyType: 'Customer',
-      costCenter: 'CC-ADMIN-07',
-      narration: `Sales Invoice ${invId} for ${custName} - ${inv.remarks || 'Finished Goods'}`,
-      debit: grandTotal,
-      credit: 0
-    });
-
-    // Entry 2: Credit Sales Revenue (411010)
-    rawEntries.push({
-      id: `GLE-${seq++}`,
-      date: invDate,
-      voucherType: 'Sales Invoice',
-      voucherNo: invId,
-      sourceDocId: invId,
-      accountId: '411010',
-      accountName: accountMap.get('411010')?.name || 'Sales Revenue - Synthetic Leather Rolls',
-      party: custName,
-      partyType: 'Customer',
-      costCenter: 'CC-DRY-01',
-      narration: `Revenue recognition for invoice ${invId}`,
-      debit: 0,
-      credit: subtotal
-    });
-
-    // Entry 3: Credit Sales Tax Output (212010)
-    if (tax > 0) {
+    if (grandTotal > 0 || subtotal > 0) {
+      // Entry 1: Debit Debtors / Accounts Receivable (113010)
       rawEntries.push({
         id: `GLE-${seq++}`,
         date: invDate,
         voucherType: 'Sales Invoice',
         voucherNo: invId,
         sourceDocId: invId,
-        accountId: '212010',
-        accountName: accountMap.get('212010')?.name || 'Sales Tax Output / Payable (FBR 18%)',
+        accountId: '113010',
+        accountName: accountMap.get('113010')?.name || 'Accounts Receivable (Debtors Control)',
         party: custName,
-        partyType: 'Tax Authority',
+        partyType: 'Customer',
         costCenter: 'CC-ADMIN-07',
-        narration: `Output Sales Tax payable to FBR (18%) on ${invId}`,
-        debit: 0,
-        credit: tax
+        narration: `Sales Invoice ${invId} for ${custName} - ${inv.remarks || 'Finished Goods'}`,
+        debit: grandTotal,
+        credit: 0
       });
+
+      // Entry 2: Credit Sales Revenue (411010)
+      rawEntries.push({
+        id: `GLE-${seq++}`,
+        date: invDate,
+        voucherType: 'Sales Invoice',
+        voucherNo: invId,
+        sourceDocId: invId,
+        accountId: '411010',
+        accountName: accountMap.get('411010')?.name || 'Sales Revenue - Synthetic Leather Rolls',
+        party: custName,
+        partyType: 'Customer',
+        costCenter: 'CC-DRY-01',
+        narration: `Revenue recognition for invoice ${invId}`,
+        debit: 0,
+        credit: subtotal
+      });
+
+      // Entry 3: Credit Sales Tax Output (212010)
+      if (tax > 0) {
+        rawEntries.push({
+          id: `GLE-${seq++}`,
+          date: invDate,
+          voucherType: 'Sales Invoice',
+          voucherNo: invId,
+          sourceDocId: invId,
+          accountId: '212010',
+          accountName: accountMap.get('212010')?.name || 'Sales Tax Output / Payable (FBR 18%)',
+          party: custName,
+          partyType: 'Tax Authority',
+          costCenter: 'CC-ADMIN-07',
+          narration: `Output Sales Tax payable on invoice ${invId}`,
+          debit: 0,
+          credit: tax
+        });
+      }
     }
   });
 
-  // B. Purchase Invoices -> Post GL
+  // B. Actual Purchase Invoices -> Post to GL
   purchaseInvoices.forEach(pinv => {
     const pinvDate = pinv.date || new Date().toISOString();
     const pinvId = pinv.id || `PINV-${seq}`;
@@ -389,62 +223,64 @@ export const generateGeneralLedger = (state = {}, filters = {}) => {
     const subtotal = round2(pinv.subtotal || (grandTotal - (pinv.tax || 0)));
     const tax = round2(pinv.tax || (grandTotal - subtotal));
 
-    // Entry 1: Debit Raw Materials / Cost (511010)
-    rawEntries.push({
-      id: `GLE-${seq++}`,
-      date: pinvDate,
-      voucherType: 'Purchase Invoice',
-      voucherNo: pinvId,
-      sourceDocId: pinvId,
-      accountId: '511010',
-      accountName: accountMap.get('511010')?.name || 'Raw Material Consumed - PVC / PU Resin',
-      party: vendorName,
-      partyType: 'Supplier',
-      costCenter: 'CC-DRY-01',
-      narration: `Direct raw material purchase bill ${pinvId} from ${vendorName}`,
-      debit: subtotal,
-      credit: 0
-    });
-
-    // Entry 2: Debit Sales Tax Input (116010)
-    if (tax > 0) {
+    if (grandTotal > 0 || subtotal > 0) {
+      // Entry 1: Debit Raw Materials / Cost (511010)
       rawEntries.push({
         id: `GLE-${seq++}`,
         date: pinvDate,
         voucherType: 'Purchase Invoice',
         voucherNo: pinvId,
         sourceDocId: pinvId,
-        accountId: '116010',
-        accountName: accountMap.get('116010')?.name || 'Sales Tax Input / Claimable (FBR)',
+        accountId: '511010',
+        accountName: accountMap.get('511010')?.name || 'Raw Material Consumed - PVC / PU Resin',
         party: vendorName,
-        partyType: 'Tax Authority',
-        costCenter: 'CC-ADMIN-07',
-        narration: `Input sales tax credit claimable on ${pinvId}`,
-        debit: tax,
+        partyType: 'Supplier',
+        costCenter: 'CC-DRY-01',
+        narration: `Direct raw material purchase bill ${pinvId} from ${vendorName}`,
+        debit: subtotal,
         credit: 0
       });
-    }
 
-    // Entry 3: Credit Accounts Payable (211010)
-    rawEntries.push({
-      id: `GLE-${seq++}`,
-      date: pinvDate,
-      voucherType: 'Purchase Invoice',
-      voucherNo: pinvId,
-      sourceDocId: pinvId,
-      accountId: '211010',
-      accountName: accountMap.get('211010')?.name || 'Accounts Payable (Creditors Control)',
-      party: vendorName,
-      partyType: 'Supplier',
-      costCenter: 'CC-ADMIN-07',
-      narration: `Trade payable bill ${pinvId} credited to ${vendorName}`,
-      debit: 0,
-      credit: grandTotal
-    });
+      // Entry 2: Debit Sales Tax Input (116010)
+      if (tax > 0) {
+        rawEntries.push({
+          id: `GLE-${seq++}`,
+          date: pinvDate,
+          voucherType: 'Purchase Invoice',
+          voucherNo: pinvId,
+          sourceDocId: pinvId,
+          accountId: '116010',
+          accountName: accountMap.get('116010')?.name || 'Sales Tax Input / Claimable (FBR)',
+          party: vendorName,
+          partyType: 'Tax Authority',
+          costCenter: 'CC-ADMIN-07',
+          narration: `Input sales tax claimable on ${pinvId}`,
+          debit: tax,
+          credit: 0
+        });
+      }
+
+      // Entry 3: Credit Accounts Payable (211010)
+      rawEntries.push({
+        id: `GLE-${seq++}`,
+        date: pinvDate,
+        voucherType: 'Purchase Invoice',
+        voucherNo: pinvId,
+        sourceDocId: pinvId,
+        accountId: '211010',
+        accountName: accountMap.get('211010')?.name || 'Accounts Payable (Creditors Control)',
+        party: vendorName,
+        partyType: 'Supplier',
+        costCenter: 'CC-ADMIN-07',
+        narration: `Trade payable bill ${pinvId} to ${vendorName}`,
+        debit: 0,
+        credit: grandTotal
+      });
+    }
   });
 
-  // C. Vouchers (JV, CPV, CRV, BPV, BRV) -> Post GL
-  vouchers.forEach(v => {
+  // C. Actual Vouchers (JV, CPV, CRV, BPV, BRV) -> Post to GL
+  rawVouchers.forEach(v => {
     const vDate = v.date || new Date().toISOString();
     const vId = v.id || v.voucherNo || `VOUCH-${seq}`;
     const vType = v.type || 'Journal Voucher';
@@ -476,44 +312,89 @@ export const generateGeneralLedger = (state = {}, filters = {}) => {
       });
     } else if (v.amount || v.totalAmount) {
       const amt = round2(v.amount || v.totalAmount || 0);
-      const isReceipt = v.type === 'Receipt' || v.type === 'Cash Receipt' || v.type === 'Bank Receipt';
-      const cashAcc = isReceipt ? '112010' : '211010';
-      const offsetAcc = isReceipt ? '113010' : '112010';
+      if (amt > 0) {
+        const isReceipt = v.type === 'Receipt' || v.type === 'Cash Receipt' || v.type === 'Bank Receipt';
+        const primaryAcc = isReceipt ? '112010' : '211010';
+        const offsetAcc = isReceipt ? '113010' : '112010';
 
+        rawEntries.push({
+          id: `GLE-${seq++}`,
+          date: vDate,
+          voucherType: vType,
+          voucherNo: vId,
+          sourceDocId: vId,
+          accountId: primaryAcc,
+          accountName: accountMap.get(primaryAcc)?.name || 'Cash & Bank',
+          party: v.paidTo || v.receivedFrom || 'Counterparty',
+          costCenter,
+          narration: v.narration || `${vType} transaction`,
+          debit: amt,
+          credit: 0
+        });
+
+        rawEntries.push({
+          id: `GLE-${seq++}`,
+          date: vDate,
+          voucherType: vType,
+          voucherNo: vId,
+          sourceDocId: vId,
+          accountId: offsetAcc,
+          accountName: accountMap.get(offsetAcc)?.name || 'Offset Control A/C',
+          party: v.paidTo || v.receivedFrom || 'Counterparty',
+          costCenter,
+          narration: v.narration || `${vType} offset`,
+          debit: 0,
+          credit: amt
+        });
+      }
+    }
+  });
+
+  // D. Actual Sales Returns -> Post to GL
+  returns.forEach(ret => {
+    const retDate = ret.date || ret.createdAt || new Date().toISOString();
+    const retId = ret.id || ret.returnId || `RTN-${seq}`;
+    const custName = ret.customerName || 'Customer';
+    const retAmount = round2(ret.totalAmount || ret.amount || (ret.items ? ret.items.reduce((s, it) => s + (it.qty * (it.rate || it.unitPrice || 0)), 0) : 0));
+
+    if (retAmount > 0) {
+      // Debit: Sales Returns (413010)
       rawEntries.push({
         id: `GLE-${seq++}`,
-        date: vDate,
-        voucherType: vType,
-        voucherNo: vId,
-        sourceDocId: vId,
-        accountId: cashAcc,
-        accountName: accountMap.get(cashAcc)?.name || 'Cash & Bank',
-        party: v.paidTo || v.receivedFrom || 'Counterparty',
-        costCenter,
-        narration: v.narration || `${vType} payment`,
-        debit: amt,
+        date: retDate,
+        voucherType: 'Sales Return',
+        voucherNo: retId,
+        sourceDocId: retId,
+        accountId: '413010',
+        accountName: accountMap.get('413010')?.name || 'Sales Returns & Quality Deductions',
+        party: custName,
+        partyType: 'Customer',
+        costCenter: 'CC-DRY-01',
+        narration: `Customer sales return ${retId} for ${custName} (${ret.reason || 'Damaged'})`,
+        debit: retAmount,
         credit: 0
       });
 
+      // Credit: Accounts Receivable (113010)
       rawEntries.push({
         id: `GLE-${seq++}`,
-        date: vDate,
-        voucherType: vType,
-        voucherNo: vId,
-        sourceDocId: vId,
-        accountId: offsetAcc,
-        accountName: accountMap.get(offsetAcc)?.name || 'Offset Control A/C',
-        party: v.paidTo || v.receivedFrom || 'Counterparty',
-        costCenter,
-        narration: v.narration || `${vType} offset`,
+        date: retDate,
+        voucherType: 'Sales Return',
+        voucherNo: retId,
+        sourceDocId: retId,
+        accountId: '113010',
+        accountName: accountMap.get('113010')?.name || 'Accounts Receivable (Debtors Control)',
+        party: custName,
+        partyType: 'Customer',
+        costCenter: 'CC-ADMIN-07',
+        narration: `Credit note adjustment for return ${retId}`,
         debit: 0,
-        credit: amt
+        credit: retAmount
       });
     }
   });
 
-  // D. HR Generated Salaries -> Post GL
-  const hrSalaries = state.hr_generated_salaries || [];
+  // E. Actual HR Generated Salaries -> Post to GL
   hrSalaries.forEach(sal => {
     const salDate = sal.date || sal.month || new Date().toISOString();
     const salId = sal.id || `PAY-${seq}`;
@@ -531,7 +412,7 @@ export const generateGeneralLedger = (state = {}, filters = {}) => {
         party: sal.employeeName || 'Staff Payroll',
         partyType: 'Employee',
         costCenter: 'CC-DRY-01',
-        narration: `Monthly salary & wage disbarment for ${sal.employeeName || 'Factory Workers'}`,
+        narration: `Monthly salary disbursement for ${sal.employeeName || 'Staff'}`,
         debit: netSal,
         credit: 0
       });
@@ -550,6 +431,47 @@ export const generateGeneralLedger = (state = {}, filters = {}) => {
         narration: `Net payroll paid via HBL Direct Transfer`,
         debit: 0,
         credit: netSal
+      });
+    }
+  });
+
+  // F. Actual Material Consumptions -> Post to GL
+  otherConsumptions.forEach(cons => {
+    const consDate = cons.date || new Date().toISOString();
+    const consId = cons.id || `CONS-${seq}`;
+    const consVal = round2(cons.totalValue || (cons.qty * (cons.rate || 0)));
+
+    if (consVal > 0) {
+      rawEntries.push({
+        id: `GLE-${seq++}`,
+        date: consDate,
+        voucherType: 'Material Consumption',
+        voucherNo: consId,
+        sourceDocId: consId,
+        accountId: '511010',
+        accountName: accountMap.get('511010')?.name || 'Raw Material Consumed - PVC / PU Resin',
+        party: cons.department || 'Production Line',
+        partyType: 'Department',
+        costCenter: cons.costCenter || 'CC-DRY-01',
+        narration: `Material consumption ${consId}: ${cons.itemName || 'Raw Materials'}`,
+        debit: consVal,
+        credit: 0
+      });
+
+      rawEntries.push({
+        id: `GLE-${seq++}`,
+        date: consDate,
+        voucherType: 'Material Consumption',
+        voucherNo: consId,
+        sourceDocId: consId,
+        accountId: '114010',
+        accountName: accountMap.get('114010')?.name || 'Stock in Hand - PVC & PU Resins',
+        party: cons.department || 'Production Line',
+        partyType: 'Department',
+        costCenter: cons.costCenter || 'CC-DRY-01',
+        narration: `Inventory issue for line processing`,
+        debit: 0,
+        credit: consVal
       });
     }
   });
@@ -618,7 +540,7 @@ export const generateGeneralLedger = (state = {}, filters = {}) => {
 };
 
 // ----------------------------------------------------------------------------
-// 5. TRIAL BALANCE GENERATOR
+// 4. TRIAL BALANCE GENERATOR
 // ----------------------------------------------------------------------------
 export const generateTrialBalance = (state = {}, fromDate = null, toDate = null) => {
   const chart = (state.chartOfAccounts && state.chartOfAccounts.length > 0)
@@ -669,7 +591,7 @@ export const generateTrialBalance = (state = {}, fromDate = null, toDate = null)
       if (net >= 0) {
         closingCr = net;
       } else {
-        closingCr = Math.abs(net);
+        closingDr = Math.abs(net);
       }
     }
 
@@ -723,7 +645,7 @@ export const generateTrialBalance = (state = {}, fromDate = null, toDate = null)
 };
 
 // ----------------------------------------------------------------------------
-// 6. PROFIT & LOSS STATEMENT (INCOME STATEMENT)
+// 5. PROFIT & LOSS STATEMENT (INCOME STATEMENT)
 // ----------------------------------------------------------------------------
 export const generateProfitAndLoss = (state = {}, fromDate = null, toDate = null) => {
   const tb = generateTrialBalance(state, fromDate, toDate);
@@ -794,7 +716,7 @@ export const generateProfitAndLoss = (state = {}, fromDate = null, toDate = null
 };
 
 // ----------------------------------------------------------------------------
-// 7. BALANCE SHEET STATEMENT
+// 6. BALANCE SHEET STATEMENT
 // ----------------------------------------------------------------------------
 export const generateBalanceSheet = (state = {}, asOfDate = null) => {
   const tb = generateTrialBalance(state, null, asOfDate);
@@ -852,7 +774,7 @@ export const generateBalanceSheet = (state = {}, asOfDate = null) => {
 };
 
 // ----------------------------------------------------------------------------
-// 8. CASH FLOW STATEMENT
+// 7. CASH FLOW STATEMENT
 // ----------------------------------------------------------------------------
 export const generateCashFlow = (state = {}, fromDate = null, toDate = null) => {
   const gl = generateGeneralLedger(state, { fromDate, toDate });
@@ -887,7 +809,18 @@ export const generateCashFlow = (state = {}, fromDate = null, toDate = null) => 
   const netFinancingCash = financingInflows;
   const netCashFlow = round2(netOperatingCash + netInvestingCash + netFinancingCash);
 
-  const openingCash = 33550000;
+  // Opening Cash Balance from chart of accounts
+  const chart = (state.chartOfAccounts && state.chartOfAccounts.length > 0)
+    ? state.chartOfAccounts
+    : DEFAULT_CHART_OF_ACCOUNTS;
+
+  let openingCash = 0;
+  chart.forEach(a => {
+    if (cashAccounts.includes(a.id || a.code)) {
+      openingCash = round2(openingCash + (a.openingDebit || 0) - (a.openingCredit || 0));
+    }
+  });
+
   const closingCash = round2(openingCash + netCashFlow);
 
   return {
@@ -912,18 +845,36 @@ export const generateCashFlow = (state = {}, fromDate = null, toDate = null) => 
 };
 
 // ----------------------------------------------------------------------------
-// 9. ACCOUNTS RECEIVABLE & CUSTOMER AGING ANALYSIS
+// 8. ACCOUNTS RECEIVABLE & CUSTOMER AGING ANALYSIS (100% Real Invoices & Customers)
 // ----------------------------------------------------------------------------
 export const generateARAging = (state = {}) => {
-  const salesInvoices = (state.salesInvoices && state.salesInvoices.length > 0)
-    ? state.salesInvoices
-    : SEED_FINANCE_DATA.salesInvoices;
+  const salesInvoices = Array.isArray(state.salesInvoices) ? state.salesInvoices : [];
+  const rawCustomers = Array.isArray(state.customers) ? state.customers : [];
 
   const customerMap = new Map();
 
+  // Populate from customer masters first if any
+  rawCustomers.forEach(cust => {
+    const cId = cust.id || cust.customerId || cust.code || 'CUST';
+    const cName = cust.name || cust.customerName || 'Customer';
+    customerMap.set(cId, {
+      customerId: cId,
+      customerName: cName,
+      totalInvoiced: 0,
+      totalPaid: 0,
+      outstanding: 0,
+      bucket_0_30: 0,
+      bucket_31_60: 0,
+      bucket_61_90: 0,
+      bucket_90_plus: 0,
+      invoices: []
+    });
+  });
+
+  // Reconcile real sales invoices
   salesInvoices.forEach(inv => {
     const custId = inv.customerId || inv.customerName || 'CUST-GEN';
-    const custName = inv.customerName || 'Valued Customer';
+    const custName = inv.customerName || 'Customer';
     const total = round2(inv.grandTotal || 0);
     const invDate = new Date(inv.date || Date.now());
     const daysOld = Math.max(0, Math.floor((Date.now() - invDate.getTime()) / (1000 * 60 * 60 * 24)));
@@ -962,13 +913,13 @@ export const generateARAging = (state = {}) => {
       date: inv.date,
       amount: total,
       tax: inv.tax || 0,
-      status: inv.status,
+      status: inv.status || 'Pending',
       daysOld,
-      remarks: inv.remarks
+      remarks: inv.remarks || ''
     });
   });
 
-  const customersList = Array.from(customerMap.values());
+  const customersList = Array.from(customerMap.values()).filter(c => c.totalInvoiced > 0 || c.outstanding > 0 || rawCustomers.length <= 10);
   const grandTotalReceivables = round2(customersList.reduce((sum, c) => sum + c.outstanding, 0));
   const totalBilled = round2(customersList.reduce((sum, c) => sum + c.totalInvoiced, 0));
   const totalCollected = round2(customersList.reduce((sum, c) => sum + c.totalPaid, 0));
@@ -990,18 +941,34 @@ export const generateARAging = (state = {}) => {
 };
 
 // ----------------------------------------------------------------------------
-// 10. ACCOUNTS PAYABLE & SUPPLIER AGING ANALYSIS
+// 9. ACCOUNTS PAYABLE & SUPPLIER AGING ANALYSIS (100% Real Bills & Vendors)
 // ----------------------------------------------------------------------------
 export const generateAPAging = (state = {}) => {
-  const purchaseInvoices = (state.purchaseInvoices && state.purchaseInvoices.length > 0)
-    ? state.purchaseInvoices
-    : SEED_FINANCE_DATA.purchaseInvoices;
+  const purchaseInvoices = Array.isArray(state.purchaseInvoices) ? state.purchaseInvoices : [];
+  const rawSuppliers = Array.isArray(state.suppliers) ? state.suppliers : [];
 
   const vendorMap = new Map();
 
+  rawSuppliers.forEach(sup => {
+    const sId = sup.id || sup.supplierId || sup.vendorId || 'VND';
+    const sName = sup.name || sup.supplierName || 'Vendor';
+    vendorMap.set(sId, {
+      vendorId: sId,
+      vendorName: sName,
+      totalInvoiced: 0,
+      totalPaid: 0,
+      outstanding: 0,
+      bucket_0_30: 0,
+      bucket_31_60: 0,
+      bucket_61_90: 0,
+      bucket_90_plus: 0,
+      invoices: []
+    });
+  });
+
   purchaseInvoices.forEach(pinv => {
     const vId = pinv.vendorId || pinv.vendorName || 'VND-GEN';
-    const vName = pinv.vendorName || 'Raw Material Supplier';
+    const vName = pinv.vendorName || 'Supplier';
     const total = round2(pinv.grandTotal || 0);
     const pinvDate = new Date(pinv.date || Date.now());
     const daysOld = Math.max(0, Math.floor((Date.now() - pinvDate.getTime()) / (1000 * 60 * 60 * 24)));
@@ -1040,13 +1007,13 @@ export const generateAPAging = (state = {}) => {
       date: pinv.date,
       amount: total,
       tax: pinv.tax || 0,
-      status: pinv.status,
+      status: pinv.status || 'Posted',
       daysOld,
-      remarks: pinv.remarks
+      remarks: pinv.remarks || ''
     });
   });
 
-  const vendorsList = Array.from(vendorMap.values());
+  const vendorsList = Array.from(vendorMap.values()).filter(v => v.totalInvoiced > 0 || v.outstanding > 0 || rawSuppliers.length <= 10);
   const grandTotalPayables = round2(vendorsList.reduce((sum, v) => sum + v.outstanding, 0));
   const totalInvoiced = round2(vendorsList.reduce((sum, v) => sum + v.totalInvoiced, 0));
   const totalPaid = round2(vendorsList.reduce((sum, v) => sum + v.totalPaid, 0));
@@ -1068,22 +1035,18 @@ export const generateAPAging = (state = {}) => {
 };
 
 // ----------------------------------------------------------------------------
-// 11. TAXATION & WITHHOLDING TAX REGISTERS
+// 10. TAXATION & WITHHOLDING TAX REGISTERS (100% Real Invoices)
 // ----------------------------------------------------------------------------
 export const generateTaxRegisters = (state = {}) => {
-  const salesInvoices = (state.salesInvoices && state.salesInvoices.length > 0)
-    ? state.salesInvoices
-    : SEED_FINANCE_DATA.salesInvoices;
-
-  const purchaseInvoices = (state.purchaseInvoices && state.purchaseInvoices.length > 0)
-    ? state.purchaseInvoices
-    : SEED_FINANCE_DATA.purchaseInvoices;
+  const salesInvoices = Array.isArray(state.salesInvoices) ? state.salesInvoices : [];
+  const purchaseInvoices = Array.isArray(state.purchaseInvoices) ? state.purchaseInvoices : [];
+  const rawVouchers = Array.isArray(state.vouchers) ? state.vouchers : (Array.isArray(state.paymentVouchers) ? state.paymentVouchers : []);
 
   const outputRegister = salesInvoices.map(inv => ({
     id: inv.id,
     date: inv.date,
-    partyName: inv.customerName,
-    taxId: 'STRN-3277890-1',
+    partyName: inv.customerName || 'Customer',
+    taxId: inv.strn || 'STRN-Registered',
     taxableValue: round2(inv.subtotal || (inv.grandTotal - (inv.tax || 0))),
     taxRate: '18%',
     taxAmount: round2(inv.tax || 0),
@@ -1095,8 +1058,8 @@ export const generateTaxRegisters = (state = {}) => {
   const inputRegister = purchaseInvoices.map(pinv => ({
     id: pinv.id,
     date: pinv.date,
-    partyName: pinv.vendorName,
-    taxId: 'STRN-9982104-5',
+    partyName: pinv.vendorName || 'Supplier',
+    taxId: pinv.strn || 'STRN-Vendor',
     taxableValue: round2(pinv.subtotal || (pinv.grandTotal - (pinv.tax || 0))),
     taxRate: '18%',
     taxAmount: round2(pinv.tax || 0),
@@ -1106,11 +1069,30 @@ export const generateTaxRegisters = (state = {}) => {
   const totalInputTax = round2(inputRegister.reduce((sum, r) => sum + r.taxAmount, 0));
   const netSalesTaxPayable = round2(totalOutputTax - totalInputTax);
 
-  const whtRegister = [
-    { id: 'WHT-101', date: new Date(Date.now() - 86400000 * 6).toISOString(), party: 'Nexis Chem-Corp', section: 'Sec 153 (1)(a) Goods', grossAmount: 8000000, rate: '4.5%', whtAmount: 360000, cprNo: 'CPR-2026-99021', status: 'Deposited' },
-    { id: 'WHT-102', date: new Date(Date.now() - 86400000 * 12).toISOString(), party: 'Engr. Kamran (Services)', section: 'Sec 153 (1)(b) Services', grossAmount: 185000, rate: '10.0%', whtAmount: 18500, cprNo: 'CPR-2026-99044', status: 'Deposited' },
-    { id: 'WHT-103', date: new Date(Date.now() - 86400000 * 20).toISOString(), party: 'National Yarn & Mills', section: 'Sec 153 (1)(a) Goods', grossAmount: 6800000, rate: '4.5%', whtAmount: 306000, cprNo: 'Pending', status: 'Accrued' }
-  ];
+  // Extract WHT deductions from vouchers where lines match 213010 or WHT is noted
+  const whtRegister = [];
+  rawVouchers.forEach(v => {
+    if (Array.isArray(v.lines)) {
+      v.lines.forEach(l => {
+        if (l.accountId === '213010' || (l.accountName && l.accountName.toLowerCase().includes('withholding'))) {
+          const amt = round2(l.credit || l.debit || 0);
+          if (amt > 0) {
+            whtRegister.push({
+              id: `WHT-${v.id}`,
+              date: v.date,
+              party: v.party || v.paidTo || l.accountName,
+              section: 'Sec 153 Withholding',
+              grossAmount: amt * 20, // estimated gross
+              rate: '5.0%',
+              whtAmount: amt,
+              cprNo: v.reference || 'Pending Deposit',
+              status: 'Deducted'
+            });
+          }
+        }
+      });
+    }
+  });
 
   const totalWht = round2(whtRegister.reduce((sum, r) => sum + r.whtAmount, 0));
 
@@ -1126,7 +1108,7 @@ export const generateTaxRegisters = (state = {}) => {
 };
 
 // ----------------------------------------------------------------------------
-// 12. BANK & CASH RECONCILIATION
+// 11. BANK & CASH RECONCILIATION
 // ----------------------------------------------------------------------------
 export const generateBankReconciliation = (state = {}, accountId = '112010', statementEndingBalance = null) => {
   const gl = generateGeneralLedger(state, { accountId });
@@ -1141,27 +1123,16 @@ export const generateBankReconciliation = (state = {}, accountId = '112010', sta
   const netMovement = round2(entries.reduce((sum, e) => sum + (e.debit - e.credit), 0));
   const bookBalance = round2(openingBalance + netMovement);
 
-  const threeDaysAgo = Date.now() - (86400000 * 3);
-  const clearedEntries = [];
+  const clearedEntries = [...entries];
   const unclearedDeposits = [];
   const unclearedPayments = [];
 
-  entries.forEach(e => {
-    const isRecent = new Date(e.date).getTime() > threeDaysAgo;
-    if (isRecent) {
-      if (e.debit > 0) unclearedDeposits.push(e);
-      if (e.credit > 0) unclearedPayments.push(e);
-    } else {
-      clearedEntries.push(e);
-    }
-  });
-
-  const totalUnclearedDeposits = round2(unclearedDeposits.reduce((sum, e) => sum + e.debit, 0));
-  const totalUnclearedPayments = round2(unclearedPayments.reduce((sum, e) => sum + e.credit, 0));
+  const totalUnclearedDeposits = 0;
+  const totalUnclearedPayments = 0;
 
   const targetStatement = statementEndingBalance !== null
     ? Number(statementEndingBalance)
-    : round2(bookBalance - totalUnclearedDeposits + totalUnclearedPayments);
+    : bookBalance;
 
   const adjustedBankBalance = round2(targetStatement + totalUnclearedDeposits - totalUnclearedPayments);
   const difference = round2(bookBalance - adjustedBankBalance);
@@ -1183,7 +1154,7 @@ export const generateBankReconciliation = (state = {}, accountId = '112010', sta
 };
 
 // ----------------------------------------------------------------------------
-// 13. COST CENTERS & DEPARTMENTAL BUDGETS
+// 12. COST CENTERS & DEPARTMENTAL BUDGETS
 // ----------------------------------------------------------------------------
 export const generateCostCenterReport = (state = {}) => {
   const gl = generateGeneralLedger(state);
@@ -1225,7 +1196,7 @@ export const generateCostCenterReport = (state = {}) => {
 };
 
 // ----------------------------------------------------------------------------
-// 14. EXECUTIVE FINANCE OVERVIEW KPIS (Real-Time Calculated)
+// 13. EXECUTIVE FINANCE OVERVIEW KPIS (100% Real-Time Calculated)
 // ----------------------------------------------------------------------------
 export const generateFinanceOverviewKpis = (state = {}) => {
   const pnl = generateProfitAndLoss(state);
@@ -1246,16 +1217,16 @@ export const generateFinanceOverviewKpis = (state = {}) => {
 
   const currentRatio = bs.liabilities.totalCurrent > 0
     ? round2(bs.assets.totalCurrent / bs.liabilities.totalCurrent)
-    : 1.85;
+    : 0;
 
   const quickAssets = round2(cashAndBank + totalReceivables);
   const quickRatio = bs.liabilities.totalCurrent > 0
     ? round2(quickAssets / bs.liabilities.totalCurrent)
-    : 1.25;
+    : 0;
 
   const dso = netRevenue > 0
     ? Math.round((totalReceivables / netRevenue) * 90)
-    : 42;
+    : 0;
 
   return {
     cashAndBank,

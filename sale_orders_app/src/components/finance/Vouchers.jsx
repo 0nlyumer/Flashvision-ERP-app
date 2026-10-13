@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useDialog } from '../../context/DialogContext';
 import ResizableHeader from '../ui/ResizableHeader';
+import { DEFAULT_CHART_OF_ACCOUNTS } from '../../utils/financeEngine';
 import { useLocation } from 'react-router-dom';
 
 export default function Vouchers() {
@@ -13,52 +14,27 @@ export default function Vouchers() {
   // Active view: 'create' or 'history'
   const [viewMode, setViewMode] = useState('create');
 
-  // Accounts list from Chart of Accounts or fallback defaults
-  const accounts = state.chartOfAccounts || [];
-  const defaultAccountsList = [
-    { id: 'ACC-1001', name: 'Petty Cash - Main', category: 'Internal' },
-    { id: 'ACC-4821', name: 'Nexis Chem-Corp', category: 'Customer' },
-    { id: 'ACC-4822', name: 'Global Logistics Ltd', category: 'Vendor' },
-    { id: 'ACC-4825', name: 'Alpha Tech Supplies', category: 'Vendor' },
-    { id: 'ACC-4826', name: 'Al-Haq Traders', category: 'Customer' },
-    { id: 'ACC-4827', name: 'Pak Enterprises', category: 'Customer' },
-    { id: 'ACC-4828', name: 'National Yarn Corp', category: 'Vendor' }
-  ];
-  const activeAccountsList = accounts.length > 0 ? accounts : defaultAccountsList;
+  // Dynamic accounts list combining Chart of Accounts, Customers, and Suppliers from real ERP state
+  const coaAccounts = (state.chartOfAccounts && state.chartOfAccounts.length > 0)
+    ? state.chartOfAccounts
+    : DEFAULT_CHART_OF_ACCOUNTS;
 
-  // Initial Seed Vouchers
-  const defaultVouchers = [
-    {
-      id: 'JV-2026-0001',
-      date: '2026-06-01',
-      type: 'JV',
-      reference: 'Inv# 45902',
-      narration: 'Office supplies and petty cash adjustment for Q2.',
-      status: 'Posted',
-      totalDebit: 15000,
-      totalCredit: 15000,
-      lines: [
-        { accountId: 'ACC-1001', accountName: 'Petty Cash - Main', narration: 'Cash disbursed to admin', debit: 0, credit: 15000 },
-        { accountId: 'ACC-4822', accountName: 'Global Logistics Ltd', narration: 'Stationery purchase for Oct', debit: 15000, credit: 0 }
-      ]
-    },
-    {
-      id: 'CPV-2026-0002',
-      date: '2026-06-03',
-      type: 'CPV',
-      reference: 'REF-771',
-      narration: 'Supplier advance payment for raw materials.',
-      status: 'Posted',
-      totalDebit: 500000,
-      totalCredit: 500000,
-      lines: [
-        { accountId: 'ACC-4822', accountName: 'Global Logistics Ltd', narration: 'Advance payment', debit: 500000, credit: 0 },
-        { accountId: 'ACC-1001', accountName: 'Petty Cash - Main', narration: 'Cash Payment', debit: 0, credit: 500000 }
-      ]
-    }
-  ];
+  const customerAccounts = (state.customers || []).map(c => ({
+    id: `CUST-${c.id || c.customerId || c.name}`,
+    name: `${c.name || c.customerName} (Customer / Debtor)`,
+    category: 'Debtors'
+  }));
 
-  const vouchers = state.vouchers || defaultVouchers;
+  const supplierAccounts = (state.suppliers || []).map(s => ({
+    id: `SUPP-${s.id || s.supplierId || s.name}`,
+    name: `${s.name || s.supplierName} (Supplier / Creditor)`,
+    category: 'Creditors'
+  }));
+
+  const activeAccountsList = [...coaAccounts, ...customerAccounts, ...supplierAccounts];
+
+  // Pure real vouchers from ERP state with ZERO dummy fallback entries
+  const vouchers = state.vouchers || [];
 
   // ==================== VOUCHER CREATION STATE ====================
   const [voucherType, setVoucherType] = useState(''); // '' | 'JV' | 'CPV' | 'CRV'

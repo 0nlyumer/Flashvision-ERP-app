@@ -134,11 +134,6 @@ export default function PurchaseInvoice() {
       {/* Header section */}
       <div className="flex justify-between items-end">
         <div>
-          <nav className="flex items-center gap-2 text-xs font-medium text-on-surface-variant mb-2">
-            <a className="hover:text-primary transition-colors" href="#">Purchasing</a>
-            <span className="material-symbols-outlined text-[10px]">chevron_right</span>
-            <span className="text-primary font-bold">Purchase Invoice</span>
-          </nav>
           <div className="flex items-center gap-4">
             <h3 className="text-3xl font-bold tracking-tight text-on-surface">New Purchase Invoice</h3>
             <button

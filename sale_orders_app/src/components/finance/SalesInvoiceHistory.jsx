@@ -338,11 +338,6 @@ export default function SalesInvoiceHistory({ onViewCreate }) {
       {/* Navigation and Title */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <nav className="flex items-center gap-2 text-xs text-on-surface-variant mb-2">
-            <span>Sales</span>
-            <span className="material-symbols-outlined text-[14px]">chevron_right</span>
-            <span className="text-primary font-semibold">Invoice History</span>
-          </nav>
           <div className="flex items-center gap-4">
             <h2 className="text-3xl font-headline font-extrabold text-on-surface tracking-tight">Sales Invoice History</h2>
             <button

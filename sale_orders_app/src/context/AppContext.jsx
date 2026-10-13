@@ -13,7 +13,7 @@ import React, { createContext, useContext, useState, useEffect, useRef } from 'r
 import { applyTheme } from '../utils/theme';
 import { supabase } from '../utils/supabaseClient';
 import { getInitialFGConfig, saveFGConfig } from '../utils/fgCombinationUtils';
-import { DEFAULT_CHART_OF_ACCOUNTS, SEED_FINANCE_DATA } from '../utils/financeEngine';
+import { DEFAULT_CHART_OF_ACCOUNTS } from '../utils/financeEngine';
 
 const AppContext = createContext();
 const BUILD_VERSION = '20260715_v5';
@@ -64,7 +64,7 @@ const initialMockState = {
   salesInvoices: [],
   purchaseInvoices: [],
   paymentVouchers: [],
-  chartOfAccounts: [],
+  chartOfAccounts: DEFAULT_CHART_OF_ACCOUNTS,
   hr_overtime_requests: [],
   hr_leave_requests: [],
   hr_generated_salaries: [],
@@ -234,6 +234,39 @@ const seedStateIfEmpty = (stateObj) => {
   }
   if (!seeded.finishedGoodPhases || seeded.finishedGoodPhases.length === 0) {
     seeded.finishedGoodPhases = initialMockState.finishedGoodPhases || [];
+  }
+
+    // Ensure standard Chart of Accounts
+  if (!seeded.chartOfAccounts || seeded.chartOfAccounts.length === 0) {
+    seeded.chartOfAccounts = DEFAULT_CHART_OF_ACCOUNTS;
+  }
+
+  // Remove any legacy mock finance items from stored state
+  const dummyIds = new Set([
+    'INV-8901', 'INV-8902', 'INV-8903', 'INV-8904',
+    'PINV-7801', 'PINV-7802', 'PINV-7803',
+    'VOUCH-1001', 'VOUCH-1002', 'VOUCH-1003', 'VOUCH-1004',
+    'JV-2026-0001', 'CPV-2026-0002'
+  ]);
+  if (Array.isArray(seeded.salesInvoices)) {
+    seeded.salesInvoices = seeded.salesInvoices.filter(x => !dummyIds.has(x.id) && !dummyIds.has(x.invoiceNo));
+  }
+  if (Array.isArray(seeded.purchaseInvoices)) {
+    seeded.purchaseInvoices = seeded.purchaseInvoices.filter(x => !dummyIds.has(x.id) && !dummyIds.has(x.invoiceNo));
+  }
+  if (Array.isArray(seeded.vouchers)) {
+    seeded.vouchers = seeded.vouchers.filter(x => !dummyIds.has(x.id) && !dummyIds.has(x.voucherNo));
+  }
+  if (Array.isArray(seeded.paymentVouchers)) {
+    seeded.paymentVouchers = seeded.paymentVouchers.filter(x => !dummyIds.has(x.id) && !dummyIds.has(x.voucherNo));
+  }
+  if (Array.isArray(seeded.chartOfAccounts)) {
+    seeded.chartOfAccounts = seeded.chartOfAccounts.map(acc => {
+      if (acc.openingDebit === 2450000 || acc.openingDebit === 1500000 || acc.openingDebit === 3800000 || acc.openingDebit === 9500000) {
+        return { ...acc, openingDebit: 0, openingCredit: 0 };
+      }
+      return acc;
+    });
   }
 
   return reconcileHRApprovalsAndLedgers(seeded);
@@ -806,7 +839,35 @@ export const AppProvider = ({ children }) => {
         if (!prev.salesInvoices) { nextState.salesInvoices = []; updated = true; }
         if (!prev.purchaseInvoices) { nextState.purchaseInvoices = []; updated = true; }
         if (!prev.paymentVouchers) { nextState.paymentVouchers = []; updated = true; }
-        if (!prev.chartOfAccounts) { nextState.chartOfAccounts = initialMockState.chartOfAccounts || []; updated = true; }
+        if (!prev.chartOfAccounts || prev.chartOfAccounts.length === 0) { 
+          nextState.chartOfAccounts = DEFAULT_CHART_OF_ACCOUNTS; 
+          updated = true; 
+        } else {
+          // Clean any lingering dummy opening balances from previous runs
+          const hasDummyCoa = prev.chartOfAccounts.some(acc => acc.openingDebit === 2450000 || acc.openingDebit === 1500000);
+          if (hasDummyCoa) {
+            nextState.chartOfAccounts = prev.chartOfAccounts.map(acc => 
+              (acc.openingDebit === 2450000 || acc.openingDebit === 1500000 || acc.openingDebit === 3800000 || acc.openingDebit === 9500000)
+                ? { ...acc, openingDebit: 0, openingCredit: 0 }
+                : acc
+            );
+            updated = true;
+          }
+        }
+        // Clean dummy invoices if present
+        const dummyFilter = x => !['INV-8901','INV-8902','INV-8903','INV-8904','PINV-7801','PINV-7802','PINV-7803','VOUCH-1001','VOUCH-1002','VOUCH-1003','VOUCH-1004','JV-2026-0001','CPV-2026-0002'].includes(x.id) && !['INV-8901','INV-8902','INV-8903','INV-8904','PINV-7801','PINV-7802','PINV-7803','VOUCH-1001','VOUCH-1002','VOUCH-1003','VOUCH-1004','JV-2026-0001','CPV-2026-0002'].includes(x.invoiceNo);
+        if (Array.isArray(prev.salesInvoices) && prev.salesInvoices.some(x => !dummyFilter(x))) {
+          nextState.salesInvoices = prev.salesInvoices.filter(dummyFilter);
+          updated = true;
+        }
+        if (Array.isArray(prev.purchaseInvoices) && prev.purchaseInvoices.some(x => !dummyFilter(x))) {
+          nextState.purchaseInvoices = prev.purchaseInvoices.filter(dummyFilter);
+          updated = true;
+        }
+        if (Array.isArray(prev.vouchers) && prev.vouchers.some(x => !dummyFilter(x))) {
+          nextState.vouchers = prev.vouchers.filter(dummyFilter);
+          updated = true;
+        }
         if (!prev.adminSetup) { 
           nextState.adminSetup = initialMockState.adminSetup; 
           updated = true; 

@@ -35,11 +35,6 @@ export default function FinanceDashboard({ onNavigateTab }) {
       {/* Page Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
         <div>
-          <nav className="flex items-center gap-2 text-xs text-on-surface-variant mb-1">
-            <span>Enterprise Suite</span>
-            <span className="material-symbols-outlined text-[14px]">chevron_right</span>
-            <span className="text-primary font-semibold">Finance & Accounting</span>
-          </nav>
           <div className="flex items-center gap-3">
             <h2 className="font-display text-3xl sm:text-4xl font-extrabold text-on-surface tracking-tight">
               Finance & Accounts Cockpit

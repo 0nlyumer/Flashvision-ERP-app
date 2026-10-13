@@ -243,11 +243,6 @@ export default function LedgerTaxDashboard() {
       {/* Page Header */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
         <div>
-          <nav className="flex items-center gap-2 text-xs text-on-surface-variant mb-2">
-            <span>Finance</span>
-            <span className="material-symbols-outlined text-[14px]">chevron_right</span>
-            <span className="text-primary font-semibold">Ledger & Tax Dashboard</span>
-          </nav>
           <div className="flex items-center gap-4">
             <h2 className="text-3xl font-headline font-extrabold text-on-surface tracking-tight">Unified Ledger</h2>
             <span className="text-xs font-semibold px-3 py-1 bg-surface-container text-on-secondary-container rounded-full">

@@ -132,11 +132,6 @@ export default function SalesInvoice() {
       {/* Page header and selection bar */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
         <div>
-          <nav className="flex items-center gap-2 text-xs text-on-surface-variant mb-2">
-            <span>Sales</span>
-            <span className="material-symbols-outlined text-[14px]">chevron_right</span>
-            <span className="text-primary font-semibold">Create Invoice</span>
-          </nav>
           <div className="flex items-center gap-4">
             <h2 className="text-3xl font-headline font-extrabold text-on-surface tracking-tight">Create Sales Invoice</h2>
             <button

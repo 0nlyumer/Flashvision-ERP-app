@@ -233,11 +233,6 @@ export default function ChartOfAccounts() {
       {/* Top Header */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
-          <nav className="flex items-center gap-2 text-xs text-on-surface-variant mb-2">
-            <span>Finance & Accounts</span>
-            <span className="material-symbols-outlined text-[14px]">chevron_right</span>
-            <span className="text-primary font-semibold">Chart of Accounts</span>
-          </nav>
           <div className="flex items-center gap-3">
             <h2 className="text-3xl font-headline font-black text-on-surface tracking-tight">Chart of Accounts (COA)</h2>
             <span className="text-xs font-bold px-3 py-1 bg-primary/10 text-primary rounded-full border border-primary/20">
