@@ -173,6 +173,8 @@ export default function Login() {
     if (reason) {
       if (reason === 'inactivity_timeout') {
         setSessionExpiredNotice('Your session timed out after 60 minutes of inactivity. Please re-authenticate.');
+      } else if (reason === 'concurrent_device_login') {
+        setSessionExpiredNotice('Security Notice: You were automatically logged out because your account was logged in from another device or browser.');
       } else {
         setSessionExpiredNotice('Your session has expired. Please sign in with your credentials to continue.');
       }

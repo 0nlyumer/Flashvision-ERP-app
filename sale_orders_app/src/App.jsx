@@ -43,6 +43,8 @@ const RootLayout = () => {
       setNotificationMsg(
         reason === 'inactivity_timeout' 
           ? "Session locked due to 60 minutes of inactivity. Please sign in again."
+          : reason === 'concurrent_device_login'
+          ? "Security Alert: You have been logged out because your account was logged in on another device."
           : "Session expired or invalidated. Please sign in to continue."
       );
       setNotificationType("warning");

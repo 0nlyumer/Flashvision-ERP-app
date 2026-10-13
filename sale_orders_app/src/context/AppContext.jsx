@@ -521,6 +521,21 @@ export const AppProvider = ({ children }) => {
       return newId;
     })()
   );
+
+  const getDeviceId = () => {
+    try {
+      let id = localStorage.getItem('fv_device_id');
+      if (!id) {
+        id = 'dev_' + Math.random().toString(36).substring(2, 10) + '_' + Date.now();
+        localStorage.setItem('fv_device_id', id);
+      }
+      return id;
+    } catch (e) {
+      return 'dev_' + Date.now();
+    }
+  };
+
+  const sessionsChannelRef = useRef(null);
   const clientId = useRef(Math.random().toString(36).substr(2, 9) + Date.now().toString(36));
   const isLocalStorageWriting = useRef(false);
   const isRemoteSyncing = useRef(false);
@@ -553,6 +568,40 @@ export const AppProvider = ({ children }) => {
 
   const [isInitialLoadCompleted, setIsInitialLoadCompleted] = useState(false);
   const [activeSessions, setActiveSessions] = useState([]);
+  const currentUserRef = useRef(null);
+
+  const handleForceConcurrentLogout = () => {
+    const loggedUser = currentUserRef.current;
+    if (!loggedUser) return;
+    console.warn('[Security Shield] Account was logged in from another device. Forcing logout on this terminal.');
+
+    destroySession();
+
+    try {
+      supabase.from('user_sessions').delete().eq('connection_id', connectionId.current);
+    } catch(e) {}
+
+    const auditLog = {
+      id: 'LOG-' + Date.now(),
+      timestamp: new Date().toISOString(),
+      action: 'Concurrent Session Terminated',
+      module: 'Security Shield',
+      details: 'User ' + (loggedUser.name || loggedUser.username) + ' was logged out because the account was accessed from another device/browser.',
+      status: 'Warning',
+      user: loggedUser.name || loggedUser.username || 'System'
+    };
+
+    setState(prev => ({
+      ...prev,
+      currentUser: null,
+      auditLogs: [auditLog, ...(prev.auditLogs || [])].slice(0, 200)
+    }));
+
+    window.dispatchEvent(new CustomEvent('fv_session_expired', {
+      detail: { reason: 'concurrent_device_login' }
+    }));
+  };
+
   const [state, setState] = useState(() => {
     const saved = localStorage.getItem('aj_synthetic_erp') || sessionStorage.getItem('aj_synthetic_erp');
     if (saved) {
@@ -665,7 +714,12 @@ export const AppProvider = ({ children }) => {
 
   const [isDirty, setDirty] = useState(false);
 
-  // Enterprise Session Inactivity & Health Guard
+  // Keep currentUserRef continuously synchronized
+  useEffect(() => {
+    currentUserRef.current = state.currentUser;
+  }, [state.currentUser]);
+
+  // Enterprise Session Inactivity & Health Guard (with Remote Concurrent Device Check)
   useEffect(() => {
     if (!state.currentUser) return;
 
@@ -690,6 +744,35 @@ export const AppProvider = ({ children }) => {
         destroySession();
         setState(prev => ({ ...prev, currentUser: null }));
         window.dispatchEvent(new CustomEvent('fv_session_expired', { detail: { reason: validation.reason } }));
+        return;
+      }
+
+      // Check remote single-session integrity in Supabase:
+      // If another device logged in for this username, our connection_id won't be active!
+      if (currentUserRef.current?.username) {
+        supabase
+          .from('user_sessions')
+          .select('connection_id, device_info, last_active')
+          .ilike('username', currentUserRef.current.username)
+          .then(({ data, error }) => {
+            if (!error && data && data.length > 0) {
+              const myConn = connectionId.current;
+              const myDev = getDeviceId();
+              const isMySessionActive = data.some(s => {
+                if (s.connection_id === myConn) return true;
+                try {
+                  const p = typeof s.device_info === 'string' ? JSON.parse(s.device_info) : s.device_info;
+                  if (p?.deviceId === myDev) return true;
+                } catch (e) {}
+                return false;
+              });
+
+              if (!isMySessionActive) {
+                console.warn('[Security Guard] Session superseded by another device in background probe.');
+                handleForceConcurrentLogout();
+              }
+            }
+          });
       }
     }, 15000);
 
@@ -1275,12 +1358,50 @@ export const AppProvider = ({ children }) => {
               const filtered = prev.filter(s => s.connection_id !== payload.new.connection_id);
               return [...filtered, payload.new];
             });
+
+            // Real-Time Concurrent Login Detection:
+            // If another connection/device logs into this account, kick this device out immediately!
+            const myUser = currentUserRef.current?.username;
+            if (myUser && payload.new?.username?.toLowerCase() === myUser.toLowerCase()) {
+              const myConn = connectionId.current;
+              const myDev = getDeviceId();
+              let newDev = null;
+              try {
+                const parsed = typeof payload.new.device_info === 'string' ? JSON.parse(payload.new.device_info) : payload.new.device_info;
+                newDev = parsed?.deviceId;
+              } catch (e) {}
+
+              if (payload.new.connection_id !== myConn && (!newDev || newDev !== myDev)) {
+                console.warn('[Security Guard] New active session detected for our account on another device. Logging out.');
+                handleForceConcurrentLogout();
+              }
+            }
           } else if (payload.eventType === 'DELETE') {
             setActiveSessions(prev => prev.filter(s => s.connection_id !== payload.old.connection_id));
+
+            // If our connection_id was deleted by another logging-in device
+            const myUser = currentUserRef.current?.username;
+            if (myUser && payload.old?.connection_id === connectionId.current) {
+              console.warn('[Security Guard] Our session was removed from user_sessions. Logging out.');
+              handleForceConcurrentLogout();
+            }
           }
         }
       )
+      .on('broadcast', { event: 'force_logout_concurrent' }, ({ payload }) => {
+        const myUser = currentUserRef.current?.username;
+        if (myUser && payload?.username && payload.username.toLowerCase() === myUser.toLowerCase()) {
+          const myConn = connectionId.current;
+          const myDev = getDeviceId();
+          if (payload.activeConnectionId !== myConn && (!payload.activeDeviceId || payload.activeDeviceId !== myDev)) {
+            console.warn('[Security Guard] Received real-time force_logout_concurrent broadcast. Terminating session.');
+            handleForceConcurrentLogout();
+          }
+        }
+      })
       .subscribe();
+
+    sessionsChannelRef.current = sessionsChannel;
 
     // 3. Lightweight remote synchronization check (45s probe + window focus listener)
     // Downloads only tiny updated_at metadata (~100 bytes) instead of downloading 300KB every 4s, saving 99% bandwidth!
@@ -2185,26 +2306,59 @@ export const AppProvider = ({ children }) => {
     };
   }, [state.displaySettings]);
 
-  const updateActiveStatus = () => {
-    if (!state.currentUser?.username) return;
+  const updateActiveStatus = async () => {
+    if (!currentUserRef.current?.username) return;
     
-    // 2. Supabase user_sessions database heartbeats
     const connId = connectionId.current;
+    const myDevId = getDeviceId();
     const customName = localStorage.getItem('custom_device_name') || '';
-    const deviceInfoStr = customName ? `${customName}|${navigator.userAgent}` : navigator.userAgent;
+    const devInfoPayload = JSON.stringify({
+      deviceId: myDevId,
+      customName,
+      platform: window.process?.versions?.electron ? 'Desktop' : 'Web',
+      userAgent: navigator.userAgent,
+      updatedAt: new Date().toISOString()
+    });
 
-    supabase
-      .from('user_sessions')
-      .upsert({
-        username: state.currentUser.username,
-        connection_id: connId,
-        last_active: new Date().toISOString(),
-        status: 'online',
-        device_info: deviceInfoStr
-      }, { onConflict: 'connection_id' })
-      .then(({ error }) => {
-        if (error) console.warn("Error upserting user session to Supabase:", error);
-      });
+    try {
+      // Check if another device has superseded us
+      const { data: currentSessions } = await supabase
+        .from('user_sessions')
+        .select('connection_id, device_info')
+        .ilike('username', currentUserRef.current.username);
+
+      if (currentSessions && currentSessions.length > 0) {
+        const isCurrentActive = currentSessions.some(s => {
+          if (s.connection_id === connId) return true;
+          try {
+            const p = typeof s.device_info === 'string' ? JSON.parse(s.device_info) : s.device_info;
+            if (p?.deviceId === myDevId) return true;
+          } catch(e) {}
+          return false;
+        });
+
+        if (!isCurrentActive) {
+          console.warn('[Security Guard] Active session superseded in heartbeat check.');
+          handleForceConcurrentLogout();
+          return;
+        }
+      }
+
+      supabase
+        .from('user_sessions')
+        .upsert({
+          username: currentUserRef.current.username,
+          connection_id: connId,
+          last_active: new Date().toISOString(),
+          status: 'online',
+          device_info: devInfoPayload
+        }, { onConflict: 'connection_id' })
+        .then(({ error }) => {
+          if (error) console.warn("Error upserting user session to Supabase:", error);
+        });
+    } catch (err) {
+      console.warn("Heartbeat session update error:", err);
+    }
   };
 
   const cleanupSession = () => {
@@ -4043,6 +4197,49 @@ export const AppProvider = ({ children }) => {
         user: user.name
       };
       
+      // Enforce Single Active Device Session:
+      // Invalidate all other active sessions for this user across all other devices/browsers
+      const myConnId = connectionId.current;
+      const myDeviceId = getDeviceId();
+      const devInfoStr = JSON.stringify({
+        deviceId: myDeviceId,
+        platform,
+        loginTime: new Date().toISOString(),
+        userAgent: navigator.userAgent
+      });
+
+      // 1. Delete prior sessions for this username in Supabase
+      supabase
+        .from('user_sessions')
+        .delete()
+        .ilike('username', cleanIdentifier)
+        .then(() => {
+          // 2. Upsert this device's session
+          supabase
+            .from('user_sessions')
+            .upsert({
+              username: user.username,
+              connection_id: myConnId,
+              last_active: new Date().toISOString(),
+              status: 'online',
+              device_info: devInfoStr
+            }, { onConflict: 'connection_id' });
+        });
+
+      // 3. Send instant broadcast to kick any previous device out immediately
+      try {
+        sessionsChannelRef.current?.send({
+          type: 'broadcast',
+          event: 'force_logout_concurrent',
+          payload: {
+            username: user.username.toLowerCase(),
+            activeConnectionId: myConnId,
+            activeDeviceId: myDeviceId,
+            timestamp: Date.now()
+          }
+        });
+      } catch (e) {}
+
       setState(prev => {
         const currentLogs = prev.auditLogs || [];
         const nextState = {
