@@ -1,3 +1,14 @@
+import {
+  validateCurrentSession,
+  createSecureSession,
+  destroySession,
+  touchSessionActivity,
+  getRateLimitStatus,
+  recordFailedAttempt,
+  resetRateLimit,
+  verifyPassword,
+  sanitizeUser
+} from '../utils/securityAuth';
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { applyTheme } from '../utils/theme';
 import { supabase } from '../utils/supabaseClient';
@@ -558,32 +569,27 @@ export const AppProvider = ({ children }) => {
           parsed.users = merged;
         }
 
-        // Restore currentUser from tab sessionStorage first for multi-tab isolation, then fallback to localStorage
+        // Strictly restore currentUser ONLY if a cryptographically valid, unexpired session exists
         try {
-          const sessionUser = sessionStorage.getItem('aj_current_user_session');
-          if (sessionUser) {
-            parsed.currentUser = JSON.parse(sessionUser);
+          const sessionVal = validateCurrentSession();
+          if (sessionVal.isValid && sessionVal.session?.user) {
+            parsed.currentUser = sessionVal.session.user;
+            if (parsed.users) {
+              const latest = parsed.users.find(u => 
+                String(u.id) === String(parsed.currentUser.id) || 
+                (u.username && parsed.currentUser.username && u.username.toLowerCase() === parsed.currentUser.username.toLowerCase())
+              );
+              if (latest) {
+                parsed.currentUser = sanitizeUser({ ...parsed.currentUser, ...latest });
+              }
+            }
           } else {
-            const savedUser = localStorage.getItem('aj_current_user');
-            if (savedUser) {
-              parsed.currentUser = JSON.parse(savedUser);
-              sessionStorage.setItem('aj_current_user_session', savedUser);
-            }
+            parsed.currentUser = null;
+            destroySession();
           }
-          if (parsed.currentUser && parsed.users) {
-            const latest = parsed.users.find(u => 
-              String(u.id) === String(parsed.currentUser.id) || 
-              (u.username && parsed.currentUser.username && u.username.toLowerCase() === parsed.currentUser.username.toLowerCase())
-            );
-            if (latest) {
-              parsed.currentUser = { ...parsed.currentUser, ...latest };
-              try {
-                localStorage.setItem('aj_current_user', JSON.stringify(parsed.currentUser));
-                sessionStorage.setItem('aj_current_user_session', JSON.stringify(parsed.currentUser));
-              } catch(e) {}
-            }
-          }
-        } catch(e) {}
+        } catch(e) {
+          parsed.currentUser = null;
+        }
 
         // Migrate old itemCodes that were prefixed with orderId (e.g., SO-001-ITM-001 -> ITM-001)
         if (parsed.saleOrders) {
@@ -644,21 +650,58 @@ export const AppProvider = ({ children }) => {
     }
     const stateObj = seedStateIfEmpty(initialMockState);
     try {
-      const sessionUser = sessionStorage.getItem('aj_current_user_session');
-      if (sessionUser) {
-        stateObj.currentUser = JSON.parse(sessionUser);
+      const sessionVal = validateCurrentSession();
+      if (sessionVal.isValid && sessionVal.session?.user) {
+        stateObj.currentUser = sessionVal.session.user;
       } else {
-        const savedUser = localStorage.getItem('aj_current_user');
-        if (savedUser) {
-          stateObj.currentUser = JSON.parse(savedUser);
-          sessionStorage.setItem('aj_current_user_session', savedUser);
-        }
+        stateObj.currentUser = null;
+        destroySession();
       }
-    } catch(e) {}
+    } catch(e) {
+      stateObj.currentUser = null;
+    }
     return stateObj;
   });
 
   const [isDirty, setDirty] = useState(false);
+
+  // Enterprise Session Inactivity & Health Guard
+  useEffect(() => {
+    if (!state.currentUser) return;
+
+    let lastTouch = Date.now();
+    const handleUserActivity = () => {
+      const now = Date.now();
+      if (now - lastTouch > 20000) {
+        lastTouch = now;
+        touchSessionActivity();
+      }
+    };
+
+    window.addEventListener('mousemove', handleUserActivity, { passive: true });
+    window.addEventListener('keydown', handleUserActivity, { passive: true });
+    window.addEventListener('click', handleUserActivity, { passive: true });
+    window.addEventListener('touchstart', handleUserActivity, { passive: true });
+
+    const sessionInterval = setInterval(() => {
+      const validation = validateCurrentSession();
+      if (!validation.isValid) {
+        console.warn('[Security Guard] Session expired or invalidated:', validation.reason);
+        destroySession();
+        setState(prev => ({ ...prev, currentUser: null }));
+        window.dispatchEvent(new CustomEvent('fv_session_expired', { detail: { reason: validation.reason } }));
+      }
+    }, 15000);
+
+    return () => {
+      window.removeEventListener('mousemove', handleUserActivity);
+      window.removeEventListener('keydown', handleUserActivity);
+      window.removeEventListener('click', handleUserActivity);
+      window.removeEventListener('touchstart', handleUserActivity);
+      clearInterval(sessionInterval);
+    };
+  }, [state.currentUser?.username]);
+
 
   // Ensure newly added global structures exist in old states
   useEffect(() => {
@@ -1026,25 +1069,21 @@ export const AppProvider = ({ children }) => {
           setState(prev => {
             const mergedState = smartUnionMerge(prev, sanitized);
             const nextState = seedStateIfEmpty(mergedState);
-            let effectiveUser = prev.currentUser || (() => {
-              try {
-                const u = localStorage.getItem('aj_current_user');
-                return u ? JSON.parse(u) : null;
-              } catch(e) { return null; }
-            })();
-
-            if (effectiveUser && nextState.users) {
-              const latest = nextState.users.find(u => 
-                String(u.id) === String(effectiveUser.id) || 
-                (u.username && effectiveUser.username && u.username.toLowerCase() === effectiveUser.username.toLowerCase())
-              );
-              if (latest) {
-                effectiveUser = { ...effectiveUser, ...latest };
-                try {
-                  localStorage.setItem('aj_current_user', JSON.stringify(effectiveUser));
-                  sessionStorage.setItem('aj_current_user_session', JSON.stringify(effectiveUser));
-                } catch(e) {}
+            let effectiveUser = null;
+            const sessionVal = validateCurrentSession();
+            if (sessionVal.isValid && prev.currentUser) {
+              effectiveUser = prev.currentUser;
+              if (nextState.users) {
+                const latest = nextState.users.find(u => 
+                  String(u.id) === String(effectiveUser.id) || 
+                  (u.username && effectiveUser.username && u.username.toLowerCase() === effectiveUser.username.toLowerCase())
+                );
+                if (latest) {
+                  effectiveUser = sanitizeUser({ ...effectiveUser, ...latest });
+                }
               }
+            } else {
+              effectiveUser = null;
             }
 
             return {
@@ -3963,90 +4002,113 @@ export const AppProvider = ({ children }) => {
      addNotification('Widget Added', `${widgetConfig.title} has been pinned to your dashboard.`, 'success');
   };
 
-   const login = (username, password, platform = 'Web') => {
+   const login = (username, password, platform = 'Web', rememberMe = false) => {
+    const cleanIdentifier = String(username || '').trim();
+
+    // 1. Anti-Brute-Force Rate Limiting Check
+    const rateStatus = getRateLimitStatus(cleanIdentifier);
+    if (!rateStatus.allowed) {
+      return {
+        success: false,
+        locked: true,
+        remainingSeconds: rateStatus.remainingSeconds,
+        reason: `Security Lockout: Too many failed login attempts. Please retry in ${rateStatus.remainingSeconds} seconds.`
+      };
+    }
+
+    // 2. Lookup user in state
     const user = state.users?.find(u => 
-      u.username?.toLowerCase() === username?.toLowerCase() || 
-      u.email?.toLowerCase() === username?.toLowerCase()
+      u.username?.toLowerCase() === cleanIdentifier.toLowerCase() || 
+      u.email?.toLowerCase() === cleanIdentifier.toLowerCase()
     );
     
-    if (user) {
-      if (password === user.password) {
-        // Log the successful login audit record
-        const logId = `LOG-${Date.now()}`;
-        const newAuditLog = {
-          id: logId,
-          timestamp: new Date().toISOString(),
-          action: 'User Login',
-          module: 'Authentication',
-          details: `User ${user.name} (@${user.username}) logged in via ${platform}.`,
-          status: 'Success',
-          user: user.name
+    // 3. Verify credentials
+    if (user && verifyPassword(password, user.password)) {
+      // Reset rate limit on success
+      resetRateLimit(cleanIdentifier);
+      resetRateLimit('global');
+
+      // Create cryptographically signed session token
+      const sessionToken = createSecureSession(user, rememberMe);
+      const cleanUser = sanitizeUser({ ...user, ...sessionToken });
+
+      const logId = `LOG-${Date.now()}`;
+      const newAuditLog = {
+        id: logId,
+        timestamp: new Date().toISOString(),
+        action: 'User Login',
+        module: 'Authentication',
+        details: `User ${user.name} (@${user.username}) authenticated successfully via ${platform} (Remember: ${rememberMe ? 'Yes' : 'No'}).`,
+        status: 'Success',
+        user: user.name
+      };
+      
+      setState(prev => {
+        const currentLogs = prev.auditLogs || [];
+        const nextState = {
+          ...prev,
+          currentUser: cleanUser,
+          auditLogs: [newAuditLog, ...currentLogs].slice(0, 200)
         };
-        
-        setState(prev => {
-          const currentLogs = prev.auditLogs || [];
-          const nextState = {
-            ...prev,
-            currentUser: user,
-            auditLogs: [newAuditLog, ...currentLogs].slice(0, 200)
-          };
-          sessionStorage.setItem('aj_current_user_session', JSON.stringify(user));
-          localStorage.setItem('aj_synthetic_erp', JSON.stringify(nextState));
-          localStorage.setItem('aj_current_user', JSON.stringify(user));
-          return nextState;
-        });
-        
-        return { success: true, user };
-      }
-      return { success: false, reason: 'password_mismatch', debugUsers: state.users?.map(u => u.username) };
+        localStorage.setItem('aj_synthetic_erp', JSON.stringify(nextState));
+        return nextState;
+      });
+      
+      return { success: true, user: cleanUser };
     }
-    
-    return { success: false, reason: 'user_not_found', debugUsers: state.users?.map(u => u.username) };
+
+    // 4. Failed authentication
+    const newRate = recordFailedAttempt(cleanIdentifier);
+    const failAuditLog = {
+      id: `LOG-${Date.now()}`,
+      timestamp: new Date().toISOString(),
+      action: 'Failed Login Attempt',
+      module: 'Security Shield',
+      details: `Failed login attempt for identifier '${cleanIdentifier}' via ${platform}. Attempts remaining: ${newRate.remainingAttempts}`,
+      status: 'Warning',
+      user: cleanIdentifier || 'Unknown'
+    };
+
+    setState(prev => ({
+      ...prev,
+      auditLogs: [failAuditLog, ...(prev.auditLogs || [])].slice(0, 200)
+    }));
+
+    return {
+      success: false,
+      reason: 'Invalid username/email or password. Please verify your credentials.',
+      remainingAttempts: newRate.remainingAttempts,
+      locked: !newRate.allowed,
+      remainingSeconds: newRate.remainingSeconds
+    };
   };
 
   const logout = () => {
+    destroySession();
     const connId = sessionStorage.getItem('connectionId');
     if (connId) {
       supabase
         .from('user_sessions')
         .delete()
         .eq('connection_id', connId)
-        .then(({ error }) => {
-          if (error) console.warn("Error cleaning up user session during logout:", error);
-        });
+        .then(() => {});
     }
 
-    sessionStorage.removeItem('aj_current_user_session');
-    localStorage.removeItem('aj_current_user');
+    const logoutLog = {
+      id: `LOG-${Date.now()}`,
+      timestamp: new Date().toISOString(),
+      action: 'User Logout',
+      module: 'Authentication',
+      details: `User session terminated cleanly.`,
+      status: 'Info',
+      user: state.currentUser?.name || 'User'
+    };
 
-    setState(prev => {
-      const nextState = {
-        ...prev,
-        currentUser: null,
-        themeSettings: {
-          colorMode: 'light',
-          primaryColor: 'indigo',
-          fontStyle: 'inter',
-          borderRadius: 'rounded'
-        },
-        displaySettings: {
-          webScale: 75,
-          mobileScale: 100,
-          sidebarPosition: 'left',
-          subMenuPosition: 'left'
-        },
-        dashboardLayout: [
-          { i: 'delivery_kpi', x: 0, y: 0, w: 12, h: 4, type: 'delivery_kpi', static: false },
-          { i: 'shortcuts', x: 0, y: 4, w: 4, h: 4, type: 'shortcuts', static: false },
-          { i: 'todo_list', x: 4, y: 4, w: 4, h: 6, type: 'todo_list', static: false },
-          { i: 'calendar', x: 8, y: 4, w: 4, h: 6, type: 'calendar', static: false }
-        ],
-        dashboardBackground: null,
-        documentWarehouseBinders: null
-      };
-      localStorage.setItem('aj_synthetic_erp', JSON.stringify(nextState));
-      return nextState;
-    });
+    setState(prev => ({
+      ...prev,
+      currentUser: null,
+      auditLogs: [logoutLog, ...(prev.auditLogs || [])].slice(0, 200)
+    }));
   };
 
   const setCollection = (collection, data) => {
@@ -4774,6 +4836,9 @@ export const AppProvider = ({ children }) => {
       networkQuality,
       syncStatus,
       isInitialLoadCompleted,
+      isSessionValid: () => validateCurrentSession().isValid,
+      getRateLimitStatus,
+      validateSession: validateCurrentSession,
       activeSessions
     }}>
       {children}

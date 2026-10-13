@@ -38,6 +38,25 @@ const RootLayout = () => {
   }, [location.pathname]);
 
   useEffect(() => {
+    const handleSessionExpired = (e) => {
+      const reason = e?.detail?.reason || 'session_expired';
+      setNotificationMsg(
+        reason === 'inactivity_timeout' 
+          ? "Session locked due to 60 minutes of inactivity. Please sign in again."
+          : "Session expired or invalidated. Please sign in to continue."
+      );
+      setNotificationType("warning");
+      setShowNotification(true);
+      setTimeout(() => {
+        window.location.href = '/login?reason=' + encodeURIComponent(reason);
+      }, 1400);
+    };
+
+    window.addEventListener('fv_session_expired', handleSessionExpired);
+    return () => window.removeEventListener('fv_session_expired', handleSessionExpired);
+  }, []);
+
+  useEffect(() => {
       // 1. Detect transition from Online -> Offline
       if (!isOnline && lastState.isOnline) {
           setNotificationMsg("Connection Lost. Working in local offline mode.");
@@ -116,11 +135,12 @@ const RootLayout = () => {
 };
 
 const ProtectedRoute = ({ children, moduleName }) => {
-  const { hasPermission, state } = useApp();
+  const { hasPermission, state, isSessionValid } = useApp();
   const location = useLocation();
   
-  if (!state.currentUser) {
-    return <Navigate to="/login" replace />;
+  // Strictly enforce authenticated user and valid cryptographic session token
+  if (!state.currentUser || (isSessionValid && !isSessionValid())) {
+    return <Navigate to="/login" state={{ from: location.pathname }} replace />;
   }
 
   if (state.currentUser?.requirePasswordChange && location.pathname !== '/profile') {
@@ -142,8 +162,9 @@ const ProtectedRoute = ({ children, moduleName }) => {
 };
 
 const IndexRedirect = () => {
-  const { state, hasPermission } = useApp();
-  if (state?.currentUser) {
+  const { state, hasPermission, isSessionValid } = useApp();
+  const isValidSession = state?.currentUser && (!isSessionValid || isSessionValid());
+  if (isValidSession) {
     if (state.currentUser.requirePasswordChange) {
       return <Navigate to="/profile?forceChange=true" replace />;
     }
