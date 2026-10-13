@@ -13,6 +13,7 @@ import React, { createContext, useContext, useState, useEffect, useRef } from 'r
 import { applyTheme } from '../utils/theme';
 import { supabase } from '../utils/supabaseClient';
 import { getInitialFGConfig, saveFGConfig } from '../utils/fgCombinationUtils';
+import { DEFAULT_CHART_OF_ACCOUNTS, SEED_FINANCE_DATA } from '../utils/financeEngine';
 
 const AppContext = createContext();
 const BUILD_VERSION = '20260715_v5';
@@ -206,6 +207,7 @@ const seedStateIfEmpty = (stateObj) => {
     'otherConsumptions',
     'paymentVouchers',
     'chartOfAccounts',
+    'vouchers',
     'chats',
     'hr_employees_list',
     'hr_uploaded_attendance',
