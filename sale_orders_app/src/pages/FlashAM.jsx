@@ -756,9 +756,20 @@ export default function FlashAM() {
               <div className="text-xs font-bold text-white truncate">{savedUser?.name || 'Administrator'}</div>
               <div className="text-[10px] text-slate-400 truncate">Flash AM Attendance Terminal</div>
             </div>
-            <div className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-              <span className="text-[10px] text-emerald-400 font-bold uppercase">{isOnline ? 'Online' : 'Offline'}</span>
+            <div className="flex items-center gap-2">
+              <a
+                href="/downloads/FlashAM.apk"
+                download="FlashAM.apk"
+                className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[10px] font-bold flex items-center gap-1 hover:bg-emerald-500/30 transition-all"
+                title="Download Android APK file"
+              >
+                <span className="material-symbols-outlined text-[12px]">android</span>
+                APK
+              </a>
+              <div className="flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span className="text-[10px] text-emerald-400 font-bold uppercase">{isOnline ? 'Online' : 'Offline'}</span>
+              </div>
             </div>
           </div>
 
@@ -901,6 +912,15 @@ export default function FlashAM() {
               </span>
             </button>
           )}
+
+          <a
+            href="/downloads/FlashAM.apk"
+            download="FlashAM.apk"
+            className="p-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 text-xs border border-emerald-500/30 transition-all flex items-center justify-center shadow-sm shadow-emerald-500/20"
+            title="Download Flash AM Android APK File"
+          >
+            <span className="material-symbols-outlined text-[18px]">android</span>
+          </a>
 
           <button
             onClick={handleLockApp}

@@ -1,11 +1,11 @@
 {
-  "appId": "com.flashvision.app",
-  "appName": "FlashVision",
+  "appId": "com.flashvision.flasham",
+  "appName": "Flash AM",
   "webDir": "dist",
-  "bundledWebRuntime": false,
   "plugins": {
-    "Keyboard": {
-      "resize": "body"
+    "SplashScreen": {
+      "launchShowDuration": 1500,
+      "backgroundColor": "#0b0e14"
     }
   }
 }

@@ -2188,6 +2188,17 @@ export default function HRAttendance({ isMobile }) {
               Flash AM (Mobile)
             </a>
 
+            {/* Direct Flash AM Android APK Download */}
+            <a 
+              href="/downloads/FlashAM.apk" 
+              download="FlashAM.apk"
+              className="px-4 py-2.5 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border border-emerald-500/30 rounded-xl text-xs font-black flex items-center gap-2 transition-all active:scale-[0.97] cursor-pointer shadow-md shadow-emerald-500/10"
+              title="Direct Download Flash AM Android APK file for mobile installation"
+            >
+              <span className="material-symbols-outlined text-[18px]">android</span>
+              Download APK
+            </a>
+
             {/* Verify & Reconcile Button */}
             {canReconcile && (
               <button 

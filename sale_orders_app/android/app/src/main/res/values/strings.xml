@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">FlashVision</string>
-    <string name="title_activity_main">FlashVision</string>
-    <string name="package_name">com.flashvision.app</string>
-    <string name="custom_url_scheme">com.flashvision.app</string>
+    <string name="app_name">Flash AM</string>
+    <string name="title_activity_main">Flash AM</string>
+    <string name="package_name">com.flashvision.flasham</string>
+    <string name="custom_url_scheme">com.flashvision.flasham</string>
 </resources>
