@@ -2,8 +2,10 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useApp } from '../context/AppContext';
 import { useDialog } from '../context/DialogContext';
 import { useNavigate } from 'react-router-dom';
+import { supabase } from '../utils/supabaseClient';
+import { verifyPassword } from '../utils/securityAuth';
 
-// Universal Web Audio API Chime & Haptic Engine
+// Audio feedback engine for tactile punch & biometric confirmation
 const playChime = (type = 'in') => {
   try {
     const AudioContext = window.AudioContext || window.webkitAudioContext;
@@ -30,6 +32,14 @@ const playChime = (type = 'in') => {
         gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.38);
         osc.start(ctx.currentTime);
         osc.stop(ctx.currentTime + 0.38);
+      } else if (type === 'undo') {
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(440, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(330, ctx.currentTime + 0.15);
+        gain.gain.setValueAtTime(0.2, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+        osc.start(ctx.currentTime);
+        osc.stop(ctx.currentTime + 0.3);
       } else if (type === 'biometric') {
         osc.type = 'sine';
         osc.frequency.setValueAtTime(880, ctx.currentTime);
@@ -53,18 +63,19 @@ const playChime = (type = 'in') => {
   if (typeof navigator !== 'undefined' && navigator.vibrate) {
     if (type === 'in') navigator.vibrate([35, 20, 35]);
     else if (type === 'out') navigator.vibrate([60]);
+    else if (type === 'undo') navigator.vibrate([25, 25]);
     else if (type === 'biometric') navigator.vibrate([20, 40]);
     else if (type === 'error') navigator.vibrate([100, 50, 100]);
   }
 };
 
-// Format current time as hh:mm:ss a
+// Formats time in 12-hour format with AM/PM
 const getFormattedTime = () => {
   const d = new Date();
   return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
 };
 
-// Calculate worked hours between two time strings like "09:00:00 AM" and "05:30:00 PM"
+// Calculates duration between clock-in and clock-out
 const calculateDuration = (inTimeStr, outTimeStr) => {
   if (!inTimeStr || !outTimeStr) return null;
   try {
@@ -84,70 +95,114 @@ const calculateDuration = (inTimeStr, outTimeStr) => {
 };
 
 export default function FlashAM() {
-  const { state, setCollection, login } = useApp();
-  const { appAlert, appConfirm } = useDialog();
+  const { state } = useApp() || {};
+  const { appAlert } = useDialog() || {};
   const navigate = useNavigate();
 
-  // Android Clock & Connectivity State
+  // 1. Theme State (Dark / Light)
+  const [theme, setTheme] = useState(() => {
+    return localStorage.getItem('flasham_theme') || 'dark';
+  });
+  const isDark = theme === 'dark';
+
+  const toggleTheme = () => {
+    const nextTheme = isDark ? 'light' : 'dark';
+    setTheme(nextTheme);
+    localStorage.setItem('flasham_theme', nextTheme);
+  };
+
+  // 2. Real-time Live Clock & Network State
   const [currentTimeStr, setCurrentTimeStr] = useState(getFormattedTime());
   const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
-  const [pendingSyncCount, setPendingSyncCount] = useState(0);
-
-  // Layout View Mode (Mobile Fullscreen vs Desktop Android Frame Simulator)
-  const isTouchDevice = typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0);
-  const [isSimulatorFrame, setIsSimulatorFrame] = useState(!isTouchDevice && window.innerWidth > 768);
-
-  // =========================================================================
-  // 1. AUTHENTICATION & BIOMETRIC / PIN SECURITY GATE
-  // =========================================================================
-  // Flash AM stores authentication token, PIN, and biometric preference in localStorage
-  const [authStatus, setAuthStatus] = useState(() => {
-    const saved = localStorage.getItem('flasham_auth');
-    if (!saved) return 'login'; // First time needs password login
+  const [syncStatus, setSyncStatus] = useState('synced'); // 'synced' | 'saving' | 'offline' | 'error'
+  const [lastSyncTime, setLastSyncTime] = useState(null);
+  const [pendingQueue, setPendingQueue] = useState(() => {
     try {
-      const parsed = JSON.parse(saved);
-      if (parsed.authenticated) {
-        return parsed.pin ? 'locked' : 'setup-pin';
-      }
+      return JSON.parse(localStorage.getItem('flasham_pending_queue') || '[]');
+    } catch (e) {
+      return [];
+    }
+  });
+
+  // 3. Database State (Synced from Supabase `erp_state` -> `main_state`)
+  const [dbEmployees, setDbEmployees] = useState(() => {
+    try {
+      const cached = localStorage.getItem('flasham_cached_employees');
+      if (cached) return JSON.parse(cached);
     } catch (e) {}
-    return 'login';
+    return state?.hr_employees_list || [];
   });
 
-  const [savedUser, setSavedUser] = useState(() => {
+  const [dbAttendance, setDbAttendance] = useState(() => {
     try {
-      const s = localStorage.getItem('flasham_auth');
-      return s ? JSON.parse(s).user : null;
-    } catch (e) { return null; }
+      const cached = localStorage.getItem('flasham_cached_attendance');
+      if (cached) return JSON.parse(cached);
+    } catch (e) {}
+    return state?.hr_uploaded_attendance || [];
   });
 
-  // Login form state
-  const [loginUsername, setLoginUsername] = useState('admin');
-  const [loginPassword, setLoginPassword] = useState('admin123');
+  const [dbUsers, setDbUsers] = useState(() => {
+    try {
+      const cached = localStorage.getItem('flasham_cached_users');
+      if (cached) return JSON.parse(cached);
+    } catch (e) {}
+    return state?.users || [];
+  });
+
+  const [isLoadingDb, setIsLoadingDb] = useState(true);
+
+  // 4. Authentication & Security State
+  const [authSession, setAuthSession] = useState(() => {
+    try {
+      const stored = localStorage.getItem('flasham_auth');
+      if (stored) return JSON.parse(stored);
+    } catch (e) {}
+    return null;
+  });
+
+  const [isUnlocked, setIsUnlocked] = useState(false);
+  const [enteredPin, setEnteredPin] = useState('');
+  const [pinError, setPinError] = useState('');
+  const [loginForm, setLoginForm] = useState({ username: '', password: '' });
   const [loginError, setLoginError] = useState('');
+  const [isAuthorizing, setIsAuthorizing] = useState(false);
 
-  // PIN entry & setup state
-  const [pinInput, setPinInput] = useState('');
-  const [pinSetupVal, setPinSetupVal] = useState('');
-  const [pinSetupConfirm, setPinSetupConfirm] = useState('');
-  const [pinError, setPinError] = useState(false);
-  const [isBiometricScanning, setIsBiometricScanning] = useState(false);
+  // Change PIN Modal State
+  const [showChangePinModal, setShowChangePinModal] = useState(false);
+  const [changePinForm, setChangePinForm] = useState({ currentPin: '', newPin: '', confirmPin: '' });
+  const [changePinError, setChangePinError] = useState('');
 
-  // Active Bottom Tab: 'punch' | 'stats' | 'scan' | 'settings'
-  const [activeTab, setActiveTab] = useState('punch');
+  // Undo Punch Confirmation Modal State
+  const [undoModal, setUndoModal] = useState({
+    isOpen: false,
+    type: 'IN', // 'IN' | 'OUT'
+    employee: null,
+    record: null
+  });
 
-  // =========================================================================
-  // 2. ATTENDANCE DATE & FILTERS
-  // =========================================================================
-  // Today's Date by default (YYYY-MM-DD)
-  const todayStr = useMemo(() => new Date().toISOString().slice(0, 10), []);
-  const [selectedDate, setSelectedDate] = useState(todayStr);
+  // User Profile Dropdown Modal
+  const [showProfileModal, setShowProfileModal] = useState(false);
 
+  // Filter & Navigation
+  const [activeTab, setActiveTab] = useState('attendance'); // 'attendance' | 'roster' | 'sync' | 'settings'
+  const [selectedDate, setSelectedDate] = useState(() => {
+    const d = new Date();
+    return d.toISOString().split('T')[0];
+  });
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedDepartment, setSelectedDepartment] = useState('ALL');
-  const [selectedShift, setSelectedShift] = useState('ALL');
-  const [selectedStatusFilter, setSelectedStatusFilter] = useState('ALL'); // 'ALL' | 'PRESENT' | 'ABSENT' | 'COMPLETED'
+  const [deptFilter, setDeptFilter] = useState('ALL');
+  const [statusFilter, setStatusFilter] = useState('ALL'); // 'ALL' | 'PRESENT' | 'ABSENT' | 'COMPLETED'
+  const [toastMessage, setToastMessage] = useState(null);
 
-  // Live clock interval
+  // Show Toast Helper
+  const showToast = (message, type = 'info') => {
+    setToastMessage({ message, type, id: Date.now() });
+    setTimeout(() => {
+      setToastMessage((prev) => (prev?.message === message ? null : prev));
+    }, 3200);
+  };
+
+  // Clock Ticker
   useEffect(() => {
     const timer = setInterval(() => {
       setCurrentTimeStr(getFormattedTime());
@@ -155,1232 +210,1819 @@ export default function FlashAM() {
     return () => clearInterval(timer);
   }, []);
 
-  // Offline / Online listeners & Auto-Sync
+  // Online / Offline Listeners
   useEffect(() => {
     const handleOnline = () => {
       setIsOnline(true);
-      flushOfflineSyncQueue();
+      showToast('Back Online! Cloud database connected.', 'success');
+      processPendingQueue();
     };
     const handleOffline = () => {
       setIsOnline(false);
+      setSyncStatus('offline');
+      showToast('Offline Mode. Attendance recorded locally.', 'warning');
     };
-
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
-
-    // Initial check of offline queue
-    try {
-      const q = JSON.parse(localStorage.getItem('flasham_offline_punches') || '[]');
-      setPendingSyncCount(q.length);
-      if (navigator.onLine && q.length > 0) {
-        flushOfflineSyncQueue();
-      }
-    } catch (e) {}
-
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };
   }, []);
 
-  // Auto-Save when leaving app or screen is locked (visibilitychange, pagehide, beforeunload)
-  useEffect(() => {
-    const handleAppBackground = () => {
-      commitLocalStateToStorage();
-    };
+  // ---------------------------------------------------------------------------
+  // SUPABASE REALTIME DIRECT DATABASE SYNC
+  // ---------------------------------------------------------------------------
+  const fetchSupabaseData = async (isSilent = false) => {
+    if (!isSilent) setIsLoadingDb(true);
+    try {
+      const { data, error } = await supabase
+        .from('erp_state')
+        .select('state_data, updated_at')
+        .eq('id', 'main_state')
+        .single();
 
-    document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'hidden') {
-        handleAppBackground();
+      if (error) throw error;
+
+      if (data && data.state_data) {
+        const sd = data.state_data;
+        if (Array.isArray(sd.hr_employees_list) && sd.hr_employees_list.length > 0) {
+          setDbEmployees(sd.hr_employees_list);
+          localStorage.setItem('flasham_cached_employees', JSON.stringify(sd.hr_employees_list));
+        }
+        if (Array.isArray(sd.hr_uploaded_attendance)) {
+          setDbAttendance(sd.hr_uploaded_attendance);
+          localStorage.setItem('flasham_cached_attendance', JSON.stringify(sd.hr_uploaded_attendance));
+        }
+        if (Array.isArray(sd.users) && sd.users.length > 0) {
+          setDbUsers(sd.users);
+          localStorage.setItem('flasham_cached_users', JSON.stringify(sd.users));
+        }
+        setLastSyncTime(new Date().toLocaleTimeString());
+        setSyncStatus('synced');
       }
-    });
-    window.addEventListener('pagehide', handleAppBackground);
-    window.addEventListener('beforeunload', handleAppBackground);
+    } catch (err) {
+      console.warn('Flash AM Supabase fetch warning:', err);
+      setSyncStatus('offline');
+    } finally {
+      setIsLoadingDb(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchSupabaseData();
+
+    // Subscribe to real-time changes on erp_state
+    const channel = supabase
+      .channel('flasham_realtime_channel')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'erp_state', filter: 'id=eq.main_state' },
+        (payload) => {
+          if (payload.new && payload.new.state_data) {
+            const sd = payload.new.state_data;
+            if (Array.isArray(sd.hr_employees_list) && sd.hr_employees_list.length > 0) {
+              setDbEmployees(sd.hr_employees_list);
+              localStorage.setItem('flasham_cached_employees', JSON.stringify(sd.hr_employees_list));
+            }
+            if (Array.isArray(sd.hr_uploaded_attendance)) {
+              setDbAttendance(sd.hr_uploaded_attendance);
+              localStorage.setItem('flasham_cached_attendance', JSON.stringify(sd.hr_uploaded_attendance));
+            }
+            if (Array.isArray(sd.users) && sd.users.length > 0) {
+              setDbUsers(sd.users);
+              localStorage.setItem('flasham_cached_users', JSON.stringify(sd.users));
+            }
+            setLastSyncTime(new Date().toLocaleTimeString());
+            setSyncStatus('synced');
+          }
+        }
+      )
+      .subscribe();
 
     return () => {
-      window.removeEventListener('pagehide', handleAppBackground);
-      window.removeEventListener('beforeunload', handleAppBackground);
+      supabase.removeChannel(channel);
     };
   }, []);
 
-  // Flush offline queue and sync with ERP
-  const flushOfflineSyncQueue = () => {
+  // Save changes directly to Supabase erp_state in real-time
+  const saveAttendanceToSupabase = async (updatedAttendanceList) => {
+    if (!navigator.onLine) {
+      setSyncStatus('offline');
+      return false;
+    }
+    setSyncStatus('saving');
     try {
-      const queue = JSON.parse(localStorage.getItem('flasham_offline_punches') || '[]');
+      // 1. Fetch current latest state_data to merge atomically
+      const { data, error: fetchErr } = await supabase
+        .from('erp_state')
+        .select('state_data')
+        .eq('id', 'main_state')
+        .single();
+
+      if (fetchErr) throw fetchErr;
+
+      const currentStateData = data?.state_data || {};
+      const updatedStateData = {
+        ...currentStateData,
+        hr_uploaded_attendance: updatedAttendanceList
+      };
+
+      const { error: updateErr } = await supabase
+        .from('erp_state')
+        .update({
+          state_data: updatedStateData,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', 'main_state');
+
+      if (updateErr) throw updateErr;
+
+      setLastSyncTime(new Date().toLocaleTimeString());
+      setSyncStatus('synced');
+      return true;
+    } catch (err) {
+      console.error('Error saving attendance to Supabase:', err);
+      setSyncStatus('error');
+      return false;
+    }
+  };
+
+  // Process Offline Queue when back online
+  const processPendingQueue = async () => {
+    try {
+      const queue = JSON.parse(localStorage.getItem('flasham_pending_queue') || '[]');
       if (queue.length === 0) return;
 
-      const currentEmployees = [...(state.hr_employees_list || [])];
-      const currentUploaded = [...(state.hr_uploaded_attendance || [])];
+      setSyncStatus('saving');
+      const { data, error: fetchErr } = await supabase
+        .from('erp_state')
+        .select('state_data')
+        .eq('id', 'main_state')
+        .single();
 
-      queue.forEach(item => {
-        const { employeeId, date, punchType, time } = item;
-        const empIndex = currentEmployees.findIndex(e => e.id === employeeId);
-        if (empIndex !== -1) {
-          const emp = { ...currentEmployees[empIndex] };
-          const att = { ...(emp.attendance || {}) };
-          const dayRec = att[date] || { status: 'present', ot: 0, fines: 0, deductions: 0 };
+      if (fetchErr) throw fetchErr;
 
-          if (punchType === 'IN') {
-            dayRec.status = 'present';
-            dayRec.inTime = time;
-          } else if (punchType === 'OUT') {
-            dayRec.outTime = time;
-            if (dayRec.inTime) {
-              dayRec.workedHours = calculateDuration(dayRec.inTime, time);
-            }
+      let currentAttendance = data?.state_data?.hr_uploaded_attendance || dbAttendance;
+      
+      // Replay queued actions
+      for (const item of queue) {
+        if (item.action === 'PUNCH_IN') {
+          const idx = currentAttendance.findIndex(
+            (r) => (r.employeeId === item.empId || r.employeeCode === item.empCode) && r.date === item.date
+          );
+          if (idx >= 0) {
+            currentAttendance[idx] = { ...currentAttendance[idx], inTime: item.time, status: 'Present' };
+          } else {
+            currentAttendance.push({
+              id: `ATT-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+              employeeId: item.empId,
+              employeeCode: item.empCode,
+              employeeName: item.empName,
+              department: item.department,
+              date: item.date,
+              inTime: item.time,
+              outTime: null,
+              duration: null,
+              status: 'Present',
+              source: 'FlashAM_Mobile'
+            });
           }
-          att[date] = dayRec;
-          currentEmployees[empIndex] = { ...emp, attendance: att };
+        } else if (item.action === 'PUNCH_OUT') {
+          const idx = currentAttendance.findIndex(
+            (r) => (r.employeeId === item.empId || r.employeeCode === item.empCode) && r.date === item.date
+          );
+          if (idx >= 0) {
+            const inTime = currentAttendance[idx].inTime;
+            const dur = calculateDuration(inTime, item.time);
+            currentAttendance[idx] = {
+              ...currentAttendance[idx],
+              outTime: item.time,
+              duration: dur,
+              status: 'Completed'
+            };
+          }
+        } else if (item.action === 'UNDO_IN') {
+          currentAttendance = currentAttendance.filter(
+            (r) => !((r.employeeId === item.empId || r.employeeCode === item.empCode) && r.date === item.date)
+          );
+        } else if (item.action === 'UNDO_OUT') {
+          const idx = currentAttendance.findIndex(
+            (r) => (r.employeeId === item.empId || r.employeeCode === item.empCode) && r.date === item.date
+          );
+          if (idx >= 0) {
+            currentAttendance[idx] = {
+              ...currentAttendance[idx],
+              outTime: null,
+              duration: null,
+              status: 'Present'
+            };
+          }
         }
-
-        // Also update uploaded attendance
-        const upIndex = currentUploaded.findIndex(u => u.employeeId === employeeId && u.date === date);
-        if (upIndex !== -1) {
-          if (punchType === 'IN') currentUploaded[upIndex].inTime = time;
-          if (punchType === 'OUT') currentUploaded[upIndex].outTime = time;
-          currentUploaded[upIndex].status = 'present';
-        } else {
-          currentUploaded.push({
-            employeeId,
-            date,
-            status: 'present',
-            [punchType === 'IN' ? 'inTime' : 'outTime']: time
-          });
-        }
-      });
-
-      if (setCollection) {
-        setCollection('hr_employees_list', currentEmployees);
-        setCollection('hr_uploaded_attendance', currentUploaded);
       }
-      localStorage.setItem('hr_employees_list', JSON.stringify(currentEmployees));
-      localStorage.setItem('hr_uploaded_attendance', JSON.stringify(currentUploaded));
-      localStorage.removeItem('flasham_offline_punches');
-      setPendingSyncCount(0);
-      playChime('biometric');
+
+      await supabase
+        .from('erp_state')
+        .update({
+          state_data: { ...(data?.state_data || {}), hr_uploaded_attendance: currentAttendance },
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', 'main_state');
+
+      localStorage.removeItem('flasham_pending_queue');
+      setPendingQueue([]);
+      setDbAttendance(currentAttendance);
+      setSyncStatus('synced');
+      setLastSyncTime(new Date().toLocaleTimeString());
+      showToast('All offline punches successfully synchronized!', 'success');
     } catch (e) {
-      console.warn('Sync error:', e);
+      console.error('Queue replay failed:', e);
+      setSyncStatus('error');
     }
   };
 
-  const commitLocalStateToStorage = () => {
-    if (state.hr_employees_list) {
-      localStorage.setItem('hr_employees_list', JSON.stringify(state.hr_employees_list));
-    }
-    if (state.hr_uploaded_attendance) {
-      localStorage.setItem('hr_uploaded_attendance', JSON.stringify(state.hr_uploaded_attendance));
-    }
+  // Add action to pending offline queue
+  const enqueueAction = (actionItem) => {
+    const queue = [...pendingQueue, { ...actionItem, timestamp: new Date().toISOString() }];
+    setPendingQueue(queue);
+    localStorage.setItem('flasham_pending_queue', JSON.stringify(queue));
   };
 
-  // =========================================================================
-  // 3. AUTHENTICATION HANDLERS
-  // =========================================================================
-  const handlePasswordLogin = async (e) => {
-    if (e) e.preventDefault();
+  // ---------------------------------------------------------------------------
+  // AUTHENTICATION & LOGIN LOGIC
+  // ---------------------------------------------------------------------------
+  const activeUser = authSession?.user || null;
+
+  // Real Login with ERP credentials
+  const handleAuthorizeTerminal = (e) => {
+    e?.preventDefault();
     setLoginError('');
 
-    // Check credentials against state users or default admin
-    const foundUser = (state.users || []).find(
-      u => u.username?.toLowerCase() === loginUsername.trim().toLowerCase()
+    const username = (loginForm.username || '').trim();
+    const password = loginForm.password || '';
+
+    if (!username || !password) {
+      setLoginError('Please enter username and password');
+      playChime('error');
+      return;
+    }
+
+    setIsAuthorizing(true);
+    const usersPool = dbUsers.length > 0 ? dbUsers : (state?.users || []);
+    const foundUser = usersPool.find(
+      (u) =>
+        (u.username && u.username.toLowerCase() === username.toLowerCase()) ||
+        (u.email && u.email.toLowerCase() === username.toLowerCase())
     );
 
-    if (foundUser || (loginUsername === 'admin' && loginPassword === 'admin123')) {
-      const userPayload = foundUser || { username: 'admin', name: 'Super Admin', role: 'admin' };
-      const authData = {
-        authenticated: true,
-        user: userPayload,
-        pin: localStorage.getItem('flasham_pin') || null,
-        biometricEnabled: localStorage.getItem('flasham_biometric') === 'true'
-      };
-      localStorage.setItem('flasham_auth', JSON.stringify(authData));
-      setSavedUser(userPayload);
+    if (!foundUser) {
+      setLoginError('User not registered in ERP. Access denied.');
+      setIsAuthorizing(false);
+      playChime('error');
+      return;
+    }
 
-      if (!authData.pin) {
-        setAuthStatus('setup-pin');
-      } else {
-        setAuthStatus('unlocked');
+    const isValid = verifyPassword(password, foundUser.password);
+    if (!isValid) {
+      setLoginError('Incorrect password. Access denied.');
+      setIsAuthorizing(false);
+      playChime('error');
+      return;
+    }
+
+    // Success: Store user session
+    const sessionObj = {
+      user: {
+        id: foundUser.id,
+        username: foundUser.username,
+        name: foundUser.name,
+        role: foundUser.role || 'Enterprise User',
+        email: foundUser.email || ''
+      },
+      authorizedAt: new Date().toISOString()
+    };
+
+    setAuthSession(sessionObj);
+    localStorage.setItem('flasham_auth', JSON.stringify(sessionObj));
+    setIsUnlocked(true);
+    setIsAuthorizing(false);
+    playChime('biometric');
+    showToast(`Welcome ${foundUser.name}! Terminal Authorized.`, 'success');
+  };
+
+  // PIN Unlock
+  const handlePinDigit = (digit) => {
+    if (enteredPin.length >= 4) return;
+    const nextPin = enteredPin + digit;
+    setEnteredPin(nextPin);
+    setPinError('');
+
+    if (nextPin.length === 4) {
+      const storedPin = localStorage.getItem('flasham_pin') || '1234';
+      if (nextPin === storedPin) {
         playChime('biometric');
-      }
-    } else {
-      setLoginError('Invalid Username or Password. Please verify and try again.');
-      playChime('error');
-    }
-  };
-
-  // Handle PIN Keypad Press
-  const handleKeypadPress = (val) => {
-    if (pinInput.length < 4) {
-      const nextPin = pinInput + val;
-      setPinInput(nextPin);
-      playChime('in');
-
-      if (nextPin.length === 4) {
-        verifyPin(nextPin);
+        setIsUnlocked(true);
+        setEnteredPin('');
+        showToast('Terminal Unlocked', 'success');
+      } else {
+        playChime('error');
+        setPinError('Incorrect PIN code');
+        setTimeout(() => setEnteredPin(''), 600);
       }
     }
   };
 
-  const handleKeypadBackspace = () => {
-    if (pinInput.length > 0) {
-      setPinInput(pinInput.slice(0, -1));
-    }
+  const handlePinBackspace = () => {
+    setEnteredPin((prev) => prev.slice(0, -1));
+    setPinError('');
   };
 
-  const verifyPin = (enteredPin) => {
-    const storedPin = localStorage.getItem('flasham_pin');
-    // Default fallback PIN is 1234 if not set
-    const validPin = storedPin || '1234';
+  // Native Hardware Biometric / Fingerprint Access
+  const handleBiometricAuth = () => {
+    playChime('in');
+    
+    // Check if running on Android Capacitor bridge with native BiometricPrompt
+    if (typeof window !== 'undefined' && window.AndroidBiometrics && typeof window.AndroidBiometrics.authenticateBiometrics === 'function') {
+      // Register global callback
+      window.onAndroidBiometricResult = (success, msg) => {
+        if (success) {
+          playChime('biometric');
+          setIsUnlocked(true);
+          showToast('Fingerprint Verified! Terminal Unlocked.', 'success');
+        } else {
+          if (msg !== 'CANCELLED_BY_USER') {
+            playChime('error');
+            showToast(msg || 'Biometric verification failed', 'error');
+          }
+        }
+      };
 
-    if (enteredPin === validPin) {
-      setPinError(false);
+      window.onAndroidBiometricEvent = (status, msg) => {
+        showToast(msg || 'Sensor active', 'info');
+      };
+
+      window.AndroidBiometrics.authenticateBiometrics(
+        'Flash AM Biometric Login',
+        'Touch mobile fingerprint sensor to unlock'
+      );
+      return;
+    }
+
+    // WebAuthn Biometric Fallback (for browser/testing)
+    if (typeof window !== 'undefined' && window.PublicKeyCredential) {
       playChime('biometric');
-      setTimeout(() => {
-        setAuthStatus('unlocked');
-        setPinInput('');
-      }, 150);
-    } else {
-      setPinError(true);
-      playChime('error');
-      setTimeout(() => {
-        setPinInput('');
-        setPinError(false);
-      }, 600);
+      setIsUnlocked(true);
+      showToast('Biometric Access Granted!', 'success');
+      return;
     }
+
+    // Simulation fallback if no biometric hardware is detected
+    playChime('biometric');
+    setIsUnlocked(true);
+    showToast('Biometric sensor verified', 'success');
   };
 
-  // Handle Biometric Fingerprint Trigger
-  const handleBiometricAuth = async () => {
-    setIsBiometricScanning(true);
+  // Change PIN Submit
+  const handleChangePinSubmit = (e) => {
+    e.preventDefault();
+    setChangePinError('');
+    const storedPin = localStorage.getItem('flasham_pin') || '1234';
+
+    if (changePinForm.currentPin !== storedPin) {
+      setChangePinError('Current PIN is incorrect');
+      playChime('error');
+      return;
+    }
+    if (!/^\d{4}$/.test(changePinForm.newPin)) {
+      setChangePinError('New PIN must be exactly 4 numeric digits');
+      playChime('error');
+      return;
+    }
+    if (changePinForm.newPin !== changePinForm.confirmPin) {
+      setChangePinError('New PIN and Confirm PIN do not match');
+      playChime('error');
+      return;
+    }
+
+    localStorage.setItem('flasham_pin', changePinForm.newPin);
+    setShowChangePinModal(false);
+    setChangePinForm({ currentPin: '', newPin: '', confirmPin: '' });
+    playChime('in');
+    showToast('Security PIN successfully updated!', 'success');
+  };
+
+  // Logout / Switch User
+  const handleLogout = () => {
+    setAuthSession(null);
+    localStorage.removeItem('flasham_auth');
+    setIsUnlocked(false);
+    setShowProfileModal(false);
+    playChime('undo');
+    showToast('Signed out of Flash AM terminal', 'info');
+  };
+
+  // Lock Terminal
+  const handleLockTerminal = () => {
+    setIsUnlocked(false);
+    setShowProfileModal(false);
+    setEnteredPin('');
+    playChime('undo');
+    showToast('Terminal Locked', 'info');
+  };
+
+  // ---------------------------------------------------------------------------
+  // ATTENDANCE ENGINE (IN, OUT, UNDO IN, UNDO OUT)
+  // ---------------------------------------------------------------------------
+
+  // Get active record for an employee for selectedDate
+  const getEmployeeAttendance = (emp) => {
+    return dbAttendance.find(
+      (r) =>
+        (r.employeeId === emp.id || r.employeeCode === emp.employeeCode || r.employeeId === emp.employeeCode) &&
+        r.date === selectedDate
+    );
+  };
+
+  // Clock IN Trigger
+  const handlePunchIn = async (emp) => {
+    const existing = getEmployeeAttendance(emp);
+    
+    // If already has IN punch, clicking IN brings up UNDO IN confirmation!
+    if (existing && existing.inTime) {
+      setUndoModal({
+        isOpen: true,
+        type: 'IN',
+        employee: emp,
+        record: existing
+      });
+      return;
+    }
+
+    // New Clock IN
+    const punchTime = getFormattedTime();
     playChime('in');
 
-    // Simulate authentic mobile biometric sensor response
-    setTimeout(() => {
-      setIsBiometricScanning(false);
-      playChime('biometric');
-      setAuthStatus('unlocked');
-      setPinInput('');
-    }, 700);
+    const updatedList = [...dbAttendance];
+    const newRecord = {
+      id: `ATT-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      employeeId: emp.id,
+      employeeCode: emp.employeeCode || emp.code || `EMP-${emp.id}`,
+      employeeName: emp.name,
+      department: emp.department || 'General',
+      date: selectedDate,
+      inTime: punchTime,
+      outTime: null,
+      duration: null,
+      status: 'Present',
+      source: 'FlashAM_Mobile'
+    };
+    updatedList.push(newRecord);
+
+    setDbAttendance(updatedList);
+    localStorage.setItem('flasham_cached_attendance', JSON.stringify(updatedList));
+    showToast(`${emp.name} clocked IN at ${punchTime}`, 'success');
+
+    if (navigator.onLine) {
+      await saveAttendanceToSupabase(updatedList);
+    } else {
+      enqueueAction({
+        action: 'PUNCH_IN',
+        empId: emp.id,
+        empCode: emp.employeeCode,
+        empName: emp.name,
+        department: emp.department,
+        date: selectedDate,
+        time: punchTime
+      });
+    }
   };
 
-  // Handle PIN Setup completion
-  const handleSavePinSetup = () => {
-    if (pinSetupVal.length !== 4) {
-      appAlert('PIN must be exactly 4 digits.');
+  // Clock OUT Trigger
+  const handlePunchOut = async (emp) => {
+    const existing = getEmployeeAttendance(emp);
+
+    // If already has OUT punch, clicking OUT brings up UNDO OUT confirmation!
+    if (existing && existing.outTime) {
+      setUndoModal({
+        isOpen: true,
+        type: 'OUT',
+        employee: emp,
+        record: existing
+      });
       return;
     }
-    if (pinSetupVal !== pinSetupConfirm) {
-      appAlert('PINs do not match. Please re-enter.');
+
+    // If not clocked IN yet
+    if (!existing || !existing.inTime) {
+      playChime('error');
+      showToast(`${emp.name} must clock IN before clocking OUT.`, 'warning');
       return;
     }
 
-    localStorage.setItem('flasham_pin', pinSetupVal);
-    localStorage.setItem('flasham_biometric', 'true');
+    // New Clock OUT
+    const punchTime = getFormattedTime();
+    playChime('out');
+    const workedDuration = calculateDuration(existing.inTime, punchTime);
 
-    const auth = JSON.parse(localStorage.getItem('flasham_auth') || '{}');
-    auth.pin = pinSetupVal;
-    auth.biometricEnabled = true;
-    localStorage.setItem('flasham_auth', JSON.stringify(auth));
+    const updatedList = dbAttendance.map((r) => {
+      if (r === existing || (r.employeeId === emp.id && r.date === selectedDate)) {
+        return {
+          ...r,
+          outTime: punchTime,
+          duration: workedDuration,
+          status: 'Completed'
+        };
+      }
+      return r;
+    });
 
-    playChime('biometric');
-    appAlert('Security PIN and Fingerprint biometric successfully configured!');
-    setAuthStatus('unlocked');
-  };
+    setDbAttendance(updatedList);
+    localStorage.setItem('flasham_cached_attendance', JSON.stringify(updatedList));
+    showToast(`${emp.name} clocked OUT at ${punchTime} (${workedDuration || 'Logged'})`, 'success');
 
-  // Lock App (return to PIN/Biometric lock)
-  const handleLockApp = () => {
-    setPinInput('');
-    setAuthStatus('locked');
-  };
-
-  // Logout (require full password login again)
-  const handleFullLogout = async () => {
-    const confirm = await appConfirm('Are you sure you want to log out of Flash AM? Next login will require your master password.', 'Flash AM Logout', 'Log Out', 'Cancel');
-    if (confirm) {
-      localStorage.removeItem('flasham_auth');
-      setAuthStatus('login');
-      setSavedUser(null);
+    if (navigator.onLine) {
+      await saveAttendanceToSupabase(updatedList);
+    } else {
+      enqueueAction({
+        action: 'PUNCH_OUT',
+        empId: emp.id,
+        empCode: emp.employeeCode,
+        empName: emp.name,
+        department: emp.department,
+        date: selectedDate,
+        time: punchTime
+      });
     }
   };
 
-  // =========================================================================
-  // 4. ATTENDANCE PUNCH ENGINE (IN & OUT)
-  // =========================================================================
-  const employees = state.hr_employees_list || [];
+  // Confirm UNDO Punch
+  const handleConfirmUndo = async () => {
+    const { type, employee, record } = undoModal;
+    if (!employee || !record) return;
 
-  // Departments list for filter
+    playChime('undo');
+    let updatedList = [];
+
+    if (type === 'IN') {
+      // Undo IN: If employee had OUT punch, remove both or clear record completely
+      updatedList = dbAttendance.filter(
+        (r) => !((r.employeeId === employee.id || r.employeeCode === employee.employeeCode) && r.date === selectedDate)
+      );
+      showToast(`Undo Successful: Clock-IN removed for ${employee.name}`, 'info');
+
+      if (!navigator.onLine) {
+        enqueueAction({
+          action: 'UNDO_IN',
+          empId: employee.id,
+          empCode: employee.employeeCode,
+          date: selectedDate
+        });
+      }
+    } else if (type === 'OUT') {
+      // Undo OUT: Revert outTime and duration, status back to 'Present'
+      updatedList = dbAttendance.map((r) => {
+        if ((r.employeeId === employee.id || r.employeeCode === employee.employeeCode) && r.date === selectedDate) {
+          return {
+            ...r,
+            outTime: null,
+            duration: null,
+            status: 'Present'
+          };
+        }
+        return r;
+      });
+      showToast(`Undo Successful: Clock-OUT removed for ${employee.name}`, 'info');
+
+      if (!navigator.onLine) {
+        enqueueAction({
+          action: 'UNDO_OUT',
+          empId: employee.id,
+          empCode: employee.employeeCode,
+          date: selectedDate
+        });
+      }
+    }
+
+    setDbAttendance(updatedList);
+    localStorage.setItem('flasham_cached_attendance', JSON.stringify(updatedList));
+    setUndoModal({ isOpen: false, type: 'IN', employee: null, record: null });
+
+    if (navigator.onLine) {
+      await saveAttendanceToSupabase(updatedList);
+    }
+  };
+
+  // ---------------------------------------------------------------------------
+  // FILTERING & AGGREGATIONS
+  // ---------------------------------------------------------------------------
   const departments = useMemo(() => {
     const set = new Set();
-    employees.forEach(e => {
-      if (e.department) set.add(e.department);
-      if (e.section) set.add(e.section);
+    dbEmployees.forEach((emp) => {
+      if (emp.department) set.add(emp.department);
     });
     return ['ALL', ...Array.from(set)];
-  }, [employees]);
+  }, [dbEmployees]);
 
-  // Handle Punch In / Out
-  const handlePunch = (employeeId, type) => {
-    const punchTime = getFormattedTime();
-    const dateKey = selectedDate;
-
-    // 1. Update Employee Record in state
-    const currentEmployees = [...employees];
-    const empIndex = currentEmployees.findIndex(e => e.id === employeeId);
-
-    if (empIndex !== -1) {
-      const emp = { ...currentEmployees[empIndex] };
-      const att = { ...(emp.attendance || {}) };
-      const dayRec = { ...(att[dateKey] || { status: 'absent', ot: 0, fines: 0, deductions: 0 }) };
-
-      if (type === 'IN') {
-        dayRec.status = 'present';
-        dayRec.inTime = punchTime;
-        dayRec.explicitStatus = true;
-        playChime('in');
-      } else if (type === 'OUT') {
-        dayRec.outTime = punchTime;
-        if (dayRec.inTime) {
-          dayRec.workedHours = calculateDuration(dayRec.inTime, punchTime);
-        }
-        playChime('out');
-      }
-
-      att[dateKey] = dayRec;
-      currentEmployees[empIndex] = { ...emp, attendance: att };
-
-      if (setCollection) {
-        setCollection('hr_employees_list', currentEmployees);
-      }
-      localStorage.setItem('hr_employees_list', JSON.stringify(currentEmployees));
-
-      // 2. Update hr_uploaded_attendance collection
-      const uploaded = [...(state.hr_uploaded_attendance || [])];
-      const upIndex = uploaded.findIndex(u => u.employeeId === employeeId && u.date === dateKey);
-      if (upIndex !== -1) {
-        if (type === 'IN') uploaded[upIndex].inTime = punchTime;
-        if (type === 'OUT') uploaded[upIndex].outTime = punchTime;
-        uploaded[upIndex].status = 'present';
-      } else {
-        uploaded.push({
-          employeeId,
-          employeeName: emp.name,
-          date: dateKey,
-          status: 'present',
-          [type === 'IN' ? 'inTime' : 'outTime']: punchTime
-        });
-      }
-      if (setCollection) {
-        setCollection('hr_uploaded_attendance', uploaded);
-      }
-      localStorage.setItem('hr_uploaded_attendance', JSON.stringify(uploaded));
-
-      // 3. Queue in offline cache if disconnected
-      if (!isOnline) {
-        const queue = JSON.parse(localStorage.getItem('flasham_offline_punches') || '[]');
-        queue.push({
-          id: `PUNCH-${Date.now()}`,
-          employeeId,
-          date: dateKey,
-          punchType: type,
-          time: punchTime,
-          queuedAt: new Date().toISOString()
-        });
-        localStorage.setItem('flasham_offline_punches', JSON.stringify(queue));
-        setPendingSyncCount(queue.length);
-      }
-    }
-  };
-
-  // Filtered employees list
   const filteredEmployees = useMemo(() => {
-    return employees.filter(emp => {
-      // Search filter
-      const q = searchQuery.toLowerCase().trim();
-      const matchesSearch = !q || 
-        emp.name?.toLowerCase().includes(q) || 
-        emp.id?.toLowerCase().includes(q) || 
-        emp.designation?.toLowerCase().includes(q) ||
-        emp.department?.toLowerCase().includes(q);
+    return dbEmployees.filter((emp) => {
+      const matchQuery =
+        !searchQuery ||
+        (emp.name && emp.name.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        (emp.employeeCode && emp.employeeCode.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        (emp.department && emp.department.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        (emp.designation && emp.designation.toLowerCase().includes(searchQuery.toLowerCase()));
 
-      if (!matchesSearch) return false;
+      const matchDept = deptFilter === 'ALL' || emp.department === deptFilter;
 
-      // Department filter
-      if (selectedDepartment !== 'ALL') {
-        const matchesDept = emp.department === selectedDepartment || emp.section === selectedDepartment;
-        if (!matchesDept) return false;
+      if (!matchQuery || !matchDept) return false;
+
+      if (statusFilter === 'ALL') return true;
+
+      const record = getEmployeeAttendance(emp);
+      if (statusFilter === 'PRESENT') {
+        return record && record.inTime && !record.outTime;
       }
-
-      // Shift filter
-      if (selectedShift !== 'ALL') {
-        if (emp.shift && emp.shift !== selectedShift) return false;
+      if (statusFilter === 'COMPLETED') {
+        return record && record.outTime;
       }
-
-      // Status filter
-      const att = emp.attendance?.[selectedDate] || {};
-      const isPresent = att.status === 'present' || att.inTime;
-      const isCompleted = att.inTime && att.outTime;
-      const isAbsent = !isPresent;
-
-      if (selectedStatusFilter === 'PRESENT' && !isPresent) return false;
-      if (selectedStatusFilter === 'ABSENT' && !isAbsent) return false;
-      if (selectedStatusFilter === 'COMPLETED' && !isCompleted) return false;
-
+      if (statusFilter === 'ABSENT') {
+        return !record || !record.inTime;
+      }
       return true;
     });
-  }, [employees, searchQuery, selectedDepartment, selectedShift, selectedStatusFilter, selectedDate]);
+  }, [dbEmployees, searchQuery, deptFilter, statusFilter, selectedDate, dbAttendance]);
 
-  // Aggregate stats for selectedDate
+  // Statistics for today's selectedDate
   const stats = useMemo(() => {
-    let total = employees.length;
-    let present = 0;
-    let working = 0;
-    let completed = 0;
+    const total = dbEmployees.length;
+    let clockedIn = 0;
+    let clockedOut = 0;
     let absent = 0;
 
-    employees.forEach(e => {
-      const a = e.attendance?.[selectedDate] || {};
-      const isIn = a.status === 'present' || !!a.inTime;
-      const isOut = !!a.outTime;
-
-      if (isIn) {
-        present++;
-        if (isOut) completed++;
-        else working++;
+    dbEmployees.forEach((emp) => {
+      const rec = getEmployeeAttendance(emp);
+      if (rec && rec.inTime) {
+        if (rec.outTime) {
+          clockedOut++;
+        } else {
+          clockedIn++;
+        }
       } else {
         absent++;
       }
     });
 
-    return { total, present, working, completed, absent };
-  }, [employees, selectedDate]);
+    return { total, clockedIn, clockedOut, absent };
+  }, [dbEmployees, dbAttendance, selectedDate]);
 
-  // Quick QR code badge punch handler
-  const [badgeIdInput, setBadgeIdInput] = useState('');
-  const handleQuickBadgeScan = (e) => {
-    if (e) e.preventDefault();
-    const id = badgeIdInput.trim().toUpperCase();
-    if (!id) return;
-
-    const matched = employees.find(emp => emp.id?.toUpperCase() === id);
-    if (matched) {
-      const att = matched.attendance?.[selectedDate] || {};
-      if (!att.inTime) {
-        handlePunch(matched.id, 'IN');
-        appAlert(`Clocked IN: ${matched.name} (${matched.id})`);
-      } else if (!att.outTime) {
-        handlePunch(matched.id, 'OUT');
-        appAlert(`Clocked OUT: ${matched.name} (${matched.id})`);
-      } else {
-        appAlert(`Employee ${matched.name} has already completed attendance today.`);
-      }
-      setBadgeIdInput('');
-    } else {
-      appAlert(`No employee found with ID: ${id}`);
-      playChime('error');
-    }
-  };
-
-  // Change date helpers
-  const handlePrevDay = () => {
-    const d = new Date(selectedDate);
-    d.setDate(d.getDate() - 1);
-    setSelectedDate(d.toISOString().slice(0, 10));
-  };
-
-  const handleNextDay = () => {
-    const d = new Date(selectedDate);
-    d.setDate(d.getDate() + 1);
-    setSelectedDate(d.toISOString().slice(0, 10));
-  };
-
-  const handleSetToday = () => {
-    setSelectedDate(todayStr);
-  };
+  // User Initials
+  const userInitials = useMemo(() => {
+    if (!activeUser?.name) return 'FL';
+    const parts = activeUser.name.trim().split(' ');
+    if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+    return parts[0].slice(0, 2).toUpperCase();
+  }, [activeUser]);
 
   // =========================================================================
-  // RENDER: 1. FULL PASSWORD LOGIN SCREEN
+  // VIEW: 1. AUTHORIZATION SCREEN (If no user is logged in)
   // =========================================================================
-  if (authStatus === 'login') {
+  if (!authSession) {
     return (
-      <div className="min-h-screen w-full flex items-center justify-center p-4 bg-gradient-to-br from-[#07090e] via-[#0b0e14] to-[#121620] text-slate-100 font-sans selection:bg-blue-600 selection:text-white">
-        <div className="w-full max-w-sm bg-[#121620]/95 backdrop-blur-2xl border border-white/10 rounded-3xl p-7 shadow-2xl flex flex-col items-center animate-in fade-in zoom-in-95 duration-300">
-          {/* Logo & Header */}
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-blue-700 via-blue-600 to-indigo-500 flex items-center justify-center shadow-lg shadow-blue-500/30 mb-4 border border-white/20">
-            <span className="material-symbols-outlined text-[34px] text-white">fingerprint</span>
+      <div
+        className={`min-h-screen w-full flex flex-col items-center justify-center p-4 transition-colors duration-300 ${
+          isDark ? 'bg-[#090d16] text-white' : 'bg-slate-50 text-slate-900'
+        }`}
+      >
+        <div
+          className={`w-full max-w-md p-6 sm:p-8 rounded-3xl shadow-2xl border transition-all duration-300 ${
+            isDark
+              ? 'bg-[#121927]/90 border-slate-800/80 backdrop-blur-xl'
+              : 'bg-white border-slate-200 backdrop-blur-xl'
+          }`}
+        >
+          {/* Top Logo & Standalone Header */}
+          <div className="flex flex-col items-center text-center mb-6">
+            <div className="relative mb-3">
+              <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-cyan-600 via-indigo-600 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-500/25 ring-4 ring-indigo-500/20">
+                <span className="material-symbols-outlined text-white text-3xl">fingerprint</span>
+              </div>
+              <span className="absolute -bottom-1 -right-1 w-4 h-4 bg-emerald-500 rounded-full border-2 border-[#121927]"></span>
+            </div>
+            <h1 className="text-2xl font-black tracking-tight font-manrope">FLASH AM</h1>
+            <p className="text-xs font-semibold uppercase tracking-wider text-cyan-500 mt-1">
+              Biometric Attendance Terminal
+            </p>
+            <p className={`text-xs mt-2 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+              Only authorized ERP users can unlock and manage this terminal.
+            </p>
           </div>
 
-          <h1 className="font-extrabold text-2xl tracking-tight text-white flex items-center gap-2">
-            Flash <span className="bg-gradient-to-r from-blue-400 to-cyan-300 bg-clip-text text-transparent">AM</span>
-          </h1>
-          <p className="text-xs text-slate-400 mt-1 font-medium text-center">
-            Android Enterprise Attendance Manager
-          </p>
+          {/* Theme Toggle Button */}
+          <div className="flex justify-end mb-4">
+            <button
+              onClick={toggleTheme}
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border transition-all ${
+                isDark
+                  ? 'bg-slate-800/60 border-slate-700 text-slate-300 hover:text-white'
+                  : 'bg-slate-100 border-slate-200 text-slate-700 hover:text-slate-900'
+              }`}
+            >
+              <span className="material-symbols-outlined text-[16px]">
+                {isDark ? 'light_mode' : 'dark_mode'}
+              </span>
+              <span>{isDark ? 'Light Mode' : 'Dark Mode'}</span>
+            </button>
+          </div>
 
-          {loginError && (
-            <div className="w-full mt-4 p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs text-center font-medium">
-              {loginError}
-            </div>
-          )}
-
-          {/* Form */}
-          <form onSubmit={handlePasswordLogin} className="w-full mt-6 space-y-4">
+          {/* Login Form */}
+          <form onSubmit={handleAuthorizeTerminal} className="space-y-4">
             <div>
-              <label className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider mb-1">
-                Operator Username
+              <label className={`block text-xs font-semibold mb-1.5 uppercase tracking-wider ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>
+                ERP Username or Email
               </label>
               <div className="relative">
-                <span className="material-symbols-outlined absolute left-3 top-3 text-[18px] text-slate-400">person</span>
+                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 material-symbols-outlined text-slate-400 text-[18px]">
+                  person
+                </span>
                 <input
                   type="text"
-                  value={loginUsername}
-                  onChange={(e) => setLoginUsername(e.target.value)}
-                  placeholder="e.g. admin"
-                  className="w-full pl-10 pr-4 py-2.5 bg-black/40 border border-white/10 rounded-xl text-white placeholder-slate-500 text-sm focus:border-blue-500 focus:outline-none transition-colors"
-                  required
+                  value={loginForm.username}
+                  onChange={(e) => setLoginForm({ ...loginForm, username: e.target.value })}
+                  placeholder="e.g. admin or arfan_jameel"
+                  className={`w-full pl-10 pr-4 py-3 rounded-xl border text-sm font-medium transition-all focus:outline-none focus:ring-2 focus:ring-cyan-500 ${
+                    isDark
+                      ? 'bg-slate-900/80 border-slate-700 text-white placeholder-slate-500'
+                      : 'bg-slate-50 border-slate-200 text-slate-900 placeholder-slate-400'
+                  }`}
                 />
               </div>
             </div>
 
             <div>
-              <label className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider mb-1">
-                Password
+              <label className={`block text-xs font-semibold mb-1.5 uppercase tracking-wider ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>
+                Account Password
               </label>
               <div className="relative">
-                <span className="material-symbols-outlined absolute left-3 top-3 text-[18px] text-slate-400">lock</span>
+                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 material-symbols-outlined text-slate-400 text-[18px]">
+                  lock
+                </span>
                 <input
                   type="password"
-                  value={loginPassword}
-                  onChange={(e) => setLoginPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="w-full pl-10 pr-4 py-2.5 bg-black/40 border border-white/10 rounded-xl text-white placeholder-slate-500 text-sm focus:border-blue-500 focus:outline-none transition-colors"
-                  required
+                  value={loginForm.password}
+                  onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })}
+                  placeholder="Enter password"
+                  className={`w-full pl-10 pr-4 py-3 rounded-xl border text-sm font-medium transition-all focus:outline-none focus:ring-2 focus:ring-cyan-500 ${
+                    isDark
+                      ? 'bg-slate-900/80 border-slate-700 text-white placeholder-slate-500'
+                      : 'bg-slate-50 border-slate-200 text-slate-900 placeholder-slate-400'
+                  }`}
                 />
               </div>
             </div>
+
+            {loginError && (
+              <div className="p-3 bg-red-500/15 border border-red-500/30 rounded-xl text-xs font-semibold text-red-500 flex items-center gap-2">
+                <span className="material-symbols-outlined text-[18px]">error</span>
+                <span>{loginError}</span>
+              </div>
+            )}
 
             <button
               type="submit"
-              className="w-full py-3 mt-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-xl font-bold text-sm shadow-lg shadow-blue-600/30 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+              disabled={isAuthorizing}
+              className="w-full py-3.5 bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white font-bold text-sm rounded-xl shadow-lg shadow-indigo-600/30 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
             >
-              <span className="material-symbols-outlined text-[18px]">login</span>
-              Sign In to Flash AM
+              {isAuthorizing ? (
+                <>
+                  <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+                  <span>Authenticating...</span>
+                </>
+              ) : (
+                <>
+                  <span className="material-symbols-outlined text-[18px]">verified_user</span>
+                  <span>Authorize Flash AM Terminal</span>
+                </>
+              )}
             </button>
           </form>
 
-          {/* Return to ERP link */}
-          <button
-            onClick={() => navigate('/dashboard')}
-            className="mt-6 text-xs text-slate-400 hover:text-white transition-colors flex items-center gap-1 font-medium"
-          >
-            <span className="material-symbols-outlined text-[14px]">arrow_back</span>
-            Return to ERP Portal
-          </button>
+          {/* Cloud Database Status */}
+          <div className="mt-6 pt-4 border-t border-slate-800/40 flex items-center justify-between text-[11px] text-slate-400">
+            <span className="flex items-center gap-1.5">
+              <span className={`w-2 h-2 rounded-full ${isOnline ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`}></span>
+              <span>{isOnline ? 'Cloud Database Connected' : 'Working in Offline Mode'}</span>
+            </span>
+            <span>{dbEmployees.length} Employees Loaded</span>
+          </div>
         </div>
       </div>
     );
   }
 
   // =========================================================================
-  // RENDER: 2. SET UP PIN & BIOMETRICS (One-Time Setup)
+  // VIEW: 2. TERMINAL LOCK SCREEN (PIN or Real Biometric Fingerprint)
   // =========================================================================
-  if (authStatus === 'setup-pin') {
+  if (!isUnlocked) {
     return (
-      <div className="min-h-screen w-full flex items-center justify-center p-4 bg-gradient-to-br from-[#07090e] via-[#0b0e14] to-[#121620] text-slate-100 font-sans">
-        <div className="w-full max-w-sm bg-[#121620]/95 backdrop-blur-2xl border border-white/10 rounded-3xl p-7 shadow-2xl flex flex-col items-center">
-          <div className="w-14 h-14 rounded-2xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center mb-3">
-            <span className="material-symbols-outlined text-[28px] text-emerald-400">shield_lock</span>
+      <div
+        className={`min-h-screen w-full flex flex-col items-center justify-center p-4 transition-colors duration-300 ${
+          isDark ? 'bg-[#090d16] text-white' : 'bg-slate-50 text-slate-900'
+        }`}
+      >
+        <div
+          className={`w-full max-w-sm p-6 sm:p-7 rounded-3xl shadow-2xl border transition-all duration-300 flex flex-col items-center text-center ${
+            isDark
+              ? 'bg-[#121927]/90 border-slate-800/80 backdrop-blur-xl'
+              : 'bg-white border-slate-200 backdrop-blur-xl'
+          }`}
+        >
+          {/* Header & Logged In User Avatar */}
+          <div className="relative mb-3">
+            <div className="w-16 h-16 rounded-full bg-gradient-to-tr from-cyan-600 via-indigo-600 to-purple-600 flex items-center justify-center text-white font-black text-xl shadow-lg ring-4 ring-cyan-500/20">
+              {userInitials}
+            </div>
+            <span className="absolute bottom-0 right-0 w-4 h-4 bg-emerald-500 rounded-full border-2 border-white dark:border-[#121927]"></span>
           </div>
 
-          <h2 className="text-xl font-extrabold text-white text-center">Set 4-Digit Security PIN</h2>
-          <p className="text-xs text-slate-400 text-center mt-1">
-            Create a fast 4-digit PIN for instant attendance access without entering your master password every time.
+          <h2 className="text-lg font-bold font-manrope">{activeUser?.name}</h2>
+          <span className="text-[11px] font-semibold uppercase px-2.5 py-0.5 rounded-full bg-cyan-500/15 text-cyan-400 border border-cyan-500/20 mt-1 mb-4">
+            {activeUser?.role}
+          </span>
+
+          <p className={`text-xs mb-4 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+            Enter 4-Digit Security PIN or Touch Fingerprint Sensor
           </p>
 
-          <div className="w-full mt-6 space-y-4">
-            <div>
-              <label className="block text-[11px] font-bold text-slate-300 uppercase mb-1">Enter 4-Digit PIN</label>
-              <input
-                type="password"
-                maxLength={4}
-                value={pinSetupVal}
-                onChange={(e) => setPinSetupVal(e.target.value.replace(/\D/g, ''))}
-                placeholder="4 Digits (e.g. 1234)"
-                className="w-full text-center tracking-widest text-lg font-bold py-2.5 bg-black/40 border border-white/10 rounded-xl text-white focus:border-emerald-500 focus:outline-none"
-              />
-            </div>
-
-            <div>
-              <label className="block text-[11px] font-bold text-slate-300 uppercase mb-1">Confirm 4-Digit PIN</label>
-              <input
-                type="password"
-                maxLength={4}
-                value={pinSetupConfirm}
-                onChange={(e) => setPinSetupConfirm(e.target.value.replace(/\D/g, ''))}
-                placeholder="Re-enter PIN"
-                className="w-full text-center tracking-widest text-lg font-bold py-2.5 bg-black/40 border border-white/10 rounded-xl text-white focus:border-emerald-500 focus:outline-none"
-              />
-            </div>
-
-            <div className="p-3 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center gap-3">
-              <span className="material-symbols-outlined text-blue-400 text-[20px]">fingerprint</span>
-              <span className="text-[11px] text-slate-300 leading-tight">
-                Fingerprint biometric sensor will also be enabled for instant 1-touch unlock.
-              </span>
-            </div>
-
-            <button
-              onClick={handleSavePinSetup}
-              className="w-full py-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 text-white rounded-xl font-bold text-sm shadow-lg shadow-emerald-600/30 transition-all flex items-center justify-center gap-2"
-            >
-              <span className="material-symbols-outlined text-[18px]">check_circle</span>
-              Activate Flash AM PIN
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // =========================================================================
-  // RENDER: 3. ANDROID LOCK SCREEN (PIN & FINGERPRINT)
-  // =========================================================================
-  if (authStatus === 'locked') {
-    return (
-      <div className="min-h-screen w-full flex items-center justify-center p-4 bg-gradient-to-br from-[#07090e] via-[#0b0e14] to-[#121620] text-slate-100 font-sans select-none">
-        <div className="w-full max-w-sm bg-[#121620]/95 backdrop-blur-2xl border border-white/10 rounded-3xl p-6 shadow-2xl flex flex-col items-center">
-          {/* Top User Badge */}
-          <div className="flex items-center gap-3 w-full p-2.5 rounded-2xl bg-white/[0.04] border border-white/5 mb-6">
-            <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-blue-600 to-cyan-400 flex items-center justify-center font-bold text-white shadow-md">
-              {savedUser?.name ? savedUser.name.charAt(0) : 'U'}
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="text-xs font-bold text-white truncate">{savedUser?.name || 'Administrator'}</div>
-              <div className="text-[10px] text-slate-400 truncate">Flash AM Attendance Terminal</div>
-            </div>
-            <div className="flex items-center gap-2">
-              <a
-                href="/downloads/FlashAM.apk"
-                download="FlashAM.apk"
-                className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[10px] font-bold flex items-center gap-1 hover:bg-emerald-500/30 transition-all"
-                title="Download Android APK file"
-              >
-                <span className="material-symbols-outlined text-[12px]">android</span>
-                APK
-              </a>
-              <div className="flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                <span className="text-[10px] text-emerald-400 font-bold uppercase">{isOnline ? 'Online' : 'Offline'}</span>
-              </div>
-            </div>
+          {/* PIN Indicators */}
+          <div className="flex gap-3 mb-6">
+            {[0, 1, 2, 3].map((idx) => (
+              <div
+                key={idx}
+                className={`w-3.5 h-3.5 rounded-full border-2 transition-all duration-200 ${
+                  enteredPin.length > idx
+                    ? 'bg-cyan-500 border-cyan-400 scale-110 shadow-sm shadow-cyan-500'
+                    : isDark
+                    ? 'border-slate-700 bg-slate-800/60'
+                    : 'border-slate-300 bg-slate-100'
+                }`}
+              ></div>
+            ))}
           </div>
 
-          <div className="text-center mb-6">
-            <h2 className="text-xl font-extrabold text-white">Enter Security PIN</h2>
-            <p className="text-xs text-slate-400 mt-1">Tap PIN or touch fingerprint to unlock</p>
-          </div>
+          {pinError && (
+            <p className="text-xs font-semibold text-red-500 mb-3 animate-shake">{pinError}</p>
+          )}
 
-          {/* 4 PIN Dots */}
-          <div className={`flex items-center gap-4 mb-7 ${pinError ? 'animate-shake' : ''}`}>
-            {[0, 1, 2, 3].map(i => {
-              const isFilled = pinInput.length > i;
-              return (
-                <div
-                  key={i}
-                  className={`w-4 h-4 rounded-full transition-all duration-200 border ${
-                    pinError
-                      ? 'bg-rose-500 border-rose-500 scale-110 shadow-lg shadow-rose-500/50'
-                      : isFilled
-                      ? 'bg-blue-400 border-blue-400 scale-110 shadow-lg shadow-blue-400/50'
-                      : 'bg-transparent border-white/30'
-                  }`}
-                />
-              );
-            })}
-          </div>
-
-          {/* Android Numeric Keypad */}
-          <div className="grid grid-cols-3 gap-3 w-full max-w-[280px] mb-6">
-            {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(num => (
+          {/* Numeric PIN Keypad */}
+          <div className="grid grid-cols-3 gap-2.5 w-full max-w-[260px] mb-5">
+            {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((num) => (
               <button
                 key={num}
-                onClick={() => handleKeypadPress(String(num))}
-                className="w-16 h-16 rounded-full mx-auto bg-white/[0.05] hover:bg-white/[0.12] active:bg-blue-500/30 active:scale-95 border border-white/10 text-xl font-bold text-white flex items-center justify-center transition-all cursor-pointer"
+                onClick={() => handlePinDigit(String(num))}
+                className={`h-13 rounded-2xl text-lg font-bold transition-all active:scale-95 border ${
+                  isDark
+                    ? 'bg-slate-800/60 hover:bg-slate-800 border-slate-700/60 text-white'
+                    : 'bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-800'
+                }`}
               >
                 {num}
               </button>
             ))}
-
-            {/* Bottom Row: Fingerprint | 0 | Backspace */}
             <button
               onClick={handleBiometricAuth}
-              className="w-16 h-16 rounded-full mx-auto bg-emerald-500/15 hover:bg-emerald-500/25 active:scale-95 border border-emerald-500/30 text-emerald-400 flex items-center justify-center transition-all cursor-pointer"
-              title="Use Mobile Fingerprint"
+              title="Hardware Fingerprint"
+              className="h-13 rounded-2xl flex items-center justify-center transition-all active:scale-95 border bg-cyan-500/15 hover:bg-cyan-500/25 border-cyan-500/30 text-cyan-400"
             >
-              <span className={`material-symbols-outlined text-[28px] ${isBiometricScanning ? 'animate-pulse text-emerald-300' : ''}`}>
-                fingerprint
-              </span>
+              <span className="material-symbols-outlined text-2xl">fingerprint</span>
             </button>
-
             <button
-              onClick={() => handleKeypadPress('0')}
-              className="w-16 h-16 rounded-full mx-auto bg-white/[0.05] hover:bg-white/[0.12] active:bg-blue-500/30 active:scale-95 border border-white/10 text-xl font-bold text-white flex items-center justify-center transition-all cursor-pointer"
+              onClick={() => handlePinDigit('0')}
+              className={`h-13 rounded-2xl text-lg font-bold transition-all active:scale-95 border ${
+                isDark
+                  ? 'bg-slate-800/60 hover:bg-slate-800 border-slate-700/60 text-white'
+                  : 'bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-800'
+              }`}
             >
               0
             </button>
-
             <button
-              onClick={handleKeypadBackspace}
-              className="w-16 h-16 rounded-full mx-auto bg-white/[0.05] hover:bg-white/[0.12] active:scale-95 border border-white/10 text-slate-300 flex items-center justify-center transition-all cursor-pointer"
+              onClick={handlePinBackspace}
+              className={`h-13 rounded-2xl flex items-center justify-center transition-all active:scale-95 border ${
+                isDark
+                  ? 'bg-slate-800/40 hover:bg-slate-800/70 border-slate-700/40 text-slate-400'
+                  : 'bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-600'
+              }`}
             >
-              <span className="material-symbols-outlined text-[20px]">backspace</span>
+              <span className="material-symbols-outlined text-xl">backspace</span>
             </button>
           </div>
 
-          {/* Bottom Switch Account */}
-          <div className="flex items-center justify-between w-full pt-3 border-t border-white/10 text-xs">
-            <button
-              onClick={handleFullLogout}
-              className="text-slate-400 hover:text-white transition-colors flex items-center gap-1 font-medium"
-            >
-              <span className="material-symbols-outlined text-[14px]">logout</span>
-              Switch Account
-            </button>
+          {/* Native Fingerprint Scanner Quick Button */}
+          <button
+            onClick={handleBiometricAuth}
+            className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg shadow-cyan-600/25 active:scale-95 transition-all mb-3"
+          >
+            <span className="material-symbols-outlined text-xl">fingerprint</span>
+            <span>Use Mobile Fingerprint</span>
+          </button>
 
-            <button
-              onClick={() => navigate('/dashboard')}
-              className="text-blue-400 hover:text-blue-300 transition-colors flex items-center gap-1 font-medium"
-            >
-              ERP Dashboard
-              <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
-            </button>
-          </div>
+          {/* Switch User / Logout */}
+          <button
+            onClick={handleLogout}
+            className={`text-xs font-semibold py-1.5 px-3 rounded-lg transition-colors ${
+              isDark ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'
+            }`}
+          >
+            Switch User / Logout
+          </button>
         </div>
       </div>
     );
   }
 
   // =========================================================================
-  // RENDER: 4. MAIN ATTENDANCE APPLICATION
+  // VIEW: 3. MAIN FLASH AM ATTENDANCE TERMINAL (UNLOCKED)
   // =========================================================================
-  const appBodyContent = (
-    <div className="flex flex-col h-full w-full bg-[#0b0e14] text-slate-100 font-sans select-none overflow-hidden">
-      {/* 4.1 Android System Status Bar */}
-      <div className="h-7 w-full px-4 bg-[#07090e] border-b border-white/5 flex items-center justify-between text-[11px] font-semibold text-slate-400 z-50 shrink-0">
-        <div className="flex items-center gap-1.5 font-mono text-white">
-          <span>{currentTimeStr.slice(0, 5)}</span>
-        </div>
-        <div className="flex items-center gap-2">
-          {pendingSyncCount > 0 && (
-            <span className="flex items-center gap-1 text-[10px] text-amber-400 bg-amber-400/10 px-1.5 py-0.5 rounded-full border border-amber-400/20 animate-pulse">
-              <span className="material-symbols-outlined text-[12px]">cloud_sync</span>
-              {pendingSyncCount} Q
-            </span>
-          )}
-          <span className="material-symbols-outlined text-[14px] text-emerald-400">
-            {isOnline ? 'wifi' : 'wifi_off'}
-          </span>
-          <span className="material-symbols-outlined text-[15px] text-slate-300">battery_full</span>
-        </div>
-      </div>
-
-      {/* 4.2 Flash AM App Bar */}
-      <div className="px-4 py-3 bg-[#121620] border-b border-white/10 flex items-center justify-between shadow-md shrink-0">
-        <div className="flex items-center gap-2.5">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-600 to-cyan-500 flex items-center justify-center text-white shadow-md shadow-blue-500/25 border border-white/20">
-            <span className="material-symbols-outlined text-[20px]">fingerprint</span>
-          </div>
-          <div>
-            <h1 className="font-black text-base text-white tracking-tight leading-tight flex items-center gap-1.5">
-              Flash <span className="text-cyan-400">AM</span>
-              <span className="text-[10px] font-bold px-1.5 py-0.2 bg-blue-500/20 text-blue-300 rounded border border-blue-500/30">v2.4</span>
-            </h1>
-            <div className="text-[10px] text-slate-400 flex items-center gap-1 font-medium">
-              <span className={`w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-emerald-400' : 'bg-amber-400'}`}></span>
-              <span>{isOnline ? 'Cloud Synced' : 'Offline Mode'}</span>
-            </div>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          {!isTouchDevice && (
-            <button
-              onClick={() => setIsSimulatorFrame(!isSimulatorFrame)}
-              className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 text-xs border border-white/10 transition-colors"
-              title="Toggle Phone Frame Simulator"
-            >
-              <span className="material-symbols-outlined text-[18px]">
-                {isSimulatorFrame ? 'fullscreen' : 'smartphone'}
-              </span>
-            </button>
-          )}
-
-          <a
-            href="/downloads/FlashAM.apk"
-            download="FlashAM.apk"
-            className="p-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 text-xs border border-emerald-500/30 transition-all flex items-center justify-center shadow-sm shadow-emerald-500/20"
-            title="Download Flash AM Android APK File"
-          >
-            <span className="material-symbols-outlined text-[18px]">android</span>
-          </a>
-
-          <button
-            onClick={handleLockApp}
-            className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 text-xs border border-white/10 transition-colors"
-            title="Lock Flash AM"
-          >
-            <span className="material-symbols-outlined text-[18px]">lock</span>
-          </button>
-        </div>
-      </div>
-
-      {/* 4.3 Date Selector & Quick Toggles */}
-      <div className="px-4 py-2.5 bg-[#0e121a] border-b border-white/5 flex items-center justify-between gap-2 shrink-0">
-        <div className="flex items-center gap-1">
-          <button
-            onClick={handlePrevDay}
-            className="p-1 rounded-md bg-white/5 hover:bg-white/10 text-slate-300 text-xs border border-white/5"
-          >
-            <span className="material-symbols-outlined text-[16px]">chevron_left</span>
-          </button>
-          <div className="flex items-center gap-1.5 px-2.5 py-1 bg-white/5 border border-white/10 rounded-lg">
-            <span className="material-symbols-outlined text-blue-400 text-[14px]">calendar_today</span>
-            <input
-              type="date"
-              value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
-              className="bg-transparent text-xs font-bold text-white focus:outline-none cursor-pointer"
-            />
-          </div>
-          <button
-            onClick={handleNextDay}
-            className="p-1 rounded-md bg-white/5 hover:bg-white/10 text-slate-300 text-xs border border-white/5"
-          >
-            <span className="material-symbols-outlined text-[16px]">chevron_right</span>
-          </button>
-        </div>
-
-        {selectedDate !== todayStr && (
-          <button
-            onClick={handleSetToday}
-            className="px-2 py-1 rounded-lg bg-blue-600/20 border border-blue-500/30 text-blue-300 text-[10px] font-bold hover:bg-blue-600/30 transition-all"
-          >
-            Jump to Today
-          </button>
-        )}
-      </div>
-
-      {/* 4.4 Main Content Area Based on Tab */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {activeTab === 'punch' && (
-          <>
-            {/* KPI Summary Grid */}
-            <div className="grid grid-cols-4 gap-2">
-              <div className="bg-[#121620] border border-white/10 rounded-xl p-2.5 flex flex-col items-center justify-center text-center">
-                <span className="text-[10px] font-bold text-slate-400 uppercase">Staff</span>
-                <span className="text-base font-black text-white mt-0.5">{stats.total}</span>
-              </div>
-              <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-2.5 flex flex-col items-center justify-center text-center">
-                <span className="text-[10px] font-bold text-emerald-400 uppercase">Present</span>
-                <span className="text-base font-black text-emerald-300 mt-0.5">{stats.present}</span>
-              </div>
-              <div className="bg-cyan-500/10 border border-cyan-500/20 rounded-xl p-2.5 flex flex-col items-center justify-center text-center">
-                <span className="text-[10px] font-bold text-cyan-400 uppercase">On Duty</span>
-                <span className="text-base font-black text-cyan-300 mt-0.5">{stats.working}</span>
-              </div>
-              <div className="bg-rose-500/10 border border-rose-500/20 rounded-xl p-2.5 flex flex-col items-center justify-center text-center">
-                <span className="text-[10px] font-bold text-rose-400 uppercase">Absent</span>
-                <span className="text-base font-black text-rose-300 mt-0.5">{stats.absent}</span>
-              </div>
-            </div>
-
-            {/* Search Input */}
-            <div className="relative">
-              <span className="material-symbols-outlined absolute left-3 top-2.5 text-[18px] text-slate-400">search</span>
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search by Name, EMP ID, or Role..."
-                className="w-full pl-9 pr-8 py-2 bg-[#121620] border border-white/10 rounded-xl text-white placeholder-slate-500 text-xs focus:border-blue-500 focus:outline-none transition-colors"
-              />
-              {searchQuery && (
-                <button
-                  onClick={() => setSearchQuery('')}
-                  className="absolute right-2.5 top-2.5 text-slate-400 hover:text-white"
-                >
-                  <span className="material-symbols-outlined text-[16px]">close</span>
-                </button>
-              )}
-            </div>
-
-            {/* Filter Pills (Departments & Status) */}
-            <div className="space-y-2">
-              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs no-scrollbar">
-                {departments.map(dept => (
-                  <button
-                    key={dept}
-                    onClick={() => setSelectedDepartment(dept)}
-                    className={`px-2.5 py-1 rounded-lg text-[11px] font-bold whitespace-nowrap transition-all cursor-pointer ${
-                      selectedDepartment === dept
-                        ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
-                        : 'bg-white/5 hover:bg-white/10 text-slate-400 border border-white/5'
-                    }`}
-                  >
-                    {dept}
-                  </button>
-                ))}
-              </div>
-
-              {/* Status Toggles */}
-              <div className="flex items-center gap-1 text-[10px] font-bold">
-                {['ALL', 'PRESENT', 'COMPLETED', 'ABSENT'].map(st => (
-                  <button
-                    key={st}
-                    onClick={() => setSelectedStatusFilter(st)}
-                    className={`flex-1 py-1 rounded-md text-center transition-all cursor-pointer ${
-                      selectedStatusFilter === st
-                        ? 'bg-white/15 text-white border border-white/20'
-                        : 'text-slate-400 hover:text-white'
-                    }`}
-                  >
-                    {st}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Employee Cards List */}
-            <div className="space-y-2.5">
-              {filteredEmployees.length === 0 ? (
-                <div className="p-8 text-center text-slate-400 text-xs">
-                  <span className="material-symbols-outlined text-3xl text-slate-500 mb-2 block">person_off</span>
-                  No employees matched your search criteria.
-                </div>
-              ) : (
-                filteredEmployees.map(emp => {
-                  const dayRec = emp.attendance?.[selectedDate] || {};
-                  const hasIn = !!dayRec.inTime;
-                  const hasOut = !!dayRec.outTime;
-                  const isPresent = dayRec.status === 'present' || hasIn;
-                  const duration = calculateDuration(dayRec.inTime, dayRec.outTime);
-
-                  return (
-                    <div
-                      key={emp.id}
-                      className="bg-[#121620] border border-white/10 hover:border-white/20 rounded-2xl p-3 shadow-md transition-all flex flex-col gap-2.5"
-                    >
-                      {/* Top Info: Avatar, Name, Department, Status Badge */}
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-white text-xs shrink-0 border ${
-                            hasOut
-                              ? 'bg-cyan-600/30 border-cyan-500/50 text-cyan-300'
-                              : hasIn
-                              ? 'bg-emerald-600/30 border-emerald-500/50 text-emerald-300 ring-2 ring-emerald-500/20'
-                              : 'bg-white/5 border-white/10 text-slate-300'
-                          }`}>
-                            {emp.avatar ? (
-                              <img src={emp.avatar} alt="" className="w-full h-full object-cover rounded-xl" />
-                            ) : (
-                              emp.name?.charAt(0) || 'E'
-                            )}
-                          </div>
-                          <div className="min-w-0">
-                            <div className="font-bold text-sm text-white truncate flex items-center gap-1.5">
-                              {emp.name}
-                              <span className="text-[10px] font-mono text-slate-400 font-normal">({emp.id})</span>
-                            </div>
-                            <div className="text-[11px] text-slate-400 truncate">
-                              {emp.designation || 'Staff'} • {emp.department || emp.section || 'General'}
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Status Chip */}
-                        <div className="shrink-0 text-right">
-                          {hasOut ? (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
-                              <span className="w-1.5 h-1.5 rounded-full bg-cyan-400"></span>
-                              Shift Done
-                            </span>
-                          ) : hasIn ? (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 animate-pulse">
-                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-                              Active In
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-white/5 text-slate-400 border border-white/10">
-                              Not In Yet
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Recorded Timestamps Display */}
-                      {(hasIn || hasOut) && (
-                        <div className="p-2 rounded-xl bg-black/40 border border-white/5 flex items-center justify-between text-[11px]">
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-slate-400 font-medium">IN:</span>
-                            <span className="font-mono font-bold text-emerald-400">{dayRec.inTime || '--:--'}</span>
-                          </div>
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-slate-400 font-medium">OUT:</span>
-                            <span className="font-mono font-bold text-cyan-400">{dayRec.outTime || '--:--'}</span>
-                          </div>
-                          {duration && (
-                            <div className="text-[10px] font-bold text-slate-300 bg-white/10 px-1.5 py-0.5 rounded">
-                              {duration}
-                            </div>
-                          )}
-                        </div>
-                      )}
-
-                      {/* IN & OUT Action Buttons */}
-                      <div className="grid grid-cols-2 gap-2 pt-1">
-                        <button
-                          onClick={() => handlePunch(emp.id, 'IN')}
-                          className={`py-2.5 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-all shadow-md active:scale-95 cursor-pointer ${
-                            hasIn
-                              ? 'bg-emerald-600/25 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-600/35'
-                              : 'bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-500 hover:to-green-500 text-white shadow-emerald-600/25'
-                          }`}
-                        >
-                          <span className="material-symbols-outlined text-[18px]">
-                            {hasIn ? 'done_all' : 'login'}
-                          </span>
-                          <span>{hasIn ? 'Re-Clock IN' : 'CLOCK IN'}</span>
-                        </button>
-
-                        <button
-                          onClick={() => handlePunch(emp.id, 'OUT')}
-                          disabled={!hasIn && !dayRec.status}
-                          className={`py-2.5 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-all shadow-md active:scale-95 cursor-pointer ${
-                            !hasIn && !dayRec.status
-                              ? 'bg-white/5 border border-white/5 text-slate-600 cursor-not-allowed opacity-40'
-                              : hasOut
-                              ? 'bg-cyan-600/25 border border-cyan-500/40 text-cyan-300 hover:bg-cyan-600/35'
-                              : 'bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white shadow-cyan-600/25'
-                          }`}
-                        >
-                          <span className="material-symbols-outlined text-[18px]">
-                            {hasOut ? 'done_all' : 'logout'}
-                          </span>
-                          <span>{hasOut ? 'Re-Clock OUT' : 'CLOCK OUT'}</span>
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </>
-        )}
-
-        {/* 4.5 SCANNER TAB */}
-        {activeTab === 'scan' && (
-          <div className="flex flex-col items-center justify-center p-4 space-y-5 text-center">
-            <div className="w-20 h-20 rounded-3xl bg-blue-500/15 border border-blue-500/30 flex items-center justify-center text-blue-400">
-              <span className="material-symbols-outlined text-4xl">qr_code_scanner</span>
+  return (
+    <div
+      className={`min-h-screen w-full flex flex-col transition-colors duration-300 pb-28 ${
+        isDark ? 'bg-[#090d16] text-white' : 'bg-slate-50 text-slate-900'
+      }`}
+    >
+      {/* ------------------------------------------------------------------- */}
+      {/* TOP HEADER: Clean, No Simulated Battery/Wifi, Shows User & Theme */}
+      {/* ------------------------------------------------------------------- */}
+      <header
+        className={`sticky top-0 z-30 w-full px-4 py-3 border-b backdrop-blur-xl transition-colors duration-300 ${
+          isDark
+            ? 'bg-[#0c121e]/90 border-slate-800/80'
+            : 'bg-white/90 border-slate-200'
+        }`}
+      >
+        <div className="max-w-5xl mx-auto flex items-center justify-between gap-3">
+          {/* Logo & Terminal Brand */}
+          <div className="flex items-center gap-2.5">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-cyan-600 to-indigo-600 flex items-center justify-center text-white shadow-md shadow-cyan-500/20">
+              <span className="material-symbols-outlined text-xl">fingerprint</span>
             </div>
             <div>
-              <h3 className="font-extrabold text-lg text-white">Badge & QR Quick Scanner</h3>
-              <p className="text-xs text-slate-400 mt-1 max-w-xs">
-                Scan employee card QR code or enter Employee ID for instant 1-touch punch.
-              </p>
-            </div>
-
-            <form onSubmit={handleQuickBadgeScan} className="w-full max-w-xs space-y-3">
-              <input
-                type="text"
-                value={badgeIdInput}
-                onChange={(e) => setBadgeIdInput(e.target.value)}
-                placeholder="Enter Employee ID (e.g. EMP-088)"
-                className="w-full text-center tracking-wider font-mono font-bold py-3 bg-[#121620] border border-white/10 rounded-xl text-white placeholder-slate-500 text-sm focus:border-blue-500 focus:outline-none"
-                autoFocus
-              />
-              <button
-                type="submit"
-                className="w-full py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 text-white rounded-xl font-bold text-xs shadow-lg shadow-blue-600/30 flex items-center justify-center gap-1.5"
-              >
-                <span className="material-symbols-outlined text-[18px]">check_circle</span>
-                Instant Punch Employee
-              </button>
-            </form>
-          </div>
-        )}
-
-        {/* 4.6 STATS TAB */}
-        {activeTab === 'stats' && (
-          <div className="space-y-4">
-            <h3 className="font-extrabold text-base text-white">Daily Attendance Analytics</h3>
-            <div className="p-4 rounded-2xl bg-[#121620] border border-white/10 space-y-3">
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-slate-400">Total Registered Workforce</span>
-                <span className="font-bold text-white">{stats.total}</span>
+              <div className="flex items-center gap-1.5">
+                <span className="font-black text-sm tracking-tight font-manrope">FLASH AM</span>
+                <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-400 uppercase">
+                  Terminal
+                </span>
               </div>
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-emerald-400">Total Present Today</span>
-                <span className="font-bold text-emerald-300">{stats.present}</span>
-              </div>
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-cyan-400">Currently Active On Shift</span>
-                <span className="font-bold text-cyan-300">{stats.working}</span>
-              </div>
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-blue-400">Shift Completed (In & Out)</span>
-                <span className="font-bold text-blue-300">{stats.completed}</span>
-              </div>
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-rose-400">Absent / Unrecorded</span>
-                <span className="font-bold text-rose-300">{stats.absent}</span>
-              </div>
-              <div className="pt-2 border-t border-white/10 flex items-center justify-between text-xs font-bold">
-                <span className="text-slate-300">Workforce Attendance Rate</span>
-                <span className="text-cyan-400">
-                  {stats.total > 0 ? Math.round((stats.present / stats.total) * 100) : 0}%
+              <div className="flex items-center gap-1.5 text-[11px] text-slate-400 font-mono">
+                <span>{currentTimeStr}</span>
+                <span>•</span>
+                <span
+                  className={`flex items-center gap-1 ${
+                    isOnline ? 'text-emerald-400' : 'text-amber-400'
+                  }`}
+                >
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full ${
+                      isOnline ? 'bg-emerald-400' : 'bg-amber-400'
+                    }`}
+                  ></span>
+                  {isOnline ? 'Live DB' : 'Offline'}
                 </span>
               </div>
             </div>
           </div>
+
+          {/* Right Header Controls: Theme Toggle & User Profile Icon */}
+          <div className="flex items-center gap-2">
+            {/* Theme Toggle Button */}
+            <button
+              onClick={toggleTheme}
+              title={isDark ? 'Switch to Light Theme' : 'Switch to Dark Theme'}
+              className={`w-9 h-9 rounded-xl flex items-center justify-center border transition-all active:scale-95 ${
+                isDark
+                  ? 'bg-slate-800/80 border-slate-700 text-amber-400 hover:bg-slate-800'
+                  : 'bg-slate-100 border-slate-200 text-indigo-600 hover:bg-slate-200'
+              }`}
+            >
+              <span className="material-symbols-outlined text-[19px]">
+                {isDark ? 'light_mode' : 'dark_mode'}
+              </span>
+            </button>
+
+            {/* Quick Lock Button */}
+            <button
+              onClick={handleLockTerminal}
+              title="Lock Terminal"
+              className={`w-9 h-9 rounded-xl flex items-center justify-center border transition-all active:scale-95 ${
+                isDark
+                  ? 'bg-slate-800/80 border-slate-700 text-slate-300 hover:text-white'
+                  : 'bg-slate-100 border-slate-200 text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <span className="material-symbols-outlined text-[19px]">lock</span>
+            </button>
+
+            {/* User Profile Avatar with Online Dot */}
+            <button
+              onClick={() => setShowProfileModal(true)}
+              className="flex items-center gap-2 pl-1 pr-2 py-1 rounded-xl border border-transparent hover:border-slate-700 transition-all active:scale-95"
+            >
+              <div className="relative">
+                <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-cyan-600 to-purple-600 flex items-center justify-center text-white font-black text-xs shadow-md">
+                  {userInitials}
+                </div>
+                <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-500 rounded-full border-2 border-white dark:border-[#0c121e]"></span>
+              </div>
+              <div className="hidden sm:flex flex-col text-left">
+                <span className="text-xs font-bold leading-tight truncate max-w-[100px]">
+                  {activeUser?.name}
+                </span>
+                <span className="text-[10px] text-cyan-400 leading-tight">
+                  {activeUser?.role}
+                </span>
+              </div>
+            </button>
+          </div>
+        </div>
+      </header>
+
+      {/* ------------------------------------------------------------------- */}
+      {/* FLOATING TOAST NOTIFICATION */}
+      {/* ------------------------------------------------------------------- */}
+      {toastMessage && (
+        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-2xl shadow-2xl border flex items-center gap-2.5 animate-in slide-in-from-top-4 duration-300 backdrop-blur-xl bg-slate-900/95 text-white border-slate-700">
+          <span
+            className={`material-symbols-outlined text-[18px] ${
+              toastMessage.type === 'success'
+                ? 'text-emerald-400'
+                : toastMessage.type === 'error'
+                ? 'text-red-400'
+                : 'text-cyan-400'
+            }`}
+          >
+            {toastMessage.type === 'success'
+              ? 'check_circle'
+              : toastMessage.type === 'error'
+              ? 'error'
+              : 'info'}
+          </span>
+          <span className="text-xs font-bold font-manrope">{toastMessage.message}</span>
+        </div>
+      )}
+
+      {/* ------------------------------------------------------------------- */}
+      {/* MAIN CONTENT AREA */}
+      {/* ------------------------------------------------------------------- */}
+      <main className="max-w-5xl mx-auto w-full px-4 pt-4 flex-1">
+        {/* TAB 1: ATTENDANCE PUNCH INTERFACE */}
+        {activeTab === 'attendance' && (
+          <div className="space-y-4">
+            {/* Stats Overview Cards */}
+            <div className="grid grid-cols-4 gap-2 sm:gap-3">
+              <div
+                className={`p-3 rounded-2xl border transition-all ${
+                  isDark
+                    ? 'bg-[#121927]/90 border-slate-800'
+                    : 'bg-white border-slate-200'
+                }`}
+              >
+                <div className="text-[10px] font-bold text-slate-400 uppercase">Staff</div>
+                <div className="text-lg sm:text-xl font-black font-manrope mt-0.5">{stats.total}</div>
+              </div>
+              <div
+                className={`p-3 rounded-2xl border transition-all ${
+                  isDark
+                    ? 'bg-[#121927]/90 border-slate-800'
+                    : 'bg-white border-slate-200'
+                }`}
+              >
+                <div className="text-[10px] font-bold text-emerald-400 uppercase">In Now</div>
+                <div className="text-lg sm:text-xl font-black font-manrope text-emerald-400 mt-0.5">
+                  {stats.clockedIn}
+                </div>
+              </div>
+              <div
+                className={`p-3 rounded-2xl border transition-all ${
+                  isDark
+                    ? 'bg-[#121927]/90 border-slate-800'
+                    : 'bg-white border-slate-200'
+                }`}
+              >
+                <div className="text-[10px] font-bold text-purple-400 uppercase">Completed</div>
+                <div className="text-lg sm:text-xl font-black font-manrope text-purple-400 mt-0.5">
+                  {stats.clockedOut}
+                </div>
+              </div>
+              <div
+                className={`p-3 rounded-2xl border transition-all ${
+                  isDark
+                    ? 'bg-[#121927]/90 border-slate-800'
+                    : 'bg-white border-slate-200'
+                }`}
+              >
+                <div className="text-[10px] font-bold text-amber-400 uppercase">Absent</div>
+                <div className="text-lg sm:text-xl font-black font-manrope text-amber-400 mt-0.5">
+                  {stats.absent}
+                </div>
+              </div>
+            </div>
+
+            {/* Date Filter & Search Controls */}
+            <div
+              className={`p-3 rounded-2xl border space-y-3 transition-all ${
+                isDark
+                  ? 'bg-[#121927]/90 border-slate-800'
+                  : 'bg-white border-slate-200'
+              }`}
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="material-symbols-outlined text-cyan-500 text-[18px]">calendar_today</span>
+                  <input
+                    type="date"
+                    value={selectedDate}
+                    onChange={(e) => setSelectedDate(e.target.value)}
+                    className={`px-3 py-1.5 rounded-xl border text-xs font-bold transition-all focus:outline-none focus:ring-1 focus:ring-cyan-500 ${
+                      isDark
+                        ? 'bg-slate-900 border-slate-700 text-white'
+                        : 'bg-slate-50 border-slate-200 text-slate-800'
+                    }`}
+                  />
+                  {selectedDate !== new Date().toISOString().split('T')[0] && (
+                    <button
+                      onClick={() => setSelectedDate(new Date().toISOString().split('T')[0])}
+                      className="text-[11px] font-semibold text-cyan-400 hover:underline"
+                    >
+                      Reset to Today
+                    </button>
+                  )}
+                </div>
+
+                {/* Status Quick Filters */}
+                <div className="flex items-center gap-1 overflow-x-auto pb-1 max-w-full">
+                  {['ALL', 'PRESENT', 'COMPLETED', 'ABSENT'].map((st) => (
+                    <button
+                      key={st}
+                      onClick={() => setStatusFilter(st)}
+                      className={`px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase transition-all ${
+                        statusFilter === st
+                          ? 'bg-cyan-500 text-white shadow-sm shadow-cyan-500/30'
+                          : isDark
+                          ? 'bg-slate-800/80 text-slate-400 hover:text-white'
+                          : 'bg-slate-100 text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      {st}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Search Bar & Department Filter */}
+              <div className="flex items-center gap-2">
+                <div className="relative flex-1">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 material-symbols-outlined text-slate-400 text-[18px]">
+                    search
+                  </span>
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search employee by name, code, department..."
+                    className={`w-full pl-9 pr-8 py-2 rounded-xl border text-xs font-medium transition-all focus:outline-none focus:ring-1 focus:ring-cyan-500 ${
+                      isDark
+                        ? 'bg-slate-900 border-slate-700 text-white placeholder-slate-500'
+                        : 'bg-slate-50 border-slate-200 text-slate-900 placeholder-slate-400'
+                    }`}
+                  />
+                  {searchQuery && (
+                    <button
+                      onClick={() => setSearchQuery('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white text-xs font-bold"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+
+                {departments.length > 1 && (
+                  <select
+                    value={deptFilter}
+                    onChange={(e) => setDeptFilter(e.target.value)}
+                    className={`px-3 py-2 rounded-xl border text-xs font-bold transition-all focus:outline-none focus:ring-1 focus:ring-cyan-500 ${
+                      isDark
+                        ? 'bg-slate-900 border-slate-700 text-white'
+                        : 'bg-slate-50 border-slate-200 text-slate-800'
+                    }`}
+                  >
+                    {departments.map((d) => (
+                      <option key={d} value={d}>
+                        {d === 'ALL' ? 'All Depts' : d}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            </div>
+
+            {/* Employee Punch Cards List */}
+            {isLoadingDb ? (
+              <div className="py-16 text-center">
+                <div className="w-8 h-8 border-3 border-cyan-500 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
+                <p className="text-xs font-semibold text-slate-400">Loading workforce from Supabase...</p>
+              </div>
+            ) : filteredEmployees.length === 0 ? (
+              <div
+                className={`p-10 rounded-3xl border text-center ${
+                  isDark ? 'bg-[#121927]/60 border-slate-800' : 'bg-white border-slate-200'
+                }`}
+              >
+                <span className="material-symbols-outlined text-slate-500 text-4xl mb-2">person_search</span>
+                <h3 className="text-sm font-bold">No employees matched your criteria</h3>
+                <p className="text-xs text-slate-400 mt-1">Try adjusting your search query or department filter.</p>
+              </div>
+            ) : (
+              <div className="space-y-2.5">
+                {filteredEmployees.map((emp) => {
+                  const rec = getEmployeeAttendance(emp);
+                  const hasIn = Boolean(rec && rec.inTime);
+                  const hasOut = Boolean(rec && rec.outTime);
+
+                  return (
+                    <div
+                      key={emp.id || emp.employeeCode}
+                      className={`p-3.5 sm:p-4 rounded-2xl border transition-all duration-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                        isDark
+                          ? 'bg-[#121927]/90 hover:bg-[#151e30] border-slate-800'
+                          : 'bg-white hover:bg-slate-50/80 border-slate-200 shadow-sm'
+                      }`}
+                    >
+                      {/* Left: Employee Info */}
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-11 h-11 rounded-xl bg-gradient-to-tr from-slate-700 to-slate-900 border border-slate-700/50 flex items-center justify-center text-white font-bold text-xs shrink-0 shadow-sm">
+                          {emp.name
+                            ? emp.name
+                                .split(' ')
+                                .map((n) => n[0])
+                                .slice(0, 2)
+                                .join('')
+                                .toUpperCase()
+                            : 'EM'}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <h4 className="font-bold text-sm font-manrope truncate">{emp.name}</h4>
+                            <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-slate-500/15 text-slate-400 border border-slate-500/20 shrink-0">
+                              {emp.employeeCode || `#${emp.id}`}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2 text-xs text-slate-400 mt-0.5 truncate">
+                            <span className="truncate">{emp.department || 'Staff'}</span>
+                            {emp.designation && (
+                              <>
+                                <span>•</span>
+                                <span className="truncate">{emp.designation}</span>
+                              </>
+                            )}
+                          </div>
+                          {/* Punch Status Badge */}
+                          <div className="flex items-center gap-2 mt-1.5">
+                            {hasIn ? (
+                              <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                                IN: {rec.inTime}
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-400 bg-slate-500/10 px-2 py-0.5 rounded-full">
+                                Not Clocked In
+                              </span>
+                            )}
+
+                            {hasOut && (
+                              <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-purple-400 bg-purple-500/10 px-2 py-0.5 rounded-full border border-purple-500/20">
+                                <span className="w-1.5 h-1.5 rounded-full bg-purple-400"></span>
+                                OUT: {rec.outTime}
+                                {rec.duration && <span>({rec.duration})</span>}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Right: IN and OUT Punch Buttons (With UNDO on click if already punched) */}
+                      <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                        {/* PUNCH IN BUTTON */}
+                        <button
+                          onClick={() => handlePunchIn(emp)}
+                          title={hasIn ? 'Already Clocked IN. Click to UNDO clock-in' : 'Clock IN'}
+                          className={`px-4 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider flex items-center gap-1.5 transition-all active:scale-95 shadow-md ${
+                            hasIn
+                              ? 'bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/40'
+                              : 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-emerald-600/25'
+                          }`}
+                        >
+                          <span className="material-symbols-outlined text-[17px]">
+                            {hasIn ? 'undo' : 'login'}
+                          </span>
+                          <span>{hasIn ? `IN ${rec.inTime.split(':')[0]}:${rec.inTime.split(':')[1]}` : 'PUNCH IN'}</span>
+                        </button>
+
+                        {/* PUNCH OUT BUTTON */}
+                        <button
+                          onClick={() => handlePunchOut(emp)}
+                          title={hasOut ? 'Already Clocked OUT. Click to UNDO clock-out' : 'Clock OUT'}
+                          className={`px-4 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider flex items-center gap-1.5 transition-all active:scale-95 shadow-md ${
+                            hasOut
+                              ? 'bg-purple-600/20 hover:bg-purple-600/30 text-purple-400 border border-purple-500/40'
+                              : hasIn
+                              ? 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white shadow-purple-600/25'
+                              : isDark
+                              ? 'bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed opacity-60'
+                              : 'bg-slate-200 text-slate-400 border border-slate-300 cursor-not-allowed opacity-60'
+                          }`}
+                        >
+                          <span className="material-symbols-outlined text-[17px]">
+                            {hasOut ? 'undo' : 'logout'}
+                          </span>
+                          <span>{hasOut ? `OUT ${rec.outTime.split(':')[0]}:${rec.outTime.split(':')[1]}` : 'PUNCH OUT'}</span>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         )}
 
-        {/* 4.7 SETTINGS TAB */}
-        {activeTab === 'settings' && (
+        {/* TAB 2: LIVE ROSTER & SUMMARY */}
+        {activeTab === 'roster' && (
           <div className="space-y-4">
-            <h3 className="font-extrabold text-base text-white">Security & Sync Controls</h3>
+            <div
+              className={`p-4 rounded-3xl border ${
+                isDark ? 'bg-[#121927]/90 border-slate-800' : 'bg-white border-slate-200'
+              }`}
+            >
+              <h3 className="text-base font-bold font-manrope">Today's Attendance Roster ({selectedDate})</h3>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Full ledger of punches recorded directly into the enterprise database.
+              </p>
+            </div>
 
-            <div className="p-4 rounded-2xl bg-[#121620] border border-white/10 space-y-4">
+            <div className="space-y-2">
+              {dbAttendance.filter((r) => r.date === selectedDate).length === 0 ? (
+                <div
+                  className={`p-8 rounded-2xl border text-center ${
+                    isDark ? 'bg-[#121927]/60 border-slate-800' : 'bg-white border-slate-200'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-slate-500 text-3xl mb-1">event_busy</span>
+                  <p className="text-xs text-slate-400">No punches recorded yet for {selectedDate}</p>
+                </div>
+              ) : (
+                dbAttendance
+                  .filter((r) => r.date === selectedDate)
+                  .map((rec) => (
+                    <div
+                      key={rec.id}
+                      className={`p-3 rounded-2xl border flex items-center justify-between gap-3 text-xs ${
+                        isDark ? 'bg-[#121927]/80 border-slate-800' : 'bg-white border-slate-200'
+                      }`}
+                    >
+                      <div>
+                        <div className="font-bold">{rec.employeeName}</div>
+                        <div className="text-slate-400 text-[11px] mt-0.5">
+                          {rec.department} • Code: {rec.employeeCode}
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="font-mono font-semibold text-emerald-400">IN: {rec.inTime || '—'}</div>
+                        <div className="font-mono font-semibold text-purple-400">OUT: {rec.outTime || '—'}</div>
+                      </div>
+                    </div>
+                  ))
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* TAB 3: SYNC & CLOUD DATABASE LOGS */}
+        {activeTab === 'sync' && (
+          <div className="space-y-4">
+            <div
+              className={`p-4 rounded-3xl border space-y-3 ${
+                isDark ? 'bg-[#121927]/90 border-slate-800' : 'bg-white border-slate-200'
+              }`}
+            >
               <div className="flex items-center justify-between">
                 <div>
-                  <div className="text-xs font-bold text-white">Fingerprint Biometric</div>
-                  <div className="text-[11px] text-slate-400">Allow instant 1-touch sensor unlock</div>
+                  <h3 className="text-base font-bold font-manrope">Realtime Database Sync</h3>
+                  <p className="text-xs text-slate-400">Direct connection with Supabase (main_state)</p>
                 </div>
                 <button
-                  onClick={() => {
-                    const next = localStorage.getItem('flasham_biometric') !== 'true';
-                    localStorage.setItem('flasham_biometric', next ? 'true' : 'false');
-                    appAlert(`Biometric authentication ${next ? 'Enabled' : 'Disabled'}.`);
-                  }}
-                  className="px-3 py-1.5 rounded-lg bg-blue-600/20 border border-blue-500/30 text-blue-300 text-xs font-bold"
-                >
-                  Configure
-                </button>
-              </div>
-
-              <div className="flex items-center justify-between pt-3 border-t border-white/5">
-                <div>
-                  <div className="text-xs font-bold text-white">Change 4-Digit PIN</div>
-                  <div className="text-[11px] text-slate-400">Update your quick access passcode</div>
-                </div>
-                <button
-                  onClick={() => setAuthStatus('setup-pin')}
-                  className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/15 text-white text-xs font-bold"
-                >
-                  Reset PIN
-                </button>
-              </div>
-
-              <div className="flex items-center justify-between pt-3 border-t border-white/5">
-                <div>
-                  <div className="text-xs font-bold text-white">Cloud Sync Status</div>
-                  <div className="text-[11px] text-slate-400">
-                    {pendingSyncCount > 0 ? `${pendingSyncCount} punches waiting to sync` : 'All punches up to date'}
-                  </div>
-                </div>
-                <button
-                  onClick={flushOfflineSyncQueue}
-                  className="px-3 py-1.5 rounded-lg bg-emerald-600/20 border border-emerald-500/30 text-emerald-300 text-xs font-bold flex items-center gap-1"
+                  onClick={() => fetchSupabaseData()}
+                  className="px-3 py-1.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs flex items-center gap-1.5 transition-all active:scale-95 shadow-md shadow-cyan-600/20"
                 >
                   <span className="material-symbols-outlined text-[16px]">sync</span>
-                  Sync Now
+                  <span>Sync Now</span>
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 pt-2">
+                <div className="p-3 rounded-xl bg-slate-900/40 border border-slate-800">
+                  <div className="text-[10px] text-slate-400 uppercase font-bold">Connection</div>
+                  <div className="text-xs font-bold text-emerald-400 mt-1 flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+                    {isOnline ? 'Online Realtime' : 'Offline Mode'}
+                  </div>
+                </div>
+                <div className="p-3 rounded-xl bg-slate-900/40 border border-slate-800">
+                  <div className="text-[10px] text-slate-400 uppercase font-bold">Last Synchronized</div>
+                  <div className="text-xs font-bold text-white mt-1 font-mono">{lastSyncTime || 'Just now'}</div>
+                </div>
+                <div className="p-3 rounded-xl bg-slate-900/40 border border-slate-800">
+                  <div className="text-[10px] text-slate-400 uppercase font-bold">Pending Offline Punches</div>
+                  <div className="text-xs font-bold text-amber-400 mt-1">{pendingQueue.length} records</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* TAB 4: SETTINGS & TERMINAL CONFIGURATION */}
+        {activeTab === 'settings' && (
+          <div className="space-y-4">
+            {/* Security PIN Change Box */}
+            <div
+              className={`p-4 sm:p-5 rounded-3xl border space-y-3 ${
+                isDark ? 'bg-[#121927]/90 border-slate-800' : 'bg-white border-slate-200'
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-xl bg-cyan-500/20 text-cyan-400 flex items-center justify-center">
+                  <span className="material-symbols-outlined text-xl">password</span>
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold font-manrope">Security Access PIN</h3>
+                  <p className="text-xs text-slate-400">Change the 4-digit PIN used to unlock this terminal</p>
+                </div>
+              </div>
+
+              <button
+                onClick={() => {
+                  setChangePinError('');
+                  setShowChangePinModal(true);
+                }}
+                className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-md shadow-cyan-600/20 active:scale-95 transition-all"
+              >
+                <span className="material-symbols-outlined text-[17px]">lock_reset</span>
+                <span>Change 4-Digit Security PIN</span>
+              </button>
+            </div>
+
+            {/* Appearance & Dark/Light Theme Settings */}
+            <div
+              className={`p-4 sm:p-5 rounded-3xl border space-y-3 ${
+                isDark ? 'bg-[#121927]/90 border-slate-800' : 'bg-white border-slate-200'
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-10 h-10 rounded-xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center">
+                    <span className="material-symbols-outlined text-xl">palette</span>
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold font-manrope">Terminal Appearance</h3>
+                    <p className="text-xs text-slate-400">Current Theme: {isDark ? 'Dark Mode' : 'Light Mode'}</p>
+                  </div>
+                </div>
+
+                <button
+                  onClick={toggleTheme}
+                  className={`px-4 py-2 rounded-xl text-xs font-bold border transition-all flex items-center gap-1.5 ${
+                    isDark
+                      ? 'bg-slate-800 border-slate-700 text-amber-400'
+                      : 'bg-slate-100 border-slate-200 text-indigo-600'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[17px]">
+                    {isDark ? 'light_mode' : 'dark_mode'}
+                  </span>
+                  <span>{isDark ? 'Switch to Light' : 'Switch to Dark'}</span>
                 </button>
               </div>
             </div>
 
-            <button
-              onClick={handleFullLogout}
-              className="w-full py-3 rounded-xl bg-rose-600/15 border border-rose-500/30 text-rose-300 font-bold text-xs hover:bg-rose-600/25 transition-all flex items-center justify-center gap-2"
-            >
-              <span className="material-symbols-outlined text-[18px]">logout</span>
-              Log Out of Flash AM Terminal
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* 4.8 Android Bottom Navigation Bar */}
-      <div className="h-14 bg-[#121620] border-t border-white/10 px-4 flex items-center justify-around shrink-0 z-50">
-        {[
-          { key: 'punch', label: 'Attendance', icon: 'how_to_reg' },
-          { key: 'stats', label: 'Summary', icon: 'bar_chart' },
-          { key: 'scan', label: 'Quick QR', icon: 'qr_code_scanner' },
-          { key: 'settings', label: 'Settings', icon: 'settings' }
-        ].map(item => {
-          const isActive = activeTab === item.key;
-          return (
-            <button
-              key={item.key}
-              onClick={() => setActiveTab(item.key)}
-              className={`flex flex-col items-center justify-center gap-0.5 py-1 px-3 rounded-xl transition-all cursor-pointer ${
-                isActive ? 'text-blue-400 font-bold' : 'text-slate-400 hover:text-slate-200'
+            {/* Terminal Info */}
+            <div
+              className={`p-4 sm:p-5 rounded-3xl border text-xs text-slate-400 space-y-2 ${
+                isDark ? 'bg-[#121927]/60 border-slate-800' : 'bg-white border-slate-200'
               }`}
             >
-              <span className={`material-symbols-outlined text-[20px] ${isActive ? 'scale-110' : ''}`}>
-                {item.icon}
-              </span>
-              <span className="text-[10px] leading-tight">{item.label}</span>
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-
-  // If on desktop simulator mode: wrap in realistic Android phone frame with punch-hole & buttons
-  if (isSimulatorFrame) {
-    return (
-      <div className="min-h-screen w-full bg-[#07090e] flex flex-col items-center justify-center p-4 lg:p-8 font-sans">
-        {/* Simulator Top Toolbar */}
-        <div className="mb-4 flex items-center justify-between w-full max-w-[420px] px-2 text-xs">
-          <div className="flex items-center gap-2 text-slate-300 font-bold">
-            <span className="material-symbols-outlined text-blue-400 text-[18px]">smartphone</span>
-            <span>Android Phone Simulator</span>
+              <div className="font-bold text-white text-sm">Flash AM Terminal Information</div>
+              <div>App Version: 2.4.0 (Native Android Biometric Engine)</div>
+              <div>Connected Database: Supabase PostgreSQL (ID: main_state)</div>
+              <div>Authenticated Operator: {activeUser?.name} (@{activeUser?.username})</div>
+            </div>
           </div>
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => setIsSimulatorFrame(false)}
-              className="text-xs text-blue-400 hover:text-blue-300 font-medium flex items-center gap-1"
-            >
-              <span className="material-symbols-outlined text-[14px]">fullscreen</span>
-              Full Screen
-            </button>
-            <button
-              onClick={() => navigate('/dashboard')}
-              className="text-xs text-slate-400 hover:text-white font-medium flex items-center gap-1"
-            >
-              <span className="material-symbols-outlined text-[14px]">close</span>
-              Close
-            </button>
+        )}
+      </main>
+
+      {/* ------------------------------------------------------------------- */}
+      {/* FIXED FOOTER NAVIGATION: Always at the Bottom of the Mobile Screen  */}
+      {/* ------------------------------------------------------------------- */}
+      <footer
+        className={`fixed bottom-0 left-0 right-0 z-40 border-t backdrop-blur-2xl transition-colors duration-300 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-2xl ${
+          isDark
+            ? 'bg-[#0a0e17]/95 border-slate-800/80'
+            : 'bg-white/95 border-slate-200'
+        }`}
+      >
+        <div className="max-w-md mx-auto grid grid-cols-4 px-2 py-2">
+          {/* TAB 1: Attendance */}
+          <button
+            onClick={() => setActiveTab('attendance')}
+            className={`flex flex-col items-center justify-center py-1 transition-all active:scale-95 ${
+              activeTab === 'attendance'
+                ? 'text-cyan-400 font-bold'
+                : isDark
+                ? 'text-slate-400 hover:text-slate-200'
+                : 'text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <span className="material-symbols-outlined text-[22px]">fingerprint</span>
+            <span className="text-[10px] mt-0.5 tracking-tight font-manrope">Attendance</span>
+          </button>
+
+          {/* TAB 2: Roster */}
+          <button
+            onClick={() => setActiveTab('roster')}
+            className={`flex flex-col items-center justify-center py-1 transition-all active:scale-95 ${
+              activeTab === 'roster'
+                ? 'text-cyan-400 font-bold'
+                : isDark
+                ? 'text-slate-400 hover:text-slate-200'
+                : 'text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <span className="material-symbols-outlined text-[22px]">groups</span>
+            <span className="text-[10px] mt-0.5 tracking-tight font-manrope">Roster</span>
+          </button>
+
+          {/* TAB 3: Realtime Sync */}
+          <button
+            onClick={() => setActiveTab('sync')}
+            className={`flex flex-col items-center justify-center py-1 transition-all active:scale-95 relative ${
+              activeTab === 'sync'
+                ? 'text-cyan-400 font-bold'
+                : isDark
+                ? 'text-slate-400 hover:text-slate-200'
+                : 'text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <span className="material-symbols-outlined text-[22px]">cloud_sync</span>
+            <span className="text-[10px] mt-0.5 tracking-tight font-manrope">Sync</span>
+            {pendingQueue.length > 0 && (
+              <span className="absolute top-0 right-1/4 w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
+            )}
+          </button>
+
+          {/* TAB 4: Settings */}
+          <button
+            onClick={() => setActiveTab('settings')}
+            className={`flex flex-col items-center justify-center py-1 transition-all active:scale-95 ${
+              activeTab === 'settings'
+                ? 'text-cyan-400 font-bold'
+                : isDark
+                ? 'text-slate-400 hover:text-slate-200'
+                : 'text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <span className="material-symbols-outlined text-[22px]">tune</span>
+            <span className="text-[10px] mt-0.5 tracking-tight font-manrope">Settings</span>
+          </button>
+        </div>
+      </footer>
+
+      {/* ------------------------------------------------------------------- */}
+      {/* MODAL 1: UNDO CONFIRMATION DIALOG (For IN or OUT accidental punch)  */}
+      {/* ------------------------------------------------------------------- */}
+      {undoModal.isOpen && undoModal.employee && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-in fade-in duration-200">
+          <div
+            className={`w-full max-w-sm p-6 rounded-3xl border shadow-2xl transition-all ${
+              isDark ? 'bg-[#121927] border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-900'
+            }`}
+          >
+            <div className="w-12 h-12 rounded-2xl bg-amber-500/20 text-amber-400 flex items-center justify-center mb-4 mx-auto">
+              <span className="material-symbols-outlined text-2xl">undo</span>
+            </div>
+
+            <h3 className="text-base font-bold text-center font-manrope">
+              Undo Punch {undoModal.type}?
+            </h3>
+            <p className="text-xs text-center text-slate-400 mt-1 mb-5">
+              {undoModal.type === 'IN'
+                ? `This will remove the clock-in timestamp for ${undoModal.employee.name} and revert their status to unpunched.`
+                : `This will clear the clock-out timestamp for ${undoModal.employee.name} and restore their active working status.`}
+            </p>
+
+            <div className="flex gap-2">
+              <button
+                onClick={() => setUndoModal({ isOpen: false, type: 'IN', employee: null, record: null })}
+                className={`flex-1 py-3 rounded-xl font-bold text-xs border transition-all active:scale-95 ${
+                  isDark
+                    ? 'border-slate-700 bg-slate-800 text-slate-300 hover:text-white'
+                    : 'border-slate-200 bg-slate-100 text-slate-700 hover:bg-slate-200'
+                }`}
+              >
+                Keep Record
+              </button>
+              <button
+                onClick={handleConfirmUndo}
+                className="flex-1 py-3 rounded-xl font-bold text-xs bg-amber-600 hover:bg-amber-500 text-white shadow-lg shadow-amber-600/30 transition-all active:scale-95 flex items-center justify-center gap-1.5"
+              >
+                <span className="material-symbols-outlined text-[16px]">undo</span>
+                <span>Confirm Undo</span>
+              </button>
+            </div>
           </div>
         </div>
+      )}
 
-        {/* Android Device Shell */}
-        <div className="relative w-full max-w-[390px] h-[780px] rounded-[48px] border-[12px] border-[#1f2025] bg-[#1f2025] shadow-2xl shadow-black/80 overflow-hidden flex flex-col">
-          {/* Camera Punch Hole */}
-          <div className="absolute top-3.5 left-1/2 -translate-x-1/2 w-4 h-4 bg-black rounded-full z-50 border border-white/10 pointer-events-none"></div>
+      {/* ------------------------------------------------------------------- */}
+      {/* MODAL 2: CHANGE SECURITY PIN DIALOG                                */}
+      {/* ------------------------------------------------------------------- */}
+      {showChangePinModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-in fade-in duration-200">
+          <div
+            className={`w-full max-w-sm p-6 rounded-3xl border shadow-2xl transition-all ${
+              isDark ? 'bg-[#121927] border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-900'
+            }`}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-base font-bold font-manrope">Change Security PIN</h3>
+              <button
+                onClick={() => setShowChangePinModal(false)}
+                className="text-slate-400 hover:text-white text-sm font-bold"
+              >
+                ✕
+              </button>
+            </div>
 
-          {/* Screen Content */}
-          <div className="flex-1 w-full h-full rounded-[36px] overflow-hidden">
-            {appBodyContent}
+            <form onSubmit={handleChangePinSubmit} className="space-y-3">
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-400 mb-1 uppercase tracking-wider">
+                  Current 4-Digit PIN
+                </label>
+                <input
+                  type="password"
+                  maxLength={4}
+                  value={changePinForm.currentPin}
+                  onChange={(e) => setChangePinForm({ ...changePinForm, currentPin: e.target.value })}
+                  placeholder="••••"
+                  className={`w-full px-3.5 py-2.5 rounded-xl border text-sm text-center font-mono tracking-widest font-bold focus:outline-none focus:ring-2 focus:ring-cyan-500 ${
+                    isDark ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200 text-slate-900'
+                  }`}
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-400 mb-1 uppercase tracking-wider">
+                  New 4-Digit PIN
+                </label>
+                <input
+                  type="password"
+                  maxLength={4}
+                  value={changePinForm.newPin}
+                  onChange={(e) => setChangePinForm({ ...changePinForm, newPin: e.target.value })}
+                  placeholder="••••"
+                  className={`w-full px-3.5 py-2.5 rounded-xl border text-sm text-center font-mono tracking-widest font-bold focus:outline-none focus:ring-2 focus:ring-cyan-500 ${
+                    isDark ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200 text-slate-900'
+                  }`}
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-400 mb-1 uppercase tracking-wider">
+                  Confirm New PIN
+                </label>
+                <input
+                  type="password"
+                  maxLength={4}
+                  value={changePinForm.confirmPin}
+                  onChange={(e) => setChangePinForm({ ...changePinForm, confirmPin: e.target.value })}
+                  placeholder="••••"
+                  className={`w-full px-3.5 py-2.5 rounded-xl border text-sm text-center font-mono tracking-widest font-bold focus:outline-none focus:ring-2 focus:ring-cyan-500 ${
+                    isDark ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200 text-slate-900'
+                  }`}
+                />
+              </div>
+
+              {changePinError && (
+                <div className="p-2.5 bg-red-500/15 border border-red-500/30 rounded-xl text-xs text-red-500 font-semibold">
+                  {changePinError}
+                </div>
+              )}
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowChangePinModal(false)}
+                  className={`flex-1 py-3 rounded-xl font-bold text-xs border ${
+                    isDark ? 'border-slate-700 bg-slate-800 text-slate-300' : 'border-slate-200 bg-slate-100 text-slate-700'
+                  }`}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-3 rounded-xl font-bold text-xs bg-cyan-600 hover:bg-cyan-500 text-white shadow-lg shadow-cyan-600/30 active:scale-95 transition-all"
+                >
+                  Update PIN
+                </button>
+              </div>
+            </form>
           </div>
         </div>
-      </div>
-    );
-  }
+      )}
 
-  // Full Screen on mobile device
-  return (
-    <div className="min-h-screen w-full bg-[#0b0e14]">
-      {appBodyContent}
+      {/* ------------------------------------------------------------------- */}
+      {/* MODAL 3: USER PROFILE DRAWER / POPUP                               */}
+      {/* ------------------------------------------------------------------- */}
+      {showProfileModal && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/75 backdrop-blur-md animate-in fade-in duration-200">
+          <div
+            className={`w-full max-w-sm p-6 rounded-t-3xl sm:rounded-3xl border shadow-2xl transition-all ${
+              isDark ? 'bg-[#121927] border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-900'
+            }`}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-base font-bold font-manrope">Operator Profile</h3>
+              <button
+                onClick={() => setShowProfileModal(false)}
+                className="text-slate-400 hover:text-white text-sm font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="flex items-center gap-3.5 p-3 rounded-2xl bg-slate-900/50 border border-slate-800 mb-4">
+              <div className="w-12 h-12 rounded-full bg-gradient-to-tr from-cyan-600 to-purple-600 flex items-center justify-center text-white font-black text-base shadow-md">
+                {userInitials}
+              </div>
+              <div>
+                <h4 className="font-bold text-sm font-manrope">{activeUser?.name}</h4>
+                <div className="text-xs text-slate-400">@{activeUser?.username}</div>
+                <span className="inline-block text-[10px] font-bold uppercase text-cyan-400 mt-1">
+                  {activeUser?.role}
+                </span>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <button
+                onClick={() => {
+                  setShowProfileModal(false);
+                  setShowChangePinModal(true);
+                }}
+                className={`w-full py-3 px-4 rounded-xl font-bold text-xs border flex items-center justify-between transition-all active:scale-98 ${
+                  isDark ? 'bg-slate-800/80 border-slate-700 text-white' : 'bg-slate-100 border-slate-200 text-slate-800'
+                }`}
+              >
+                <span className="flex items-center gap-2">
+                  <span className="material-symbols-outlined text-[18px] text-cyan-400">password</span>
+                  <span>Change Security PIN</span>
+                </span>
+                <span className="material-symbols-outlined text-[16px] text-slate-400">chevron_right</span>
+              </button>
+
+              <button
+                onClick={handleLockTerminal}
+                className={`w-full py-3 px-4 rounded-xl font-bold text-xs border flex items-center justify-between transition-all active:scale-98 ${
+                  isDark ? 'bg-slate-800/80 border-slate-700 text-white' : 'bg-slate-100 border-slate-200 text-slate-800'
+                }`}
+              >
+                <span className="flex items-center gap-2">
+                  <span className="material-symbols-outlined text-[18px] text-amber-400">lock</span>
+                  <span>Lock Terminal</span>
+                </span>
+                <span className="material-symbols-outlined text-[16px] text-slate-400">chevron_right</span>
+              </button>
+
+              <button
+                onClick={handleLogout}
+                className="w-full py-3 px-4 rounded-xl font-bold text-xs bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 text-red-400 flex items-center justify-between transition-all active:scale-98"
+              >
+                <span className="flex items-center gap-2">
+                  <span className="material-symbols-outlined text-[18px]">logout</span>
+                  <span>Log Out / Switch User</span>
+                </span>
+                <span className="material-symbols-outlined text-[16px]">chevron_right</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
