@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { supabase } from '../../utils/supabaseClient';
 import { useDialog } from '../../context/DialogContext';
 import { useApp } from '../../context/AppContext';
 
@@ -295,33 +296,140 @@ export default function HRAttendance({ isMobile }) {
   const [startX, setStartX] = useState(0);
   const [startWidth, setStartWidth] = useState(200);
 
-  // Interactive Dates Picker states - loaded persistently from localStorage
+  // User Identification for Per-User Filter Persistence
+  const currentUsername = (appState?.currentUser?.username || appState?.currentUser?.id || 'admin').toLowerCase();
+  const userFilterKey = `hr_attendance_filters_${currentUsername}`;
+
+  const getSavedUserFilters = () => {
+    try {
+      const raw = localStorage.getItem(userFilterKey);
+      if (raw) return JSON.parse(raw);
+    } catch(e) {}
+    return null;
+  };
+  const savedFilters = getSavedUserFilters();
+
+  const [departmentFilter, setDepartmentFilter] = useState(() => savedFilters?.departmentFilter || 'ALL');
+  const [statusFilter, setStatusFilter] = useState(() => savedFilters?.statusFilter || 'ALL');
+
+  // Interactive Dates Picker states - loaded persistently per user
   const [startDate, setStartDate] = useState(() => {
+    if (savedFilters?.startDate) return savedFilters.startDate;
     const d = new Date();
     const y = d.getFullYear();
     const m = String(d.getMonth() + 1).padStart(2, '0');
     const day = String(d.getDate()).padStart(2, '0');
-    const todayStr = `${y}-${m}-${day}`;
-    return localStorage.getItem('hr_attendance_start_date') || todayStr;
+    return `${y}-${m}-${day}`;
   });
+
   const [endDate, setEndDate] = useState(() => {
+    if (savedFilters?.endDate) return savedFilters.endDate;
     const d = new Date();
     const y = d.getFullYear();
     const m = String(d.getMonth() + 1).padStart(2, '0');
     const day = String(d.getDate()).padStart(2, '0');
-    const todayStr = `${y}-${m}-${day}`;
-    return localStorage.getItem('hr_attendance_end_date') || todayStr;
+    return `${y}-${m}-${day}`;
   });
   const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
 
   const [selectedMonth, setSelectedMonth] = useState(() => {
-    const m = localStorage.getItem('hr_attendance_selected_month');
-    return m !== null ? parseInt(m) : new Date().getMonth();
+    if (savedFilters?.selectedMonth !== undefined && savedFilters?.selectedMonth !== null) {
+      return parseInt(savedFilters.selectedMonth);
+    }
+    return new Date().getMonth();
   });
+
   const [selectedYear, setSelectedYear] = useState(() => {
-    const y = localStorage.getItem('hr_attendance_selected_year');
-    return y !== null ? parseInt(y) : new Date().getFullYear();
+    if (savedFilters?.selectedYear !== undefined && savedFilters?.selectedYear !== null) {
+      return parseInt(savedFilters.selectedYear);
+    }
+    return new Date().getFullYear();
   });
+
+  // Live real-time attendance punches stream (WhatsApp-speed instant delivery)
+  const [liveUploadedAttendance, setLiveUploadedAttendance] = useState(() => appState?.hr_uploaded_attendance || []);
+
+  useEffect(() => {
+    if (appState?.hr_uploaded_attendance) {
+      setLiveUploadedAttendance(appState.hr_uploaded_attendance);
+    }
+  }, [appState?.hr_uploaded_attendance]);
+
+  // Subscribe to instant WebSocket punch broadcast channel
+  useEffect(() => {
+    const channel = supabase
+      .channel('hr_attendance_realtime_broadcast')
+      .on('broadcast', { event: 'attendance_punch' }, ({ payload }) => {
+        if (!payload) return;
+        const { action, record, empId, empCode, date } = payload;
+        setLiveUploadedAttendance(prev => {
+          let updated = [...(prev || [])];
+          if (action === 'PUNCH_IN' || action === 'PUNCH_OUT') {
+            const idx = updated.findIndex(u => 
+              (u.employeeId === record.employeeId || u.employeeCode === record.employeeCode) && 
+              u.date === record.date
+            );
+            if (idx >= 0) updated[idx] = { ...updated[idx], ...record };
+            else updated.unshift(record);
+          } else if (action === 'UNDO_IN') {
+            updated = updated.filter(u => 
+              !((u.employeeId === empId || u.employeeCode === empCode) && u.date === date)
+            );
+          } else if (action === 'UNDO_OUT') {
+            const idx = updated.findIndex(u => 
+              (u.employeeId === empId || u.employeeCode === empCode) && u.date === date
+            );
+            if (idx >= 0) {
+              updated[idx] = { ...updated[idx], outTime: null, duration: null, status: 'Present' };
+            }
+          }
+          return updated;
+        });
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  // Per-User Filter Persistence: Restore filters when current user switches
+  useEffect(() => {
+    if (!currentUsername) return;
+    const filters = getSavedUserFilters();
+    if (filters) {
+      if (filters.startDate) setStartDate(filters.startDate);
+      if (filters.endDate) setEndDate(filters.endDate);
+      if (filters.selectedMonth !== undefined) setSelectedMonth(parseInt(filters.selectedMonth));
+      if (filters.selectedYear !== undefined) setSelectedYear(parseInt(filters.selectedYear));
+      if (filters.selectedDay) setSelectedDay(filters.selectedDay);
+      if (filters.activeConditions) setActiveConditions(filters.activeConditions);
+      if (filters.searchQuery !== undefined) setSearchQuery(filters.searchQuery);
+      if (filters.departmentFilter) setDepartmentFilter(filters.departmentFilter);
+      if (filters.statusFilter) setStatusFilter(filters.statusFilter);
+      if (filters.viewMode) setViewMode(filters.viewMode);
+    }
+  }, [currentUsername]);
+
+  // Per-User Filter Persistence: Save filters whenever the user changes any filter
+  useEffect(() => {
+    if (!currentUsername) return;
+    const currentFilters = {
+      startDate,
+      endDate,
+      selectedMonth,
+      selectedYear,
+      selectedDay,
+      activeConditions,
+      searchQuery,
+      departmentFilter,
+      statusFilter,
+      viewMode
+    };
+    try {
+      localStorage.setItem(userFilterKey, JSON.stringify(currentFilters));
+    } catch(e) {}
+  }, [currentUsername, startDate, endDate, selectedMonth, selectedYear, selectedDay, activeConditions, searchQuery, departmentFilter, statusFilter, viewMode]);
 
   const [openColumnMenu, setOpenColumnMenu] = useState(null);
 
@@ -762,10 +870,37 @@ export default function HRAttendance({ isMobile }) {
   };
 
   // Filter employees list based on search inside local draft state
-  const filteredEmployees = localEmployees.filter(emp => 
-    emp.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    emp.id.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  // Distinct Departments for Filter Dropdown
+  const departmentsList = React.useMemo(() => {
+    const set = new Set();
+    localEmployees.forEach(emp => {
+      if (emp.department) set.add(emp.department);
+    });
+    return ['ALL', ...Array.from(set).sort()];
+  }, [localEmployees]);
+
+  const filteredEmployees = localEmployees.filter(emp => {
+    const q = searchQuery.toLowerCase().trim();
+    const matchSearch = !q || 
+      (emp.name && emp.name.toLowerCase().includes(q)) ||
+      (emp.id && String(emp.id).toLowerCase().includes(q)) ||
+      (emp.employeeCode && String(emp.employeeCode).toLowerCase().includes(q)) ||
+      (emp.department && emp.department.toLowerCase().includes(q));
+
+    const matchDept = departmentFilter === 'ALL' || !departmentFilter || emp.department === departmentFilter;
+
+    if (!matchSearch || !matchDept) return false;
+
+    if (statusFilter !== 'ALL' && statusFilter) {
+      const att = emp.attendance || {};
+      const rec = att[startDate] || att[selectedDay] || {};
+      if ((rec.status || 'absent').toLowerCase() !== statusFilter.toLowerCase()) {
+        return false;
+      }
+    }
+
+    return true;
+  });
 
   // Pagination bounds (20 entries per page)
   const totalPages = Math.ceil(filteredEmployees.length / itemsPerPage);
@@ -1433,10 +1568,24 @@ export default function HRAttendance({ isMobile }) {
                                   <option value="holiday">Holiday</option>
                                   <option value="off day">Off Day</option>
                                 </select>
+                                {uploadedAttRec && uploadedAttRec.inTime && (
+                                  <div className="flex flex-col gap-0.5 text-[8px] font-mono mt-0.5 w-full bg-emerald-500/10 p-1 rounded border border-emerald-500/20">
+                                    <span className="text-emerald-700 dark:text-emerald-400 font-bold flex items-center justify-center gap-1">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                                      IN: {uploadedAttRec.inTime}
+                                    </span>
+                                    {uploadedAttRec.outTime && (
+                                      <span className="text-purple-700 dark:text-purple-400 font-bold flex items-center justify-center gap-1">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-purple-500"></span>
+                                        OUT: {uploadedAttRec.outTime}
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
                                 {(systemRec.ot > 0 || systemRec.fines > 0 || systemRec.deductions > 0) && (
                                   <span className="text-[8px] text-slate-400 font-mono">
                                     {systemRec.ot > 0 ? `OT:${systemRec.ot}h ` : ''}
-                                    {systemRec.fines > 0 ? `F:$${systemRec.fines} ` : ''}
+                                    {systemRec.fines > 0 ? `F:${systemRec.fines} ` : ''}
                                     {systemRec.deductions > 0 ? `L:${systemRec.deductions}h` : ''}
                                   </span>
                                 )}
@@ -1685,23 +1834,41 @@ export default function HRAttendance({ isMobile }) {
 
         {/* Search & Date Filters Bar */}
         <div className="bg-surface-container-lowest p-4 rounded-2xl border border-outline-variant/10 shadow-sm flex flex-col gap-3">
-          <div className="relative w-full">
-            <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[18px]">search</span>
-            <input 
-              type="text" 
-              value={searchQuery}
-              onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
-              placeholder="Quick search employees..." 
-              className="w-full bg-surface-container-low border border-outline-variant/15 rounded-xl pl-9 pr-4 py-2 text-xs font-semibold text-on-surface placeholder:text-slate-400 focus:bg-surface-container-lowest focus:ring-1 focus:ring-primary focus:border-transparent transition-all outline-none"
-            />
-            {searchQuery && (
-              <button 
-                onClick={() => setSearchQuery('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-on-surface text-[14px]"
+          <div className="flex flex-col sm:flex-row items-center gap-2.5 w-full">
+            <div className="relative flex-1 w-full">
+              <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[18px]">search</span>
+              <input 
+                type="text" 
+                value={searchQuery}
+                onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
+                placeholder="Quick search employees by name, code, dept..." 
+                className="w-full bg-surface-container-low border border-outline-variant/15 rounded-xl pl-9 pr-4 py-2 text-xs font-semibold text-on-surface placeholder:text-slate-400 focus:bg-surface-container-lowest focus:ring-1 focus:ring-primary focus:border-transparent transition-all outline-none"
+              />
+              {searchQuery && (
+                <button 
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-on-surface text-[14px]"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+
+            {/* Department Filter Dropdown (Saved per user) */}
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <select
+                value={departmentFilter}
+                onChange={(e) => { setDepartmentFilter(e.target.value); setCurrentPage(1); }}
+                className="w-full sm:w-auto bg-white border border-outline-variant/20 rounded-xl px-3 py-2 text-xs font-bold text-on-surface cursor-pointer shadow-2xs outline-none focus:ring-1 focus:ring-primary"
+                title="Filter by Department (Saved for your user profile)"
               >
-                ✕
-              </button>
-            )}
+                {departmentsList.map(dept => (
+                  <option key={dept} value={dept}>
+                    {dept === 'ALL' ? '🏢 All Departments' : dept}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
 
           {canUseDateFilter && (
@@ -1878,13 +2045,25 @@ export default function HRAttendance({ isMobile }) {
                       (r.date === day.date || normalizeDate(r.date) === normalizeDate(day.date))
                     );
 
-                    const uploadedAttRec = (uploadedAttendance || []).find(u => 
+                    const uploadedAttRec = (liveUploadedAttendance || uploadedAttendance || []).find(u => 
                       (
-                        (u.employeeId && (String(u.employeeId) === empIdStr || String(u.employeeId) === String(emp.employeeId))) ||
+                        (u.employeeId && (String(u.employeeId) === empIdStr || String(u.employeeId) === String(emp.employeeId) || String(u.employeeCode) === String(emp.employeeCode))) ||
                         (u.employeeName && String(u.employeeName).trim().toLowerCase() === empNameLower)
                       ) &&
                       (u.date === day.date || normalizeDate(u.date) === normalizeDate(day.date))
                     );
+
+                    // Auto-sync live punch from Flash AM into active cell status
+                    if (uploadedAttRec && uploadedAttRec.inTime) {
+                      rec = {
+                        ...rec,
+                        status: uploadedAttRec.status === 'Completed' ? 'present' : (uploadedAttRec.status?.toLowerCase() || 'present'),
+                        inTime: uploadedAttRec.inTime,
+                        outTime: uploadedAttRec.outTime,
+                        duration: uploadedAttRec.duration,
+                        explicitStatus: true
+                      };
+                    }
 
                     if (approvedOtReq && parseFloat(approvedOtReq.hours || 0) > 0) {
                       const otHrs = parseFloat(approvedOtReq.hours);
@@ -2178,26 +2357,7 @@ export default function HRAttendance({ isMobile }) {
               </>
             )}
 
-                        {/* Flash AM Mobile Terminal Launcher */}
-            <a 
-              href="/flash-am" 
-              className="px-4 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 rounded-xl text-xs font-black text-white flex items-center gap-2 transition-all active:scale-[0.97] cursor-pointer shadow-md shadow-blue-500/20"
-              title="Launch Flash AM Android Attendance Terminal"
-            >
-              <span className="material-symbols-outlined text-[18px]">fingerprint</span>
-              Flash AM (Mobile)
-            </a>
-
-            {/* Direct Flash AM Android APK Download */}
-            <a 
-              href="/downloads/FlashAM.apk" 
-              download="FlashAM.apk"
-              className="px-4 py-2.5 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border border-emerald-500/30 rounded-xl text-xs font-black flex items-center gap-2 transition-all active:scale-[0.97] cursor-pointer shadow-md shadow-emerald-500/10"
-              title="Direct Download Flash AM Android APK file for mobile installation"
-            >
-              <span className="material-symbols-outlined text-[18px]">android</span>
-              Download APK
-            </a>
+                        
 
             {/* Verify & Reconcile Button */}
             {canReconcile && (

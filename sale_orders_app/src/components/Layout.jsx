@@ -501,7 +501,6 @@ export default function Layout({ children, hideSidebar = false, subNavigation = 
     { to: '/delivery-dashboard', icon: 'local_shipping', label: 'Delivery', module: 'delivery' },
     { to: '/finance', icon: 'account_balance_wallet', label: 'Finance', module: 'finance' },
     { to: '/hr', icon: 'badge', label: 'HR Dashboard', module: 'hr' },
-    { to: '/flash-am', icon: 'fingerprint', label: 'Flash AM (Mobile)', module: 'hr' },
     { to: '/chat', icon: 'chat', label: 'Chats', module: 'chat' },
     { to: '/admin-setup', icon: 'manage_accounts', label: 'User Control', module: 'userManagement' },
     { to: '/settings', icon: 'settings', label: 'Settings', module: 'settings' }

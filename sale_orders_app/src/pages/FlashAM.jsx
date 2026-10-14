@@ -96,7 +96,6 @@ const calculateDuration = (inTimeStr, outTimeStr) => {
 
 export default function FlashAM() {
   const { state } = useApp() || {};
-  const { appAlert } = useDialog() || {};
   const navigate = useNavigate();
 
   // 1. Theme State (Dark / Light)
@@ -184,7 +183,7 @@ export default function FlashAM() {
   const [showProfileModal, setShowProfileModal] = useState(false);
 
   // Filter & Navigation
-  const [activeTab, setActiveTab] = useState('attendance'); // 'attendance' | 'roster' | 'sync' | 'settings'
+  const [activeTab, setActiveTab] = useState('attendance'); // 'attendance' | 'roster' | 'reports' | 'sync' | 'settings'
   const [selectedDate, setSelectedDate] = useState(() => {
     const d = new Date();
     return d.toISOString().split('T')[0];
@@ -193,6 +192,31 @@ export default function FlashAM() {
   const [deptFilter, setDeptFilter] = useState('ALL');
   const [statusFilter, setStatusFilter] = useState('ALL'); // 'ALL' | 'PRESENT' | 'ABSENT' | 'COMPLETED'
   const [toastMessage, setToastMessage] = useState(null);
+
+  // 5. Department Reports State (Date Range, Department Selection, Export Modals)
+  const [reportDept, setReportDept] = useState('ALL');
+  const [reportStartDate, setReportStartDate] = useState(() => {
+    const d = new Date();
+    d.setDate(1); // 1st of current month
+    return d.toISOString().split('T')[0];
+  });
+  const [reportEndDate, setReportEndDate] = useState(() => {
+    return new Date().toISOString().split('T')[0];
+  });
+  const [isExporting, setIsExporting] = useState(false);
+
+  // Supabase Real-time Broadcast Channel for Sub-second WhatsApp-like delivery
+  const broadcastChannelRef = useRef(null);
+
+  useEffect(() => {
+    broadcastChannelRef.current = supabase.channel('hr_attendance_realtime_broadcast');
+    broadcastChannelRef.current.subscribe();
+    return () => {
+      if (broadcastChannelRef.current) {
+        supabase.removeChannel(broadcastChannelRef.current);
+      }
+    };
+  }, []);
 
   // Show Toast Helper
   const showToast = (message, type = 'info') => {
@@ -313,7 +337,6 @@ export default function FlashAM() {
     }
     setSyncStatus('saving');
     try {
-      // 1. Fetch current latest state_data to merge atomically
       const { data, error: fetchErr } = await supabase
         .from('erp_state')
         .select('state_data')
@@ -348,6 +371,28 @@ export default function FlashAM() {
     }
   };
 
+  // Instant WhatsApp-like WebSocket Broadcast
+  const broadcastPunchEvent = (action, record, empId, empCode, date) => {
+    try {
+      if (broadcastChannelRef.current) {
+        broadcastChannelRef.current.send({
+          type: 'broadcast',
+          event: 'attendance_punch',
+          payload: {
+            action,
+            record,
+            empId,
+            empCode,
+            date,
+            timestamp: Date.now()
+          }
+        });
+      }
+    } catch (e) {
+      console.warn('Broadcast send notice:', e);
+    }
+  };
+
   // Process Offline Queue when back online
   const processPendingQueue = async () => {
     try {
@@ -365,7 +410,6 @@ export default function FlashAM() {
 
       let currentAttendance = data?.state_data?.hr_uploaded_attendance || dbAttendance;
       
-      // Replay queued actions
       for (const item of queue) {
         if (item.action === 'PUNCH_IN') {
           const idx = currentAttendance.findIndex(
@@ -490,7 +534,6 @@ export default function FlashAM() {
       return;
     }
 
-    // Success: Store user session
     const sessionObj = {
       user: {
         id: foundUser.id,
@@ -541,9 +584,7 @@ export default function FlashAM() {
   const handleBiometricAuth = () => {
     playChime('in');
     
-    // Check if running on Android Capacitor bridge with native BiometricPrompt
     if (typeof window !== 'undefined' && window.AndroidBiometrics && typeof window.AndroidBiometrics.authenticateBiometrics === 'function') {
-      // Register global callback
       window.onAndroidBiometricResult = (success, msg) => {
         if (success) {
           playChime('biometric');
@@ -568,7 +609,6 @@ export default function FlashAM() {
       return;
     }
 
-    // WebAuthn Biometric Fallback (for browser/testing)
     if (typeof window !== 'undefined' && window.PublicKeyCredential) {
       playChime('biometric');
       setIsUnlocked(true);
@@ -576,7 +616,6 @@ export default function FlashAM() {
       return;
     }
 
-    // Simulation fallback if no biometric hardware is detected
     playChime('biometric');
     setIsUnlocked(true);
     showToast('Biometric sensor verified', 'success');
@@ -633,8 +672,6 @@ export default function FlashAM() {
   // ---------------------------------------------------------------------------
   // ATTENDANCE ENGINE (IN, OUT, UNDO IN, UNDO OUT)
   // ---------------------------------------------------------------------------
-
-  // Get active record for an employee for selectedDate
   const getEmployeeAttendance = (emp) => {
     return dbAttendance.find(
       (r) =>
@@ -647,7 +684,6 @@ export default function FlashAM() {
   const handlePunchIn = async (emp) => {
     const existing = getEmployeeAttendance(emp);
     
-    // If already has IN punch, clicking IN brings up UNDO IN confirmation!
     if (existing && existing.inTime) {
       setUndoModal({
         isOpen: true,
@@ -658,11 +694,9 @@ export default function FlashAM() {
       return;
     }
 
-    // New Clock IN
     const punchTime = getFormattedTime();
     playChime('in');
 
-    const updatedList = [...dbAttendance];
     const newRecord = {
       id: `ATT-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
       employeeId: emp.id,
@@ -676,11 +710,14 @@ export default function FlashAM() {
       status: 'Present',
       source: 'FlashAM_Mobile'
     };
-    updatedList.push(newRecord);
 
+    const updatedList = [...dbAttendance, newRecord];
     setDbAttendance(updatedList);
     localStorage.setItem('flasham_cached_attendance', JSON.stringify(updatedList));
     showToast(`${emp.name} clocked IN at ${punchTime}`, 'success');
+
+    // Instant WhatsApp-like WebSocket Broadcast
+    broadcastPunchEvent('PUNCH_IN', newRecord, emp.id, emp.employeeCode, selectedDate);
 
     if (navigator.onLine) {
       await saveAttendanceToSupabase(updatedList);
@@ -701,7 +738,6 @@ export default function FlashAM() {
   const handlePunchOut = async (emp) => {
     const existing = getEmployeeAttendance(emp);
 
-    // If already has OUT punch, clicking OUT brings up UNDO OUT confirmation!
     if (existing && existing.outTime) {
       setUndoModal({
         isOpen: true,
@@ -712,26 +748,26 @@ export default function FlashAM() {
       return;
     }
 
-    // If not clocked IN yet
     if (!existing || !existing.inTime) {
       playChime('error');
       showToast(`${emp.name} must clock IN before clocking OUT.`, 'warning');
       return;
     }
 
-    // New Clock OUT
     const punchTime = getFormattedTime();
     playChime('out');
     const workedDuration = calculateDuration(existing.inTime, punchTime);
 
+    let updatedRecord = null;
     const updatedList = dbAttendance.map((r) => {
       if (r === existing || (r.employeeId === emp.id && r.date === selectedDate)) {
-        return {
+        updatedRecord = {
           ...r,
           outTime: punchTime,
           duration: workedDuration,
           status: 'Completed'
         };
+        return updatedRecord;
       }
       return r;
     });
@@ -739,6 +775,9 @@ export default function FlashAM() {
     setDbAttendance(updatedList);
     localStorage.setItem('flasham_cached_attendance', JSON.stringify(updatedList));
     showToast(`${emp.name} clocked OUT at ${punchTime} (${workedDuration || 'Logged'})`, 'success');
+
+    // Instant WhatsApp-like WebSocket Broadcast
+    broadcastPunchEvent('PUNCH_OUT', updatedRecord || existing, emp.id, emp.employeeCode, selectedDate);
 
     if (navigator.onLine) {
       await saveAttendanceToSupabase(updatedList);
@@ -764,11 +803,12 @@ export default function FlashAM() {
     let updatedList = [];
 
     if (type === 'IN') {
-      // Undo IN: If employee had OUT punch, remove both or clear record completely
       updatedList = dbAttendance.filter(
         (r) => !((r.employeeId === employee.id || r.employeeCode === employee.employeeCode) && r.date === selectedDate)
       );
       showToast(`Undo Successful: Clock-IN removed for ${employee.name}`, 'info');
+
+      broadcastPunchEvent('UNDO_IN', null, employee.id, employee.employeeCode, selectedDate);
 
       if (!navigator.onLine) {
         enqueueAction({
@@ -779,7 +819,6 @@ export default function FlashAM() {
         });
       }
     } else if (type === 'OUT') {
-      // Undo OUT: Revert outTime and duration, status back to 'Present'
       updatedList = dbAttendance.map((r) => {
         if ((r.employeeId === employee.id || r.employeeCode === employee.employeeCode) && r.date === selectedDate) {
           return {
@@ -792,6 +831,8 @@ export default function FlashAM() {
         return r;
       });
       showToast(`Undo Successful: Clock-OUT removed for ${employee.name}`, 'info');
+
+      broadcastPunchEvent('UNDO_OUT', null, employee.id, employee.employeeCode, selectedDate);
 
       if (!navigator.onLine) {
         enqueueAction({
@@ -820,7 +861,7 @@ export default function FlashAM() {
     dbEmployees.forEach((emp) => {
       if (emp.department) set.add(emp.department);
     });
-    return ['ALL', ...Array.from(set)];
+    return ['ALL', ...Array.from(set).sort()];
   }, [dbEmployees]);
 
   const filteredEmployees = useMemo(() => {
@@ -883,24 +924,378 @@ export default function FlashAM() {
     return parts[0].slice(0, 2).toUpperCase();
   }, [activeUser]);
 
+  // ---------------------------------------------------------------------------
+  // DEPARTMENT-WISE ATTENDANCE REPORT CALCULATIONS & EXPORTS
+  // ---------------------------------------------------------------------------
+  const reportEmployees = useMemo(() => {
+    return dbEmployees.filter((emp) => {
+      if (reportDept === 'ALL') return true;
+      return emp.department === reportDept;
+    });
+  }, [dbEmployees, reportDept]);
+
+  const reportRecords = useMemo(() => {
+    const start = new Date(reportStartDate);
+    const end = new Date(reportEndDate);
+
+    return dbAttendance.filter((rec) => {
+      if (!rec.date) return false;
+      const recDate = new Date(rec.date);
+      if (isNaN(recDate.getTime())) return false;
+      if (recDate < start || recDate > end) return false;
+
+      if (reportDept === 'ALL') return true;
+      return rec.department === reportDept;
+    });
+  }, [dbAttendance, reportDept, reportStartDate, reportEndDate]);
+
+  const reportStats = useMemo(() => {
+    const totalEmp = reportEmployees.length;
+    const totalPunches = reportRecords.length;
+    const presentCount = reportRecords.filter((r) => r.inTime).length;
+    const completedCount = reportRecords.filter((r) => r.outTime).length;
+    
+    // Total Hours
+    let totalMinutes = 0;
+    reportRecords.forEach((r) => {
+      if (r.duration) {
+        const m = r.duration.match(/(\d+)h\s*(\d+)m/);
+        if (m) totalMinutes += parseInt(m[1]) * 60 + parseInt(m[2]);
+      }
+    });
+    const totalHrs = Math.floor(totalMinutes / 60);
+    const remMins = totalMinutes % 60;
+
+    return {
+      totalEmp,
+      totalPunches,
+      presentCount,
+      completedCount,
+      totalHoursStr: `${totalHrs}h ${remMins}m`
+    };
+  }, [reportEmployees, reportRecords]);
+
+  // Quick Date Range Preset Selector
+  const applyDatePreset = (preset) => {
+    const today = new Date();
+    const formatDate = (d) => d.toISOString().split('T')[0];
+
+    if (preset === 'today') {
+      const t = formatDate(today);
+      setReportStartDate(t);
+      setReportEndDate(t);
+    } else if (preset === 'yesterday') {
+      const y = new Date(today);
+      y.setDate(today.getDate() - 1);
+      const yStr = formatDate(y);
+      setReportStartDate(yStr);
+      setReportEndDate(yStr);
+    } else if (preset === 'week') {
+      const w = new Date(today);
+      w.setDate(today.getDate() - 7);
+      setReportStartDate(formatDate(w));
+      setReportEndDate(formatDate(today));
+    } else if (preset === 'month') {
+      const m = new Date(today);
+      m.setDate(1);
+      setReportStartDate(formatDate(m));
+      setReportEndDate(formatDate(today));
+    }
+  };
+
+  // EXPORT 1: CSV Export
+  const exportCSV = () => {
+    try {
+      setIsExporting(true);
+      const headers = ['Employee ID', 'Employee Code', 'Employee Name', 'Department', 'Date', 'Clock IN', 'Clock OUT', 'Duration', 'Status'];
+      const rows = reportRecords.map((r) => [
+        `"${r.employeeId || ''}"`,
+        `"${r.employeeCode || ''}"`,
+        `"${r.employeeName || ''}"`,
+        `"${r.department || ''}"`,
+        `"${r.date || ''}"`,
+        `"${r.inTime || ''}"`,
+        `"${r.outTime || ''}"`,
+        `"${r.duration || ''}"`,
+        `"${r.status || ''}"`
+      ]);
+
+      const csvContent = '\uFEFF' + [headers.join(','), ...rows.map((e) => e.join(','))].join('\r\n');
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.setAttribute('href', url);
+      link.setAttribute('download', `Attendance_Report_${reportDept}_${reportStartDate}_to_${reportEndDate}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      showToast('CSV Report Downloaded Successfully!', 'success');
+      playChime('in');
+    } catch (e) {
+      showToast('Failed to export CSV', 'error');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  // EXPORT 2: Printable PDF Export
+  const exportPDF = () => {
+    setIsExporting(true);
+    try {
+      const printWindow = window.open('', '_blank');
+      if (!printWindow) {
+        showToast('Please allow popups to export printable PDF report', 'warning');
+        setIsExporting(false);
+        return;
+      }
+
+      const rowsHtml = reportRecords
+        .map(
+          (r, idx) => `
+        <tr style="border-bottom: 1px solid #e2e8f0; font-size: 11px;">
+          <td style="padding: 6px 8px; font-weight: bold;">${idx + 1}</td>
+          <td style="padding: 6px 8px;">${r.employeeCode || r.employeeId}</td>
+          <td style="padding: 6px 8px; font-weight: bold;">${r.employeeName}</td>
+          <td style="padding: 6px 8px;">${r.department || 'General'}</td>
+          <td style="padding: 6px 8px; font-family: monospace;">${r.date}</td>
+          <td style="padding: 6px 8px; color: #059669; font-weight: bold;">${r.inTime || '—'}</td>
+          <td style="padding: 6px 8px; color: #7c3aed; font-weight: bold;">${r.outTime || '—'}</td>
+          <td style="padding: 6px 8px;">${r.duration || '—'}</td>
+          <td style="padding: 6px 8px;"><span style="background: #e0f2fe; color: #0369a1; padding: 2px 6px; border-radius: 4px; font-size: 9px; font-weight: bold;">${r.status}</span></td>
+        </tr>
+      `
+        )
+        .join('');
+
+      printWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>Department Attendance Report - ${reportDept}</title>
+          <style>
+            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; margin: 20px; color: #0f172a; }
+            .header { border-bottom: 2px solid #0284c7; padding-bottom: 10px; margin-bottom: 15px; }
+            .title { font-size: 18px; font-weight: 900; margin: 0; color: #0f172a; }
+            .subtitle { font-size: 12px; color: #64748b; margin-top: 4px; }
+            .kpis { display: flex; gap: 10px; margin-bottom: 15px; }
+            .kpi-card { flex: 1; border: 1px solid #cbd5e1; border-radius: 8px; padding: 8px 12px; background: #f8fafc; }
+            .kpi-label { font-size: 9px; text-transform: uppercase; color: #64748b; font-weight: bold; }
+            .kpi-val { font-size: 16px; font-weight: 800; color: #0f172a; margin-top: 2px; }
+            table { width: 100%; border-collapse: collapse; text-align: left; }
+            th { background: #f1f5f9; padding: 8px; font-size: 10px; text-transform: uppercase; color: #475569; border-bottom: 1px solid #cbd5e1; }
+            @media print {
+              body { margin: 0; }
+              @page { size: auto; margin: 10mm; }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1 class="title">FLASHVISION ENTERPRISE — DEPARTMENT ATTENDANCE AUDIT</h1>
+            <div class="subtitle">
+              Department: <b>${reportDept}</b> | Date Range: <b>${reportStartDate}</b> to <b>${reportEndDate}</b> | Generated: ${new Date().toLocaleString()} | Operator: ${activeUser?.name || 'Admin'}
+            </div>
+          </div>
+          <div class="kpis">
+            <div class="kpi-card"><div class="kpi-label">Staff in Dept</div><div class="kpi-val">${reportStats.totalEmp}</div></div>
+            <div class="kpi-card"><div class="kpi-label">Recorded Punches</div><div class="kpi-val">${reportStats.totalPunches}</div></div>
+            <div class="kpi-card"><div class="kpi-label">Clocked In</div><div class="kpi-val" style="color: #059669;">${reportStats.presentCount}</div></div>
+            <div class="kpi-card"><div class="kpi-label">Completed Shifts</div><div class="kpi-val" style="color: #7c3aed;">${reportStats.completedCount}</div></div>
+            <div class="kpi-card"><div class="kpi-label">Total Work Duration</div><div class="kpi-val">${reportStats.totalHoursStr}</div></div>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Emp Code</th>
+                <th>Employee Name</th>
+                <th>Department</th>
+                <th>Date</th>
+                <th>Clock IN</th>
+                <th>Clock OUT</th>
+                <th>Duration</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rowsHtml || '<tr><td colspan="9" style="text-align: center; padding: 20px;">No punches found for this period.</td></tr>'}
+            </tbody>
+          </table>
+        </body>
+        </html>
+      `);
+      printWindow.document.close();
+      printWindow.focus();
+      setTimeout(() => {
+        printWindow.print();
+      }, 500);
+      showToast('Printable PDF Opened!', 'success');
+      playChime('in');
+    } catch (e) {
+      showToast('PDF export failed', 'error');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  // EXPORT 3: High-Quality Image (PNG) Export
+  const exportImage = () => {
+    setIsExporting(true);
+    try {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      const dpr = 2; // High-DPI retina scale
+      const width = 1000;
+      const rowHeight = 36;
+      const headerHeight = 240;
+      const rowsCount = Math.max(reportRecords.length, 1);
+      const height = headerHeight + rowsCount * rowHeight + 80;
+
+      canvas.width = width * dpr;
+      canvas.height = height * dpr;
+      ctx.scale(dpr, dpr);
+
+      // Background
+      ctx.fillStyle = isDark ? '#0b0f19' : '#f8fafc';
+      ctx.fillRect(0, 0, width, height);
+
+      // Top Banner gradient
+      const gradient = ctx.createLinearGradient(0, 0, width, 0);
+      gradient.addColorStop(0, '#06b6d4');
+      gradient.addColorStop(0.5, '#4f46e5');
+      gradient.addColorStop(1, '#9333ea');
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, width, 8);
+
+      // Title & Header Text
+      ctx.fillStyle = isDark ? '#ffffff' : '#0f172a';
+      ctx.font = 'bold 24px -apple-system, sans-serif';
+      ctx.fillText('FLASHVISION — DEPARTMENT ATTENDANCE REPORT', 40, 50);
+
+      ctx.fillStyle = isDark ? '#94a3b8' : '#64748b';
+      ctx.font = '13px -apple-system, sans-serif';
+      ctx.fillText(
+        `Department: ${reportDept}  |  Period: ${reportStartDate} to ${reportEndDate}  |  Generated: ${new Date().toLocaleDateString()}`,
+        40,
+        78
+      );
+
+      // KPI Cards
+      const kpis = [
+        { label: 'STAFF IN DEPT', val: String(reportStats.totalEmp) },
+        { label: 'TOTAL PUNCHES', val: String(reportStats.totalPunches) },
+        { label: 'CLOCKED IN', val: String(reportStats.presentCount), color: '#10b981' },
+        { label: 'COMPLETED SHIFTS', val: String(reportStats.completedCount), color: '#8b5cf6' },
+        { label: 'TOTAL WORK DURATION', val: reportStats.totalHoursStr }
+      ];
+
+      kpis.forEach((kpi, i) => {
+        const x = 40 + i * 180;
+        const y = 105;
+        ctx.fillStyle = isDark ? '#161f30' : '#ffffff';
+        ctx.strokeStyle = isDark ? '#1e293b' : '#e2e8f0';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.roundRect(x, y, 168, 64, 10);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = isDark ? '#94a3b8' : '#64748b';
+        ctx.font = 'bold 9px -apple-system, sans-serif';
+        ctx.fillText(kpi.label, x + 12, y + 24);
+
+        ctx.fillStyle = kpi.color || (isDark ? '#ffffff' : '#0f172a');
+        ctx.font = 'bold 18px -apple-system, sans-serif';
+        ctx.fillText(kpi.val, x + 12, y + 48);
+      });
+
+      // Table Header
+      const tableTop = 200;
+      ctx.fillStyle = isDark ? '#161f30' : '#e2e8f0';
+      ctx.fillRect(40, tableTop, width - 80, 32);
+
+      ctx.fillStyle = isDark ? '#94a3b8' : '#475569';
+      ctx.font = 'bold 10px -apple-system, sans-serif';
+      ctx.fillText('#', 55, tableTop + 20);
+      ctx.fillText('EMP CODE', 90, tableTop + 20);
+      ctx.fillText('EMPLOYEE NAME', 220, tableTop + 20);
+      ctx.fillText('DEPARTMENT', 420, tableTop + 20);
+      ctx.fillText('DATE', 580, tableTop + 20);
+      ctx.fillText('CLOCK IN', 690, tableTop + 20);
+      ctx.fillText('CLOCK OUT', 780, tableTop + 20);
+      ctx.fillText('DURATION', 870, tableTop + 20);
+
+      // Table Rows
+      reportRecords.forEach((r, idx) => {
+        const y = tableTop + 32 + idx * rowHeight;
+        ctx.fillStyle = idx % 2 === 0 ? (isDark ? '#111726' : '#ffffff') : (isDark ? '#0c121e' : '#f8fafc');
+        ctx.fillRect(40, y, width - 80, rowHeight);
+
+        ctx.fillStyle = isDark ? '#94a3b8' : '#64748b';
+        ctx.font = '11px -apple-system, sans-serif';
+        ctx.fillText(String(idx + 1), 55, y + 22);
+
+        ctx.font = 'bold 11px monospace';
+        ctx.fillText(String(r.employeeCode || r.employeeId || '—'), 90, y + 22);
+
+        ctx.fillStyle = isDark ? '#ffffff' : '#0f172a';
+        ctx.font = 'bold 11px -apple-system, sans-serif';
+        ctx.fillText(String(r.employeeName || 'Staff'), 220, y + 22);
+
+        ctx.fillStyle = isDark ? '#94a3b8' : '#64748b';
+        ctx.font = '11px -apple-system, sans-serif';
+        ctx.fillText(String(r.department || 'General'), 420, y + 22);
+
+        ctx.font = '11px monospace';
+        ctx.fillText(String(r.date || '—'), 580, y + 22);
+
+        ctx.fillStyle = '#10b981';
+        ctx.font = 'bold 11px monospace';
+        ctx.fillText(String(r.inTime || '—'), 690, y + 22);
+
+        ctx.fillStyle = '#8b5cf6';
+        ctx.fillText(String(r.outTime || '—'), 780, y + 22);
+
+        ctx.fillStyle = isDark ? '#cbd5e1' : '#334155';
+        ctx.font = '11px -apple-system, sans-serif';
+        ctx.fillText(String(r.duration || '—'), 870, y + 22);
+      });
+
+      // Export canvas as image
+      const imageUri = canvas.toDataURL('image/png');
+      const dlLink = document.createElement('a');
+      dlLink.download = `Attendance_HighRes_${reportDept}_${reportStartDate}_to_${reportEndDate}.png`;
+      dlLink.href = imageUri;
+      document.body.appendChild(dlLink);
+      dlLink.click();
+      document.body.removeChild(dlLink);
+      showToast('High-Resolution Image Downloaded!', 'success');
+      playChime('in');
+    } catch (e) {
+      showToast('Image export failed', 'error');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   // =========================================================================
-  // VIEW: 1. AUTHORIZATION SCREEN (If no user is logged in)
+  // VIEW 1: AUTHORIZATION SCREEN (When no user logged in)
   // =========================================================================
   if (!authSession) {
     return (
       <div
-        className={`min-h-screen w-full flex flex-col items-center justify-center p-4 transition-colors duration-300 ${
+        className={`h-screen h-[100dvh] w-full flex flex-col items-center justify-center p-4 overflow-y-auto overflow-x-hidden touch-pan-y transition-colors duration-300 ${
           isDark ? 'bg-[#090d16] text-white' : 'bg-slate-50 text-slate-900'
         }`}
+        style={{ WebkitOverflowScrolling: 'touch' }}
       >
         <div
-          className={`w-full max-w-md p-6 sm:p-8 rounded-3xl shadow-2xl border transition-all duration-300 ${
+          className={`w-full max-w-md p-6 sm:p-8 rounded-3xl shadow-2xl border transition-all duration-300 my-auto ${
             isDark
               ? 'bg-[#121927]/90 border-slate-800/80 backdrop-blur-xl'
               : 'bg-white border-slate-200 backdrop-blur-xl'
           }`}
         >
-          {/* Top Logo & Standalone Header */}
           <div className="flex flex-col items-center text-center mb-6">
             <div className="relative mb-3">
               <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-cyan-600 via-indigo-600 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-500/25 ring-4 ring-indigo-500/20">
@@ -917,7 +1312,6 @@ export default function FlashAM() {
             </p>
           </div>
 
-          {/* Theme Toggle Button */}
           <div className="flex justify-end mb-4">
             <button
               onClick={toggleTheme}
@@ -934,7 +1328,6 @@ export default function FlashAM() {
             </button>
           </div>
 
-          {/* Login Form */}
           <form onSubmit={handleAuthorizeTerminal} className="space-y-4">
             <div>
               <label className={`block text-xs font-semibold mb-1.5 uppercase tracking-wider ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>
@@ -1006,7 +1399,6 @@ export default function FlashAM() {
             </button>
           </form>
 
-          {/* Cloud Database Status */}
           <div className="mt-6 pt-4 border-t border-slate-800/40 flex items-center justify-between text-[11px] text-slate-400">
             <span className="flex items-center gap-1.5">
               <span className={`w-2 h-2 rounded-full ${isOnline ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`}></span>
@@ -1020,23 +1412,23 @@ export default function FlashAM() {
   }
 
   // =========================================================================
-  // VIEW: 2. TERMINAL LOCK SCREEN (PIN or Real Biometric Fingerprint)
+  // VIEW 2: TERMINAL LOCK SCREEN (PIN or Real Biometric Fingerprint)
   // =========================================================================
   if (!isUnlocked) {
     return (
       <div
-        className={`min-h-screen w-full flex flex-col items-center justify-center p-4 transition-colors duration-300 ${
+        className={`h-screen h-[100dvh] w-full flex flex-col items-center justify-center p-4 overflow-y-auto overflow-x-hidden touch-pan-y transition-colors duration-300 ${
           isDark ? 'bg-[#090d16] text-white' : 'bg-slate-50 text-slate-900'
         }`}
+        style={{ WebkitOverflowScrolling: 'touch' }}
       >
         <div
-          className={`w-full max-w-sm p-6 sm:p-7 rounded-3xl shadow-2xl border transition-all duration-300 flex flex-col items-center text-center ${
+          className={`w-full max-w-sm p-6 sm:p-7 rounded-3xl shadow-2xl border transition-all duration-300 flex flex-col items-center text-center my-auto ${
             isDark
               ? 'bg-[#121927]/90 border-slate-800/80 backdrop-blur-xl'
               : 'bg-white border-slate-200 backdrop-blur-xl'
           }`}
         >
-          {/* Header & Logged In User Avatar */}
           <div className="relative mb-3">
             <div className="w-16 h-16 rounded-full bg-gradient-to-tr from-cyan-600 via-indigo-600 to-purple-600 flex items-center justify-center text-white font-black text-xl shadow-lg ring-4 ring-cyan-500/20">
               {userInitials}
@@ -1053,7 +1445,6 @@ export default function FlashAM() {
             Enter 4-Digit Security PIN or Touch Fingerprint Sensor
           </p>
 
-          {/* PIN Indicators */}
           <div className="flex gap-3 mb-6">
             {[0, 1, 2, 3].map((idx) => (
               <div
@@ -1073,7 +1464,6 @@ export default function FlashAM() {
             <p className="text-xs font-semibold text-red-500 mb-3 animate-shake">{pinError}</p>
           )}
 
-          {/* Numeric PIN Keypad */}
           <div className="grid grid-cols-3 gap-2.5 w-full max-w-[260px] mb-5">
             {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((num) => (
               <button
@@ -1117,7 +1507,6 @@ export default function FlashAM() {
             </button>
           </div>
 
-          {/* Native Fingerprint Scanner Quick Button */}
           <button
             onClick={handleBiometricAuth}
             className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg shadow-cyan-600/25 active:scale-95 transition-all mb-3"
@@ -1126,7 +1515,6 @@ export default function FlashAM() {
             <span>Use Mobile Fingerprint</span>
           </button>
 
-          {/* Switch User / Logout */}
           <button
             onClick={handleLogout}
             className={`text-xs font-semibold py-1.5 px-3 rounded-lg transition-colors ${
@@ -1141,13 +1529,14 @@ export default function FlashAM() {
   }
 
   // =========================================================================
-  // VIEW: 3. MAIN FLASH AM ATTENDANCE TERMINAL (UNLOCKED)
+  // VIEW 3: MAIN FLASH AM ATTENDANCE TERMINAL (UNLOCKED & SCROLLABLE)
   // =========================================================================
   return (
     <div
-      className={`min-h-screen w-full flex flex-col transition-colors duration-300 pb-28 ${
+      className={`h-screen h-[100dvh] w-full flex flex-col overflow-y-auto overflow-x-hidden touch-pan-y transition-colors duration-300 pb-28 ${
         isDark ? 'bg-[#090d16] text-white' : 'bg-slate-50 text-slate-900'
       }`}
+      style={{ WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain' }}
     >
       {/* ------------------------------------------------------------------- */}
       {/* TOP HEADER: Clean, No Simulated Battery/Wifi, Shows User & Theme */}
@@ -1193,7 +1582,6 @@ export default function FlashAM() {
 
           {/* Right Header Controls: Theme Toggle & User Profile Icon */}
           <div className="flex items-center gap-2">
-            {/* Theme Toggle Button */}
             <button
               onClick={toggleTheme}
               title={isDark ? 'Switch to Light Theme' : 'Switch to Dark Theme'}
@@ -1208,7 +1596,6 @@ export default function FlashAM() {
               </span>
             </button>
 
-            {/* Quick Lock Button */}
             <button
               onClick={handleLockTerminal}
               title="Lock Terminal"
@@ -1221,7 +1608,6 @@ export default function FlashAM() {
               <span className="material-symbols-outlined text-[19px]">lock</span>
             </button>
 
-            {/* User Profile Avatar with Online Dot */}
             <button
               onClick={() => setShowProfileModal(true)}
               className="flex items-center gap-2 pl-1 pr-2 py-1 rounded-xl border border-transparent hover:border-slate-700 transition-all active:scale-95"
@@ -1245,9 +1631,7 @@ export default function FlashAM() {
         </div>
       </header>
 
-      {/* ------------------------------------------------------------------- */}
-      {/* FLOATING TOAST NOTIFICATION */}
-      {/* ------------------------------------------------------------------- */}
+      {/* Floating Toast Notification */}
       {toastMessage && (
         <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-2xl shadow-2xl border flex items-center gap-2.5 animate-in slide-in-from-top-4 duration-300 backdrop-blur-xl bg-slate-900/95 text-white border-slate-700">
           <span
@@ -1269,20 +1653,15 @@ export default function FlashAM() {
         </div>
       )}
 
-      {/* ------------------------------------------------------------------- */}
       {/* MAIN CONTENT AREA */}
-      {/* ------------------------------------------------------------------- */}
       <main className="max-w-5xl mx-auto w-full px-4 pt-4 flex-1">
         {/* TAB 1: ATTENDANCE PUNCH INTERFACE */}
         {activeTab === 'attendance' && (
           <div className="space-y-4">
-            {/* Stats Overview Cards */}
             <div className="grid grid-cols-4 gap-2 sm:gap-3">
               <div
                 className={`p-3 rounded-2xl border transition-all ${
-                  isDark
-                    ? 'bg-[#121927]/90 border-slate-800'
-                    : 'bg-white border-slate-200'
+                  isDark ? 'bg-[#121927]/90 border-slate-800' : 'bg-white border-slate-200'
                 }`}
               >
                 <div className="text-[10px] font-bold text-slate-400 uppercase">Staff</div>
@@ -1290,9 +1669,7 @@ export default function FlashAM() {
               </div>
               <div
                 className={`p-3 rounded-2xl border transition-all ${
-                  isDark
-                    ? 'bg-[#121927]/90 border-slate-800'
-                    : 'bg-white border-slate-200'
+                  isDark ? 'bg-[#121927]/90 border-slate-800' : 'bg-white border-slate-200'
                 }`}
               >
                 <div className="text-[10px] font-bold text-emerald-400 uppercase">In Now</div>
@@ -1302,9 +1679,7 @@ export default function FlashAM() {
               </div>
               <div
                 className={`p-3 rounded-2xl border transition-all ${
-                  isDark
-                    ? 'bg-[#121927]/90 border-slate-800'
-                    : 'bg-white border-slate-200'
+                  isDark ? 'bg-[#121927]/90 border-slate-800' : 'bg-white border-slate-200'
                 }`}
               >
                 <div className="text-[10px] font-bold text-purple-400 uppercase">Completed</div>
@@ -1314,9 +1689,7 @@ export default function FlashAM() {
               </div>
               <div
                 className={`p-3 rounded-2xl border transition-all ${
-                  isDark
-                    ? 'bg-[#121927]/90 border-slate-800'
-                    : 'bg-white border-slate-200'
+                  isDark ? 'bg-[#121927]/90 border-slate-800' : 'bg-white border-slate-200'
                 }`}
               >
                 <div className="text-[10px] font-bold text-amber-400 uppercase">Absent</div>
@@ -1326,12 +1699,9 @@ export default function FlashAM() {
               </div>
             </div>
 
-            {/* Date Filter & Search Controls */}
             <div
               className={`p-3 rounded-2xl border space-y-3 transition-all ${
-                isDark
-                  ? 'bg-[#121927]/90 border-slate-800'
-                  : 'bg-white border-slate-200'
+                isDark ? 'bg-[#121927]/90 border-slate-800' : 'bg-white border-slate-200'
               }`}
             >
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1342,9 +1712,7 @@ export default function FlashAM() {
                     value={selectedDate}
                     onChange={(e) => setSelectedDate(e.target.value)}
                     className={`px-3 py-1.5 rounded-xl border text-xs font-bold transition-all focus:outline-none focus:ring-1 focus:ring-cyan-500 ${
-                      isDark
-                        ? 'bg-slate-900 border-slate-700 text-white'
-                        : 'bg-slate-50 border-slate-200 text-slate-800'
+                      isDark ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200 text-slate-800'
                     }`}
                   />
                   {selectedDate !== new Date().toISOString().split('T')[0] && (
@@ -1357,7 +1725,6 @@ export default function FlashAM() {
                   )}
                 </div>
 
-                {/* Status Quick Filters */}
                 <div className="flex items-center gap-1 overflow-x-auto pb-1 max-w-full">
                   {['ALL', 'PRESENT', 'COMPLETED', 'ABSENT'].map((st) => (
                     <button
@@ -1377,7 +1744,6 @@ export default function FlashAM() {
                 </div>
               </div>
 
-              {/* Search Bar & Department Filter */}
               <div className="flex items-center gap-2">
                 <div className="relative flex-1">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 material-symbols-outlined text-slate-400 text-[18px]">
@@ -1409,14 +1775,12 @@ export default function FlashAM() {
                     value={deptFilter}
                     onChange={(e) => setDeptFilter(e.target.value)}
                     className={`px-3 py-2 rounded-xl border text-xs font-bold transition-all focus:outline-none focus:ring-1 focus:ring-cyan-500 ${
-                      isDark
-                        ? 'bg-slate-900 border-slate-700 text-white'
-                        : 'bg-slate-50 border-slate-200 text-slate-800'
+                      isDark ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200 text-slate-800'
                     }`}
                   >
                     {departments.map((d) => (
                       <option key={d} value={d}>
-                        {d === 'ALL' ? 'All Depts' : d}
+                        {d === 'ALL' ? '🏢 All Depts' : d}
                       </option>
                     ))}
                   </select>
@@ -1424,7 +1788,6 @@ export default function FlashAM() {
               </div>
             </div>
 
-            {/* Employee Punch Cards List */}
             {isLoadingDb ? (
               <div className="py-16 text-center">
                 <div className="w-8 h-8 border-3 border-cyan-500 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
@@ -1456,7 +1819,6 @@ export default function FlashAM() {
                           : 'bg-white hover:bg-slate-50/80 border-slate-200 shadow-sm'
                       }`}
                     >
-                      {/* Left: Employee Info */}
                       <div className="flex items-center gap-3 min-w-0">
                         <div className="w-11 h-11 rounded-xl bg-gradient-to-tr from-slate-700 to-slate-900 border border-slate-700/50 flex items-center justify-center text-white font-bold text-xs shrink-0 shadow-sm">
                           {emp.name
@@ -1484,7 +1846,6 @@ export default function FlashAM() {
                               </>
                             )}
                           </div>
-                          {/* Punch Status Badge */}
                           <div className="flex items-center gap-2 mt-1.5">
                             {hasIn ? (
                               <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
@@ -1508,9 +1869,7 @@ export default function FlashAM() {
                         </div>
                       </div>
 
-                      {/* Right: IN and OUT Punch Buttons (With UNDO on click if already punched) */}
                       <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
-                        {/* PUNCH IN BUTTON */}
                         <button
                           onClick={() => handlePunchIn(emp)}
                           title={hasIn ? 'Already Clocked IN. Click to UNDO clock-in' : 'Clock IN'}
@@ -1526,7 +1885,6 @@ export default function FlashAM() {
                           <span>{hasIn ? `IN ${rec.inTime.split(':')[0]}:${rec.inTime.split(':')[1]}` : 'PUNCH IN'}</span>
                         </button>
 
-                        {/* PUNCH OUT BUTTON */}
                         <button
                           onClick={() => handlePunchOut(emp)}
                           title={hasOut ? 'Already Clocked OUT. Click to UNDO clock-out' : 'Clock OUT'}
@@ -1554,18 +1912,27 @@ export default function FlashAM() {
           </div>
         )}
 
-        {/* TAB 2: LIVE ROSTER & SUMMARY */}
+        {/* TAB 2: LIVE ROSTER */}
         {activeTab === 'roster' && (
           <div className="space-y-4">
             <div
-              className={`p-4 rounded-3xl border ${
+              className={`p-4 rounded-3xl border flex items-center justify-between gap-3 ${
                 isDark ? 'bg-[#121927]/90 border-slate-800' : 'bg-white border-slate-200'
               }`}
             >
-              <h3 className="text-base font-bold font-manrope">Today's Attendance Roster ({selectedDate})</h3>
-              <p className="text-xs text-slate-400 mt-0.5">
-                Full ledger of punches recorded directly into the enterprise database.
-              </p>
+              <div>
+                <h3 className="text-base font-bold font-manrope">Today's Attendance Roster ({selectedDate})</h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Full ledger of punches recorded directly into the enterprise database.
+                </p>
+              </div>
+              <button
+                onClick={() => setActiveTab('reports')}
+                className="px-3 py-1.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-cyan-600/20 transition-all active:scale-95"
+              >
+                <span className="material-symbols-outlined text-[16px]">summarize</span>
+                <span>Dept Reports</span>
+              </button>
             </div>
 
             <div className="space-y-2">
@@ -1605,7 +1972,198 @@ export default function FlashAM() {
           </div>
         )}
 
-        {/* TAB 3: SYNC & CLOUD DATABASE LOGS */}
+        {/* TAB 3: DEPARTMENT-WISE ATTENDANCE REPORTS (PDF, CSV, HIGH-QUALITY IMAGE) */}
+        {activeTab === 'reports' && (
+          <div className="space-y-4">
+            <div
+              className={`p-4 sm:p-5 rounded-3xl border space-y-4 ${
+                isDark ? 'bg-[#121927]/90 border-slate-800' : 'bg-white border-slate-200'
+              }`}
+            >
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-base font-bold font-manrope">Department Attendance Reports</h3>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Generate multi-format audit reports in PDF, CSV, and High-Resolution Image formats.
+                  </p>
+                </div>
+
+                {/* 3 Export Buttons */}
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={exportPDF}
+                    disabled={isExporting}
+                    className="px-3.5 py-2 rounded-xl bg-red-600/20 hover:bg-red-600/30 text-red-400 border border-red-500/30 font-bold text-xs flex items-center gap-1.5 transition-all active:scale-95"
+                    title="Export Printable PDF Document"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">picture_as_pdf</span>
+                    <span>PDF</span>
+                  </button>
+
+                  <button
+                    onClick={exportCSV}
+                    disabled={isExporting}
+                    className="px-3.5 py-2 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/30 font-bold text-xs flex items-center gap-1.5 transition-all active:scale-95"
+                    title="Export Microsoft Excel CSV"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">csv</span>
+                    <span>CSV</span>
+                  </button>
+
+                  <button
+                    onClick={exportImage}
+                    disabled={isExporting}
+                    className="px-3.5 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs flex items-center gap-1.5 transition-all active:scale-95 shadow-md shadow-cyan-600/20"
+                    title="Export High-Resolution Image"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">image</span>
+                    <span>HQ Image</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Department & Date Range Selection Controls */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-slate-800/40">
+                <div>
+                  <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Select Department</label>
+                  <select
+                    value={reportDept}
+                    onChange={(e) => setReportDept(e.target.value)}
+                    className={`w-full px-3 py-2 rounded-xl border text-xs font-bold transition-all focus:outline-none focus:ring-1 focus:ring-cyan-500 ${
+                      isDark ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200 text-slate-800'
+                    }`}
+                  >
+                    {departments.map((d) => (
+                      <option key={d} value={d}>
+                        {d === 'ALL' ? '🏢 All Departments' : d}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">From Date</label>
+                  <input
+                    type="date"
+                    value={reportStartDate}
+                    onChange={(e) => setReportStartDate(e.target.value)}
+                    className={`w-full px-3 py-2 rounded-xl border text-xs font-bold transition-all focus:outline-none focus:ring-1 focus:ring-cyan-500 ${
+                      isDark ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200 text-slate-800'
+                    }`}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">To Date</label>
+                  <input
+                    type="date"
+                    value={reportEndDate}
+                    onChange={(e) => setReportEndDate(e.target.value)}
+                    className={`w-full px-3 py-2 rounded-xl border text-xs font-bold transition-all focus:outline-none focus:ring-1 focus:ring-cyan-500 ${
+                      isDark ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200 text-slate-800'
+                    }`}
+                  />
+                </div>
+              </div>
+
+              {/* Quick Range Presets */}
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
+                <span className="text-[10px] font-bold text-slate-400 uppercase mr-1">Presets:</span>
+                {[
+                  { id: 'today', label: 'Today' },
+                  { id: 'yesterday', label: 'Yesterday' },
+                  { id: 'week', label: 'Last 7 Days' },
+                  { id: 'month', label: 'This Month' }
+                ].map((p) => (
+                  <button
+                    key={p.id}
+                    onClick={() => applyDatePreset(p.id)}
+                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase border transition-all ${
+                      isDark
+                        ? 'bg-slate-800/60 border-slate-700 text-slate-300 hover:text-white'
+                        : 'bg-slate-100 border-slate-200 text-slate-700 hover:text-slate-900'
+                    }`}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Department Summary KPI Metrics */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+              <div className={`p-3.5 rounded-2xl border ${isDark ? 'bg-[#121927]/90 border-slate-800' : 'bg-white border-slate-200'}`}>
+                <div className="text-[10px] font-bold uppercase text-slate-400">Total Staff in Dept</div>
+                <div className="text-xl font-black mt-1 font-manrope">{reportStats.totalEmp}</div>
+              </div>
+              <div className={`p-3.5 rounded-2xl border ${isDark ? 'bg-[#121927]/90 border-slate-800' : 'bg-white border-slate-200'}`}>
+                <div className="text-[10px] font-bold uppercase text-emerald-400">Recorded Clock-Ins</div>
+                <div className="text-xl font-black mt-1 text-emerald-400 font-manrope">{reportStats.presentCount}</div>
+              </div>
+              <div className={`p-3.5 rounded-2xl border ${isDark ? 'bg-[#121927]/90 border-slate-800' : 'bg-white border-slate-200'}`}>
+                <div className="text-[10px] font-bold uppercase text-purple-400">Completed Shifts</div>
+                <div className="text-xl font-black mt-1 text-purple-400 font-manrope">{reportStats.completedCount}</div>
+              </div>
+              <div className={`p-3.5 rounded-2xl border ${isDark ? 'bg-[#121927]/90 border-slate-800' : 'bg-white border-slate-200'}`}>
+                <div className="text-[10px] font-bold uppercase text-cyan-400">Total Work Duration</div>
+                <div className="text-xl font-black mt-1 text-cyan-400 font-manrope">{reportStats.totalHoursStr}</div>
+              </div>
+            </div>
+
+            {/* Department Records Table */}
+            <div className={`rounded-3xl border overflow-hidden ${isDark ? 'bg-[#121927]/90 border-slate-800' : 'bg-white border-slate-200'}`}>
+              <div className="p-3.5 border-b border-slate-800/40 flex items-center justify-between text-xs">
+                <span className="font-bold">Department Punches ({reportRecords.length} records)</span>
+                <span className="text-slate-400">{reportDept} • {reportStartDate} to {reportEndDate}</span>
+              </div>
+
+              {reportRecords.length === 0 ? (
+                <div className="p-10 text-center text-xs text-slate-400">
+                  No attendance punches recorded for this department within the selected date range.
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead>
+                      <tr className={`border-b ${isDark ? 'bg-slate-900/60 border-slate-800 text-slate-400' : 'bg-slate-50 border-slate-200 text-slate-600'}`}>
+                        <th className="p-3">#</th>
+                        <th className="p-3">Emp Code</th>
+                        <th className="p-3">Name</th>
+                        <th className="p-3">Department</th>
+                        <th className="p-3">Date</th>
+                        <th className="p-3">Clock IN</th>
+                        <th className="p-3">Clock OUT</th>
+                        <th className="p-3">Duration</th>
+                        <th className="p-3">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/40">
+                      {reportRecords.map((r, i) => (
+                        <tr key={r.id || i} className={isDark ? 'hover:bg-slate-800/40' : 'hover:bg-slate-50'}>
+                          <td className="p-3 text-slate-400">{i + 1}</td>
+                          <td className="p-3 font-mono font-bold text-cyan-400">{r.employeeCode || r.employeeId}</td>
+                          <td className="p-3 font-bold">{r.employeeName}</td>
+                          <td className="p-3 text-slate-400">{r.department}</td>
+                          <td className="p-3 font-mono">{r.date}</td>
+                          <td className="p-3 text-emerald-400 font-mono font-bold">{r.inTime || '—'}</td>
+                          <td className="p-3 text-purple-400 font-mono font-bold">{r.outTime || '—'}</td>
+                          <td className="p-3 text-slate-300 font-mono">{r.duration || '—'}</td>
+                          <td className="p-3">
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+                              {r.status}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* TAB 4: SYNC & CLOUD DATABASE LOGS */}
         {activeTab === 'sync' && (
           <div className="space-y-4">
             <div
@@ -1616,7 +2174,7 @@ export default function FlashAM() {
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="text-base font-bold font-manrope">Realtime Database Sync</h3>
-                  <p className="text-xs text-slate-400">Direct connection with Supabase (main_state)</p>
+                  <p className="text-xs text-slate-400">Direct connection with Supabase (main_state) & WhatsApp-speed Broadcast</p>
                 </div>
                 <button
                   onClick={() => fetchSupabaseData()}
@@ -1648,10 +2206,9 @@ export default function FlashAM() {
           </div>
         )}
 
-        {/* TAB 4: SETTINGS & TERMINAL CONFIGURATION */}
+        {/* TAB 5: SETTINGS & TERMINAL CONFIGURATION */}
         {activeTab === 'settings' && (
           <div className="space-y-4">
-            {/* Security PIN Change Box */}
             <div
               className={`p-4 sm:p-5 rounded-3xl border space-y-3 ${
                 isDark ? 'bg-[#121927]/90 border-slate-800' : 'bg-white border-slate-200'
@@ -1679,7 +2236,6 @@ export default function FlashAM() {
               </button>
             </div>
 
-            {/* Appearance & Dark/Light Theme Settings */}
             <div
               className={`p-4 sm:p-5 rounded-3xl border space-y-3 ${
                 isDark ? 'bg-[#121927]/90 border-slate-800' : 'bg-white border-slate-200'
@@ -1712,14 +2268,13 @@ export default function FlashAM() {
               </div>
             </div>
 
-            {/* Terminal Info */}
             <div
               className={`p-4 sm:p-5 rounded-3xl border text-xs text-slate-400 space-y-2 ${
                 isDark ? 'bg-[#121927]/60 border-slate-800' : 'bg-white border-slate-200'
               }`}
             >
               <div className="font-bold text-white text-sm">Flash AM Terminal Information</div>
-              <div>App Version: 2.4.0 (Native Android Biometric Engine)</div>
+              <div>App Version: 2.5.0 (Instant Broadcast & Multi-Format Reports)</div>
               <div>Connected Database: Supabase PostgreSQL (ID: main_state)</div>
               <div>Authenticated Operator: {activeUser?.name} (@{activeUser?.username})</div>
             </div>
@@ -1737,7 +2292,7 @@ export default function FlashAM() {
             : 'bg-white/95 border-slate-200'
         }`}
       >
-        <div className="max-w-md mx-auto grid grid-cols-4 px-2 py-2">
+        <div className="max-w-md mx-auto grid grid-cols-5 px-2 py-2">
           {/* TAB 1: Attendance */}
           <button
             onClick={() => setActiveTab('attendance')}
@@ -1749,8 +2304,8 @@ export default function FlashAM() {
                 : 'text-slate-500 hover:text-slate-800'
             }`}
           >
-            <span className="material-symbols-outlined text-[22px]">fingerprint</span>
-            <span className="text-[10px] mt-0.5 tracking-tight font-manrope">Attendance</span>
+            <span className="material-symbols-outlined text-[20px]">fingerprint</span>
+            <span className="text-[9px] mt-0.5 tracking-tight font-manrope">Attendance</span>
           </button>
 
           {/* TAB 2: Roster */}
@@ -1764,11 +2319,26 @@ export default function FlashAM() {
                 : 'text-slate-500 hover:text-slate-800'
             }`}
           >
-            <span className="material-symbols-outlined text-[22px]">groups</span>
-            <span className="text-[10px] mt-0.5 tracking-tight font-manrope">Roster</span>
+            <span className="material-symbols-outlined text-[20px]">groups</span>
+            <span className="text-[9px] mt-0.5 tracking-tight font-manrope">Roster</span>
           </button>
 
-          {/* TAB 3: Realtime Sync */}
+          {/* TAB 3: Reports */}
+          <button
+            onClick={() => setActiveTab('reports')}
+            className={`flex flex-col items-center justify-center py-1 transition-all active:scale-95 ${
+              activeTab === 'reports'
+                ? 'text-cyan-400 font-bold'
+                : isDark
+                ? 'text-slate-400 hover:text-slate-200'
+                : 'text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <span className="material-symbols-outlined text-[20px]">summarize</span>
+            <span className="text-[9px] mt-0.5 tracking-tight font-manrope">Reports</span>
+          </button>
+
+          {/* TAB 4: Realtime Sync */}
           <button
             onClick={() => setActiveTab('sync')}
             className={`flex flex-col items-center justify-center py-1 transition-all active:scale-95 relative ${
@@ -1779,14 +2349,14 @@ export default function FlashAM() {
                 : 'text-slate-500 hover:text-slate-800'
             }`}
           >
-            <span className="material-symbols-outlined text-[22px]">cloud_sync</span>
-            <span className="text-[10px] mt-0.5 tracking-tight font-manrope">Sync</span>
+            <span className="material-symbols-outlined text-[20px]">cloud_sync</span>
+            <span className="text-[9px] mt-0.5 tracking-tight font-manrope">Sync</span>
             {pendingQueue.length > 0 && (
               <span className="absolute top-0 right-1/4 w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
             )}
           </button>
 
-          {/* TAB 4: Settings */}
+          {/* TAB 5: Settings */}
           <button
             onClick={() => setActiveTab('settings')}
             className={`flex flex-col items-center justify-center py-1 transition-all active:scale-95 ${
@@ -1797,15 +2367,13 @@ export default function FlashAM() {
                 : 'text-slate-500 hover:text-slate-800'
             }`}
           >
-            <span className="material-symbols-outlined text-[22px]">tune</span>
-            <span className="text-[10px] mt-0.5 tracking-tight font-manrope">Settings</span>
+            <span className="material-symbols-outlined text-[20px]">tune</span>
+            <span className="text-[9px] mt-0.5 tracking-tight font-manrope">Settings</span>
           </button>
         </div>
       </footer>
 
-      {/* ------------------------------------------------------------------- */}
-      {/* MODAL 1: UNDO CONFIRMATION DIALOG (For IN or OUT accidental punch)  */}
-      {/* ------------------------------------------------------------------- */}
+      {/* MODAL 1: UNDO CONFIRMATION DIALOG */}
       {undoModal.isOpen && undoModal.employee && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-in fade-in duration-200">
           <div
@@ -1849,9 +2417,7 @@ export default function FlashAM() {
         </div>
       )}
 
-      {/* ------------------------------------------------------------------- */}
-      {/* MODAL 2: CHANGE SECURITY PIN DIALOG                                */}
-      {/* ------------------------------------------------------------------- */}
+      {/* MODAL 2: CHANGE SECURITY PIN DIALOG */}
       {showChangePinModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-in fade-in duration-200">
           <div
@@ -1946,9 +2512,7 @@ export default function FlashAM() {
         </div>
       )}
 
-      {/* ------------------------------------------------------------------- */}
-      {/* MODAL 3: USER PROFILE DRAWER / POPUP                               */}
-      {/* ------------------------------------------------------------------- */}
+      {/* MODAL 3: USER PROFILE DRAWER / POPUP */}
       {showProfileModal && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/75 backdrop-blur-md animate-in fade-in duration-200">
           <div

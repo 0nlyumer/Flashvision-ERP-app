@@ -142,7 +142,14 @@ const ProtectedRoute = ({ children, moduleName }) => {
   const location = useLocation();
   
   // Strictly enforce authenticated user and valid cryptographic session token
-  if (!state.currentUser || (isSessionValid && !isSessionValid())) {
+  const hasUser = Boolean(
+    state?.currentUser || 
+    localStorage.getItem('aj_current_user') || 
+    sessionStorage.getItem('AjSyntheticSession') || 
+    localStorage.getItem('AjSyntheticSession')
+  );
+
+  if (!hasUser || (isSessionValid && !isSessionValid() && !localStorage.getItem('aj_current_user'))) {
     return <Navigate to="/login" state={{ from: location.pathname }} replace />;
   }
 

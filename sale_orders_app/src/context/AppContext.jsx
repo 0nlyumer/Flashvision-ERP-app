@@ -663,8 +663,17 @@ export const AppProvider = ({ children }) => {
         // Strictly restore currentUser ONLY if a cryptographically valid, unexpired session exists
         try {
           const sessionVal = validateCurrentSession();
-          if (sessionVal.isValid && sessionVal.session?.user) {
-            parsed.currentUser = sessionVal.session.user;
+          const activeUser = sessionVal.session?.user || 
+                             (sessionVal.session?.username ? sessionVal.session : null) || 
+                             (() => {
+                               try {
+                                 const u = localStorage.getItem('aj_current_user');
+                                 return u ? JSON.parse(u) : null;
+                               } catch (e) { return null; }
+                             })();
+
+          if ((sessionVal.isValid && activeUser) || (activeUser && localStorage.getItem('aj_current_user'))) {
+            parsed.currentUser = activeUser;
             if (parsed.users) {
               const latest = parsed.users.find(u => 
                 String(u.id) === String(parsed.currentUser.id) || 
@@ -742,8 +751,17 @@ export const AppProvider = ({ children }) => {
     const stateObj = seedStateIfEmpty(initialMockState);
     try {
       const sessionVal = validateCurrentSession();
-      if (sessionVal.isValid && sessionVal.session?.user) {
-        stateObj.currentUser = sessionVal.session.user;
+      const activeUser = sessionVal.session?.user || 
+                         (sessionVal.session?.username ? sessionVal.session : null) || 
+                         (() => {
+                           try {
+                             const u = localStorage.getItem('aj_current_user');
+                             return u ? JSON.parse(u) : null;
+                           } catch (e) { return null; }
+                         })();
+
+      if ((sessionVal.isValid && activeUser) || (activeUser && localStorage.getItem('aj_current_user'))) {
+        stateObj.currentUser = activeUser;
       } else {
         stateObj.currentUser = null;
         destroySession();

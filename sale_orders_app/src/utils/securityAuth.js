@@ -164,19 +164,18 @@ export function createSecureSession(user, rememberMe = false) {
   };
 
   const signature = generateSessionSignature(payload);
+  const userObj = sanitizeUser(user);
   const sessionToken = {
     ...payload,
+    user: userObj,
     signature
   };
 
   try {
     const serialized = JSON.stringify(sessionToken);
     sessionStorage.setItem(SESSION_STORAGE_KEY, serialized);
-    if (rememberMe) {
-      localStorage.setItem(SESSION_STORAGE_KEY, serialized);
-    } else {
-      localStorage.removeItem(SESSION_STORAGE_KEY);
-    }
+    localStorage.setItem(SESSION_STORAGE_KEY, serialized);
+    localStorage.setItem('aj_current_user', JSON.stringify(userObj));
   } catch (e) {
     console.warn('[Security] Could not persist session token:', e);
   }
@@ -236,6 +235,17 @@ export function validateCurrentSession() {
     return { isValid: false, session: null, reason: 'inactivity_timeout' };
   }
 
+  if (!session.user) {
+    session.user = {
+      id: session.userId || session.id,
+      username: session.username,
+      name: session.name,
+      role: session.role,
+      permissions: session.permissions || [],
+      email: session.email || '',
+      department: session.department || ''
+    };
+  }
   return { isValid: true, session, reason: null };
 }
 
