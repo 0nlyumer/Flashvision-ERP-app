@@ -1,3 +1,19 @@
+
+// Universal filter for legacy mock/dummy invoice & voucher identifiers
+const DUMMY_IDS = new Set([
+  'INV-8901', 'INV-8902', 'INV-8903', 'INV-8904',
+  'PINV-7801', 'PINV-7802', 'PINV-7803',
+  'PV-001', 'PV-002', 'PV-003', 'PV-004',
+  'VOUCH-1001', 'VOUCH-1002', 'VOUCH-1003', 'VOUCH-1004',
+  'JV-2026-0001', 'CPV-2026-0002'
+]);
+
+export const isDummyFinancialRecord = (item) => {
+  if (!item) return false;
+  const id = item.id || item.voucherNo || item.invoiceNo || '';
+  const ref = item.invoiceId || item.reference || '';
+  return DUMMY_IDS.has(id) || DUMMY_IDS.has(ref);
+};
 /**
  * FlashVision Synthetic Leather ERP - Enterprise Finance Engine
  * Benchmarked against ERPNext & SAP Accounting Standard
@@ -134,13 +150,13 @@ export const generateGeneralLedger = (state = {}, filters = {}) => {
   chart.forEach(acc => accountMap.set(acc.id || acc.code, acc));
 
   // Purely actual ERP transactions - ZERO dummy records
-  const salesInvoices = Array.isArray(state.salesInvoices) ? state.salesInvoices : [];
-  const purchaseInvoices = Array.isArray(state.purchaseInvoices) ? state.purchaseInvoices : [];
+  const salesInvoices = (Array.isArray(state.salesInvoices) ? state.salesInvoices : []).filter(x => !isDummyFinancialRecord(x));
+  const purchaseInvoices = (Array.isArray(state.purchaseInvoices) ? state.purchaseInvoices : []).filter(x => !isDummyFinancialRecord(x));
   
   // Vouchers can be in state.vouchers or state.paymentVouchers
-  const rawVouchers = Array.isArray(state.vouchers) && state.vouchers.length > 0
+  const rawVouchers = (Array.isArray(state.vouchers) && state.vouchers.length > 0
     ? state.vouchers
-    : (Array.isArray(state.paymentVouchers) ? state.paymentVouchers : []);
+    : (Array.isArray(state.paymentVouchers) ? state.paymentVouchers : [])).filter(x => !isDummyFinancialRecord(x));
 
   const returns = Array.isArray(state.returns) ? state.returns : [];
   const hrSalaries = Array.isArray(state.hr_generated_salaries) ? state.hr_generated_salaries : [];
@@ -313,39 +329,72 @@ export const generateGeneralLedger = (state = {}, filters = {}) => {
     } else if (v.amount || v.totalAmount) {
       const amt = round2(v.amount || v.totalAmount || 0);
       if (amt > 0) {
-        const isReceipt = v.type === 'Receipt' || v.type === 'Cash Receipt' || v.type === 'Bank Receipt';
-        const primaryAcc = isReceipt ? '112010' : '211010';
-        const offsetAcc = isReceipt ? '113010' : '112010';
-
-        rawEntries.push({
-          id: `GLE-${seq++}`,
-          date: vDate,
-          voucherType: vType,
-          voucherNo: vId,
-          sourceDocId: vId,
-          accountId: primaryAcc,
-          accountName: accountMap.get(primaryAcc)?.name || 'Cash & Bank',
-          party: v.paidTo || v.receivedFrom || 'Counterparty',
-          costCenter,
-          narration: v.narration || `${vType} transaction`,
-          debit: amt,
-          credit: 0
-        });
-
-        rawEntries.push({
-          id: `GLE-${seq++}`,
-          date: vDate,
-          voucherType: vType,
-          voucherNo: vId,
-          sourceDocId: vId,
-          accountId: offsetAcc,
-          accountName: accountMap.get(offsetAcc)?.name || 'Offset Control A/C',
-          party: v.paidTo || v.receivedFrom || 'Counterparty',
-          costCenter,
-          narration: v.narration || `${vType} offset`,
-          debit: 0,
-          credit: amt
-        });
+        const isReceipt = v.type === 'Receipt' || v.type === 'Cash Receipt' || v.type === 'Bank Receipt' || v.type === 'CRV' || v.type === 'BRV' || v.invoiceType === 'Sales';
+        if (isReceipt) {
+          // Cash/Bank Receipt from Customer: Debit Cash & Bank (112010), Credit Accounts Receivable (113010)
+          rawEntries.push({
+            id: `GLE-${seq++}`,
+            date: vDate,
+            voucherType: vType || 'Cash Receipt',
+            voucherNo: vId,
+            sourceDocId: vId,
+            accountId: '112010',
+            accountName: accountMap.get('112010')?.name || 'HBL Main Operations A/C 0019284',
+            party: v.receivedFrom || v.party || v.customerName || 'Customer',
+            partyType: 'Customer',
+            costCenter,
+            narration: v.narration || `Customer payment received for ${v.invoiceId || vId}`,
+            debit: amt,
+            credit: 0
+          });
+          rawEntries.push({
+            id: `GLE-${seq++}`,
+            date: vDate,
+            voucherType: vType || 'Cash Receipt',
+            voucherNo: vId,
+            sourceDocId: vId,
+            accountId: '113010',
+            accountName: accountMap.get('113010')?.name || 'Accounts Receivable (Debtors Control)',
+            party: v.receivedFrom || v.party || v.customerName || 'Customer',
+            partyType: 'Customer',
+            costCenter,
+            narration: v.narration || `AR settled via ${vId}`,
+            debit: 0,
+            credit: amt
+          });
+        } else {
+          // Cash/Bank Payment to Supplier: Debit Accounts Payable (211010), Credit Cash & Bank (112010)
+          rawEntries.push({
+            id: `GLE-${seq++}`,
+            date: vDate,
+            voucherType: vType || 'Payment Voucher',
+            voucherNo: vId,
+            sourceDocId: vId,
+            accountId: '211010',
+            accountName: accountMap.get('211010')?.name || 'Accounts Payable (Creditors Control)',
+            party: v.paidTo || v.party || v.vendorName || 'Supplier',
+            partyType: 'Supplier',
+            costCenter,
+            narration: v.narration || `Supplier payment for ${v.invoiceId || vId}`,
+            debit: amt,
+            credit: 0
+          });
+          rawEntries.push({
+            id: `GLE-${seq++}`,
+            date: vDate,
+            voucherType: vType || 'Payment Voucher',
+            voucherNo: vId,
+            sourceDocId: vId,
+            accountId: '112010',
+            accountName: accountMap.get('112010')?.name || 'HBL Main Operations A/C 0019284',
+            party: v.paidTo || v.party || v.vendorName || 'Supplier',
+            partyType: 'Supplier',
+            costCenter,
+            narration: v.narration || `Payment disbursement via ${vId}`,
+            debit: 0,
+            credit: amt
+          });
+        }
       }
     }
   });
@@ -848,7 +897,7 @@ export const generateCashFlow = (state = {}, fromDate = null, toDate = null) => 
 // 8. ACCOUNTS RECEIVABLE & CUSTOMER AGING ANALYSIS (100% Real Invoices & Customers)
 // ----------------------------------------------------------------------------
 export const generateARAging = (state = {}) => {
-  const salesInvoices = Array.isArray(state.salesInvoices) ? state.salesInvoices : [];
+  const salesInvoices = (Array.isArray(state.salesInvoices) ? state.salesInvoices : []).filter(x => !isDummyFinancialRecord(x));
   const rawCustomers = Array.isArray(state.customers) ? state.customers : [];
 
   const customerMap = new Map();
@@ -944,7 +993,7 @@ export const generateARAging = (state = {}) => {
 // 9. ACCOUNTS PAYABLE & SUPPLIER AGING ANALYSIS (100% Real Bills & Vendors)
 // ----------------------------------------------------------------------------
 export const generateAPAging = (state = {}) => {
-  const purchaseInvoices = Array.isArray(state.purchaseInvoices) ? state.purchaseInvoices : [];
+  const purchaseInvoices = (Array.isArray(state.purchaseInvoices) ? state.purchaseInvoices : []).filter(x => !isDummyFinancialRecord(x));
   const rawSuppliers = Array.isArray(state.suppliers) ? state.suppliers : [];
 
   const vendorMap = new Map();

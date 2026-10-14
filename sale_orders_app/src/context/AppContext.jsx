@@ -245,20 +245,27 @@ const seedStateIfEmpty = (stateObj) => {
   const dummyIds = new Set([
     'INV-8901', 'INV-8902', 'INV-8903', 'INV-8904',
     'PINV-7801', 'PINV-7802', 'PINV-7803',
+    'PV-001', 'PV-002', 'PV-003', 'PV-004',
     'VOUCH-1001', 'VOUCH-1002', 'VOUCH-1003', 'VOUCH-1004',
     'JV-2026-0001', 'CPV-2026-0002'
   ]);
+  const isDummyItem = x => {
+    if (!x) return false;
+    const id = x.id || x.voucherNo || x.invoiceNo || '';
+    const ref = x.invoiceId || x.reference || '';
+    return dummyIds.has(id) || dummyIds.has(ref);
+  };
   if (Array.isArray(seeded.salesInvoices)) {
-    seeded.salesInvoices = seeded.salesInvoices.filter(x => !dummyIds.has(x.id) && !dummyIds.has(x.invoiceNo));
+    seeded.salesInvoices = seeded.salesInvoices.filter(x => !isDummyItem(x));
   }
   if (Array.isArray(seeded.purchaseInvoices)) {
-    seeded.purchaseInvoices = seeded.purchaseInvoices.filter(x => !dummyIds.has(x.id) && !dummyIds.has(x.invoiceNo));
+    seeded.purchaseInvoices = seeded.purchaseInvoices.filter(x => !isDummyItem(x));
   }
   if (Array.isArray(seeded.vouchers)) {
-    seeded.vouchers = seeded.vouchers.filter(x => !dummyIds.has(x.id) && !dummyIds.has(x.voucherNo));
+    seeded.vouchers = seeded.vouchers.filter(x => !isDummyItem(x));
   }
   if (Array.isArray(seeded.paymentVouchers)) {
-    seeded.paymentVouchers = seeded.paymentVouchers.filter(x => !dummyIds.has(x.id) && !dummyIds.has(x.voucherNo));
+    seeded.paymentVouchers = seeded.paymentVouchers.filter(x => !isDummyItem(x));
   }
   if (Array.isArray(seeded.chartOfAccounts)) {
     seeded.chartOfAccounts = seeded.chartOfAccounts.map(acc => {
@@ -854,18 +861,28 @@ export const AppProvider = ({ children }) => {
             updated = true;
           }
         }
-        // Clean dummy invoices if present
-        const dummyFilter = x => !['INV-8901','INV-8902','INV-8903','INV-8904','PINV-7801','PINV-7802','PINV-7803','VOUCH-1001','VOUCH-1002','VOUCH-1003','VOUCH-1004','JV-2026-0001','CPV-2026-0002'].includes(x.id) && !['INV-8901','INV-8902','INV-8903','INV-8904','PINV-7801','PINV-7802','PINV-7803','VOUCH-1001','VOUCH-1002','VOUCH-1003','VOUCH-1004','JV-2026-0001','CPV-2026-0002'].includes(x.invoiceNo);
-        if (Array.isArray(prev.salesInvoices) && prev.salesInvoices.some(x => !dummyFilter(x))) {
-          nextState.salesInvoices = prev.salesInvoices.filter(dummyFilter);
+        // Clean dummy invoices and vouchers if present in state
+        const dummyBadIds = new Set(['INV-8901','INV-8902','INV-8903','INV-8904','PINV-7801','PINV-7802','PINV-7803','PV-001','PV-002','PV-003','VOUCH-1001','VOUCH-1002','VOUCH-1003','VOUCH-1004','JV-2026-0001','CPV-2026-0002']);
+        const isLegacyDummy = x => {
+          if (!x) return false;
+          const id = x.id || x.voucherNo || x.invoiceNo || '';
+          const ref = x.invoiceId || x.reference || '';
+          return dummyBadIds.has(id) || dummyBadIds.has(ref);
+        };
+        if (Array.isArray(prev.salesInvoices) && prev.salesInvoices.some(isLegacyDummy)) {
+          nextState.salesInvoices = prev.salesInvoices.filter(x => !isLegacyDummy(x));
           updated = true;
         }
-        if (Array.isArray(prev.purchaseInvoices) && prev.purchaseInvoices.some(x => !dummyFilter(x))) {
-          nextState.purchaseInvoices = prev.purchaseInvoices.filter(dummyFilter);
+        if (Array.isArray(prev.purchaseInvoices) && prev.purchaseInvoices.some(isLegacyDummy)) {
+          nextState.purchaseInvoices = prev.purchaseInvoices.filter(x => !isLegacyDummy(x));
           updated = true;
         }
-        if (Array.isArray(prev.vouchers) && prev.vouchers.some(x => !dummyFilter(x))) {
-          nextState.vouchers = prev.vouchers.filter(dummyFilter);
+        if (Array.isArray(prev.vouchers) && prev.vouchers.some(isLegacyDummy)) {
+          nextState.vouchers = prev.vouchers.filter(x => !isLegacyDummy(x));
+          updated = true;
+        }
+        if (Array.isArray(prev.paymentVouchers) && prev.paymentVouchers.some(isLegacyDummy)) {
+          nextState.paymentVouchers = prev.paymentVouchers.filter(x => !isLegacyDummy(x));
           updated = true;
         }
         if (!prev.adminSetup) { 
