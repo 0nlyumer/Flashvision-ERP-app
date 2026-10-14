@@ -2178,6 +2178,16 @@ export default function HRAttendance({ isMobile }) {
               </>
             )}
 
+                        {/* Flash AM Mobile Terminal Launcher */}
+            <a 
+              href="/flash-am" 
+              className="px-4 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 rounded-xl text-xs font-black text-white flex items-center gap-2 transition-all active:scale-[0.97] cursor-pointer shadow-md shadow-blue-500/20"
+              title="Launch Flash AM Android Attendance Terminal"
+            >
+              <span className="material-symbols-outlined text-[18px]">fingerprint</span>
+              Flash AM (Mobile)
+            </a>
+
             {/* Verify & Reconcile Button */}
             {canReconcile && (
               <button 

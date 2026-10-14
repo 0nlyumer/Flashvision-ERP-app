@@ -23,6 +23,7 @@ const HRModule = lazy(() => import('./pages/HRModule'));
 const DocumentWarehouse = lazy(() => import('./pages/DocumentWarehouse'));
 const ChatModule = lazy(() => import('./pages/ChatModule'));
 const FinanceModule = lazy(() => import('./pages/FinanceModule'));
+const FlashAM = lazy(() => import('./pages/FlashAM'));
 const UserProfile = lazy(() => import('./pages/UserProfile'));
 
 const RootLayout = () => {
@@ -202,6 +203,8 @@ const router = createBrowserRouter([
       { path: "/settings", element: <ProtectedRoute moduleName="settings"><SettingsDashboard /></ProtectedRoute> },
       { path: "/theme", element: <ProtectedRoute moduleName="settings"><ThemeSettings /></ProtectedRoute> },
       { path: "/hr", element: <ProtectedRoute moduleName="hr"><HRModule /></ProtectedRoute> },
+      { path: "/flash-am", element: <Suspense fallback={<PageLoadingSkeleton />}><FlashAM /></Suspense> },
+      { path: "/flasham", element: <Navigate to="/flash-am" replace /> },
       { path: "/document-warehouse", element: <ProtectedRoute><DocumentWarehouse /></ProtectedRoute> },
       { path: "/chat", element: <ProtectedRoute moduleName="chat"><ChatModule /></ProtectedRoute> },
       { path: "/profile", element: <ProtectedRoute><UserProfile /></ProtectedRoute> }
