@@ -2,6 +2,15 @@ package com.flashvision.app;
 
 import android.os.Bundle;
 import android.os.CancellationSignal;
+import android.os.Environment;
+import android.net.Uri;
+import android.content.Intent;
+import android.content.ContentValues;
+import android.provider.MediaStore;
+import android.util.Base64;
+import android.widget.Toast;
+import android.media.MediaScannerConnection;
+import androidx.core.content.FileProvider;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebView;
 import android.content.Context;
@@ -21,6 +30,9 @@ import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
 import com.getcapacitor.BridgeActivity;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Executor;
@@ -96,6 +108,134 @@ public class MainActivity extends BridgeActivity {
                     });
                 }
             }, "AndroidBiometrics");
+
+            // Android Native File Saver & Direct Download / Share Bridge
+            webView.addJavascriptInterface(new Object() {
+                @JavascriptInterface
+                public void saveBase64File(final String base64Data, final String fileName, final String mimeType) {
+                    runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            saveFileToDownloads(base64Data, fileName, mimeType);
+                        }
+                    });
+                }
+
+                @JavascriptInterface
+                public void shareBase64File(final String base64Data, final String fileName, final String mimeType) {
+                    runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            shareFile(base64Data, fileName, mimeType);
+                        }
+                    });
+                }
+            }, "AndroidFileSaver");
+
+            // Webview Download Listener for external browser links
+            webView.setDownloadListener(new android.webkit.DownloadListener() {
+                @Override
+                public void onDownloadStart(String url, String userAgent, String contentDisposition, String mimeType, long contentLength) {
+                    try {
+                        Intent i = new Intent(Intent.ACTION_VIEW);
+                        i.setData(Uri.parse(url));
+                        startActivity(i);
+                    } catch (Exception e) {}
+                }
+            });
+        }
+    }
+
+    // Direct Native File Saver to Android Downloads Directory
+    private void saveFileToDownloads(String base64Data, String fileName, String mimeType) {
+        try {
+            if (base64Data == null || base64Data.isEmpty()) return;
+            
+            // Clean base64 header if present (e.g. data:text/csv;base64, or data:image/png;base64,)
+            String cleanBase64 = base64Data;
+            if (cleanBase64.contains(",")) {
+                cleanBase64 = cleanBase64.substring(cleanBase64.indexOf(",") + 1);
+            }
+            byte[] fileBytes = Base64.decode(cleanBase64, Base64.DEFAULT);
+
+            boolean saved = false;
+            String savedLocation = "";
+
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                ContentValues values = new ContentValues();
+                values.put(MediaStore.Downloads.DISPLAY_NAME, fileName);
+                values.put(MediaStore.Downloads.MIME_TYPE, mimeType != null ? mimeType : "application/octet-stream");
+                values.put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/FlashAM");
+
+                Uri uri = getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
+                if (uri != null) {
+                    OutputStream os = getContentResolver().openOutputStream(uri);
+                    if (os != null) {
+                        os.write(fileBytes);
+                        os.flush();
+                        os.close();
+                        saved = true;
+                        savedLocation = "Downloads/FlashAM/" + fileName;
+                    }
+                }
+            } else {
+                File downloadsDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "FlashAM");
+                if (!downloadsDir.exists()) downloadsDir.mkdirs();
+                File targetFile = new File(downloadsDir, fileName);
+                FileOutputStream fos = new FileOutputStream(targetFile);
+                fos.write(fileBytes);
+                fos.flush();
+                fos.close();
+                saved = true;
+                savedLocation = targetFile.getAbsolutePath();
+
+                MediaScannerConnection.scanFile(this, new String[]{targetFile.getAbsolutePath()}, null, null);
+            }
+
+            if (saved) {
+                Toast.makeText(this, "Downloaded successfully: " + savedLocation, Toast.LENGTH_LONG).show();
+                WebView webView = getBridge().getWebView();
+                if (webView != null) {
+                    String cleanPath = savedLocation.replace("'", "\'");
+                    webView.evaluateJavascript("if (window.onAndroidFileSaved) { window.onAndroidFileSaved('" + cleanPath + "'); }", null);
+                }
+            } else {
+                Toast.makeText(this, "Failed to save file", Toast.LENGTH_SHORT).show();
+            }
+        } catch (Exception e) {
+            Toast.makeText(this, "Error saving file: " + e.getMessage(), Toast.LENGTH_LONG).show();
+        }
+    }
+
+    // Share File via Native Android Share Sheet (WhatsApp, Drive, Email, etc.)
+    private void shareFile(String base64Data, String fileName, String mimeType) {
+        try {
+            if (base64Data == null || base64Data.isEmpty()) return;
+            String cleanBase64 = base64Data;
+            if (cleanBase64.contains(",")) {
+                cleanBase64 = cleanBase64.substring(cleanBase64.indexOf(",") + 1);
+            }
+            byte[] fileBytes = Base64.decode(cleanBase64, Base64.DEFAULT);
+
+            File cacheDir = new File(getCacheDir(), "shared_reports");
+            if (!cacheDir.exists()) cacheDir.mkdirs();
+            File cacheFile = new File(cacheDir, fileName);
+            FileOutputStream fos = new FileOutputStream(cacheFile);
+            fos.write(fileBytes);
+            fos.flush();
+            fos.close();
+
+            Uri contentUri = FileProvider.getUriForFile(this, getPackageName() + ".fileprovider", cacheFile);
+
+            Intent shareIntent = new Intent(Intent.ACTION_SEND);
+            shareIntent.setType(mimeType != null ? mimeType : "*/*");
+            shareIntent.putExtra(Intent.EXTRA_STREAM, contentUri);
+            shareIntent.putExtra(Intent.EXTRA_SUBJECT, fileName);
+            shareIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+
+            startActivity(Intent.createChooser(shareIntent, "Share " + fileName + " via"));
+        } catch (Exception e) {
+            Toast.makeText(this, "Error sharing file: " + e.getMessage(), Toast.LENGTH_LONG).show();
         }
     }
 

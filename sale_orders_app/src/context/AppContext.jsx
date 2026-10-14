@@ -743,28 +743,31 @@ export const AppProvider = ({ children }) => {
             });
         }
 
-        return seedStateIfEmpty(parsed);
+        stateObj = seedStateIfEmpty(parsed);
       } catch(e) {
-        return seedStateIfEmpty(initialMockState);
+        stateObj = seedStateIfEmpty(initialMockState);
       }
+    } else {
+      stateObj = seedStateIfEmpty(initialMockState);
     }
-    const stateObj = seedStateIfEmpty(initialMockState);
+
     try {
+      const storedUser = (() => {
+        try {
+          const u = localStorage.getItem('aj_current_user') || sessionStorage.getItem('aj_current_user');
+          return u ? JSON.parse(u) : null;
+        } catch (e) { return null; }
+      })();
+
       const sessionVal = validateCurrentSession();
       const activeUser = sessionVal.session?.user || 
                          (sessionVal.session?.username ? sessionVal.session : null) || 
-                         (() => {
-                           try {
-                             const u = localStorage.getItem('aj_current_user');
-                             return u ? JSON.parse(u) : null;
-                           } catch (e) { return null; }
-                         })();
+                         storedUser;
 
-      if ((sessionVal.isValid && activeUser) || (activeUser && localStorage.getItem('aj_current_user'))) {
+      if (activeUser && (storedUser || sessionVal.isValid)) {
         stateObj.currentUser = activeUser;
       } else {
         stateObj.currentUser = null;
-        destroySession();
       }
     } catch(e) {
       stateObj.currentUser = null;

@@ -162,12 +162,34 @@ export default function HRAttendance({ isMobile }) {
     handleStatusChange(empId, dayKey, nextStatus);
   };
 
-  const [activeConditions, setActiveConditions] = useState(() => ({
-    attendance: canFilterAttendance,
-    overtime: canFilterOvertime,
-    fines: canFilterFines,
-    deductions: canFilterDeductions
-  }));
+  // -------------------------------------------------------------
+  // PER-USER FILTER PERSISTENCE (Synchronous Hydration on Frame 1)
+  // -------------------------------------------------------------
+  const effectiveUserObj = (() => {
+    try {
+      const raw = typeof window !== 'undefined' ? (localStorage.getItem('aj_current_user') || sessionStorage.getItem('aj_current_user')) : null;
+      return raw ? JSON.parse(raw) : null;
+    } catch (e) { return null; }
+  })();
+  const activeUsername = (effectiveUserObj?.username || effectiveUserObj?.id || appState?.currentUser?.username || appState?.currentUser?.id || 'admin').toLowerCase();
+  const userFilterKey = `hr_attendance_filters_${activeUsername}`;
+
+  const savedUserFilters = (() => {
+    try {
+      const raw = typeof window !== 'undefined' ? localStorage.getItem(userFilterKey) : null;
+      return raw ? JSON.parse(raw) : null;
+    } catch (e) { return null; }
+  })();
+
+  const [activeConditions, setActiveConditions] = useState(() => {
+    if (savedUserFilters?.activeConditions) return savedUserFilters.activeConditions;
+    return {
+      attendance: canFilterAttendance,
+      overtime: canFilterOvertime,
+      fines: canFilterFines,
+      deductions: canFilterDeductions
+    };
+  });
 
   // Strict effective active conditions gating what is actually shown in table/cards
   const effectiveActiveConditions = React.useMemo(() => ({
@@ -184,7 +206,10 @@ export default function HRAttendance({ isMobile }) {
     return employees;
   });
   const [isDirty, setIsDirty] = useState(false);
-  const [viewMode, setViewMode] = useState('grid'); // 'grid' | 'reconcile'
+  const [viewMode, setViewMode] = useState(() => savedUserFilters?.viewMode || 'grid'); // 'grid' | 'reconcile'
+
+  // Live Realtime Notification Banner
+  const [livePunchNotice, setLivePunchNotice] = useState(null);
 
   // Automatic Mobile Screen & Orientation Rotation detection
   const [isMobileCardView, setIsMobileCardView] = useState(() => {
@@ -198,50 +223,43 @@ export default function HRAttendance({ isMobile }) {
 
   useEffect(() => {
     const handleResizeOrRotate = () => {
-      const isMobileDevice = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.innerWidth <= 768;
-      if (isMobile || isMobileDevice) {
-        setIsMobileCardView(true);
-      } else {
-        setIsMobileCardView(false);
+      if (typeof window !== 'undefined') {
+        const isMobileScreen = window.innerWidth <= 768;
+        const isPortrait = window.matchMedia("(orientation: portrait)").matches;
+        setIsMobileCardView(isMobileScreen || isPortrait);
       }
     };
     window.addEventListener('resize', handleResizeOrRotate);
     window.addEventListener('orientationchange', handleResizeOrRotate);
-    handleResizeOrRotate();
     return () => {
       window.removeEventListener('resize', handleResizeOrRotate);
       window.removeEventListener('orientationchange', handleResizeOrRotate);
     };
-  }, [isMobile]);
+  }, []);
 
-  useEffect(() => {
-    if (!isDirty) {
-      setLocalEmployees(employees);
-    }
-  }, [employees, isDirty]);
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [newEmployee, setNewEmployee] = useState({
+    name: '',
+    role: '',
+    department: '',
+    phone: '',
+    avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
+    salary: '',
+    joiningDate: new Date().toISOString().split('T')[0]
+  });
 
-  // Picture Upload and Camera states
-  const [isCameraActive, setIsCameraActive] = useState(false);
-  const [cameraStream, setCameraStream] = useState(null);
-  const fileInputRef = React.useRef(null);
-  const docInputRef = React.useRef(null);
-  
-  const handleDocChange = (e) => {
+  const handleAvatarUpload = (e) => {
     const file = e.target.files[0];
     if (file) {
       const reader = new FileReader();
-      reader.onload = (event) => {
-        setNewEmpForm(prev => ({ 
-          ...prev, 
-          legalDocName: file.name,
-          legalDocUrl: event.target.result 
-        }));
+      reader.onloadend = () => {
+        setNewEmployee(prev => ({ ...prev, avatar: reader.result }));
       };
       reader.readAsDataURL(file);
     }
   };
 
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState(() => savedUserFilters?.searchQuery || '');
   const [activeComment, setActiveComment] = useState(null); // { empId, dayKey, field }
   const [commentText, setCommentText] = useState('');
 
@@ -271,17 +289,13 @@ export default function HRAttendance({ isMobile }) {
     }));
     setActiveComment(null);
   };
-  const [selectedDay, setSelectedDay] = useState('Fri'); // Default mobile day is Friday or current
+  const [selectedDay, setSelectedDay] = useState(() => savedUserFilters?.selectedDay || 'Fri');
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 20; // 20 entries per page as requested
+  const itemsPerPage = 20;
 
-  // Custom states for Attendance enhancements
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [isColumnPinned, setIsColumnPinned] = useState(true);
   const [isDownloadModalOpen, setIsDownloadModalOpen] = useState(false);
   const csvFileInputRef = React.useRef(null);
   
-  // Dynamic individual Column Widths state
   const [colWidths, setColWidths] = useState({
     details: 280
   });
@@ -291,30 +305,16 @@ export default function HRAttendance({ isMobile }) {
   const [showAllEmployees, setShowAllEmployees] = useState(true);
   const [draggedIndex, setDraggedIndex] = useState(null);
 
-  // Column Resizer drag variables
-  const [resizingCol, setResizingCol] = useState(null); // 'details', or day.key + '-' + day.num
+  const [resizingCol, setResizingCol] = useState(null);
   const [startX, setStartX] = useState(0);
   const [startWidth, setStartWidth] = useState(200);
 
-  // User Identification for Per-User Filter Persistence
-  const currentUsername = (appState?.currentUser?.username || appState?.currentUser?.id || 'admin').toLowerCase();
-  const userFilterKey = `hr_attendance_filters_${currentUsername}`;
-
-  const getSavedUserFilters = () => {
-    try {
-      const raw = localStorage.getItem(userFilterKey);
-      if (raw) return JSON.parse(raw);
-    } catch(e) {}
-    return null;
-  };
-  const savedFilters = getSavedUserFilters();
-
-  const [departmentFilter, setDepartmentFilter] = useState(() => savedFilters?.departmentFilter || 'ALL');
-  const [statusFilter, setStatusFilter] = useState(() => savedFilters?.statusFilter || 'ALL');
+  const [departmentFilter, setDepartmentFilter] = useState(() => savedUserFilters?.departmentFilter || 'ALL');
+  const [statusFilter, setStatusFilter] = useState(() => savedUserFilters?.statusFilter || 'ALL');
 
   // Interactive Dates Picker states - loaded persistently per user
   const [startDate, setStartDate] = useState(() => {
-    if (savedFilters?.startDate) return savedFilters.startDate;
+    if (savedUserFilters?.startDate) return savedUserFilters.startDate;
     const d = new Date();
     const y = d.getFullYear();
     const m = String(d.getMonth() + 1).padStart(2, '0');
@@ -323,7 +323,7 @@ export default function HRAttendance({ isMobile }) {
   });
 
   const [endDate, setEndDate] = useState(() => {
-    if (savedFilters?.endDate) return savedFilters.endDate;
+    if (savedUserFilters?.endDate) return savedUserFilters.endDate;
     const d = new Date();
     const y = d.getFullYear();
     const m = String(d.getMonth() + 1).padStart(2, '0');
@@ -333,15 +333,15 @@ export default function HRAttendance({ isMobile }) {
   const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
 
   const [selectedMonth, setSelectedMonth] = useState(() => {
-    if (savedFilters?.selectedMonth !== undefined && savedFilters?.selectedMonth !== null) {
-      return parseInt(savedFilters.selectedMonth);
+    if (savedUserFilters?.selectedMonth !== undefined && savedUserFilters?.selectedMonth !== null) {
+      return parseInt(savedUserFilters.selectedMonth);
     }
     return new Date().getMonth();
   });
 
   const [selectedYear, setSelectedYear] = useState(() => {
-    if (savedFilters?.selectedYear !== undefined && savedFilters?.selectedYear !== null) {
-      return parseInt(savedFilters.selectedYear);
+    if (savedUserFilters?.selectedYear !== undefined && savedUserFilters?.selectedYear !== null) {
+      return parseInt(savedUserFilters.selectedYear);
     }
     return new Date().getFullYear();
   });
@@ -355,29 +355,31 @@ export default function HRAttendance({ isMobile }) {
     }
   }, [appState?.hr_uploaded_attendance]);
 
-  // Subscribe to instant WebSocket punch broadcast channel
+  // Subscribe to instant WebSocket punch broadcast channel (Instant WhatsApp-style sync)
   useEffect(() => {
     const channel = supabase
       .channel('hr_attendance_realtime_broadcast')
       .on('broadcast', { event: 'attendance_punch' }, ({ payload }) => {
         if (!payload) return;
         const { action, record, empId, empCode, date } = payload;
+        
+        // 1. Update live uploaded attendance list
         setLiveUploadedAttendance(prev => {
           let updated = [...(prev || [])];
           if (action === 'PUNCH_IN' || action === 'PUNCH_OUT') {
             const idx = updated.findIndex(u => 
-              (u.employeeId === record.employeeId || u.employeeCode === record.employeeCode) && 
+              (String(u.employeeId) === String(record.employeeId) || (u.employeeCode && u.employeeCode === record.employeeCode)) && 
               u.date === record.date
             );
             if (idx >= 0) updated[idx] = { ...updated[idx], ...record };
             else updated.unshift(record);
           } else if (action === 'UNDO_IN') {
             updated = updated.filter(u => 
-              !((u.employeeId === empId || u.employeeCode === empCode) && u.date === date)
+              !((String(u.employeeId) === String(empId) || (u.employeeCode && u.employeeCode === empCode)) && u.date === date)
             );
           } else if (action === 'UNDO_OUT') {
             const idx = updated.findIndex(u => 
-              (u.employeeId === empId || u.employeeCode === empCode) && u.date === date
+              (String(u.employeeId) === String(empId) || (u.employeeCode && u.employeeCode === empCode)) && u.date === date
             );
             if (idx >= 0) {
               updated[idx] = { ...updated[idx], outTime: null, duration: null, status: 'Present' };
@@ -385,6 +387,57 @@ export default function HRAttendance({ isMobile }) {
           }
           return updated;
         });
+
+        // 2. IMMEDIATELY update localEmployees attendance for instant desktop grid reflection
+        setLocalEmployees(prev => prev.map(emp => {
+          const isMatch = String(emp.id) === String(empId) || 
+                          (emp.employeeCode && String(emp.employeeCode) === String(empCode)) ||
+                          (record?.employeeName && String(emp.name).trim().toLowerCase() === String(record.employeeName).trim().toLowerCase());
+          if (!isMatch) return emp;
+
+          const currentAtt = { ...(emp.attendance || {}) };
+          const dKey = date;
+
+          if (action === 'PUNCH_IN') {
+            currentAtt[dKey] = {
+              ...(currentAtt[dKey] || {}),
+              status: 'present',
+              inTime: record.inTime,
+              explicitStatus: true
+            };
+          } else if (action === 'PUNCH_OUT') {
+            currentAtt[dKey] = {
+              ...(currentAtt[dKey] || {}),
+              status: 'present',
+              inTime: record.inTime || currentAtt[dKey]?.inTime,
+              outTime: record.outTime,
+              duration: record.duration,
+              explicitStatus: true
+            };
+          } else if (action === 'UNDO_IN') {
+            delete currentAtt[dKey];
+          } else if (action === 'UNDO_OUT') {
+            if (currentAtt[dKey]) {
+              currentAtt[dKey] = {
+                ...currentAtt[dKey],
+                outTime: null,
+                duration: null,
+                status: 'present',
+                explicitStatus: true
+              };
+            }
+          }
+          return { ...emp, attendance: currentAtt };
+        }));
+
+        // 3. Audio / Visual notification banner
+        setLivePunchNotice({
+          empName: record?.employeeName || 'Staff Member',
+          action: action === 'PUNCH_IN' ? 'Clocked IN' : (action === 'PUNCH_OUT' ? 'Clocked OUT' : 'Punch Adjusted'),
+          time: record?.inTime || record?.outTime || 'Just Now',
+          id: Date.now()
+        });
+        setTimeout(() => setLivePunchNotice(null), 5000);
       })
       .subscribe();
 
@@ -393,27 +446,15 @@ export default function HRAttendance({ isMobile }) {
     };
   }, []);
 
-  // Per-User Filter Persistence: Restore filters when current user switches
+  // Per-User Filter Persistence: HYDRATION GUARD
+  // Only saves to localStorage AFTER mount and ONLY when filters are changed by user
+  const isFiltersHydratedRef = useRef(false);
   useEffect(() => {
-    if (!currentUsername) return;
-    const filters = getSavedUserFilters();
-    if (filters) {
-      if (filters.startDate) setStartDate(filters.startDate);
-      if (filters.endDate) setEndDate(filters.endDate);
-      if (filters.selectedMonth !== undefined) setSelectedMonth(parseInt(filters.selectedMonth));
-      if (filters.selectedYear !== undefined) setSelectedYear(parseInt(filters.selectedYear));
-      if (filters.selectedDay) setSelectedDay(filters.selectedDay);
-      if (filters.activeConditions) setActiveConditions(filters.activeConditions);
-      if (filters.searchQuery !== undefined) setSearchQuery(filters.searchQuery);
-      if (filters.departmentFilter) setDepartmentFilter(filters.departmentFilter);
-      if (filters.statusFilter) setStatusFilter(filters.statusFilter);
-      if (filters.viewMode) setViewMode(filters.viewMode);
-    }
-  }, [currentUsername]);
+    isFiltersHydratedRef.current = true;
+  }, []);
 
-  // Per-User Filter Persistence: Save filters whenever the user changes any filter
   useEffect(() => {
-    if (!currentUsername) return;
+    if (!isFiltersHydratedRef.current) return;
     const currentFilters = {
       startDate,
       endDate,
@@ -429,26 +470,9 @@ export default function HRAttendance({ isMobile }) {
     try {
       localStorage.setItem(userFilterKey, JSON.stringify(currentFilters));
     } catch(e) {}
-  }, [currentUsername, startDate, endDate, selectedMonth, selectedYear, selectedDay, activeConditions, searchQuery, departmentFilter, statusFilter, viewMode]);
+  }, [startDate, endDate, selectedMonth, selectedYear, selectedDay, activeConditions, searchQuery, departmentFilter, statusFilter, viewMode, userFilterKey]);
 
   const [openColumnMenu, setOpenColumnMenu] = useState(null);
-
-  // Save selected date range back to localStorage on change
-  useEffect(() => {
-    localStorage.setItem('hr_attendance_start_date', startDate);
-  }, [startDate]);
-
-  useEffect(() => {
-    localStorage.setItem('hr_attendance_end_date', endDate);
-  }, [endDate]);
-
-  useEffect(() => {
-    localStorage.setItem('hr_attendance_selected_month', selectedMonth);
-  }, [selectedMonth]);
-
-  useEffect(() => {
-    localStorage.setItem('hr_attendance_selected_year', selectedYear);
-  }, [selectedYear]);
 
   const updateDateRangeFromMonthYear = (month, year) => {
     const firstDay = new Date(year, month, 1);
@@ -1343,6 +1367,22 @@ export default function HRAttendance({ isMobile }) {
 
     return (
       <div className="flex flex-col gap-4 animate-fade-in select-none relative w-full h-full min-h-[calc(100vh-5rem)] flex-1 overflow-hidden">
+        {/* Live Punch WhatsApp-Speed Floating Notification Banner */}
+        {livePunchNotice && (
+          <div className="bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 text-white px-4 py-2.5 rounded-2xl shadow-xl flex items-center justify-between animate-bounce border border-white/20 select-none">
+            <div className="flex items-center gap-3">
+              <span className="material-symbols-outlined text-white text-2xl animate-spin">sync</span>
+              <div>
+                <p className="text-xs font-black tracking-wide">⚡ REALTIME PUNCH RECEIVED FROM MOBILE APP</p>
+                <p className="text-[11px] font-semibold text-emerald-100">
+                  <b>{livePunchNotice.empName}</b> {livePunchNotice.action} at <b>{livePunchNotice.time}</b>
+                </p>
+              </div>
+            </div>
+            <span className="bg-white/20 text-white text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider">Live Sync</span>
+          </div>
+        )}
+
         {/* Toolbar */}
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
           <div>
@@ -2698,26 +2738,28 @@ export default function HRAttendance({ isMobile }) {
                           (r.date === day.date || normalizeDate(r.date) === normalizeDate(day.date))
                         );
 
-                        const uploadedAttRec = (uploadedAttendance || []).find(u => 
+                        // Realtime Punch lookup from Live Supabase WebSocket & Uploaded Attendance
+                        const livePunchRec = (liveUploadedAttendance || uploadedAttendance || []).find(u => 
                           (
                             (u.employeeId && (String(u.employeeId) === empIdStr || String(u.employeeId) === String(emp.employeeId))) ||
-                            (u.employeeName && String(u.employeeName).trim().toLowerCase() === empNameLower)
+                            (u.employeeName && String(u.employeeName).trim().toLowerCase() === empNameLower) ||
+                            (u.employeeCode && emp.employeeCode && String(u.employeeCode) === String(emp.employeeCode))
                           ) &&
                           (u.date === day.date || normalizeDate(u.date) === normalizeDate(day.date))
                         );
 
-                        if (approvedOtReq && parseFloat(approvedOtReq.hours || 0) > 0) {
+                        if (livePunchRec) {
+                          rec = {
+                            ...rec,
+                            status: 'present',
+                            inTime: livePunchRec.inTime || rec.inTime,
+                            outTime: livePunchRec.outTime || rec.outTime,
+                            duration: livePunchRec.duration || rec.duration,
+                            ot: parseFloat(livePunchRec.ot || 0) > 0 ? parseFloat(livePunchRec.ot) : rec.ot,
+                            explicitStatus: true
+                          };
+                        } else if (approvedOtReq && parseFloat(approvedOtReq.hours || 0) > 0) {
                           const otHrs = parseFloat(approvedOtReq.hours);
-                          if (parseFloat(rec.ot || 0) < otHrs) {
-                            rec = {
-                              ...rec,
-                              status: rec.status === 'absent' ? 'present' : (rec.status || 'present'),
-                              ot: otHrs,
-                              explicitStatus: true
-                            };
-                          }
-                        } else if (uploadedAttRec && parseFloat(uploadedAttRec.ot || 0) > 0) {
-                          const otHrs = parseFloat(uploadedAttRec.ot);
                           if (parseFloat(rec.ot || 0) < otHrs) {
                             rec = {
                               ...rec,
@@ -2728,8 +2770,8 @@ export default function HRAttendance({ isMobile }) {
                           }
                         }
                         
-                        // Force clean default 'present' records to show as 'absent'
-                        if (rec.status === 'present' && !rec.explicitStatus && !rec.ot && !rec.fines && !rec.deductions && !rec.statusReason && !rec.otReason && !rec.finesReason && !rec.deductionsReason) {
+                        // Force clean default 'present' records without punches to show as 'absent'
+                        if (rec.status === 'present' && !rec.explicitStatus && !rec.inTime && !rec.outTime && !rec.ot && !rec.fines && !rec.deductions && !rec.statusReason && !rec.otReason && !rec.finesReason && !rec.deductionsReason) {
                           rec = { ...rec, status: 'absent' };
                         }
                         const isPresent = rec.status === 'present';
@@ -2778,6 +2820,25 @@ export default function HRAttendance({ isMobile }) {
                                       />
                                     )}
                                   </div>
+
+                                  {/* Realtime IN / OUT Punch Badges */}
+                                  {(rec.inTime || rec.outTime) && (
+                                    <div className="flex flex-col gap-1 mt-1 bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-1.5 shadow-2xs">
+                                      {rec.inTime && (
+                                        <div className="flex items-center gap-1.5 text-[10px] font-black text-emerald-800 leading-none">
+                                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping"></span>
+                                          <span>IN: {rec.inTime}</span>
+                                        </div>
+                                      )}
+                                      {rec.outTime && (
+                                        <div className="flex items-center gap-1.5 text-[10px] font-black text-purple-800 leading-none mt-0.5">
+                                          <span className="w-1.5 h-1.5 rounded-full bg-purple-500"></span>
+                                          <span>OUT: {rec.outTime}</span>
+                                          {rec.duration && <span className="text-[9px] font-bold text-purple-600">({rec.duration})</span>}
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
                                 </div>
                               )}
 

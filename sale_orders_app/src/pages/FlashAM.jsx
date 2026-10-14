@@ -204,6 +204,7 @@ export default function FlashAM() {
     return new Date().toISOString().split('T')[0];
   });
   const [isExporting, setIsExporting] = useState(false);
+  const [imagePreviewModal, setImagePreviewModal] = useState({ isOpen: false, imageUri: '', fileName: '' });
 
   // Supabase Real-time Broadcast Channel for Sub-second WhatsApp-like delivery
   const broadcastChannelRef = useRef(null);
@@ -329,7 +330,7 @@ export default function FlashAM() {
     };
   }, []);
 
-  // Save changes directly to Supabase erp_state in real-time
+  // Save changes directly to Supabase erp_state in real-time (Syncs BOTH uploaded and employees list)
   const saveAttendanceToSupabase = async (updatedAttendanceList) => {
     if (!navigator.onLine) {
       setSyncStatus('offline');
@@ -346,9 +347,37 @@ export default function FlashAM() {
       if (fetchErr) throw fetchErr;
 
       const currentStateData = data?.state_data || {};
+      const currentEmployees = currentStateData.hr_employees_list || [];
+      
+      // Synchronize employee attendance records inside hr_employees_list
+      const updatedEmployees = currentEmployees.map(emp => {
+        const empRecords = updatedAttendanceList.filter(u => 
+          String(u.employeeId) === String(emp.id) || 
+          (emp.employeeCode && u.employeeCode === emp.employeeCode) ||
+          (u.employeeName && String(u.employeeName).trim().toLowerCase() === String(emp.name).trim().toLowerCase())
+        );
+        if (empRecords.length === 0) return emp;
+
+        const updatedAtt = { ...(emp.attendance || {}) };
+        empRecords.forEach(rec => {
+          if (rec.date) {
+            updatedAtt[rec.date] = {
+              ...(updatedAtt[rec.date] || {}),
+              status: rec.status === 'Completed' || rec.status === 'Present' ? 'present' : (rec.status || 'present'),
+              inTime: rec.inTime,
+              outTime: rec.outTime,
+              duration: rec.duration,
+              explicitStatus: true
+            };
+          }
+        });
+        return { ...emp, attendance: updatedAtt };
+      });
+
       const updatedStateData = {
         ...currentStateData,
-        hr_uploaded_attendance: updatedAttendanceList
+        hr_uploaded_attendance: updatedAttendanceList,
+        hr_employees_list: updatedEmployees
       };
 
       const { error: updateErr } = await supabase
@@ -1021,16 +1050,26 @@ export default function FlashAM() {
       ]);
 
       const csvContent = '\uFEFF' + [headers.join(','), ...rows.map((e) => e.join(','))].join('\r\n');
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.setAttribute('href', url);
-      link.setAttribute('download', `Attendance_Report_${reportDept}_${reportStartDate}_to_${reportEndDate}.csv`);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      showToast('CSV Report Downloaded Successfully!', 'success');
-      playChime('in');
+      const fileName = `Attendance_Report_${reportDept}_${reportStartDate}_to_${reportEndDate}.csv`;
+
+      // Check Native Android File Saver first (Handles Android WebView Downloads directly)
+      if (typeof window !== 'undefined' && window.AndroidFileSaver && typeof window.AndroidFileSaver.saveBase64File === 'function') {
+        const base64Data = btoa(unescape(encodeURIComponent(csvContent)));
+        window.AndroidFileSaver.saveBase64File(base64Data, fileName, 'text/csv');
+        showToast('CSV Report saved to Downloads/FlashAM/' + fileName, 'success');
+        playChime('in');
+      } else {
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.setAttribute('href', url);
+        link.setAttribute('download', fileName);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        showToast('CSV Report Downloaded Successfully!', 'success');
+        playChime('in');
+      }
     } catch (e) {
       showToast('Failed to export CSV', 'error');
     } finally {
@@ -1261,16 +1300,32 @@ export default function FlashAM() {
         ctx.fillText(String(r.duration || '—'), 870, y + 22);
       });
 
-      // Export canvas as image
+      // Export canvas as high-resolution PNG image
+      const fileName = `Attendance_HighRes_${reportDept}_${reportStartDate}_to_${reportEndDate}.png`;
       const imageUri = canvas.toDataURL('image/png');
-      const dlLink = document.createElement('a');
-      dlLink.download = `Attendance_HighRes_${reportDept}_${reportStartDate}_to_${reportEndDate}.png`;
-      dlLink.href = imageUri;
-      document.body.appendChild(dlLink);
-      dlLink.click();
-      document.body.removeChild(dlLink);
-      showToast('High-Resolution Image Downloaded!', 'success');
-      playChime('in');
+
+      // Check Native Android File Saver first (Directly writes to Downloads/FlashAM)
+      if (typeof window !== 'undefined' && window.AndroidFileSaver && typeof window.AndroidFileSaver.saveBase64File === 'function') {
+        window.AndroidFileSaver.saveBase64File(imageUri, fileName, 'image/png');
+        showToast('Report Image saved to Downloads/FlashAM/' + fileName, 'success');
+        playChime('in');
+      } else {
+        const dlLink = document.createElement('a');
+        dlLink.download = fileName;
+        dlLink.href = imageUri;
+        document.body.appendChild(dlLink);
+        dlLink.click();
+        document.body.removeChild(dlLink);
+        showToast('High-Resolution Image Downloaded!', 'success');
+        playChime('in');
+      }
+
+      // Always launch interactive preview modal so user can view & share to WhatsApp directly!
+      setImagePreviewModal({
+        isOpen: true,
+        imageUri,
+        fileName
+      });
     } catch (e) {
       showToast('Image export failed', 'error');
     } finally {
@@ -2004,7 +2059,7 @@ export default function FlashAM() {
                     onClick={exportCSV}
                     disabled={isExporting}
                     className="px-3.5 py-2 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/30 font-bold text-xs flex items-center gap-1.5 transition-all active:scale-95"
-                    title="Export Microsoft Excel CSV"
+                    title="Export Microsoft Excel CSV to Downloads"
                   >
                     <span className="material-symbols-outlined text-[16px]">csv</span>
                     <span>CSV</span>
@@ -2014,7 +2069,7 @@ export default function FlashAM() {
                     onClick={exportImage}
                     disabled={isExporting}
                     className="px-3.5 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs flex items-center gap-1.5 transition-all active:scale-95 shadow-md shadow-cyan-600/20"
-                    title="Export High-Resolution Image"
+                    title="Export High-Resolution Image & Preview"
                   >
                     <span className="material-symbols-outlined text-[16px]">image</span>
                     <span>HQ Image</span>

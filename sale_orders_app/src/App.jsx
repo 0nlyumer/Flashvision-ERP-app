@@ -142,18 +142,22 @@ const ProtectedRoute = ({ children, moduleName }) => {
   const location = useLocation();
   
   // Strictly enforce authenticated user and valid cryptographic session token
+  const storedUserRaw = typeof window !== 'undefined' ? (localStorage.getItem('aj_current_user') || sessionStorage.getItem('aj_current_user')) : null;
+  const storedUser = storedUserRaw ? (() => { try { return JSON.parse(storedUserRaw); } catch(e) { return null; } })() : null;
+  const effectiveUser = state?.currentUser || storedUser;
+
   const hasUser = Boolean(
-    state?.currentUser || 
-    localStorage.getItem('aj_current_user') || 
+    effectiveUser || 
+    storedUserRaw ||
     sessionStorage.getItem('AjSyntheticSession') || 
     localStorage.getItem('AjSyntheticSession')
   );
 
-  if (!hasUser || (isSessionValid && !isSessionValid() && !localStorage.getItem('aj_current_user'))) {
+  if (!hasUser || (isSessionValid && !isSessionValid() && !storedUser)) {
     return <Navigate to="/login" state={{ from: location.pathname }} replace />;
   }
 
-  if (state.currentUser?.requirePasswordChange && location.pathname !== '/profile') {
+  if (effectiveUser?.requirePasswordChange && location.pathname !== '/profile') {
     return <Navigate to="/profile?forceChange=true" replace />;
   }
 
@@ -161,11 +165,21 @@ const ProtectedRoute = ({ children, moduleName }) => {
     return <Navigate to="/chat" replace />;
   }
 
-  if (moduleName && !hasPermission(moduleName)) {
-    if (hasPermission('dashboard')) {
-      return <Navigate to="/dashboard" replace />;
+  if (moduleName) {
+    const isGranted = (effectiveUser?.role === 'Super Admin') || 
+                      (Array.isArray(effectiveUser?.permissions) && effectiveUser.permissions.includes(moduleName)) ||
+                      (effectiveUser?.permissions && typeof effectiveUser.permissions === 'object' && !!effectiveUser.permissions[moduleName]) ||
+                      hasPermission(moduleName);
+
+    if (!isGranted) {
+      const canDashboard = (effectiveUser?.role === 'Super Admin') || 
+                           (Array.isArray(effectiveUser?.permissions) && effectiveUser.permissions.includes('dashboard')) ||
+                           hasPermission('dashboard');
+      if (canDashboard) {
+        return <Navigate to="/dashboard" replace />;
+      }
+      return <Navigate to="/settings" replace />;
     }
-    return <Navigate to="/settings" replace />;
   }
 
   return children;
