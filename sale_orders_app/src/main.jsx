@@ -1,3 +1,4 @@
+import { initAutoContrastDetector } from './utils/contrastDetector';
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
@@ -11,6 +12,9 @@ if (window.AndroidPrint && typeof window.AndroidPrint.print === 'function') {
     window.AndroidPrint.print();
   };
 }
+
+// Start Real-Time Automatic UI Text Contrast & Visibility Detection Engine
+initAutoContrastDetector();
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>

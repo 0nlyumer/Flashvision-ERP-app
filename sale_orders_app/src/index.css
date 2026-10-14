@@ -1622,3 +1622,96 @@ html:not(.dark) .fg-modal-card select option {
   background-color: #14171f !important;
   color: #f0f3fa !important;
 }
+
+
+/* ==========================================================================
+   AUTOMATED UI CONTRAST & TEXT VISIBILITY ENGINE - CSS ARMOR
+   ========================================================================== */
+
+/* 1. Prevent invisible white text in light mode */
+html:not(.dark) .text-white:not(.bg-primary):not(.bg-blue-600):not(.bg-blue-700):not(.bg-indigo-600):not(.bg-indigo-700):not(.bg-emerald-600):not(.bg-emerald-700):not(.bg-rose-600):not(.bg-red-600):not(.bg-slate-800):not(.bg-slate-900):not(.bg-gray-800):not(.bg-gray-900):not(.bg-neutral-800):not(.bg-neutral-900):not(.bg-black):not(button[class*="bg-"]):not(a[class*="bg-"]):not([data-keep-white]) {
+  color: #0f172a !important;
+}
+
+/* 2. Prevent invisible black/slate text on dark backgrounds */
+.dark .text-black,
+.dark .text-slate-950,
+.dark .text-gray-950 {
+  color: #f0f3fa !important;
+}
+
+/* 3. Universal Dropdown Option Visibility in Chrome/Edge/Firefox */
+select option {
+  background-color: #ffffff;
+  color: #0f172a;
+}
+.dark select option {
+  background-color: #141924 !important;
+  color: #f0f3fa !important;
+}
+html:not(.dark) select option {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+}
+
+/* 4. Universal High-Contrast Status Badges & Pills */
+.dark [class*="bg-emerald-50"],
+.dark [class*="bg-emerald-100"],
+.dark [class*="bg-green-50"],
+.dark [class*="bg-green-100"] {
+  background-color: rgba(16, 185, 129, 0.16) !important;
+  color: #86efac !important;
+  border-color: rgba(16, 185, 129, 0.35) !important;
+}
+.dark [class*="bg-amber-50"],
+.dark [class*="bg-amber-100"],
+.dark [class*="bg-yellow-50"],
+.dark [class*="bg-yellow-100"] {
+  background-color: rgba(245, 158, 11, 0.16) !important;
+  color: #fde047 !important;
+  border-color: rgba(245, 158, 11, 0.35) !important;
+}
+.dark [class*="bg-red-50"],
+.dark [class*="bg-red-100"],
+.dark [class*="bg-rose-50"],
+.dark [class*="bg-rose-100"] {
+  background-color: rgba(244, 63, 94, 0.16) !important;
+  color: #fca5a5 !important;
+  border-color: rgba(244, 63, 94, 0.35) !important;
+}
+.dark [class*="bg-blue-50"],
+.dark [class*="bg-blue-100"],
+.dark [class*="bg-sky-50"],
+.dark [class*="bg-sky-100"] {
+  background-color: rgba(41, 98, 255, 0.16) !important;
+  color: #93c5fd !important;
+  border-color: rgba(41, 98, 255, 0.35) !important;
+}
+.dark [class*="bg-purple-50"],
+.dark [class*="bg-purple-100"] {
+  background-color: rgba(168, 85, 247, 0.16) !important;
+  color: #d8b4fe !important;
+  border-color: rgba(168, 85, 247, 0.35) !important;
+}
+
+/* 5. Adaptive input & textarea readability */
+input::placeholder,
+textarea::placeholder {
+  opacity: 0.65 !important;
+}
+.dark input::placeholder,
+.dark textarea::placeholder {
+  color: #94a3b8 !important;
+}
+html:not(.dark) input::placeholder,
+html:not(.dark) textarea::placeholder {
+  color: #64748b !important;
+}
+
+/* 6. Dynamic Auto-Contrast Indicators */
+[data-contrast-fixed="dark-bg"] {
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.75) !important;
+}
+[data-contrast-fixed="light-bg"] {
+  text-shadow: none !important;
+}
