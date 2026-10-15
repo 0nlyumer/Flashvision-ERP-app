@@ -188,12 +188,17 @@ const ProtectedRoute = ({ children, moduleName }) => {
 const IndexRedirect = () => {
   // Dedicated Native Android APK auto-launch for Flash AM Attendance Terminal
   const isFlashAMNative = typeof window !== 'undefined' && (
-    window.Capacitor?.isNativePlatform() ||
     window.isCapacitorNative ||
     window.__FLASH_AM_MODE__ ||
+    window.AndroidBiometrics !== undefined ||
+    window.AndroidFileSaver !== undefined ||
+    window.AndroidPrint !== undefined ||
+    Boolean(window.Capacitor) ||
     window.location.search.includes('mode=flasham') ||
     localStorage.getItem('flasham_standalone') === 'true' ||
-    import.meta.env.VITE_APP_MODE === 'flasham'
+    import.meta.env.VITE_APP_MODE === 'flasham' ||
+    window.location.protocol === 'capacitor:' ||
+    (window.location.hostname === 'localhost' && (!window.location.port || window.location.port === '80' || window.location.port === '443'))
   );
   if (isFlashAMNative) {
     return <Navigate to="/flash-am" replace />;

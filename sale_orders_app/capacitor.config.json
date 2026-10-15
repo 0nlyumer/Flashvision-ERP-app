@@ -1,11 +1,9 @@
 {
-  "appId": "com.flashvision.flasham",
+  "appId": "com.flashvision.app",
   "appName": "Flash AM",
   "webDir": "dist",
-  "plugins": {
-    "SplashScreen": {
-      "launchShowDuration": 1500,
-      "backgroundColor": "#0b0e14"
-    }
+  "server": {
+    "androidScheme": "https",
+    "cleartext": true
   }
 }

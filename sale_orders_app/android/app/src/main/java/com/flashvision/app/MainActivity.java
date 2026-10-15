@@ -8,11 +8,15 @@ import android.content.Intent;
 import android.content.ContentValues;
 import android.provider.MediaStore;
 import android.util.Base64;
+import android.util.Log;
 import android.widget.Toast;
 import android.media.MediaScannerConnection;
 import androidx.core.content.FileProvider;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebView;
+import android.webkit.WebSettings;
+import android.webkit.WebChromeClient;
+import android.webkit.ConsoleMessage;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.print.PrintManager;
@@ -20,11 +24,8 @@ import android.print.PrintDocumentAdapter;
 import android.print.PrintAttributes;
 import android.view.Window;
 import android.graphics.Color;
-import android.Manifest;
-import android.content.pm.PackageManager;
 import android.hardware.fingerprint.FingerprintManager;
 import android.hardware.biometrics.BiometricPrompt;
-import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
@@ -33,30 +34,67 @@ import com.getcapacitor.BridgeActivity;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.OutputStream;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.concurrent.Executor;
 
 public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
+        // Switch from launch splash theme to main app theme immediately
+        setTheme(R.style.AppTheme_NoActionBar);
         super.onCreate(savedInstanceState);
         
-        // Setup transient immersive status bar
-        Window window = getWindow();
-        WindowCompat.setDecorFitsSystemWindows(window, false);
-        window.setStatusBarColor(Color.TRANSPARENT);
-        
-        WindowInsetsControllerCompat controller = new WindowInsetsControllerCompat(window, window.getDecorView());
-        controller.hide(WindowInsetsCompat.Type.statusBars());
-        controller.setSystemBarsBehavior(WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
-        
-        // Request runtime permissions on app launch
-        requestAppPermissions();
+        try {
+            // Setup transient immersive status bar
+            Window window = getWindow();
+            WindowCompat.setDecorFitsSystemWindows(window, false);
+            window.setStatusBarColor(Color.TRANSPARENT);
+            
+            WindowInsetsControllerCompat controller = new WindowInsetsControllerCompat(window, window.getDecorView());
+            controller.hide(WindowInsetsCompat.Type.statusBars());
+            controller.setSystemBarsBehavior(WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+        } catch (Exception e) {
+            Log.w("MainActivity", "Window insets init notice: " + e.getMessage());
+        }
 
-        // Wait for bridge initialization and add Javascript Interfaces
-        WebView webView = this.getBridge().getWebView();
-        if (webView != null) {
+        // Configure WebView & JavaScript Interfaces
+        setupWebView();
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        // Ensure webView settings and bridges are active
+        setupWebView();
+    }
+
+    private void setupWebView() {
+        try {
+            if (getBridge() == null) return;
+            WebView webView = getBridge().getWebView();
+            if (webView == null) return;
+
+            // Prevent blank black unpainted webview
+            webView.setBackgroundColor(Color.parseColor("#090d16"));
+
+            WebSettings settings = webView.getSettings();
+            settings.setJavaScriptEnabled(true);
+            settings.setDomStorageEnabled(true);
+            settings.setDatabaseEnabled(true);
+            settings.setAllowFileAccess(true);
+            settings.setAllowContentAccess(true);
+            settings.setLoadWithOverviewMode(true);
+            settings.setUseWideViewPort(true);
+
+            // Log JavaScript console to Logcat for real-time diagnostics
+            webView.setWebChromeClient(new WebChromeClient() {
+                @Override
+                public boolean onConsoleMessage(ConsoleMessage consoleMessage) {
+                    Log.d("FlashAM_JS", consoleMessage.message() + " [" + consoleMessage.sourceId() + ":" + consoleMessage.lineNumber() + "]");
+                    return true;
+                }
+            });
+
+            // Android Native Print Bridge
             webView.addJavascriptInterface(new Object() {
                 @JavascriptInterface
                 public void print() {
@@ -68,18 +106,6 @@ public class MainActivity extends BridgeActivity {
                     });
                 }
             }, "AndroidPrint");
-
-            webView.addJavascriptInterface(new Object() {
-                @JavascriptInterface
-                public void requestPermissions() {
-                    runOnUiThread(new Runnable() {
-                        @Override
-                        public void run() {
-                            requestAppPermissions();
-                        }
-                    });
-                }
-            }, "AndroidPermissions");
 
             // Real Hardware Biometrics & Fingerprint Javascript Bridge
             webView.addJavascriptInterface(new Object() {
@@ -143,6 +169,19 @@ public class MainActivity extends BridgeActivity {
                     } catch (Exception e) {}
                 }
             });
+
+            // Signal to web app that it is running inside native Flash AM Android container
+            webView.post(new Runnable() {
+                @Override
+                public void run() {
+                    WebView wv = getBridge() != null ? getBridge().getWebView() : null;
+                    if (wv != null) {
+                        wv.evaluateJavascript("window.isCapacitorNative = true; window.__FLASH_AM_MODE__ = true; window.dispatchEvent(new Event('flasham_native_ready'));", null);
+                    }
+                }
+            });
+        } catch (Exception e) {
+            Log.e("MainActivity", "Error in setupWebView: " + e.getMessage());
         }
     }
 
@@ -151,7 +190,6 @@ public class MainActivity extends BridgeActivity {
         try {
             if (base64Data == null || base64Data.isEmpty()) return;
             
-            // Clean base64 header if present (e.g. data:text/csv;base64, or data:image/png;base64,)
             String cleanBase64 = base64Data;
             if (cleanBase64.contains(",")) {
                 cleanBase64 = cleanBase64.substring(cleanBase64.indexOf(",") + 1);
@@ -193,10 +231,10 @@ public class MainActivity extends BridgeActivity {
             }
 
             if (saved) {
-                Toast.makeText(this, "Downloaded successfully: " + savedLocation, Toast.LENGTH_LONG).show();
-                WebView webView = getBridge().getWebView();
+                Toast.makeText(this, "Saved: " + savedLocation, Toast.LENGTH_LONG).show();
+                WebView webView = getBridge() != null ? getBridge().getWebView() : null;
                 if (webView != null) {
-                    String cleanPath = savedLocation.replace("'", "\'");
+                    String cleanPath = savedLocation.replace("'", "\\'");
                     webView.evaluateJavascript("if (window.onAndroidFileSaved) { window.onAndroidFileSaved('" + cleanPath + "'); }", null);
                 }
             } else {
@@ -287,7 +325,7 @@ public class MainActivity extends BridgeActivity {
         runOnUiThread(new Runnable() {
             @Override
             public void run() {
-                WebView webView = getBridge().getWebView();
+                WebView webView = getBridge() != null ? getBridge().getWebView() : null;
                 if (webView != null) {
                     String clean = message == null ? "" : message.replaceAll("[^a-zA-Z0-9_ -]", " ");
                     String js = "if (window.onAndroidBiometricResult) { window.onAndroidBiometricResult(" + success + ", '" + clean + "'); }";
@@ -301,7 +339,7 @@ public class MainActivity extends BridgeActivity {
         runOnUiThread(new Runnable() {
             @Override
             public void run() {
-                WebView webView = getBridge().getWebView();
+                WebView webView = getBridge() != null ? getBridge().getWebView() : null;
                 if (webView != null) {
                     String clean = message == null ? "" : message.replaceAll("[^a-zA-Z0-9_ -]", " ");
                     String js = "if (window.onAndroidBiometricEvent) { window.onAndroidBiometricEvent('" + status + "', '" + clean + "'); }";
@@ -311,42 +349,8 @@ public class MainActivity extends BridgeActivity {
         });
     }
 
-    private void requestAppPermissions() {
-        List<String> permissionsNeeded = new ArrayList<>();
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-            permissionsNeeded.add(Manifest.permission.CAMERA);
-        }
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            permissionsNeeded.add(Manifest.permission.RECORD_AUDIO);
-        }
-        
-        // Android 13+ granular media permissions
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_IMAGES) != PackageManager.PERMISSION_GRANTED) {
-                permissionsNeeded.add(Manifest.permission.READ_MEDIA_IMAGES);
-            }
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_VIDEO) != PackageManager.PERMISSION_GRANTED) {
-                permissionsNeeded.add(Manifest.permission.READ_MEDIA_VIDEO);
-            }
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-                permissionsNeeded.add(Manifest.permission.READ_MEDIA_AUDIO);
-            }
-        } else {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
-                permissionsNeeded.add(Manifest.permission.READ_EXTERNAL_STORAGE);
-            }
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
-                permissionsNeeded.add(Manifest.permission.WRITE_EXTERNAL_STORAGE);
-            }
-        }
-        
-        if (!permissionsNeeded.isEmpty()) {
-            ActivityCompat.requestPermissions(this, permissionsNeeded.toArray(new String[0]), 101);
-        }
-    }
-
     private void doPrint() {
-        WebView webView = this.getBridge().getWebView();
+        WebView webView = getBridge() != null ? getBridge().getWebView() : null;
         if (webView != null) {
             PrintManager printManager = (PrintManager) getSystemService(Context.PRINT_SERVICE);
             String jobName = "Flashvision ERP Document";
