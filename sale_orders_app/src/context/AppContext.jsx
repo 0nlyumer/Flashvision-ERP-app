@@ -645,6 +645,7 @@ export const AppProvider = ({ children }) => {
   };
 
   const [state, setState] = useState(() => {
+    let stateObj;
     const saved = localStorage.getItem('aj_synthetic_erp') || sessionStorage.getItem('aj_synthetic_erp');
     if (saved) {
       try {

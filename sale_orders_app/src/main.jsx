@@ -64,26 +64,45 @@ class RootErrorBoundary extends React.Component {
             maxWidth: '420px',
             boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)'
           }}>
-            <h2 style={{ fontSize: '20px', fontWeight: '900', color: '#06b6d4', margin: '0 0 8px 0' }}>FLASH AM TERMINAL</h2>
-            <p style={{ fontSize: '13px', color: '#94a3b8', margin: '0 0 20px 0' }}>An unexpected error occurred while initializing the view.</p>
-            <button
-              onClick={() => {
-                localStorage.clear();
-                window.location.reload();
-              }}
-              style={{
-                background: 'linear-gradient(135deg, #06b6d4, #4f46e5)',
-                color: '#ffffff',
-                border: 'none',
-                borderRadius: '12px',
-                padding: '12px 24px',
-                fontSize: '13px',
-                fontWeight: 'bold',
-                cursor: 'pointer'
-              }}
-            >
-              Restart Terminal
-            </button>
+            {(() => {
+              const isMobileTerminal = typeof window !== 'undefined' && (
+                window.isCapacitorNative ||
+                window.__FLASH_AM_MODE__ ||
+                Boolean(window.AndroidBiometrics) ||
+                Boolean(window.AndroidFileSaver) ||
+                Boolean(window.AndroidPrint) ||
+                Boolean(window.Capacitor) ||
+                window.location.search.includes('mode=flasham') ||
+                window.location.pathname.startsWith('/flash-am')
+              );
+              const appTitle = isMobileTerminal ? 'FLASH AM TERMINAL' : 'FLASHVISION ERP';
+              const buttonText = isMobileTerminal ? 'Restart Terminal' : 'Reload ERP Application';
+
+              return (
+                <>
+                  <h2 style={{ fontSize: '20px', fontWeight: '900', color: '#06b6d4', margin: '0 0 8px 0' }}>{appTitle}</h2>
+                  <p style={{ fontSize: '13px', color: '#94a3b8', margin: '0 0 20px 0' }}>An unexpected error occurred while initializing the view.</p>
+                  <button
+                    onClick={() => {
+                      sessionStorage.clear();
+                      window.location.reload();
+                    }}
+                    style={{
+                      background: 'linear-gradient(135deg, #06b6d4, #4f46e5)',
+                      color: '#ffffff',
+                      border: 'none',
+                      borderRadius: '12px',
+                      padding: '12px 24px',
+                      fontSize: '13px',
+                      fontWeight: 'bold',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    {buttonText}
+                  </button>
+                </>
+              );
+            })()}
           </div>
         </div>
       );
