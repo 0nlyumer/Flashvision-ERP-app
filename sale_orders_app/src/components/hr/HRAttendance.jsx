@@ -299,6 +299,69 @@ export default function HRAttendance({ isMobile }) {
   const [colWidths, setColWidths] = useState({
     details: 280
   });
+  const [isColumnPinned, setIsColumnPinned] = useState(true);
+  const fileInputRef = useRef(null);
+  const docInputRef = useRef(null);
+  const [cameraStream, setCameraStream] = useState(null);
+  const [isCameraActive, setIsCameraActive] = useState(false);
+
+  const handleDocChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      setNewEmpForm(prev => ({
+        ...prev,
+        legalDocName: file.name,
+        legalDocUrl: URL.createObjectURL(file)
+      }));
+    }
+  };
+
+  const monthsList = [
+    { num: 0, name: 'January' },
+    { num: 1, name: 'February' },
+    { num: 2, name: 'March' },
+    { num: 3, name: 'April' },
+    { num: 4, name: 'May' },
+    { num: 5, name: 'June' },
+    { num: 6, name: 'July' },
+    { num: 7, name: 'August' },
+    { num: 8, name: 'September' },
+    { num: 9, name: 'October' },
+    { num: 10, name: 'November' },
+    { num: 11, name: 'December' }
+  ];
+  const currentYearNum = new Date().getFullYear();
+  const yearsList = [currentYearNum - 2, currentYearNum - 1, currentYearNum, currentYearNum + 1];
+
+  const handleMonthChange = (monthNum) => {
+    const m = parseInt(monthNum);
+    setSelectedMonth(m);
+    updateDateRangeFromMonthYear(m, selectedYear);
+  };
+
+  const handleYearChange = (yearNum) => {
+    const y = parseInt(yearNum);
+    setSelectedYear(y);
+    updateDateRangeFromMonthYear(selectedMonth, y);
+  };
+
+  const formatDateForDisplay = (dateStr) => {
+    if (!dateStr) return '';
+    try {
+      const [y, m, d] = dateStr.split('-');
+      return `${d}/${m}/${y}`;
+    } catch(e) {
+      return dateStr;
+    }
+  };
+
+  const handleStartDateChange = (val) => {
+    setStartDate(val);
+  };
+
+  const handleEndDateChange = (val) => {
+    setEndDate(val);
+  };
 
   const getColWidth = (key) => colWidths[key] || (key === 'details' ? 280 : 200);
 
@@ -1608,16 +1671,16 @@ export default function HRAttendance({ isMobile }) {
                                   <option value="holiday">Holiday</option>
                                   <option value="off day">Off Day</option>
                                 </select>
-                                {uploadedAttRec && uploadedAttRec.inTime && (
+                                {uploadedRec && uploadedRec.inTime && (
                                   <div className="flex flex-col gap-0.5 text-[8px] font-mono mt-0.5 w-full bg-emerald-500/10 p-1 rounded border border-emerald-500/20">
                                     <span className="text-emerald-700 dark:text-emerald-400 font-bold flex items-center justify-center gap-1">
                                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                                      IN: {uploadedAttRec.inTime}
+                                      IN: {uploadedRec.inTime}
                                     </span>
-                                    {uploadedAttRec.outTime && (
+                                    {uploadedRec.outTime && (
                                       <span className="text-purple-700 dark:text-purple-400 font-bold flex items-center justify-center gap-1">
                                         <span className="w-1.5 h-1.5 rounded-full bg-purple-500"></span>
-                                        OUT: {uploadedAttRec.outTime}
+                                        OUT: {uploadedRec.outTime}
                                       </span>
                                     )}
                                   </div>
@@ -2085,7 +2148,7 @@ export default function HRAttendance({ isMobile }) {
                       (r.date === day.date || normalizeDate(r.date) === normalizeDate(day.date))
                     );
 
-                    const uploadedAttRec = (liveUploadedAttendance || uploadedAttendance || []).find(u => 
+                    const uploadedRec = (liveUploadedAttendance || uploadedAttendance || []).find(u => 
                       (
                         (u.employeeId && (String(u.employeeId) === empIdStr || String(u.employeeId) === String(emp.employeeId) || String(u.employeeCode) === String(emp.employeeCode))) ||
                         (u.employeeName && String(u.employeeName).trim().toLowerCase() === empNameLower)
@@ -2094,13 +2157,13 @@ export default function HRAttendance({ isMobile }) {
                     );
 
                     // Auto-sync live punch from Flash AM into active cell status
-                    if (uploadedAttRec && uploadedAttRec.inTime) {
+                    if (uploadedRec && uploadedRec.inTime) {
                       rec = {
                         ...rec,
-                        status: uploadedAttRec.status === 'Completed' ? 'present' : (uploadedAttRec.status?.toLowerCase() || 'present'),
-                        inTime: uploadedAttRec.inTime,
-                        outTime: uploadedAttRec.outTime,
-                        duration: uploadedAttRec.duration,
+                        status: uploadedRec.status === 'Completed' ? 'present' : (uploadedRec.status?.toLowerCase() || 'present'),
+                        inTime: uploadedRec.inTime,
+                        outTime: uploadedRec.outTime,
+                        duration: uploadedRec.duration,
                         explicitStatus: true
                       };
                     }
@@ -2115,8 +2178,8 @@ export default function HRAttendance({ isMobile }) {
                           explicitStatus: true
                         };
                       }
-                    } else if (uploadedAttRec && parseFloat(uploadedAttRec.ot || 0) > 0) {
-                      const otHrs = parseFloat(uploadedAttRec.ot);
+                    } else if (uploadedRec && parseFloat(uploadedRec.ot || 0) > 0) {
+                      const otHrs = parseFloat(uploadedRec.ot);
                       if (parseFloat(rec.ot || 0) < otHrs) {
                         rec = {
                           ...rec,
@@ -3264,5 +3327,5 @@ export default function HRAttendance({ isMobile }) {
     );
   }
 
-  return viewMode === 'reconcile' ? renderReconcileView() : (isMobileCardView ? renderMobileCardView() : renderDesktopView());
+  return renderDesktopView();
 }
