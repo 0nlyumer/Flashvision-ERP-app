@@ -52,7 +52,11 @@ export default function UnifiedPrintDocument({
 
   // Company Details
   const companyName = companyInfo.companyName || 'FLASHVISION LOGISTICS & ENTERPRISE ERP';
-  const logoUrl = companyInfo.logoUrl || '';
+  const resolvedLogoUrl = layoutConfig.logoUrl || companyInfo.logoUrl || '';
+  const showLogo = layoutConfig.showHeaderLogo !== false && Boolean(resolvedLogoUrl);
+  const logoSize = layoutConfig.logoSize || 'medium';
+  const logoHeightClass = logoSize === 'small' ? 'h-8 max-h-8' : logoSize === 'large' ? 'h-16 max-h-16' : logoSize === 'xl' ? 'h-20 max-h-20' : 'h-12 max-h-12';
+  const logoPosition = layoutConfig.logoPosition || 'left';
   const address = companyInfo.address || 'Plot 42-B, Industrial Zone Phase III, Karachi, Pakistan';
   const phone = companyInfo.phone || '+92-21-34567890';
   const email = companyInfo.email || 'operations@flashvision.com';
@@ -92,11 +96,118 @@ export default function UnifiedPrintDocument({
 
   // Field Value Resolver
   const getHeaderValue = (key) => {
-    if (headerData[key] !== undefined && headerData[key] !== null) {
+    if (!key) return '—';
+
+    // 1. Direct match on headerData or top-level record
+    if (headerData[key] !== undefined && headerData[key] !== null && String(headerData[key]).trim() !== '') {
       return String(headerData[key]);
     }
-    // Document ID fallbacks
-    if (key.includes('no') || key.includes('id') || key.includes('number')) {
+    if (record[key] !== undefined && record[key] !== null && String(record[key]).trim() !== '') {
+      return String(record[key]);
+    }
+
+    // 2. Specific Document Key Mappings (Delivery Challan, OMS, HR, Production, Finance)
+    const normKey = key.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+    // Logistics & Delivery Challan fields
+    if (normKey === 'drivername') {
+      return headerData.driver_name || headerData.driverName || headerData.logistics?.driverName || headerData.logistics?.driver_name || record.logistics?.driverName || '—';
+    }
+    if (normKey === 'drivercontact' || normKey === 'drivernumber' || normKey === 'driverphone') {
+      return headerData.driver_contact || headerData.driverContact || headerData.logistics?.driverNumber || headerData.logistics?.driver_number || headerData.logistics?.driverContact || record.logistics?.driverNumber || '—';
+    }
+    if (normKey === 'vehicleno' || normKey === 'vehiclenumber') {
+      return headerData.vehicle_no || headerData.vehicleNo || headerData.vehicleNumber || headerData.logistics?.vehicleNumber || headerData.logistics?.vehicle_number || record.logistics?.vehicleNumber || '—';
+    }
+    if (normKey === 'contactperson') {
+      return headerData.contact_person || headerData.contactPerson || headerData.consignee?.contactPerson || headerData.consignee?.contact_person || record.consignee?.contactPerson || headerData.contact || '—';
+    }
+    if (normKey === 'contactnumber' || normKey === 'contact' || normKey === 'phone') {
+      return headerData.contact_number || headerData.contactNumber || headerData.consignee?.contactNumber || headerData.consignee?.contact_number || headerData.consignee?.phone || record.consignee?.contactNumber || headerData.contact || '—';
+    }
+    if (normKey === 'shippingaddress' || normKey === 'deliveryaddress' || normKey === 'destination') {
+      return headerData.shipping_address || headerData.deliveryAddress || headerData.consignee?.deliveryAddress || headerData.consignee?.address || record.consignee?.deliveryAddress || headerData.address || '—';
+    }
+    if (normKey === 'dcmode' || normKey === 'dispatchmode') {
+      return headerData.dc_mode || headerData.dcMode || headerData.dispatch_mode || headerData.dispatchMode || headerData.logistics?.dispatchMode || record.dcMode || 'Direct Delivery';
+    }
+    if (normKey === 'deliverymode') {
+      return headerData.delivery_mode || headerData.deliveryMode || headerData.mode || 'Standard Delivery';
+    }
+    if (normKey === 'specialinstructions' || normKey === 'specialnotes' || normKey === 'instructions') {
+      return headerData.special_instructions || headerData.specialInstructions || headerData.instructions || headerData.notes || headerData.remarks || 'None';
+    }
+    if (normKey === 'soref' || normKey === 'orderref' || normKey === 'saleorderref') {
+      return headerData.so_ref || headerData.saleOrderId || headerData.orderId || headerData.items?.[0]?.orderId || record.items?.[0]?.orderId || headerData.so_number || headerData.id || '—';
+    }
+    if (normKey === 'challanno') {
+      return headerData.challan_no || headerData.challanNumber || headerData.dc_number || headerData.id || record.id || '—';
+    }
+    if (normKey === 'dispatchdate') {
+      return headerData.dispatch_date || headerData.date || record.date || new Date().toISOString().split('T')[0];
+    }
+    if (normKey === 'customer' || normKey === 'customername') {
+      return headerData.customer_name || headerData.customerName || headerData.customer || record.customerName || 'Al-Haq Enterprises';
+    }
+
+    // HR Leave & Attendance Fields
+    if (normKey === 'leaveid') {
+      return headerData.leave_id || headerData.id || record.id || 'LR-2026-001';
+    }
+    if (normKey === 'leavetype') {
+      return headerData.leave_type || headerData.leaveType || 'Annual';
+    }
+    if (normKey === 'leavecategory' || normKey === 'category') {
+      return headerData.leave_category || headerData.leaveCategory || (headerData.leaveType === 'unpaid' ? 'Unpaid' : 'Paid') || 'Paid';
+    }
+    if (normKey === 'startdate') {
+      return headerData.start_date || headerData.startDate || '—';
+    }
+    if (normKey === 'enddate') {
+      return headerData.end_date || headerData.endDate || '—';
+    }
+    if (normKey === 'totaldays' || normKey === 'days') {
+      return headerData.total_days || headerData.days || (headerData.estimatedDays !== '--' ? headerData.estimatedDays : null) || '—';
+    }
+    if (normKey === 'reason') {
+      return headerData.reason || headerData.purpose || '—';
+    }
+    if (normKey === 'empcode' || normKey === 'employeeid' || normKey === 'empid') {
+      return headerData.emp_code || headerData.employeeId || headerData.emp_id || headerData.empId || '—';
+    }
+    if (normKey === 'empname' || normKey === 'employeename') {
+      return headerData.emp_name || headerData.employeeName || headerData.empName || headerData.name || 'Staff Member';
+    }
+    if (normKey === 'department') {
+      return headerData.department || headerData.dept || 'Operations';
+    }
+    if (normKey === 'applieddate') {
+      return headerData.applied_date || headerData.appliedOn || (headerData.createdAt ? new Date(headerData.createdAt).toLocaleDateString() : new Date().toLocaleDateString());
+    }
+    if (normKey === 'sheettitle') {
+      return headerData.sheet_title || headerData.report_title || 'WORKFORCE ATTENDANCE REGISTER';
+    }
+    if (normKey === 'monthyear') {
+      return headerData.month_year || headerData.audit_period || 'Current Period';
+    }
+    if (normKey === 'shift') {
+      return headerData.shift || headerData.allocated_shift || 'Regular Shift';
+    }
+    if (normKey === 'totalstaff') {
+      return headerData.total_staff || headerData.totalHeadcount || (record.items?.length ? String(record.items.length) : '—');
+    }
+    if (normKey === 'presentcount') {
+      return headerData.present_count || headerData.present || '—';
+    }
+    if (normKey === 'absentcount') {
+      return headerData.absent_count || headerData.absent || '—';
+    }
+    if (normKey === 'latecount') {
+      return headerData.late_count || headerData.late || '—';
+    }
+
+    // Generic Fallbacks (SAFE: do not match vehicle_no or contact_number as doc id!)
+    if (normKey === 'id' || normKey === 'no' || normKey === 'number' || normKey === 'docno' || normKey === 'refno') {
       return headerData.id || headerData.so_number || headerData.invoice_no || headerData.challan_no || headerData.batch_no || 'DOC-2026-001';
     }
     if (key.includes('date')) return headerData.date || new Date().toISOString().split('T')[0];
@@ -104,25 +215,109 @@ export default function UnifiedPrintDocument({
     if (key.includes('customer') || key.includes('supplier') || key.includes('party')) {
       return headerData.customerName || headerData.supplierName || headerData.party_name || 'Al-Haq Industrial Corp';
     }
+
     return '—';
   };
 
   const getCellValue = (colKey, item, index) => {
     if (!item) return '—';
-    if (colKey === 'serial_no' || colKey === 'sr' || colKey === 'sr_no') {
+
+    // 1. Serial Number
+    if (colKey === 'serial_no' || colKey === 'sr' || colKey === 'sr_no' || colKey === 'step_no' || colKey === 'month_no') {
       return String(index + 1).padStart(2, '0');
     }
-    if (item[colKey] !== undefined && item[colKey] !== null) {
+
+    // 2. Direct property match
+    if (item[colKey] !== undefined && item[colKey] !== null && String(item[colKey]).trim() !== '') {
       const val = item[colKey];
       return typeof val === 'number' ? val.toLocaleString() : String(val);
     }
-    // Common aliases
-    if (colKey === 'item_name' || colKey === 'product_name' || colKey === 'description') {
-      return item.name || item.itemName || item.productName || item.description || '—';
+
+    const norm = colKey.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+    // 3. Item Code & Name aliases
+    if (norm === 'itemcode' || norm === 'code' || norm === 'sku') {
+      return item.itemCode || item.ITEMCODE || item.item_code || item.code || item.sku || item.itemId || item.ITEMID || '—';
     }
-    if (colKey === 'item_code' || colKey === 'sku' || colKey === 'code') {
-      return item.itemCode || item.code || item.sku || '—';
+    if (norm === 'itemname' || norm === 'productname' || norm === 'description') {
+      return item.productName || item.PRODUCTNAME || item.itemName || item.item_name || item.name || item.description || item.operation || '—';
     }
+
+    // 4. Quantities & Rolls aliases
+    if (norm === 'orderedqty' || norm === 'orderqty' || norm === 'targetqty') {
+      const val = item.ordered_qty ?? item.orderedQty ?? item.ORDEREDQTY ?? item.readyQty ?? item.ready_qty ?? item.target_qty ?? item.targetQty ?? item.quantity ?? item.qty;
+      return val !== undefined && val !== null ? (typeof val === 'number' ? val.toLocaleString() : String(val)) : '—';
+    }
+    if (norm === 'dispatchqty' || norm === 'dispatchedqty') {
+      const val = item.dispatch_qty ?? item.dispatched_qty ?? item.dispatchedQty ?? item.DISPATCHEDQTY ?? item.dispatchQty ?? item.editedQty ?? item.qty;
+      return val !== undefined && val !== null ? (typeof val === 'number' ? val.toLocaleString() : String(val)) : '—';
+    }
+    if (norm === 'packingtype' || norm === 'stocktype' || norm === 'packaging') {
+      return item.packing_type || item.packingType || item.stockType || item.STOCKTYPE || item.type || (item.rollSize ? `${item.rollSize}m` : null) || 'Standard';
+    }
+    if (norm === 'weight' || norm === 'netweight') {
+      if (item.weight !== undefined && item.weight !== null) return String(item.weight);
+      if (item.net_weight !== undefined && item.net_weight !== null) return String(item.net_weight);
+      if (item.dispatchedRolls) return `${item.dispatchedRolls} Rolls`;
+      if (item.DISPATCHEDROLLS) return `${item.DISPATCHEDROLLS} Rolls`;
+      if (item.rolls) return `${item.rolls} Rolls`;
+      return '—';
+    }
+    if (norm === 'rolls' || norm === 'rollsready' || norm === 'dispatchedrolls') {
+      const val = item.rolls ?? item.dispatchedRolls ?? item.DISPATCHEDROLLS ?? item.no_of_packages;
+      return val !== undefined && val !== null ? String(val) : '—';
+    }
+    if (norm === 'qty' || norm === 'quantity') {
+      const val = item.qty ?? item.quantity ?? item.dispatchedQty ?? item.target_qty ?? item.actual_output ?? item.chalan_qty;
+      return val !== undefined && val !== null ? (typeof val === 'number' ? val.toLocaleString() : String(val)) : '—';
+    }
+
+    // 5. Rates & Pricing aliases
+    if (norm === 'rate' || norm === 'unitrate' || norm === 'unitprice' || norm === 'price') {
+      const val = item.rate ?? item.unitRate ?? item.unit_rate ?? item.unit_price ?? item.unitPrice ?? item.price;
+      return val !== undefined && val !== null ? (typeof val === 'number' ? val.toFixed(2) : String(val)) : '—';
+    }
+    if (norm === 'subtotal' || norm === 'amount' || norm === 'totalamount') {
+      const val = item.sub_total ?? item.subTotal ?? item.amount ?? item.total_amount ?? item.total;
+      return val !== undefined && val !== null ? (typeof val === 'number' ? val.toFixed(2) : String(val)) : '—';
+    }
+    if (norm === 'discount') {
+      return item.discount !== undefined && item.discount !== null ? String(item.discount) : '0%';
+    }
+    if (norm === 'uom' || norm === 'unit') {
+      return item.uom || item.unit || 'Units';
+    }
+    if (norm === 'remarks' || norm === 'notes') {
+      return item.remarks || item.notes || item.task_description || '—';
+    }
+
+    // 6. HR Line Item Aliases
+    if (norm === 'leavetype') return item.leave_type || item.leaveType || item.type || 'Annual';
+    if (norm === 'category') return item.category || item.leave_category || item.leaveCategory || 'Paid';
+    if (norm === 'days') return item.days ?? item.total_days ?? '1';
+    if (norm === 'clockin') return item.clock_in || item.inTime || '—';
+    if (norm === 'clockout') return item.clock_out || item.outTime || '—';
+    if (norm === 'duration') return item.duration || item.hours || '—';
+    if (norm === 'empcode') return item.emp_code || item.empId || item.employeeId || '—';
+    if (norm === 'empname') return item.emp_name || item.employeeName || item.name || '—';
+    if (norm === 'status') return item.status || '—';
+
+    // 7. Finance Vouchers & General Ledger
+    if (norm === 'accounthead') return item.account_head || item.accountName || item.accountTitle || (item.accountId ? `${item.accountId} - ${item.accountName || ''}` : '—');
+    if (norm === 'narration') return item.narration || item.particulars || item.description || '—';
+    if (norm === 'debit') {
+      const val = item.debit;
+      return val !== undefined && val !== null ? (typeof val === 'number' ? val.toFixed(2) : String(val)) : '0.00';
+    }
+    if (norm === 'credit') {
+      const val = item.credit;
+      return val !== undefined && val !== null ? (typeof val === 'number' ? val.toFixed(2) : String(val)) : '0.00';
+    }
+    if (norm === 'balance') {
+      const val = item.balance ?? item.current_balance;
+      return val !== undefined && val !== null ? (typeof val === 'number' ? val.toFixed(2) : String(val)) : '—';
+    }
+
     return '—';
   };
 
@@ -215,17 +410,8 @@ export default function UnifiedPrintDocument({
                     <div className="flex justify-between items-start gap-4">
                       {/* Left: Company Logo & Details */}
                       <div className="flex items-center gap-3.5 max-w-[60%]">
-                        {layoutConfig.showHeaderLogo !== false && (
-                          logoUrl ? (
-                            <img src={logoUrl} alt="Company Logo" className="h-14 object-contain max-w-[130px]" />
-                          ) : (
-                            <div 
-                              className="w-12 h-12 rounded flex items-center justify-center font-black text-xs text-white shrink-0 shadow-sm"
-                              style={{ backgroundColor: primaryColor }}
-                            >
-                              FV
-                            </div>
-                          )
+                        {showLogo && (
+                          <img src={resolvedLogoUrl} alt="Company Logo" className={`${logoHeightClass} object-contain max-w-[160px]`} />
                         )}
                         <div>
                           <h1 className="text-lg font-black uppercase tracking-tight leading-tight" style={{ color: primaryColor }}>
@@ -288,8 +474,8 @@ export default function UnifiedPrintDocument({
 
                     <div className="flex justify-between items-center gap-4">
                       <div className="flex items-center gap-3">
-                        {layoutConfig.showHeaderLogo !== false && logoUrl && (
-                          <img src={logoUrl} alt="Logo" className="h-10 object-contain" />
+                        {showLogo && (
+                          <img src={resolvedLogoUrl} alt="Logo" className={`${logoHeightClass} object-contain max-w-[160px]`} />
                         )}
                         <div>
                           <span className="text-xs uppercase tracking-widest font-bold text-slate-400">
@@ -336,6 +522,9 @@ export default function UnifiedPrintDocument({
                     {/* High-Visibility Job/Batch Floor Banner */}
                     <div className="flex justify-between items-start border-b-2 border-black pb-2 mb-2">
                       <div className="max-w-[50%]">
+                        {showLogo && (
+                          <img src={resolvedLogoUrl} alt="Logo" className={`${logoHeightClass} object-contain max-w-[120px] mb-1.5`} />
+                        )}
                         <span className="text-[8.5px] font-black uppercase tracking-widest text-black block">
                           FACTORY FLOOR ROUTING & AUDIT SHEET
                         </span>

@@ -22,6 +22,7 @@ import RawMaterialConfig from '../components/production/RawMaterialConfig';
 import RawMaterialProduction from '../components/production/RawMaterialProduction';
 import { useSearchParams } from 'react-router-dom';
 import OtherConsumption from '../components/production/OtherConsumption';
+import UniversalPrintStudioModal from '../components/ui/UniversalPrintStudioModal';
 
 export default function ProductionModule() {
   const { state, setCollection, updateSaleOrderItemStatus, isDirty, setDirty, toggleGlobalPagination, updateProductionTarget } = useApp();
@@ -61,6 +62,85 @@ export default function ProductionModule() {
   const [historyType, setHistoryType] = useState('target');
   const [isEditingTarget, setIsEditingTarget] = useState(false);
   const [tempTarget, setTempTarget] = useState(state.productionTarget || 0);
+
+  const [studioManifestPlan, setStudioManifestPlan] = useState(null);
+  const [studioBomItem, setStudioBomItem] = useState(null);
+
+  const manifestPrintData = useMemo(() => {
+    if (!studioManifestPlan) return null;
+    return {
+      header: {
+        manifest_no: studioManifestPlan.id || 'PM-001',
+        plan_no: studioManifestPlan.id || 'PLAN-001',
+        product_name: studioManifestPlan.items?.[0]?.productName || 'Multiple Products',
+        batch_size: `${studioManifestPlan.items?.reduce((s, it) => s + (Number(it.outputQty || it.quantity) || 0), 0) || 0} M`,
+        date: new Date().toLocaleDateString('en-GB', { month: 'short', day: 'numeric', year: 'numeric'}),
+        department: 'Production / Weaving',
+        status: studioManifestPlan.status || 'In Process'
+      },
+      items: (studioManifestPlan.items || []).map((item, idx) => ({
+        seq: idx + 1,
+        item_code: item.itemCode || `ITM-${idx + 1}`,
+        item_name: item.productName || item.name || '',
+        roll_no: item.orderId || '-',
+        target_qty: item.quantity || item.outputQty || 0,
+        dispatched_qty: item.outputQty || item.quantity || 0,
+        uom: 'M',
+        remarks: item.customerName || 'Standard Production'
+      }))
+    };
+  }, [studioManifestPlan]);
+
+  const bomPrintData = useMemo(() => {
+    if (!studioBomItem) return null;
+    const bom = studioBomItem;
+    const extractMaterials = () => {
+      if (Array.isArray(bom.rawMaterials) && bom.rawMaterials.length > 0) return bom.rawMaterials;
+      if (Array.isArray(bom.materials) && bom.materials.length > 0) return bom.materials;
+      if (Array.isArray(bom.components) && bom.components.length > 0) return bom.components;
+      if (bom.phases) {
+        const out = [];
+        ['top', 'foam', 'adhesive', 'packing'].forEach(phaseKey => {
+          const list = bom.phases[phaseKey];
+          if (Array.isArray(list)) {
+            list.filter(p => p.value || p.quantity || p.qty).forEach(p => {
+              out.push({
+                code: p.rmId || p.itemCode || p.sku || '-',
+                name: p.name || p.materialName || 'Material',
+                qty: p.value || p.quantity || p.qty,
+                uom: p.uom || p.unit || 'Kg',
+                stage: phaseKey.charAt(0).toUpperCase() + phaseKey.slice(1)
+              });
+            });
+          }
+        });
+        if (out.length > 0) return out;
+      }
+      return [];
+    };
+
+    const mats = extractMaterials();
+    return {
+      header: {
+        bom_no: bom.id || `BOM-${bom.finishedGoodSku || '001'}`,
+        product_name: bom.finishedGoodName || bom.name || 'Finished Good',
+        product_code: bom.finishedGoodSku || '-',
+        batch_size: `${bom.batchSize || 1000} ${bom.uom || 'M'}`,
+        version: bom.version || 'v1.0',
+        date: new Date().toLocaleDateString('en-GB', { month: 'short', day: 'numeric', year: 'numeric'}),
+        created_by: bom.createdBy || 'Production Supervisor'
+      },
+      items: mats.map((mat, idx) => ({
+        step_no: idx + 1,
+        item_code: mat.code || mat.sku || mat.itemCode || `RM-${idx + 1}`,
+        material_name: mat.name || mat.materialName || 'Raw Material',
+        qty_required: mat.qty || mat.target || mat.quantity || 0,
+        uom: mat.uom || mat.unit || 'Kg',
+        stage: mat.stage || 'Processing',
+        cost: mat.cost || (mat.rate && mat.qty ? mat.rate * mat.qty : '-')
+      }))
+    };
+  }, [studioBomItem]);
 
   const allPlans = state.productionPlans || [];
 
@@ -748,7 +828,7 @@ export default function ProductionModule() {
                                                                     </button>
                                                                     <button
                                                                         onClick={() => {
-                                                                            window.print();
+                                                                            setStudioBomItem({ ...bomRef, finishedGoodName: fg.name, finishedGoodSku: fg.sku });
                                                                         }}
                                                                         className="px-3 py-1.5 rounded-lg border border-secondary/30 text-secondary hover:bg-secondary hover:text-on-secondary transition-colors text-xs font-bold inline-flex items-center gap-1"
                                                                         title="Print BOM"
@@ -834,9 +914,10 @@ export default function ProductionModule() {
                                                             </button>
                                                             <button
                                                                 onClick={() => {
-                                                                    window.print();
+                                                                    setStudioBomItem({ ...bomRef, finishedGoodName: fg.name, finishedGoodSku: fg.sku });
                                                                 }}
                                                                 className="px-3 py-2 rounded-xl bg-secondary/5 text-secondary hover:bg-secondary/10 transition-colors text-xs font-bold inline-flex items-center gap-1"
+                                                                title="Print BOM"
                                                             >
                                                                 <span className="material-symbols-outlined text-[16px]">print</span>
                                                             </button>
@@ -1165,7 +1246,10 @@ export default function ProductionModule() {
                             <span className="material-symbols-outlined text-[20px]">inventory_2</span>
                             Record Consumption
                         </button>
-                        <button className="px-6 py-3 rounded-xl font-semibold text-primary border border-outline-variant/20 hover:bg-surface-container-low transition-colors flex items-center gap-2">
+                        <button 
+                            onClick={() => setStudioManifestPlan(activePlan)}
+                            className="px-6 py-3 rounded-xl font-semibold text-primary border border-outline-variant/20 hover:bg-surface-container-low transition-colors flex items-center gap-2 shadow-sm"
+                        >
                             <span className="material-symbols-outlined text-[20px]">print</span>
                             Print Manifest
                         </button>
@@ -1343,6 +1427,26 @@ export default function ProductionModule() {
           onClose={() => setHistoryModalOpen(false)}
           type={historyType}
       />
+
+      {studioManifestPlan && manifestPrintData && (
+        <UniversalPrintStudioModal
+          isOpen={Boolean(studioManifestPlan)}
+          onClose={() => setStudioManifestPlan(null)}
+          documentType="production_manifest"
+          documentData={manifestPrintData}
+          documentTitle={`Production Manifest - ${studioManifestPlan.id || 'Order'}`}
+        />
+      )}
+
+      {studioBomItem && bomPrintData && (
+        <UniversalPrintStudioModal
+          isOpen={Boolean(studioBomItem)}
+          onClose={() => setStudioBomItem(null)}
+          documentType="bom_master"
+          documentData={bomPrintData}
+          documentTitle={`Bill of Materials - ${studioBomItem.finishedGoodName || 'BOM'}`}
+        />
+      )}
     </Layout>
   );
 }

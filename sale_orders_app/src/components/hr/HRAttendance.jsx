@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { supabase } from '../../utils/supabaseClient';
 import { useDialog } from '../../context/DialogContext';
 import { useApp } from '../../context/AppContext';
+import UniversalPrintStudioModal from '../ui/UniversalPrintStudioModal';
 
 const INITIAL_EMPLOYEES = [
   {
@@ -207,6 +208,55 @@ export default function HRAttendance({ isMobile }) {
   });
   const [isDirty, setIsDirty] = useState(false);
   const [viewMode, setViewMode] = useState(() => savedUserFilters?.viewMode || 'grid'); // 'grid' | 'reconcile'
+  const [showStudioModal, setShowStudioModal] = useState(false);
+
+  const attendancePrintData = useMemo(() => {
+    const list = localEmployees || [];
+    let totalPresent = 0;
+    let totalAbsent = 0;
+
+    const items = list.map((emp) => {
+      let pCount = 0;
+      let aCount = 0;
+      let lCount = 0;
+      let otSum = 0;
+
+      if (emp.attendance) {
+        Object.values(emp.attendance).forEach(day => {
+          if (day?.status === 'present') pCount++;
+          else if (day?.status === 'absent') aCount++;
+          else if (day?.status === 'half_day' || day?.status === 'late') lCount++;
+          otSum += (Number(day?.ot) || 0);
+        });
+      }
+
+      totalPresent += pCount;
+      totalAbsent += aCount;
+
+      return {
+        emp_id: emp.id || '-',
+        employee_name: emp.name || 'Employee',
+        department: emp.department || emp.role || 'General',
+        present_days: pCount,
+        absent_days: aCount,
+        late_days: lCount,
+        half_days: 0,
+        overtime_hours: otSum.toFixed(1)
+      };
+    });
+
+    return {
+      header: {
+        month: 'Current Month',
+        department: 'All Departments',
+        total_employees: list.length,
+        present_count: totalPresent,
+        absent_count: totalAbsent,
+        date: new Date().toLocaleDateString('en-GB', { month: 'short', day: 'numeric', year: 'numeric'})
+      },
+      items
+    };
+  }, [localEmployees]);
 
   // Live Realtime Notification Banner
   const [livePunchNotice, setLivePunchNotice] = useState(null);
@@ -1130,15 +1180,25 @@ export default function HRAttendance({ isMobile }) {
     document.body.removeChild(link);
   };
 
+  const modalNode = showStudioModal && attendancePrintData ? (
+    <UniversalPrintStudioModal
+      isOpen={showStudioModal}
+      onClose={() => setShowStudioModal(false)}
+      documentType="attendance_sheet"
+      documentData={attendancePrintData}
+      documentTitle="Attendance Register"
+    />
+  ) : null;
+
   if (viewMode === 'reconcile') {
-    return renderReconciliationView();
+    return <>{renderReconciliationView()}{modalNode}</>;
   }
 
   if (isMobile) {
-    return renderMobileView();
+    return <>{renderMobileView()}{modalNode}</>;
   }
 
-  return renderDesktopView();
+  return <>{renderDesktopView()}{modalNode}</>;
 
   // ========================================================
   // MOBILE VIEW (Supervisor Attendance Log)
@@ -2433,6 +2493,16 @@ export default function HRAttendance({ isMobile }) {
                 Add New Employee
               </button>
             )}
+
+            {/* Print Register Button */}
+            <button 
+              onClick={() => setShowStudioModal(true)}
+              className="px-4 py-2.5 bg-secondary/10 border border-secondary/20 text-secondary hover:bg-secondary/20 rounded-xl text-xs font-bold flex items-center gap-2 transition-all active:scale-[0.97] cursor-pointer shadow-sm"
+              title="Print Attendance Register (Studio)"
+            >
+              <span className="material-symbols-outlined text-[18px]">print</span>
+              Print Register
+            </button>
 
             {/* Upload CSV & Download Template Buttons */}
             {canUploadCSV && (

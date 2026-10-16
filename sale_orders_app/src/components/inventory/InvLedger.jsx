@@ -4,6 +4,7 @@ import ResizableHeader from '../ui/ResizableHeader';
 import PrintLayout from '../ui/PrintLayout';
 import GlobalPagination from '../ui/GlobalPagination';
 import CustomMultiSelect from '../ui/CustomMultiSelect';
+import UniversalPrintStudioModal from '../ui/UniversalPrintStudioModal';
 
 export default function InvLedger({ selectedDepartments = [], onBack }) {
   const { state, toggleGlobalPagination } = useApp();
@@ -15,6 +16,7 @@ export default function InvLedger({ selectedDepartments = [], onBack }) {
   const itemDropdownRef = useRef(null);
   
   const [activeItemIds, setActiveItemIds] = useState([]); // Controls what is actually fetched
+  const [showStudioModal, setShowStudioModal] = useState(false);
 
   // Local department filter for modules that don't pass it down (like ProductionModule)
   const [localDepartments, setLocalDepartments] = useState([]);
@@ -49,19 +51,22 @@ export default function InvLedger({ selectedDepartments = [], onBack }) {
   const effectiveDepartments = selectedDepartments.length > 0 ? selectedDepartments : localDepartments;
 
   const filteredItems = useMemo(() => {
-    if (!effectiveDepartments || effectiveDepartments.length === 0) return [];
+    if (!effectiveDepartments || effectiveDepartments.length === 0) return state?.items || [];
     return state?.items?.filter(item => {
         const depts = (item.department || '').split(',').map(d => d.trim()).filter(Boolean);
-        return depts.some(d => effectiveDepartments.includes(d));
+        return depts.length === 0 || depts.some(d => effectiveDepartments.includes(d));
     }) || [];
   }, [state?.items, effectiveDepartments]);
 
   const searchedItems = useMemo(() => {
     if (!itemSearchQuery) return filteredItems;
-    const lowerQ = itemSearchQuery.toLowerCase();
+    const lowerQ = itemSearchQuery.toLowerCase().trim();
     return filteredItems.filter(item => 
         (item.name || '').toLowerCase().includes(lowerQ) || 
-        (item.sku || '').toLowerCase().includes(lowerQ)
+        (item.sku || '').toLowerCase().includes(lowerQ) ||
+        (item.itemCode || '').toLowerCase().includes(lowerQ) ||
+        (item.code || '').toLowerCase().includes(lowerQ) ||
+        String(item.id || '').toLowerCase().includes(lowerQ)
     );
   }, [filteredItems, itemSearchQuery]);
 
@@ -197,7 +202,15 @@ export default function InvLedger({ selectedDepartments = [], onBack }) {
 
       // Match items correctly
       const getMatchingItem = (refId) => {
-          return filteredItems.find(i => i.id === refId || i.sku === refId || i.name === refId);
+          if (!refId) return null;
+          const s = String(refId).toLowerCase().trim();
+          return (state?.items || []).find(i => 
+              String(i.id).toLowerCase() === s || 
+              String(i.sku || '').toLowerCase() === s || 
+              String(i.name || '').toLowerCase() === s ||
+              String(i.itemCode || '').toLowerCase() === s ||
+              String(i.code || '').toLowerCase() === s
+          );
       };
 
       let itemMovements = {};
@@ -396,10 +409,31 @@ export default function InvLedger({ selectedDepartments = [], onBack }) {
       setActiveItemIds(selectedItemIds);
   };
 
+  const printLedgerData = useMemo(() => ({
+    header: {
+      ledger_id: `LEDGER-${new Date().toISOString().slice(0, 10)}`,
+      period: (dateFrom && dateTo) ? `${dateFrom} to ${dateTo}` : (dateFrom ? `From ${dateFrom}` : (dateTo ? `Up to ${dateTo}` : 'All Time History')),
+      warehouse: effectiveDepartments.length > 0 ? effectiveDepartments.join(', ') : 'Central Stores & Multi-Warehouse',
+      date: new Date().toLocaleDateString(),
+      total_stock: stats.totalStock,
+      item_count: stats.itemCount,
+      inward: stats.inward,
+      outward: stats.outward
+    },
+    items: filteredEntries.map((e, idx) => ({
+      serial_no: idx + 1,
+      date: e.dateStr || new Date(e.timestamp).toLocaleDateString(),
+      ref_no: e.ref || '-',
+      item_name: e.matchedItem?.name || e.itemId || 'Item',
+      type: e.type,
+      qty_in: e.qtyIn || 0,
+      qty_out: e.qtyOut || 0,
+      balance: e.balance !== undefined ? e.balance : '—'
+    }))
+  }), [filteredEntries, dateFrom, dateTo, effectiveDepartments, stats]);
+
   const handlePrint = () => {
-      setTimeout(() => {
-          window.print();
-      }, 100);
+    setShowStudioModal(true);
   };
 
   const handleExport = () => {
@@ -860,6 +894,16 @@ export default function InvLedger({ selectedDepartments = [], onBack }) {
             </div>
         ))}
     </div>
+
+    {showStudioModal && (
+      <UniversalPrintStudioModal
+        isOpen={showStudioModal}
+        onClose={() => setShowStudioModal(false)}
+        documentType="inventory_ledger"
+        documentData={printLedgerData}
+        documentTitle="Multi-Item Inventory Ledger"
+      />
+    )}
     </>
   );
 }

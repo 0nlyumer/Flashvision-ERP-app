@@ -963,12 +963,7 @@ export default function SaleOrderModule() {
           const docTitle = "SALE ORDER";
           const logoElement = logoUrl ? (
             <img src={logoUrl} alt="Logo" className="h-12 max-h-16 object-contain" />
-          ) : (
-            <div className="border border-slate-200 border-dashed rounded flex flex-col items-center justify-center bg-slate-50 text-[8px] text-slate-400 font-bold select-none h-12 w-24">
-              <span className="material-symbols-outlined text-[12px]">image</span>
-              NO LOGO
-            </div>
-          );
+          ) : null;
 
           const infoElement = (
             <div className="text-[9px] text-slate-500 leading-tight">

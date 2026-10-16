@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useDialog } from '../../context/DialogContext';
 import ResizableHeader from '../ui/ResizableHeader';
 import { DEFAULT_CHART_OF_ACCOUNTS } from '../../utils/financeEngine';
 import { useLocation } from 'react-router-dom';
+import UniversalPrintStudioModal from '../ui/UniversalPrintStudioModal';
 
 export default function Vouchers() {
   const { state, setCollection } = useApp();
@@ -349,119 +350,43 @@ export default function Vouchers() {
     setViewMode('create');
   };
 
-  // Printing engine
+  // Printing studio state & mapping
+  const [studioVoucher, setStudioVoucher] = useState(null);
+
+  const voucherPrintData = useMemo(() => {
+    if (!studioVoucher) return null;
+    return {
+      header: {
+        voucher_no: studioVoucher.id,
+        date: studioVoucher.date,
+        voucher_type: studioVoucher.type === 'JV' ? 'Journal Voucher' : studioVoucher.type === 'CPV' ? 'Cash Payment Voucher' : studioVoucher.type === 'CRV' ? 'Cash Receipt Voucher' : (studioVoucher.type || 'Voucher'),
+        reference: studioVoucher.reference || 'N/A',
+        account_name: studioVoucher.lines?.[0]?.accountName || 'Consolidated Accounts',
+        amount: studioVoucher.totalDebit || 0,
+        description: studioVoucher.narration || 'General Voucher Entry'
+      },
+      items: (studioVoucher.lines || []).map((l, index) => ({
+        seq: index + 1,
+        account_code: l.accountId || '-',
+        account_name: l.accountName || l.accountId || 'General Ledger',
+        narration: l.narration || '',
+        debit: l.debit || 0,
+        credit: l.credit || 0
+      }))
+    };
+  }, [studioVoucher]);
+
+  const studioDocType = useMemo(() => {
+    if (!studioVoucher) return 'voucher_payment';
+    const t = studioVoucher.type;
+    if (t === 'CPV' || t === 'BPV' || t === 'payment') return 'voucher_payment';
+    if (t === 'CRV' || t === 'BRV' || t === 'receipt') return 'voucher_receipt';
+    if (t === 'CV' || t === 'contra') return 'voucher_contra';
+    return 'voucher_journal';
+  }, [studioVoucher]);
+
   const handlePrint = (voucher) => {
-    const printWindow = window.open('', '_blank', 'width=850,height=900');
-    if (!printWindow) return;
-
-    const linesHtml = voucher.lines.map((l, index) => `
-      <tr>
-        <td style="text-align: center;">${index + 1}</td>
-        <td><strong>${l.accountId}</strong> - ${l.accountName}</td>
-        <td>${l.narration || ''}</td>
-        <td style="text-align: right;">${l.debit > 0 ? l.debit.toLocaleString() : '-'}</td>
-        <td style="text-align: right;">${l.credit > 0 ? l.credit.toLocaleString() : '-'}</td>
-      </tr>
-    `).join('');
-
-    const content = `
-      <html>
-        <head>
-          <title>Voucher Print - ${voucher.id}</title>
-          <style>
-            body { font-family: 'Inter', sans-serif; padding: 40px; color: #1e293b; line-height: 1.5; }
-            .header { border-bottom: 2px solid #003ec7; padding-bottom: 20px; margin-bottom: 30px; display: flex; justify-content: space-between; align-items: center; }
-            .company { font-size: 24px; font-weight: 800; color: #003ec7; text-transform: uppercase; }
-            .title { font-size: 14px; font-weight: 600; color: #64748b; text-transform: uppercase; }
-            .grid { display: grid; grid-template-cols: 1fr 1fr; gap: 24px; margin-bottom: 40px; }
-            .card-info { background: #f8fafc; border: 1px solid #f1f5f9; padding: 16px; border-radius: 8px; }
-            .label { font-size: 10px; font-weight: 800; text-transform: uppercase; color: #64748b; margin-bottom: 4px; }
-            .value { font-size: 14px; font-weight: 600; color: #0f172a; }
-            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-            th { background-color: #f1f5f9; padding: 12px 16px; font-size: 11px; font-weight: 800; text-align: left; text-transform: uppercase; color: #475569; border-bottom: 2px solid #cbd5e1; }
-            td { padding: 14px 16px; font-size: 13px; border-bottom: 1px solid #e2e8f0; color: #334155; }
-            .total-row { font-weight: bold; background-color: #f8fafc; }
-            .total-row td { border-top: 2px solid #e2e8f0; border-bottom: 2px solid #e2e8f0; }
-            .footer { margin-top: 80px; font-size: 11px; color: #94a3b8; text-align: center; border-top: 1px dashed #e2e8f0; padding-top: 20px; }
-            .signatures { display: flex; justify-content: space-between; margin-top: 80px; }
-            .sig-line { width: 200px; border-top: 1px solid #cbd5e1; text-align: center; font-size: 11px; padding-top: 8px; color: #64748b; }
-          </style>
-        </head>
-        <body>
-          <div class="header">
-            <div class="company">Flashvision ERP</div>
-            <div class="title">${voucher.type === 'JV' ? 'Journal Voucher' : voucher.type === 'CPV' ? 'Cash Payment Voucher' : 'Cash Receive Voucher'}</div>
-          </div>
-          
-          <div class="grid">
-            <div class="card-info">
-              <div class="label">Voucher Number</div>
-              <div class="value">${voucher.id}</div>
-            </div>
-            <div class="card-info">
-              <div class="label">Posting Date</div>
-              <div class="value">${voucher.date}</div>
-            </div>
-            <div class="card-info">
-              <div class="label">Reference Memo</div>
-              <div class="value">${voucher.reference || 'N/A'}</div>
-            </div>
-            <div class="card-info">
-              <div class="label">Overall Description</div>
-              <div class="value">${voucher.narration || 'N/A'}</div>
-            </div>
-          </div>
-          
-          <table>
-            <thead>
-              <tr>
-                <th style="width: 40px; text-align: center;">#</th>
-                <th>Account Code & Name</th>
-                <th>Particulars / Narration</th>
-                <th style="width: 120px; text-align: right;">Debit (${currencyCode})</th>
-                <th style="width: 120px; text-align: right;">Credit (${currencyCode})</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${linesHtml}
-              <tr class="total-row">
-                <td colspan="3" style="text-align: right;">Total Reconciliation Amount:</td>
-                <td style="text-align: right; color: #003ec7;">${voucher.totalDebit.toLocaleString()}</td>
-                <td style="text-align: right; color: #003ec7;">${voucher.totalCredit.toLocaleString()}</td>
-              </tr>
-            </tbody>
-          </table>
-          
-          ${(voucher.photos?.length > 0 || voucher.videos?.length > 0 || voucher.documents?.length > 0) ? `
-            <div style="margin-top: 30px; padding: 15px; background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;">
-              <h4 style="font-size: 11px; text-transform: uppercase; color: #475569; margin: 0 0 10px 0; border-bottom: 1px solid #cbd5e1; padding-bottom: 5px;">Attached Proofs & Documents</h4>
-              <div style="font-size: 12px; color: #334155;">
-                ${[
-                  ...(voucher.photos || []).map(p => `<div>[Photo Proof] ${p}</div>`),
-                  ...(voucher.videos || []).map(v => `<div>[Video Proof] ${v}</div>`),
-                  ...(voucher.documents || []).map(d => `<div>[Doc Reference] ${d}</div>`)
-                ].join('')}
-              </div>
-            </div>
-          ` : ''}
-          
-          <div class="signatures">
-            <div class="sig-line">Prepared By</div>
-            <div class="sig-line">Checked By</div>
-            <div class="sig-line">Approved CFO</div>
-          </div>
-          
-          <div class="footer">
-            Consolidated Voucher Register. System generated on ${new Date().toLocaleDateString()}.
-          </div>
-          <script>
-            window.onload = function() { window.print(); }
-          </script>
-        </body>
-      </html>
-    `;
-    printWindow.document.write(content);
-    printWindow.document.close();
+    setStudioVoucher(voucher);
   };
 
   return (
@@ -1344,6 +1269,16 @@ export default function Vouchers() {
             )}
           </div>
         </div>
+      )}
+
+      {studioVoucher && voucherPrintData && (
+        <UniversalPrintStudioModal
+          isOpen={Boolean(studioVoucher)}
+          onClose={() => setStudioVoucher(null)}
+          documentType={studioDocType}
+          documentData={voucherPrintData}
+          documentTitle={`Voucher ${studioVoucher.id}`}
+        />
       )}
     </div>
   );

@@ -9,6 +9,7 @@ import {
   DEFAULT_DOCUMENT_SCHEMAS,
   DEFAULT_LAYOUT_SETTINGS,
   discoverDocumentSchema,
+  sanitizeColumnsForDoc,
   getMockPreviewData,
   getSampleRecordFromState
 } from '../../utils/printSchemaRegistry';
@@ -124,6 +125,10 @@ export default function PrintSettings() {
             ...(dbLayout || {}),
             ...(localSaved || {})
           };
+
+          if (merged.gridColumns) {
+            merged.gridColumns = sanitizeColumnsForDoc(docId, merged.gridColumns);
+          }
 
           // Guarantee safe contrast on table header
           const safeTheme = merged.activeTheme || defaultTheme;
@@ -1087,6 +1092,123 @@ export default function PrintSettings() {
               {/* ========================================================== */}
               {activeRightTab === 'header' && (
                 <div className="space-y-4 animate-fade-in">
+                  {/* Company Logo Configuration Section */}
+                  <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
+                        <span className="material-symbols-outlined text-sm text-blue-500">branding_watermark</span>
+                        Company Logo & Header
+                      </span>
+                      <label className="flex items-center gap-1.5 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={activeLayout.showHeaderLogo !== false}
+                          onChange={(e) => updateActiveLayout({ showHeaderLogo: e.target.checked })}
+                          className="rounded text-blue-600 cursor-pointer"
+                        />
+                        <span className="text-xs font-bold text-slate-600 dark:text-slate-300">Show Logo</span>
+                      </label>
+                    </div>
+
+                    {/* Logo Preview or Clean Omission notice */}
+                    <div className="flex items-center gap-4 bg-white dark:bg-slate-900 p-3 rounded-lg border border-slate-200 dark:border-slate-800">
+                      {activeLayout.logoUrl || companyLogo ? (
+                        <div className="flex items-center gap-3">
+                          <img
+                            src={activeLayout.logoUrl || companyLogo}
+                            alt="Company Logo Preview"
+                            className="h-12 max-h-12 max-w-[120px] object-contain rounded border border-slate-200 dark:border-slate-700 p-1 bg-white"
+                          />
+                          <div className="text-[11px] space-y-1">
+                            <p className="font-bold text-slate-800 dark:text-slate-100">Logo Active</p>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                updateActiveLayout({ logoUrl: '' });
+                                if (setCollection) {
+                                  setCollection('adminSetup', { ...(state?.adminSetup || {}), logo: '', logoUrl: '' });
+                                }
+                              }}
+                              className="text-[10px] font-bold text-red-600 hover:underline cursor-pointer"
+                            >
+                              Remove Logo
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-xs text-slate-400 italic flex items-center gap-2">
+                          <span className="material-symbols-outlined text-base text-slate-400">hide_image</span>
+                          No logo configured (Clean omission on prints — never a placeholder box).
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Upload New Logo */}
+                    <div className="space-y-1.5">
+                      <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300">
+                        Upload Logo (PNG, JPG, SVG, WebP):
+                      </label>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          const reader = new FileReader();
+                          reader.onload = (event) => {
+                            const dataUrl = event.target?.result;
+                            if (dataUrl) {
+                              updateActiveLayout({ logoUrl: dataUrl, showHeaderLogo: true });
+                              if (setCollection) {
+                                setCollection('adminSetup', {
+                                  ...(state?.adminSetup || {}),
+                                  logo: dataUrl,
+                                  logoUrl: dataUrl
+                                });
+                              }
+                            }
+                          };
+                          reader.readAsDataURL(file);
+                        }}
+                        className="w-full text-xs text-slate-500 file:mr-2 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer"
+                      />
+                    </div>
+
+                    {/* Logo Size and Position Controls */}
+                    <div className="grid grid-cols-2 gap-3 pt-1">
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                          Logo Size
+                        </label>
+                        <select
+                          value={activeLayout.logoSize || 'medium'}
+                          onChange={(e) => updateActiveLayout({ logoSize: e.target.value })}
+                          className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-2 py-1 text-xs font-semibold"
+                        >
+                          <option value="small">Small (32px)</option>
+                          <option value="medium">Medium (48px)</option>
+                          <option value="large">Large (64px)</option>
+                          <option value="xl">Extra Large (80px)</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                          Logo Position
+                        </label>
+                        <select
+                          value={activeLayout.logoPosition || 'left'}
+                          onChange={(e) => updateActiveLayout({ logoPosition: e.target.value })}
+                          className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-2 py-1 text-xs font-semibold"
+                        >
+                          <option value="left">Left Aligned</option>
+                          <option value="center">Center</option>
+                          <option value="right">Right Aligned</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+
                   <div>
                     <span className="text-xs font-black uppercase tracking-wider text-slate-400 block mb-1">
                       Header Metadata Fields

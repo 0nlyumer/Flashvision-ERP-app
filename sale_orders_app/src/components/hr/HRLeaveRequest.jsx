@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
+import UniversalPrintStudioModal from '../ui/UniversalPrintStudioModal';
 
 export default function HRLeaveRequest({ isMobile }) {
   const { state, setCollection, startRoutingWorkflow } = useApp();
@@ -19,6 +20,39 @@ export default function HRLeaveRequest({ isMobile }) {
   const [formError, setFormError] = useState('');
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef(null);
+
+  const [studioLeaveRecord, setStudioLeaveRecord] = useState(null);
+
+  const leavePrintData = useMemo(() => {
+    if (!studioLeaveRecord) return null;
+    const r = studioLeaveRecord;
+    return {
+      header: {
+        employee_name: r.employeeName || 'Staff Member',
+        employee_id: r.employeeId || r.empId || 'EMP-001',
+        department: r.department || 'Operations',
+        leave_type: r.leaveType || 'Annual Leave',
+        leave_category: r.leaveCategory || (r.paid ? 'Paid' : 'Unpaid'),
+        start_date: r.startDate || '-',
+        end_date: r.endDate || '-',
+        total_days: r.days || 1,
+        date: new Date().toLocaleDateString('en-GB', { month: 'short', day: 'numeric', year: 'numeric'}),
+        reason: r.reason || '-'
+      },
+      items: [
+        {
+          step_no: 1,
+          leave_type: r.leaveType || 'Leave Request',
+          start_date: r.startDate || '-',
+          end_date: r.endDate || '-',
+          days: r.days || 1,
+          paid_status: r.leaveCategory || (r.paid ? 'Paid' : 'Unpaid'),
+          reason: r.reason || 'Personal Leave',
+          status: r.status || 'Submitted'
+        }
+      ]
+    };
+  }, [studioLeaveRecord]);
 
   // Dynamic days calculation
   useEffect(() => {
@@ -524,7 +558,15 @@ export default function HRLeaveRequest({ isMobile }) {
                       <td className="px-6 py-4 text-xs text-on-surface-variant font-medium">
                         {formatAppliedDate(req.createdAt)}
                       </td>
-                      <td className="px-6 py-4 text-right">
+                      <td className="px-6 py-4 text-right flex items-center justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setStudioLeaveRecord(req)}
+                          className="p-1.5 hover:bg-secondary/10 rounded-lg text-secondary transition-colors flex items-center justify-center cursor-pointer"
+                          title="Print Leave Slip (Studio)"
+                        >
+                          <span className="material-symbols-outlined text-[18px]">print</span>
+                        </button>
                         {req.status === 'Draft' ? (
                           <button
                             type="button"
@@ -533,9 +575,7 @@ export default function HRLeaveRequest({ isMobile }) {
                           >
                             Submit Now
                           </button>
-                        ) : (
-                          <span className="text-xs text-on-surface-variant/40">—</span>
-                        )}
+                        ) : null}
                       </td>
                     </tr>
                   ));
@@ -546,6 +586,16 @@ export default function HRLeaveRequest({ isMobile }) {
         </section>
 
       </div>
+
+      {studioLeaveRecord && leavePrintData && (
+        <UniversalPrintStudioModal
+          isOpen={Boolean(studioLeaveRecord)}
+          onClose={() => setStudioLeaveRecord(null)}
+          documentType="hr_leave_request"
+          documentData={leavePrintData}
+          documentTitle={`Leave Slip - ${studioLeaveRecord.employeeName || 'Staff'}`}
+        />
+      )}
 
     </div>
   );

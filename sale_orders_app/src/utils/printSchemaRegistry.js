@@ -18,6 +18,7 @@ export const SYSTEM_DOCUMENTS = [
 
   // 2. Production Module
   { id: 'bom_master', name: 'BOM Master', module: 'production', icon: 'account_tree', code: 'BOM' },
+  { id: 'production_manifest', name: 'Production Manifest', module: 'production', icon: 'assignment', code: 'PMF' },
   { id: 'batch_closing_history', name: 'Batch Closing History', module: 'production', icon: 'fact_check', code: 'BCH' },
   { id: 'stock_receiving_history', name: 'Stock Receiving History', module: 'production', icon: 'move_to_inbox', code: 'SRH' },
   { id: 'consumption_history', name: 'Consumption History', module: 'production', icon: 'history_edu', code: 'CSH' },
@@ -41,12 +42,18 @@ export const SYSTEM_DOCUMENTS = [
   // 5. Finance Module
   { id: 'sale_invoice', name: 'Sale Invoice', module: 'finance', icon: 'description', code: 'INV' },
   { id: 'purchase_invoice', name: 'Purchase Invoice', module: 'finance', icon: 'receipt', code: 'PINV' },
-  { id: 'chart_of_accounts', name: 'Chart of Accounts', module: 'finance', icon: 'account_tree', code: 'COA' },
-  { id: 'tax_ledger_reports', name: 'Tax & Ledger Reports', module: 'finance', icon: 'analytics', code: 'TLR' },
   { id: 'voucher_receipt', name: 'Receipt Voucher', module: 'finance', icon: 'price_check', code: 'RVR' },
   { id: 'voucher_payment', name: 'Payment Voucher', module: 'finance', icon: 'payments', code: 'PVR' },
   { id: 'voucher_journal', name: 'Journal Voucher', module: 'finance', icon: 'book', code: 'JVR' },
   { id: 'voucher_contra', name: 'Contra Voucher', module: 'finance', icon: 'sync_alt', code: 'CVR' },
+  { id: 'chart_of_accounts', name: 'Chart of Accounts', module: 'finance', icon: 'account_tree', code: 'COA' },
+  { id: 'general_ledger', name: 'General Ledger', module: 'finance', icon: 'menu_book', code: 'GLR' },
+  { id: 'accounts_receivable', name: 'Accounts Receivable', module: 'finance', icon: 'call_received', code: 'ACR' },
+  { id: 'accounts_payable', name: 'Accounts Payable', module: 'finance', icon: 'call_made', code: 'ACP' },
+  { id: 'tax_ledger_reports', name: 'Tax & Ledger Reports', module: 'finance', icon: 'analytics', code: 'TLR' },
+  { id: 'financial_statements', name: 'Financial Statements (Balance Sheet / P&L)', module: 'finance', icon: 'balance', code: 'FST' },
+  { id: 'bank_reconciliation', name: 'Bank Reconciliation', module: 'finance', icon: 'account_balance', code: 'BRC' },
+  { id: 'cost_centers', name: 'Cost Centers Report', module: 'finance', icon: 'hub', code: 'CCR' },
 
   // 6. HR Module
   { id: 'hr_onboarding', name: 'Onboarding Wizard Slip', module: 'hr', icon: 'person_add', code: 'ONB' },
@@ -55,7 +62,7 @@ export const SYSTEM_DOCUMENTS = [
   { id: 'hr_loan_request', name: 'Loan Request Form', module: 'hr', icon: 'account_balance_wallet', code: 'LNR' },
   { id: 'hr_advance_request', name: 'Advance Request Form', module: 'hr', icon: 'account_balance', code: 'ADV' },
   { id: 'hr_payslip', name: 'Salary Generation / Payslip', module: 'hr', icon: 'payments', code: 'PAY' },
-  { id: 'attendance_sheet', name: 'Biometric Attendance Audit', module: 'hr', icon: 'fingerprint', code: 'ATT' }
+  { id: 'attendance_sheet', name: 'Biometric Attendance Audit & Register', module: 'hr', icon: 'fingerprint', code: 'ATT' }
 ];
 
 export const DEFAULT_LAYOUT_SETTINGS = {
@@ -126,20 +133,24 @@ export const DEFAULT_DOCUMENT_SCHEMAS = {
       { key: 'customer', label: 'Customer Name', enabled: true, width: 'span-2' },
       { key: 'contact', label: 'Contact Details', enabled: true, width: 'span-1' },
       { key: 'shipping_address', label: 'Shipping Address', enabled: true, width: 'span-3' },
+      { key: 'dispatch_mode', label: 'Dispatch Mode', enabled: true, width: 'span-1' },
+      { key: 'delivery_mode', label: 'Delivery Mode', enabled: true, width: 'span-1' },
       { key: 'salesperson', label: 'Sales Representative', enabled: true, width: 'span-1' },
       { key: 'payment_terms', label: 'Payment Terms', enabled: true, width: 'span-1' },
-      { key: 'delivery_date', label: 'Expected Delivery Date', enabled: true, width: 'span-1' }
+      { key: 'delivery_date', label: 'Expected Delivery Date', enabled: true, width: 'span-1' },
+      { key: 'special_instructions', label: 'Special Instructions / Notes', enabled: true, width: 'span-3' }
     ],
     gridColumns: [
-      { key: 'serial_no', label: 'Sr #', enabled: true, width: '8%', align: 'center' },
-      { key: 'item_code', label: 'Item Code', enabled: true, width: '15%', align: 'left' },
-      { key: 'item_name', label: 'Item Name / Description', enabled: true, width: '30%', align: 'left' },
-      { key: 'rolls', label: 'Rolls Qty', enabled: true, width: '9%', align: 'center' },
+      { key: 'serial_no', label: 'Sr #', enabled: true, width: '6%', align: 'center' },
+      { key: 'item_code', label: 'Item Code', enabled: true, width: '14%', align: 'left' },
+      { key: 'item_name', label: 'Item Name / Description', enabled: true, width: '28%', align: 'left' },
+      { key: 'rolls', label: 'Rolls Qty', enabled: true, width: '8%', align: 'center' },
       { key: 'qty', label: 'Quantity / Meters', enabled: true, width: '12%', align: 'right' },
-      { key: 'uom', label: 'UOM', enabled: true, width: '8%', align: 'center' },
-      { key: 'rate', label: 'Unit Rate ($)', enabled: true, width: '12%', align: 'right' },
-      { key: 'discount', label: 'Discount', enabled: true, width: '8%', align: 'right' },
-      { key: 'sub_total', label: 'Sub-Total ($)', enabled: true, width: '15%', align: 'right' }
+      { key: 'uom', label: 'UOM', enabled: true, width: '7%', align: 'center' },
+      { key: 'rate', label: 'Unit Rate ($)', enabled: true, width: '10%', align: 'right' },
+      { key: 'discount', label: 'Discount', enabled: true, width: '7%', align: 'right' },
+      { key: 'sub_total', label: 'Sub-Total ($)', enabled: true, width: '12%', align: 'right' },
+      { key: 'remarks', label: 'Item Notes', enabled: true, width: '14%', align: 'left' }
     ]
   },
 
@@ -437,17 +448,22 @@ export const DEFAULT_DOCUMENT_SCHEMAS = {
       { key: 'dispatch_date', label: 'Dispatch Date', enabled: true, width: 'span-1' },
       { key: 'so_ref', label: 'Sales Order Ref', enabled: true, width: 'span-1' },
       { key: 'customer_name', label: 'Customer Name', enabled: true, width: 'span-2' },
+      { key: 'contact_person', label: 'Contact Person', enabled: true, width: 'span-1' },
+      { key: 'contact_number', label: 'Contact Number', enabled: true, width: 'span-1' },
       { key: 'shipping_address', label: 'Delivery Address', enabled: true, width: 'span-3' },
       { key: 'vehicle_no', label: 'Vehicle Number', enabled: true, width: 'span-1' },
-      { key: 'driver_name', label: 'Driver Name', enabled: true, width: 'span-1' }
+      { key: 'driver_name', label: 'Driver Name', enabled: true, width: 'span-1' },
+      { key: 'driver_contact', label: 'Driver Contact', enabled: true, width: 'span-1' },
+      { key: 'dc_mode', label: 'Dispatch Mode', enabled: true, width: 'span-1' }
     ],
     gridColumns: [
-      { key: 'serial_no', label: 'Sr #', enabled: true, width: '8%', align: 'center' },
-      { key: 'item_code', label: 'Item Code', enabled: true, width: '18%', align: 'left' },
-      { key: 'item_name', label: 'Item Name', enabled: true, width: '32%', align: 'left' },
-      { key: 'dispatch_qty', label: 'Dispatched Qty', enabled: true, width: '14%', align: 'right' },
-      { key: 'packing_type', label: 'Packaging', enabled: true, width: '14%', align: 'center' },
-      { key: 'net_weight', label: 'Weight (kg)', enabled: true, width: '14%', align: 'right' }
+      { key: 'serial_no', label: 'Sr #', enabled: true, width: '6%', align: 'center' },
+      { key: 'item_code', label: 'Item Code', enabled: true, width: '16%', align: 'left' },
+      { key: 'item_name', label: 'Item Name', enabled: true, width: '28%', align: 'left' },
+      { key: 'ordered_qty', label: 'Ordered Qty', enabled: true, width: '12%', align: 'right' },
+      { key: 'dispatch_qty', label: 'Dispatched Qty', enabled: true, width: '12%', align: 'right' },
+      { key: 'packing_type', label: 'Packing Type', enabled: true, width: '14%', align: 'center' },
+      { key: 'weight', label: 'Weight', enabled: true, width: '12%', align: 'right' }
     ]
   },
 
@@ -603,20 +619,159 @@ export const DEFAULT_DOCUMENT_SCHEMAS = {
     ]
   },
 
+  production_manifest: {
+    ...DEFAULT_LAYOUT_SETTINGS,
+    activeTheme: 'industrial',
+    paletteId: 'industrial_steel',
+    headerFields: [
+      { key: 'manifest_no', label: 'Manifest #', enabled: true, width: 'span-1' },
+      { key: 'plan_id', label: 'Plan Reference #', enabled: true, width: 'span-1' },
+      { key: 'date', label: 'Manifest Date', enabled: true, width: 'span-1' },
+      { key: 'production_line', label: 'Production Section / Line', enabled: true, width: 'span-2' },
+      { key: 'supervisor', label: 'Shift Supervisor', enabled: true, width: 'span-1' },
+      { key: 'shift', label: 'Assigned Shift', enabled: true, width: 'span-1' }
+    ],
+    gridColumns: [
+      { key: 'serial_no', label: 'Sr #', enabled: true, width: '6%', align: 'center' },
+      { key: 'item_code', label: 'FG Code', enabled: true, width: '16%', align: 'left' },
+      { key: 'item_name', label: 'Target Product', enabled: true, width: '30%', align: 'left' },
+      { key: 'target_qty', label: 'Target Qty', enabled: true, width: '14%', align: 'right' },
+      { key: 'uom', label: 'UOM', enabled: true, width: '10%', align: 'center' },
+      { key: 'batch_no', label: 'Batch Ref', enabled: true, width: '12%', align: 'center' },
+      { key: 'status', label: 'Status', enabled: true, width: '12%', align: 'center' }
+    ]
+  },
+
+  general_ledger: {
+    ...DEFAULT_LAYOUT_SETTINGS,
+    headerFields: [
+      { key: 'ledger_title', label: 'Account Title', enabled: true, width: 'span-2' },
+      { key: 'account_code', label: 'Account Code', enabled: true, width: 'span-1' },
+      { key: 'date_range', label: 'Ledger Period', enabled: true, width: 'span-2' },
+      { key: 'currency', label: 'Currency', enabled: true, width: 'span-1' }
+    ],
+    gridColumns: [
+      { key: 'date', label: 'Date', enabled: true, width: '12%', align: 'center' },
+      { key: 'voucher_no', label: 'Voucher #', enabled: true, width: '15%', align: 'left' },
+      { key: 'narration', label: 'Particulars / Description', enabled: true, width: '37%', align: 'left' },
+      { key: 'debit', label: 'Debit ($)', enabled: true, width: '12%', align: 'right' },
+      { key: 'credit', label: 'Credit ($)', enabled: true, width: '12%', align: 'right' },
+      { key: 'balance', label: 'Running Balance ($)', enabled: true, width: '12%', align: 'right' }
+    ]
+  },
+
+  accounts_receivable: {
+    ...DEFAULT_LAYOUT_SETTINGS,
+    headerFields: [
+      { key: 'report_title', label: 'Aging Statement', enabled: true, width: 'span-2' },
+      { key: 'as_of_date', label: 'As of Date', enabled: true, width: 'span-1' },
+      { key: 'customer_name', label: 'Customer / Party', enabled: true, width: 'span-2' },
+      { key: 'credit_limit', label: 'Credit Limit ($)', enabled: true, width: 'span-1' }
+    ],
+    gridColumns: [
+      { key: 'serial_no', label: 'Sr #', enabled: true, width: '6%', align: 'center' },
+      { key: 'invoice_no', label: 'Invoice #', enabled: true, width: '16%', align: 'left' },
+      { key: 'invoice_date', label: 'Invoice Date', enabled: true, width: '14%', align: 'center' },
+      { key: 'due_date', label: 'Due Date', enabled: true, width: '14%', align: 'center' },
+      { key: 'total_amount', label: 'Billed ($)', enabled: true, width: '16%', align: 'right' },
+      { key: 'received_amount', label: 'Received ($)', enabled: true, width: '16%', align: 'right' },
+      { key: 'balance_due', label: 'Balance Due ($)', enabled: true, width: '18%', align: 'right' }
+    ]
+  },
+
+  accounts_payable: {
+    ...DEFAULT_LAYOUT_SETTINGS,
+    headerFields: [
+      { key: 'report_title', label: 'Payables Aging Statement', enabled: true, width: 'span-2' },
+      { key: 'as_of_date', label: 'As of Date', enabled: true, width: 'span-1' },
+      { key: 'supplier_name', label: 'Vendor / Supplier', enabled: true, width: 'span-2' },
+      { key: 'payment_terms', label: 'Payment Terms', enabled: true, width: 'span-1' }
+    ],
+    gridColumns: [
+      { key: 'serial_no', label: 'Sr #', enabled: true, width: '6%', align: 'center' },
+      { key: 'bill_no', label: 'Supplier Bill #', enabled: true, width: '18%', align: 'left' },
+      { key: 'bill_date', label: 'Bill Date', enabled: true, width: '14%', align: 'center' },
+      { key: 'due_date', label: 'Due Date', enabled: true, width: '14%', align: 'center' },
+      { key: 'total_amount', label: 'Bill Amount ($)', enabled: true, width: '16%', align: 'right' },
+      { key: 'paid_amount', label: 'Paid ($)', enabled: true, width: '16%', align: 'right' },
+      { key: 'balance_due', label: 'Outstanding ($)', enabled: true, width: '16%', align: 'right' }
+    ]
+  },
+
+  financial_statements: {
+    ...DEFAULT_LAYOUT_SETTINGS,
+    headerFields: [
+      { key: 'statement_title', label: 'Statement Type', enabled: true, width: 'span-2' },
+      { key: 'financial_period', label: 'Fiscal Period', enabled: true, width: 'span-2' },
+      { key: 'currency', label: 'Reporting Currency', enabled: true, width: 'span-1' },
+      { key: 'generated_on', label: 'Generated At', enabled: true, width: 'span-1' }
+    ],
+    gridColumns: [
+      { key: 'line_code', label: 'Head Code', enabled: true, width: '15%', align: 'left' },
+      { key: 'line_title', label: 'Account / Section Description', enabled: true, width: '45%', align: 'left' },
+      { key: 'current_period', label: 'Current Period ($)', enabled: true, width: '20%', align: 'right' },
+      { key: 'prior_period', label: 'Prior Period ($)', enabled: true, width: '20%', align: 'right' }
+    ]
+  },
+
+  bank_reconciliation: {
+    ...DEFAULT_LAYOUT_SETTINGS,
+    headerFields: [
+      { key: 'statement_date', label: 'Reconciliation Date', enabled: true, width: 'span-1' },
+      { key: 'bank_name', label: 'Bank & Branch', enabled: true, width: 'span-2' },
+      { key: 'account_number', label: 'Account Number', enabled: true, width: 'span-2' },
+      { key: 'closing_bank_balance', label: 'Bank Statement Balance', enabled: true, width: 'span-1' }
+    ],
+    gridColumns: [
+      { key: 'serial_no', label: 'Sr #', enabled: true, width: '6%', align: 'center' },
+      { key: 'date', label: 'Tx Date', enabled: true, width: '12%', align: 'center' },
+      { key: 'reference_no', label: 'Cheque / Ref #', enabled: true, width: '18%', align: 'left' },
+      { key: 'description', label: 'Reconciling Item / Payee', enabled: true, width: '34%', align: 'left' },
+      { key: 'debit', label: 'Deposits / Uncleared ($)', enabled: true, width: '15%', align: 'right' },
+      { key: 'credit', label: 'Payments / Unpresented ($)', enabled: true, width: '15%', align: 'right' }
+    ]
+  },
+
+  cost_centers: {
+    ...DEFAULT_LAYOUT_SETTINGS,
+    headerFields: [
+      { key: 'report_title', label: 'Cost Center Summary', enabled: true, width: 'span-2' },
+      { key: 'cost_period', label: 'Budget Period', enabled: true, width: 'span-2' },
+      { key: 'department', label: 'Operating Division', enabled: true, width: 'span-1' },
+      { key: 'generated_on', label: 'Generated At', enabled: true, width: 'span-1' }
+    ],
+    gridColumns: [
+      { key: 'center_code', label: 'CC Code', enabled: true, width: '14%', align: 'left' },
+      { key: 'center_name', label: 'Cost Center Title', enabled: true, width: '32%', align: 'left' },
+      { key: 'budget_allocated', label: 'Allocated Budget ($)', enabled: true, width: '18%', align: 'right' },
+      { key: 'actual_expense', label: 'Actual Expense ($)', enabled: true, width: '18%', align: 'right' },
+      { key: 'variance', label: 'Variance ($)', enabled: true, width: '18%', align: 'right' }
+    ]
+  },
+
   hr_leave_request: {
     ...DEFAULT_LAYOUT_SETTINGS,
     headerFields: [
       { key: 'leave_id', label: 'Leave Slip #', enabled: true, width: 'span-1' },
+      { key: 'applied_date', label: 'Application Date', enabled: true, width: 'span-1' },
+      { key: 'status', label: 'Application Status', enabled: true, width: 'span-1' },
       { key: 'emp_name', label: 'Employee Name', enabled: true, width: 'span-2' },
+      { key: 'emp_code', label: 'Employee ID / Code', enabled: true, width: 'span-1' },
       { key: 'department', label: 'Department', enabled: true, width: 'span-1' },
-      { key: 'leave_type', label: 'Leave Category', enabled: true, width: 'span-1' },
-      { key: 'duration', label: 'Date Range', enabled: true, width: 'span-2' }
+      { key: 'leave_type', label: 'Leave Type', enabled: true, width: 'span-1' },
+      { key: 'leave_category', label: 'Category (Paid/Unpaid)', enabled: true, width: 'span-1' },
+      { key: 'start_date', label: 'Start Date', enabled: true, width: 'span-1' },
+      { key: 'end_date', label: 'End Date', enabled: true, width: 'span-1' },
+      { key: 'total_days', label: 'Total Days', enabled: true, width: 'span-1' },
+      { key: 'reason', label: 'Reason for Leave', enabled: true, width: 'span-3' }
     ],
     gridColumns: [
-      { key: 'serial_no', label: 'Sr #', enabled: true, width: '10%', align: 'center' },
-      { key: 'date', label: 'Leave Date', enabled: true, width: '25%', align: 'center' },
-      { key: 'type', label: 'Type (Paid/Unpaid)', enabled: true, width: '25%', align: 'center' },
-      { key: 'reason', label: 'Reason Description', enabled: true, width: '40%', align: 'left' }
+      { key: 'serial_no', label: 'Sr #', enabled: true, width: '8%', align: 'center' },
+      { key: 'date', label: 'Leave Period / Date', enabled: true, width: '22%', align: 'center' },
+      { key: 'leave_type', label: 'Leave Type', enabled: true, width: '18%', align: 'left' },
+      { key: 'category', label: 'Category', enabled: true, width: '16%', align: 'center' },
+      { key: 'days', label: 'Days Requested', enabled: true, width: '14%', align: 'right' },
+      { key: 'reason', label: 'Stated Reason', enabled: true, width: '22%', align: 'left' }
     ]
   },
 
@@ -701,21 +856,26 @@ export const DEFAULT_DOCUMENT_SCHEMAS = {
     paletteId: 'industrial_steel',
     enableFloorCheckboxes: true,
     headerFields: [
-      { key: 'report_title', label: 'Report Title', enabled: true, width: 'span-2' },
-      { key: 'department', label: 'Target Department', enabled: true, width: 'span-1' },
-      { key: 'date_range', label: 'Audit Period', enabled: true, width: 'span-1' },
-      { key: 'generated_on', label: 'Generated At', enabled: true, width: 'span-1' },
-      { key: 'operator', label: 'Shift Supervisor', enabled: true, width: 'span-1' }
+      { key: 'sheet_title', label: 'Register Title', enabled: true, width: 'span-2' },
+      { key: 'month_year', label: 'Audit Month / Period', enabled: true, width: 'span-1' },
+      { key: 'department', label: 'Department / Section', enabled: true, width: 'span-1' },
+      { key: 'shift', label: 'Shift Details', enabled: true, width: 'span-1' },
+      { key: 'total_staff', label: 'Total Headcount', enabled: true, width: 'span-1' },
+      { key: 'present_count', label: 'Present Count', enabled: true, width: 'span-1' },
+      { key: 'absent_count', label: 'Absent Count', enabled: true, width: 'span-1' },
+      { key: 'late_count', label: 'Late Punches', enabled: true, width: 'span-1' },
+      { key: 'generated_on', label: 'Generated At', enabled: true, width: 'span-1' }
     ],
     gridColumns: [
       { key: 'serial_no', label: 'Sr #', enabled: true, width: '6%', align: 'center' },
-      { key: 'emp_code', label: 'Badge Code', enabled: true, width: '12%', align: 'left' },
-      { key: 'emp_name', label: 'Employee Name', enabled: true, width: '22%', align: 'left' },
+      { key: 'emp_code', label: 'Emp ID / Badge', enabled: true, width: '12%', align: 'left' },
+      { key: 'emp_name', label: 'Employee Name', enabled: true, width: '20%', align: 'left' },
       { key: 'department', label: 'Department', enabled: true, width: '14%', align: 'left' },
-      { key: 'date', label: 'Punch Date', enabled: true, width: '12%', align: 'center' },
-      { key: 'clock_in', label: 'Clock IN', enabled: true, width: '11%', align: 'center' },
-      { key: 'clock_out', label: 'Clock OUT', enabled: true, width: '11%', align: 'center' },
-      { key: 'duration', label: 'Duration', enabled: true, width: '12%', align: 'right' }
+      { key: 'date', label: 'Date / Period', enabled: true, width: '12%', align: 'center' },
+      { key: 'clock_in', label: 'In Time', enabled: true, width: '11%', align: 'center' },
+      { key: 'clock_out', label: 'Out Time', enabled: true, width: '11%', align: 'center' },
+      { key: 'duration', label: 'Duration / Days', enabled: true, width: '12%', align: 'right' },
+      { key: 'status', label: 'Attendance Status', enabled: true, width: '13%', align: 'center' }
     ]
   }
 };
@@ -743,44 +903,185 @@ export function getSampleRecordFromState(docType, state) {
     batch_closing_history: state.productionOutputs?.[0],
     delivery_challan: state.deliveries?.[0] ? {
       ...state.deliveries[0],
-      customer: state.deliveries[0].customerName || 'Consignee Party',
-      contact: state.deliveries[0].consignee?.contactNumber || 'N/A',
-      shipping_address: state.deliveries[0].consignee?.address || 'Site Delivery',
-      items: state.deliveries[0].items || []
-    } : null,
-    inventory_ledger: state.items?.[0] ? {
-      id: 'INV-LEDGER-01',
-      date: new Date().toISOString(),
-      department: state.items[0].department || 'Raw Material Department',
-      items: (state.items || []).slice(0, 15).map((it, idx) => ({
+      challan_no: state.deliveries[0].id || 'DC-2026-001',
+      dispatch_date: state.deliveries[0].date || new Date().toISOString().split('T')[0],
+      customer_name: state.deliveries[0].customerName || 'Consignee Party',
+      so_ref: state.deliveries[0].items?.[0]?.orderId || state.deliveries[0].saleOrderId || 'SO-2026-001',
+      contact_person: state.deliveries[0].consignee?.contactPerson || 'N/A',
+      contact_number: state.deliveries[0].consignee?.contactNumber || 'N/A',
+      shipping_address: state.deliveries[0].consignee?.deliveryAddress || state.deliveries[0].consignee?.address || 'Site Delivery',
+      vehicle_no: state.deliveries[0].logistics?.vehicleNumber || 'N/A',
+      driver_name: state.deliveries[0].logistics?.driverName || 'N/A',
+      driver_contact: state.deliveries[0].logistics?.driverNumber || 'N/A',
+      dc_mode: state.deliveries[0].dcMode || 'Direct Delivery',
+      items: (state.deliveries[0].items || []).map((it, idx) => ({
         serial_no: idx + 1,
-        item_code: it.itemCode || it.sku || `ITEM-${idx + 1}`,
-        item_name: it.name || it.description || 'Inventory Item',
-        category: it.category || 'General',
-        department: it.department || 'Warehouse',
-        stock_level: it.stockLevel || it.quantity || 0,
-        rolls: it.rolls || '-',
-        uom: it.uom || 'Meters'
+        item_code: it.itemCode || it.itemId || `ITEM-${idx + 1}`,
+        item_name: it.productName || it.itemCode || 'Line Item',
+        ordered_qty: it.readyQty ?? it.orderedQty ?? 0,
+        dispatch_qty: it.dispatchedQty ?? it.editedQty ?? 0,
+        packing_type: it.stockType || it.type || (it.rollSize ? `${it.rollSize}m` : 'Standard'),
+        weight: it.dispatchedRolls ? `${it.dispatchedRolls} Rolls` : (it.rolls ? `${it.rolls} Rolls` : '—')
       }))
     } : null,
-    inventory_adjustment: (state.inventoryAdjustments || state.adjustments)?.[0],
-    inventory_return: state.returns?.[0],
-    purchase_demand: state.purchaseDemands?.[0],
-    purchase_order: state.purchaseOrders?.[0],
-    inward_gate_pass: state.gatePassActivities?.[0],
-    grn_note: state.approvals?.find(a => a.type === 'GRN Log') || state.stockReceiving?.[0],
-    sale_invoice: state.salesInvoices?.[0],
-    purchase_invoice: state.purchaseInvoices?.[0],
-    voucher_receipt: state.paymentVouchers?.[0],
-    voucher_payment: state.paymentVouchers?.[0],
-    voucher_journal: state.paymentVouchers?.[0],
+    production_manifest: state.productionPlans?.[0] ? {
+      manifest_no: 'PMF-2026-001',
+      plan_id: state.productionPlans[0].id || 'PLN-2026-001',
+      date: new Date().toISOString().split('T')[0],
+      production_line: state.productionPlans[0].productionLine || 'Line #1',
+      supervisor: state.productionPlans[0].supervisor || 'Lead Supervisor',
+      shift: 'Morning Shift',
+      items: (state.productionPlans[0].items || []).map((it, idx) => ({
+        serial_no: idx + 1,
+        item_code: it.itemCode || it.sku || `FG-${idx + 1}`,
+        item_name: it.name || it.productName || 'Planned Output',
+        target_qty: it.targetQty || it.quantity || 1000,
+        uom: it.uom || 'Meters',
+        batch_no: it.batchCode || `B-${idx + 1}`,
+        status: it.status || 'Scheduled'
+      }))
+    } : null,
+    general_ledger: state.paymentVouchers?.[0] ? {
+      ledger_title: 'Meezan Bank Operations Account (1000-01)',
+      account_code: '1000-01',
+      date_range: '01-Jul-2026 to 31-Jul-2026',
+      currency: 'PKR',
+      items: [
+        { date: '2026-07-01', voucher_no: 'OPN-BAL', narration: 'Opening Balance', debit: 4500000, credit: 0, balance: 4500000 },
+        { date: '2026-07-15', voucher_no: 'RV-2026-001', narration: 'Customer Payment Received', debit: 500000, credit: 0, balance: 5000000 },
+        { date: '2026-07-20', voucher_no: 'PV-2026-001', narration: 'Supplier Settlement', debit: 0, credit: 350000, balance: 4650000 }
+      ]
+    } : null,
+    accounts_receivable: state.salesInvoices?.[0] ? {
+      report_title: 'ACCOUNTS RECEIVABLE AGING STATEMENT',
+      as_of_date: new Date().toISOString().split('T')[0],
+      customer_name: state.salesInvoices[0].customerName || 'Premier Textile Corp',
+      credit_limit: '10,000,000',
+      items: (state.salesInvoices || []).slice(0, 10).map((inv, idx) => ({
+        serial_no: idx + 1,
+        invoice_no: inv.id || `INV-${idx + 1}`,
+        invoice_date: inv.date || '2026-07-01',
+        due_date: inv.dueDate || '2026-07-31',
+        total_amount: inv.total || inv.grandTotal || 150000,
+        received_amount: inv.paidAmount || 0,
+        balance_due: (inv.total || inv.grandTotal || 150000) - (inv.paidAmount || 0)
+      }))
+    } : null,
+    accounts_payable: state.purchaseInvoices?.[0] ? {
+      report_title: 'ACCOUNTS PAYABLE AGING STATEMENT',
+      as_of_date: new Date().toISOString().split('T')[0],
+      supplier_name: state.purchaseInvoices[0].supplierName || 'Apex Chemicals Ltd',
+      payment_terms: 'Net 30 Days',
+      items: (state.purchaseInvoices || []).slice(0, 10).map((inv, idx) => ({
+        serial_no: idx + 1,
+        bill_no: inv.billNumber || inv.id || `PINV-${idx + 1}`,
+        bill_date: inv.date || '2026-07-01',
+        due_date: inv.dueDate || '2026-07-31',
+        total_amount: inv.total || inv.grandTotal || 120000,
+        paid_amount: inv.paidAmount || 0,
+        balance_due: (inv.total || inv.grandTotal || 120000) - (inv.paidAmount || 0)
+      }))
+    } : null,
+    financial_statements: {
+      statement_title: 'CONSOLIDATED STATEMENT OF PROFIT OR LOSS',
+      financial_period: 'Year Ended June 30, 2026',
+      currency: 'PKR',
+      generated_on: new Date().toISOString().split('T')[0],
+      items: [
+        { line_code: '4000', line_title: 'Revenue from Sales', current_period: 45000000, prior_period: 38000000 },
+        { line_code: '5000', line_title: 'Cost of Goods Sold (COGS)', current_period: -31500000, prior_period: -27000000 },
+        { line_code: '6000', line_title: 'Operating Expenses', current_period: -6200000, prior_period: -5400000 },
+        { line_code: '7000', line_title: 'Net Profit Before Taxation', current_period: 7300000, prior_period: 5600000 }
+      ]
+    },
+    bank_reconciliation: {
+      statement_date: new Date().toISOString().split('T')[0],
+      bank_name: 'Meezan Bank Ltd (Main Branch)',
+      account_number: 'PK36MEZN00019283741',
+      closing_bank_balance: '4,520,000.00',
+      items: [
+        { serial_no: 1, date: '2026-07-25', reference_no: 'CHQ-892104', description: 'Unpresented Cheque - Apex Chemicals', debit: 0, credit: 350000 },
+        { serial_no: 2, date: '2026-07-26', reference_no: 'DEP-449102', description: 'Uncleared Deposit - Al-Haq Enterprises', debit: 500000, credit: 0 }
+      ]
+    },
+    cost_centers: {
+      report_title: 'DEPARTMENTAL COST CENTER EXPENSE AUDIT',
+      cost_period: 'July 2026',
+      department: 'Manufacturing & Weaving',
+      generated_on: new Date().toISOString().split('T')[0],
+      items: [
+        { center_code: 'CC-WEAV-01', center_name: 'Loom Plant Direct Labor', budget_allocated: 1200000, actual_expense: 1145000, variance: -55000 },
+        { center_code: 'CC-DYE-02', center_name: 'Chemical & Dye Consumables', budget_allocated: 800000, actual_expense: 825000, variance: 25000 }
+      ]
+    },
     hr_payslip: state.hr_generated_salaries?.[0],
     hr_overtime_request: state.hr_overtime_requests?.[0],
-    hr_leave_request: state.hr_leave_requests?.[0],
+    hr_leave_request: state.hr_leave_requests?.[0] ? {
+      ...state.hr_leave_requests[0],
+      leave_id: state.hr_leave_requests[0].id || 'LR-2026-001',
+      emp_name: state.hr_leave_requests[0].employeeName || state.employees?.find(e => e.id === state.hr_leave_requests[0].employeeId)?.name || 'Hamza Farooq',
+      emp_code: state.hr_leave_requests[0].employeeId || 'EMP-1042',
+      department: state.hr_leave_requests[0].department || 'Operations',
+      leave_type: state.hr_leave_requests[0].leaveType || 'Annual',
+      leave_category: state.hr_leave_requests[0].leaveCategory || 'Paid',
+      start_date: state.hr_leave_requests[0].startDate || '2026-08-01',
+      end_date: state.hr_leave_requests[0].endDate || '2026-08-05',
+      total_days: state.hr_leave_requests[0].days || 5,
+      status: state.hr_leave_requests[0].status || 'Approved',
+      applied_date: state.hr_leave_requests[0].createdAt ? new Date(state.hr_leave_requests[0].createdAt).toLocaleDateString() : new Date().toLocaleDateString(),
+      reason: state.hr_leave_requests[0].reason || 'Personal / Family travel'
+    } : null,
     hr_loan_request: state.hr_loan_requests?.[0],
     attendance_sheet: state.attendanceRecords?.[0] || state.hr_attendance?.[0] || null
   };
   return map[docType] || null;
+}
+
+/**
+ * Blacklist of raw database / internal keys that must NEVER be added
+ * as duplicated table columns or header fields during runtime schema discovery.
+ */
+export const INTERNAL_DISCOVERY_BLACKLIST = [
+  'id', 'uniqueid', 'unique_id',
+  'itemid', 'item_id', 'orderid', 'order_id',
+  'itemcode', 'item_code', 'sku', 'code',
+  'productname', 'product_name', 'itemname', 'item_name',
+  'stocktype', 'stock_type', 'type',
+  'dispatchedqty', 'dispatched_qty', 'dispatchqty', 'dispatch_qty',
+  'dispatchedrolls', 'dispatched_rolls', 'rolls',
+  'orderedqty', 'ordered_qty', 'orderqty', 'order_qty', 'readyqty', 'ready_qty',
+  'isdraft', 'is_draft', 'draftsearchtext', 'draft_search_text',
+  'customerid', 'customer_id',
+  'editedqty', 'edited_qty',
+  'rollsize', 'roll_size',
+  'soid', 'so_id', 'deliveryid', 'delivery_id',
+  'createdat', 'created_at', 'updatedat', 'updated_at',
+  'price', 'unitprice', 'unit_price', 'rate', 'unitrate', 'unit_rate',
+  'subtotal', 'sub_total', 'amount', 'totalamount', 'total_amount',
+  'discount', 'tax', 'taxrate', 'tax_rate'
+];
+
+/**
+ * Sanitize columns to strip any duplicated internal raw database keys
+ * when friendly enterprise columns are already configured in standard schemas.
+ */
+export function sanitizeColumnsForDoc(docType, columns) {
+  if (!Array.isArray(columns) || columns.length === 0) return columns;
+
+  const defaultSchema = DEFAULT_DOCUMENT_SCHEMAS[docType];
+  const standardKeys = new Set(defaultSchema?.gridColumns?.map(c => c.key) || []);
+
+  return columns.filter(col => {
+    // Keep all standard configured keys
+    if (standardKeys.has(col.key)) return true;
+
+    // Filter out blacklisted duplicates
+    const normalized = (col.key || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const isBlacklisted = INTERNAL_DISCOVERY_BLACKLIST.some(b => b.replace(/[^a-z0-9]/g, '') === normalized);
+    if (isBlacklisted) return false;
+
+    return true;
+  });
 }
 
 export function discoverDocumentSchema(docType, sampleRecord = null, existingLayout = null, state = null) {
@@ -797,7 +1098,7 @@ export function discoverDocumentSchema(docType, sampleRecord = null, existingLay
   }
 
   const discoveredHeaderFields = [...(baseSchema.headerFields || [])];
-  const discoveredColumns = [...(baseSchema.gridColumns || [])];
+  let discoveredColumns = sanitizeColumnsForDoc(docType, [...(baseSchema.gridColumns || [])]);
 
   // Inspect resolved record keys for new header fields
   if (record && typeof record === 'object') {
@@ -806,7 +1107,11 @@ export function discoverDocumentSchema(docType, sampleRecord = null, existingLay
         return; // line items array handled separately below
       }
 
-      const exists = discoveredHeaderFields.some((f) => f.key === key);
+      const normalizedKey = key.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const isBlacklisted = INTERNAL_DISCOVERY_BLACKLIST.some(b => b.replace(/[^a-z0-9]/g, '') === normalizedKey);
+      if (isBlacklisted) return;
+
+      const exists = discoveredHeaderFields.some((f) => f.key.toLowerCase().replace(/[^a-z0-9]/g, '') === normalizedKey);
       if (!exists && typeof record[key] !== 'object' && record[key] !== null && record[key] !== undefined) {
         const formattedLabel = key.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
         discoveredHeaderFields.push({
@@ -824,7 +1129,11 @@ export function discoverDocumentSchema(docType, sampleRecord = null, existingLay
       const itemSample = lineItems[0];
       if (itemSample && typeof itemSample === 'object') {
         Object.keys(itemSample).forEach((colKey) => {
-          const colExists = discoveredColumns.some((c) => c.key === colKey);
+          const normalizedCol = colKey.toLowerCase().replace(/[^a-z0-9]/g, '');
+          const isBlacklisted = INTERNAL_DISCOVERY_BLACKLIST.some(b => b.replace(/[^a-z0-9]/g, '') === normalizedCol);
+          if (isBlacklisted) return;
+
+          const colExists = discoveredColumns.some((c) => c.key.toLowerCase().replace(/[^a-z0-9]/g, '') === normalizedCol);
           if (!colExists && typeof itemSample[colKey] !== 'object') {
             const formattedLabel = colKey.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
             discoveredColumns.push({
@@ -843,7 +1152,7 @@ export function discoverDocumentSchema(docType, sampleRecord = null, existingLay
   return {
     ...baseSchema,
     headerFields: discoveredHeaderFields,
-    gridColumns: discoveredColumns
+    gridColumns: sanitizeColumnsForDoc(docType, discoveredColumns)
   };
 }
 
@@ -1012,15 +1321,135 @@ export function getMockPreviewData(docType) {
           dispatch_date: '2026-07-27',
           so_ref: 'SO-2026-081',
           customer_name: 'Al-Haq Enterprises',
+          contact_person: 'Muhammad Tariq',
+          contact_number: '+92-300-9876543',
           shipping_address: 'Plot 12-A, Industrial Zone, Korangi, Karachi',
           vehicle_no: 'KBL-8921',
-          driver_name: 'Shaukat Khan'
+          driver_name: 'Shaukat Khan',
+          driver_contact: '+92-321-5544332',
+          dc_mode: 'Direct Road Dispatch'
         },
         items: [
-          { serial_no: '1', item_code: 'FG-WC-001', item_name: 'Synthetic Winter Coat Fabric', dispatch_qty: 1500, packing_type: 'Rolls (30 pcs)', net_weight: '450.0' },
-          { serial_no: '2', item_code: 'RM-PS-120', item_name: 'Polyester Silk 120g Yarn', dispatch_qty: 1000, packing_type: 'Bags (20 pcs)', net_weight: '1000.0' }
+          { serial_no: '1', item_code: 'FG-WC-001', item_name: 'Synthetic Winter Coat Fabric', ordered_qty: 1500, dispatch_qty: 1500, packing_type: 'Rolls (30 pcs)', weight: '450.0 kg' },
+          { serial_no: '2', item_code: 'RM-PS-120', item_name: 'Polyester Silk 120g Yarn', ordered_qty: 1200, dispatch_qty: 1000, packing_type: 'Bags (20 pcs)', weight: '1000.0 kg' }
         ],
-        totals: { totalPackages: 50, totalWeight: 1450.0 }
+        totals: { totalPackages: 50, totalWeight: '1,450.0 kg' }
+      };
+
+    case 'production_manifest':
+      return {
+        header: {
+          ...commonHeader,
+          manifest_no: 'PMF-2026-001',
+          plan_id: 'PLN-2026-042',
+          date: '2026-07-27',
+          production_line: 'Line #3 (Industrial Weaving Loom)',
+          supervisor: 'Eng. Kamran Raza',
+          shift: 'Morning Shift (08:00 - 16:00)'
+        },
+        items: [
+          { serial_no: '1', item_code: 'FG-WC-001', item_name: 'Synthetic Winter Coat Fabric', target_qty: 1500, uom: 'Meters', batch_no: 'BATCH-2026-901', status: 'Running' },
+          { serial_no: '2', item_code: 'RM-CB-080', item_name: 'Cotton Blend 80g Fabric', target_qty: 2000, uom: 'Meters', batch_no: 'BATCH-2026-902', status: 'Queued' }
+        ],
+        totals: { totalTargetQty: '3,500 Meters', lineEfficiency: '99.2%' }
+      };
+
+    case 'general_ledger':
+      return {
+        header: {
+          ...commonHeader,
+          ledger_title: 'Meezan Bank Operations Account (1000-01)',
+          account_code: '1000-01',
+          date_range: '01-Jul-2026 to 31-Jul-2026',
+          currency: 'PKR'
+        },
+        items: [
+          { date: '2026-07-01', voucher_no: 'OPN-BAL', narration: 'Opening Balance Carried Forward', debit: 4500000.0, credit: 0.0, balance: 4500000.0 },
+          { date: '2026-07-15', voucher_no: 'RV-2026-001', narration: 'Direct Clearance - Al-Haq Enterprises', debit: 500000.0, credit: 0.0, balance: 5000000.0 },
+          { date: '2026-07-20', voucher_no: 'PV-2026-001', narration: 'Raw Material Settlement - Apex Ltd', debit: 0.0, credit: 350000.0, balance: 4650000.0 }
+        ],
+        totals: { totalDebit: 5000000.0, totalCredit: 350000.0, closingBalance: 4650000.0 }
+      };
+
+    case 'accounts_receivable':
+      return {
+        header: {
+          ...commonHeader,
+          report_title: 'ACCOUNTS RECEIVABLE AGING STATEMENT',
+          as_of_date: '2026-07-27',
+          customer_name: 'Premier Textile Corp',
+          credit_limit: '10,000,000.00'
+        },
+        items: [
+          { serial_no: '1', invoice_no: 'INV-2026-1049', invoice_date: '2026-07-27', due_date: '2026-08-26', total_amount: 17110.0, received_amount: 5000.0, balance_due: 12110.0 },
+          { serial_no: '2', invoice_no: 'INV-2026-1042', invoice_date: '2026-07-10', due_date: '2026-08-09', total_amount: 14750.0, received_amount: 14750.0, balance_due: 0.0 }
+        ],
+        totals: { totalReceivable: 31860.0, totalCollected: 19750.0, totalOutstanding: 12110.0 }
+      };
+
+    case 'accounts_payable':
+      return {
+        header: {
+          ...commonHeader,
+          report_title: 'ACCOUNTS PAYABLE AGING STATEMENT',
+          as_of_date: '2026-07-27',
+          supplier_name: 'Apex Chemicals Ltd',
+          payment_terms: 'Net 30 Days'
+        },
+        items: [
+          { serial_no: '1', bill_no: 'PINV-2026-892', bill_date: '2026-07-25', due_date: '2026-08-24', total_amount: 11682.0, paid_amount: 0.0, balance_due: 11682.0 }
+        ],
+        totals: { totalPayable: 11682.0, totalPaid: 0.0, totalOutstanding: 11682.0 }
+      };
+
+    case 'financial_statements':
+      return {
+        header: {
+          ...commonHeader,
+          statement_title: 'CONSOLIDATED STATEMENT OF PROFIT OR LOSS',
+          financial_period: 'Year Ended June 30, 2026',
+          currency: 'PKR',
+          generated_on: '2026-07-27'
+        },
+        items: [
+          { line_code: '4000', line_title: 'Revenue from Sales & Production Services', current_period: 45000000.0, prior_period: 38000000.0 },
+          { line_code: '5000', line_title: 'Cost of Goods Sold (Raw Materials, Power & Labor)', current_period: -31500000.0, prior_period: -27000000.0 },
+          { line_code: '6000', line_title: 'Operating & Factory Overhead Expenses', current_period: -6200000.0, prior_period: -5400000.0 },
+          { line_code: '7000', line_title: 'Net Profit Before Taxation', current_period: 7300000.0, prior_period: 5600000.0 }
+        ],
+        totals: { netProfitMargin: '16.2%', priorMargin: '14.7%' }
+      };
+
+    case 'bank_reconciliation':
+      return {
+        header: {
+          ...commonHeader,
+          statement_date: '2026-07-27',
+          bank_name: 'Meezan Bank Ltd (Industrial Area Branch)',
+          account_number: 'PK36MEZN00019283741',
+          closing_bank_balance: '4,520,000.00'
+        },
+        items: [
+          { serial_no: 1, date: '2026-07-25', reference_no: 'CHQ-892104', description: 'Unpresented Cheque - Apex Chemicals Ltd', debit: 0.0, credit: 350000.0 },
+          { serial_no: 2, date: '2026-07-26', reference_no: 'DEP-449102', description: 'Uncleared Deposit - Al-Haq Enterprises', debit: 500000.0, credit: 0.0 }
+        ],
+        totals: { reconciledBookBalance: 4670000.0, bankVariance: 0.0 }
+      };
+
+    case 'cost_centers':
+      return {
+        header: {
+          ...commonHeader,
+          report_title: 'DEPARTMENTAL COST CENTER EXPENSE AUDIT',
+          cost_period: 'July 2026 Budget',
+          department: 'Manufacturing & Weaving Line #3',
+          generated_on: '2026-07-27'
+        },
+        items: [
+          { center_code: 'CC-WEAV-01', center_name: 'Loom Plant Direct Labor', budget_allocated: 1200000.0, actual_expense: 1145000.0, variance: -55000.0 },
+          { center_code: 'CC-DYE-02', center_name: 'Chemical & Dye Consumables', budget_allocated: 800000.0, actual_expense: 825000.0, variance: 25000.0 }
+        ],
+        totals: { totalBudget: 2000000.0, totalActual: 1970000.0, netVariance: -30000.0 }
       };
 
     case 'sale_invoice':
@@ -1304,15 +1733,22 @@ export function getMockPreviewData(docType) {
         header: {
           ...commonHeader,
           leave_id: 'LR-2026-091',
+          applied_date: '2026-07-28',
+          status: 'Approved',
           emp_name: 'Hamza Farooq',
-          department: 'Quality Assurance',
-          leave_type: 'Annual Paid Leave',
-          duration: '01-Aug-2026 to 05-Aug-2026'
+          emp_code: 'EMP-1042',
+          department: 'Quality Assurance Section',
+          leave_type: 'Annual Leave',
+          leave_category: 'Paid Leave',
+          start_date: '2026-08-01',
+          end_date: '2026-08-05',
+          total_days: '5 Days',
+          reason: 'Family urgent commitment and domestic travel to ancestral home.'
         },
         items: [
-          { serial_no: '1', date: '2026-08-01 to 2026-08-05', type: 'Annual Paid Leave (5 Days)', reason: 'Family commitment and travel' }
+          { serial_no: '1', date: '01-Aug-2026 to 05-Aug-2026', leave_type: 'Annual Leave', category: 'Paid Leave', days: '5 Days', reason: 'Family commitment and travel' }
         ],
-        totals: { totalDays: '5 Working Days' }
+        totals: { totalDays: '5 Working Days', approvalSign: 'Approved by HR Lead' }
       };
 
     case 'stock_receiving_history':

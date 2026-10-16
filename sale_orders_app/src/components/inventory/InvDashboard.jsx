@@ -18,22 +18,30 @@ export default function InvDashboard({ selectedDepartments = [] }) {
       return items;
   }, [state?.items, selectedDepartments]);
 
-  // Calculate total stock value
+  // Calculate total stock value with strict numerical fallbacks
   const totalStockValue = useMemo(() => {
       return filteredItems.reduce((acc, item) => {
-          const priceStr = String(item.price || '0').replace(/[^0-9.]/g, '');
+          const priceStr = String(item.price || item.unitPrice || item.rate || '0').replace(/[^0-9.]/g, '');
           const price = parseFloat(priceStr) || 0;
-          return acc + (item.stock * price);
+          const stock = parseFloat(item.stock ?? item.stockLevel ?? item.quantity ?? item.qty ?? 0) || 0;
+          const lineVal = stock * price;
+          return acc + (isFinite(lineVal) ? lineVal : 0);
       }, 0);
   }, [filteredItems]);
 
   // Top 10 items by stock
   const top10Items = useMemo(() => {
-      return [...filteredItems].sort((a, b) => (b.stock || 0) - (a.stock || 0)).slice(0, 10);
+      return [...filteredItems].sort((a, b) => {
+          const sA = parseFloat(a.stock ?? a.stockLevel ?? a.quantity ?? a.qty ?? 0) || 0;
+          const sB = parseFloat(b.stock ?? b.stockLevel ?? b.quantity ?? b.qty ?? 0) || 0;
+          return sB - sA;
+      }).slice(0, 10);
   }, [filteredItems]);
 
   // Max stock for scaling the bars
-  const maxStock = top10Items.length > 0 ? Math.max(...top10Items.map(i => i.stock || 0)) : 1;
+  const maxStock = top10Items.length > 0 
+      ? Math.max(...top10Items.map(i => parseFloat(i.stock ?? i.stockLevel ?? i.quantity ?? i.qty ?? 0) || 0), 1) 
+      : 1;
 
   // Completed/Progressing Sale Orders
   const displayOrdersData = useMemo(() => {
@@ -128,11 +136,12 @@ export default function InvDashboard({ selectedDepartments = [] }) {
 
       {/* KPI Cards Section */}
       <section className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-10">
-        {/* Total Stock Value */}
         <div className="bg-surface-container-lowest p-6 rounded-xl border border-outline-variant/10 shadow-[0_20px_40px_rgba(0,28,56,0.04)] flex flex-col justify-between h-32 relative overflow-hidden">
           <div className="z-10">
             <p className="text-xs font-label font-bold text-on-surface-variant uppercase tracking-widest">Total Stock Value</p>
-            <h3 className="text-2xl font-headline font-extrabold text-on-surface mt-1">${(totalStockValue / 1000).toFixed(1)}k</h3>
+            <h3 className="text-2xl font-headline font-extrabold text-on-surface mt-1">
+              ${isFinite(totalStockValue) && totalStockValue > 0 ? (totalStockValue / 1000).toFixed(1) : '0.0'}k
+            </h3>
           </div>
           <div className="flex items-center gap-1 text-xs font-bold text-emerald-600 z-10">
             <span className="material-symbols-outlined text-sm" style={{ fontVariationSettings: "'FILL' 0" }}>inventory_2</span>

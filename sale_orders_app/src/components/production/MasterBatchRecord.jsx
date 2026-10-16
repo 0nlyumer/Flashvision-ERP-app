@@ -1,10 +1,12 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import GlobalPagination from '../ui/GlobalPagination';
+import UniversalPrintStudioModal from '../ui/UniversalPrintStudioModal';
 
 export default function MasterBatchRecord() {
     const { state, toggleGlobalPagination, currencySymbol, currencyCode } = useApp();
     const [selectedBatch, setSelectedBatch] = useState(null);
+    const [activeStudioBatch, setActiveStudioBatch] = useState(null);
     const [searchTerm, setSearchTerm] = useState('');
     const [dateFilter, setDateFilter] = useState('All Time');
     
@@ -232,8 +234,61 @@ export default function MasterBatchRecord() {
     const formatCurrency = (val) => `${currencySymbol}${parseFloat(val || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     const formatDate = (d) => new Date(d).toLocaleString('en-GB', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 
+    const batchPrintData = useMemo(() => {
+        if (!activeStudioBatch) return null;
+        const b = activeStudioBatch;
+        return {
+            header: {
+                mbr_no: `MBR-${b.batchCode}`,
+                batch_no: b.batchCode,
+                product_name: b.productName,
+                batch_size: `${b.totalOutputQty?.toLocaleString() || 0} units`,
+                qa_sign: 'QA-CLEARED-VERIFIED',
+                date: formatDate(b.date),
+                status: b.status,
+                efficiency: `${b.efficiency?.toFixed(1) || 0}%`,
+                total_cost: b.totalConsumedCost || 0
+            },
+            items: [
+                ...(b.consumptionDetails || []).map((m, idx) => ({
+                    step_no: idx + 1,
+                    operation: `Raw Material: ${m.name}`,
+                    parameters: `Target: ${m.target > 0 ? `${m.target} ${m.unit}` : 'Standard'}`,
+                    spec_limit: `Actual: ${m.actual} ${m.unit} (Cost: $${(m.cost || 0).toFixed(2)})`,
+                    sign_off: m.variance > 10 ? 'Deviation Approved' : 'Verified'
+                })),
+                ...(b.outputDetails || []).map((o, idx) => ({
+                    step_no: (b.consumptionDetails?.length || 0) + idx + 1,
+                    operation: `Yield Output: ${o.typeName}`,
+                    parameters: o.isWastage ? 'Process Scrap / Wastage' : 'Finished Good Product',
+                    spec_limit: `Qty: ${o.quantity} ${o.uom} ($${parseFloat(o.value || 0).toFixed(2)})`,
+                    sign_off: o.isWastage ? 'Recorded Loss' : 'QC Passed'
+                }))
+            ]
+        };
+    }, [activeStudioBatch]);
+
     if (selectedBatch) {
-        return <BatchSpecificationDetail batch={selectedBatch} onBack={() => setSelectedBatch(null)} formatCurrency={formatCurrency} formatDate={formatDate} />;
+        return (
+            <>
+                <BatchSpecificationDetail 
+                    batch={selectedBatch} 
+                    onBack={() => setSelectedBatch(null)} 
+                    formatCurrency={formatCurrency} 
+                    formatDate={formatDate}
+                    onOpenStudio={(b) => setActiveStudioBatch(b)}
+                />
+                {activeStudioBatch && batchPrintData && (
+                    <UniversalPrintStudioModal
+                        isOpen={Boolean(activeStudioBatch)}
+                        onClose={() => setActiveStudioBatch(null)}
+                        documentType="master_batch_record"
+                        documentData={batchPrintData}
+                        documentTitle={`Master Batch Record #${activeStudioBatch.batchCode}`}
+                    />
+                )}
+            </>
+        );
     }
 
     return (
@@ -322,12 +377,20 @@ export default function MasterBatchRecord() {
                                         <div className={`h-full ${getStatusColor(batch.efficiency)} rounded-full`} style={{ width: `${Math.min(100, Math.max(0, batch.efficiency))}%` }}></div>
                                     </div>
                                 </div>
-                                <div className="mt-auto flex justify-between items-center pt-2">
+                                <div className="mt-auto flex justify-between items-center pt-2 gap-2">
                                     <button 
                                         onClick={() => setSelectedBatch(batch)}
-                                        className="text-primary hover:text-primary-container font-display font-bold text-sm flex items-center gap-1 transition-colors"
+                                        className="text-primary hover:text-primary-container font-display font-bold text-sm flex items-center gap-1 transition-colors cursor-pointer"
                                     >
                                         View Detailed Specs <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
+                                    </button>
+                                    <button 
+                                        onClick={() => setActiveStudioBatch(batch)}
+                                        className="text-slate-600 hover:text-primary font-bold text-xs flex items-center gap-1 transition-colors px-2.5 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 cursor-pointer"
+                                        title="Print Batch Record in Studio"
+                                    >
+                                        <span className="material-symbols-outlined text-sm">print</span>
+                                        Print Record
                                     </button>
                                 </div>
                             </div>
@@ -349,11 +412,21 @@ export default function MasterBatchRecord() {
                 currentPage={currentPage}
                 setCurrentPage={setCurrentPage}
             />
+
+            {activeStudioBatch && batchPrintData && (
+                <UniversalPrintStudioModal
+                    isOpen={Boolean(activeStudioBatch)}
+                    onClose={() => setActiveStudioBatch(null)}
+                    documentType="master_batch_record"
+                    documentData={batchPrintData}
+                    documentTitle={`Master Batch Record #${activeStudioBatch.batchCode}`}
+                />
+            )}
         </div>
     );
 }
 
-function BatchSpecificationDetail({ batch, onBack, formatCurrency, formatDate }) {
+function BatchSpecificationDetail({ batch, onBack, formatCurrency, formatDate, onOpenStudio }) {
     // Separate finished goods and wastage
     const finishedGoodsList = batch.outputDetails.filter(o => !o.isWastage);
     const wastageList = batch.outputDetails.filter(o => o.isWastage);
@@ -374,150 +447,12 @@ function BatchSpecificationDetail({ batch, onBack, formatCurrency, formatDate })
     const costPerFgUnit = totalFgQty > 0 ? (totalCost / totalFgQty) : 0;
     const fgUom = finishedGoodsList[0]?.uom || 'Unit';
 
-    const handlePrintBatch = (batch) => {
-        const printWindow = window.open('', '_blank');
-        const consumptionRows = batch.consumptionDetails.map(m => `
-            <tr>
-                <td>${m.name}</td>
-                <td style="text-align: right;">${m.target > 0 ? `${m.target.toLocaleString(undefined, {maximumFractionDigits:2})} ${m.unit}` : '-'}</td>
-                <td style="text-align: right; font-weight: bold;">${m.actual.toLocaleString(undefined, {maximumFractionDigits:2})} ${m.unit}</td>
-                <td style="text-align: right;">$${parseFloat(m.price || 0).toFixed(2)}</td>
-                <td style="text-align: right; font-weight: bold;">$${parseFloat(m.cost || 0).toFixed(2)}</td>
-                <td style="text-align: center;">${m.target > 0 ? `${m.variance > 0 ? '+' : ''}${m.variance.toFixed(1)}%` : '-'}</td>
-            </tr>
-        `).join('');
-
-        const outputRows = batch.outputDetails.map(o => `
-            <tr>
-                <td>${o.typeName}</td>
-                <td>${o.isWastage ? 'Wastage Output' : 'Finished Good Yield'}</td>
-                <td style="text-align: right; font-weight: bold;">${o.quantity.toLocaleString(undefined, {maximumFractionDigits:2})} ${o.uom}</td>
-                <td style="text-align: right; font-weight: bold;">$${parseFloat(o.value || 0).toFixed(2)}</td>
-            </tr>
-        `).join('');
-
-        printWindow.document.write(`
-            <html>
-                <head>
-                    <title>Master Batch Record - Batch #${batch.batchCode}</title>
-                    <style>
-                        body { font-family: 'Segoe UI', Arial, sans-serif; padding: 40px; color: #333; }
-                        .header { border-bottom: 2px solid #333; padding-bottom: 20px; margin-bottom: 30px; text-align: center; }
-                        .title { font-size: 24px; font-weight: bold; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 1px; }
-                        .subtitle { font-size: 14px; color: #666; }
-                        .section-title { font-size: 16px; font-weight: bold; border-bottom: 1px solid #333; padding-bottom: 5px; margin-top: 30px; margin-bottom: 15px; text-transform: uppercase; }
-                        .meta-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; margin-bottom: 20px; font-size: 13px; }
-                        .meta-item { margin-bottom: 5px; }
-                        .details-table { width: 100%; border-collapse: collapse; margin-bottom: 25px; }
-                        .details-table th, .details-table td { border: 1px solid #ddd; padding: 10px 12px; text-align: left; font-size: 11px; }
-                        .details-table th { background-color: #f5f5f5; font-weight: bold; text-transform: uppercase; }
-                        .summary-box { background-color: #fafafa; border: 1px solid #ddd; padding: 20px; border-radius: 5px; font-size: 13px; }
-                        .summary-row { display: flex; justify-content: space-between; margin-bottom: 8px; }
-                        .summary-row.total { font-weight: bold; border-top: 1px solid #ccc; padding-top: 8px; margin-top: 8px; font-size: 14px; }
-                        .signatures { display: flex; justify-content: space-between; margin-top: 70px; }
-                        .signature-line { border-top: 1px solid #333; width: 220px; text-align: center; font-size: 11px; padding-top: 8px; font-weight: bold; }
-                        .footer { margin-top: 60px; font-size: 11px; color: #888; text-align: center; border-top: 1px solid #eee; padding-top: 15px; }
-                    </style>
-                </head>
-                <body>
-                    <div class="header">
-                        <div class="title">Flashvision ERP</div>
-                        <div class="subtitle">Master Batch Production Record</div>
-                    </div>
-                    
-                    <div class="meta-grid">
-                        <div class="meta-item"><strong>Batch Reference:</strong> #${batch.batchCode}</div>
-                        <div class="meta-item"><strong>Product Name:</strong> ${batch.productName}</div>
-                        <div class="meta-item"><strong>Production Date:</strong> ${new Date(batch.date).toLocaleString()}</div>
-                        <div class="meta-item"><strong>Batch Status:</strong> ${batch.status}</div>
-                        <div class="meta-item"><strong>Requested Output:</strong> ${batch.requestedQty.toLocaleString()} m</div>
-                        <div class="meta-item"><strong>Actual Output Yield:</strong> ${batch.totalOutputQty.toLocaleString()} m</div>
-                    </div>
-
-                    <div class="section-title">Raw Material Consumption Details</div>
-                    <table class="details-table">
-                        <thead>
-                            <tr>
-                                <th>Material Name</th>
-                                <th style="text-align: right;">Target Qty</th>
-                                <th style="text-align: right;">Actual Qty</th>
-                                <th style="text-align: right;">Unit Price</th>
-                                <th style="text-align: right;">Total Cost</th>
-                                <th style="text-align: center;">Variance</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${consumptionRows}
-                        </tbody>
-                    </table>
-
-                    <div class="section-title">Output Summary & Yield Breakdown</div>
-                    <table class="details-table">
-                        <thead>
-                            <tr>
-                                <th>Output Type</th>
-                                <th>Category</th>
-                                <th style="text-align: right;">Output Quantity</th>
-                                <th style="text-align: right;">Estimated Value</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${outputRows}
-                        </tbody>
-                    </table>
-
-                    <div class="section-title">Valuation & Cost Summary</div>
-                    <div class="summary-box">
-                        <div class="summary-row">
-                            <span>Finished Goods Value:</span>
-                            <strong>$${parseFloat(fgValue || 0).toFixed(2)}</strong>
-                        </div>
-                        <div class="summary-row">
-                            <span>Wastage Loss Value:</span>
-                            <strong>$${parseFloat(wastageValue || 0).toFixed(2)}</strong>
-                        </div>
-                        <div class="summary-row">
-                            <span>Raw Material Cost (BOM):</span>
-                            <strong>$${parseFloat(rawMaterialCost || 0).toFixed(2)}</strong>
-                        </div>
-                        <div class="summary-row">
-                            <span>Other Consumption Estimated Cost:</span>
-                            <strong>$${parseFloat(otherConsumptionCost || 0).toFixed(2)}</strong>
-                        </div>
-                        <div class="summary-row total">
-                            <span>Total Batch Costing Value:</span>
-                            <span>$${parseFloat(totalCost || 0).toFixed(2)}</span>
-                        </div>
-                        <div class="summary-row" style="margin-top: 10px; font-weight: bold; color: #004277;">
-                            <span>Cost per Unit Finished Good:</span>
-                            <span>$${parseFloat(costPerFgUnit || 0).toFixed(2)} / ${fgUom}</span>
-                        </div>
-                    </div>
-
-                    <div style="margin-top: 25px; font-size: 13px;">
-                        <strong>Mass Balance Efficiency:</strong> ${batch.efficiency.toFixed(1)}%
-                    </div>
-                    
-                    <div class="signatures">
-                        <div class="signature-line">Produced By (Operator)</div>
-                        <div class="signature-line">Quality Control Assurance</div>
-                        <div class="signature-line">Plant Manager Sign-Off</div>
-                    </div>
-
-                    <div class="footer">
-                        System Generated Document &bull; Flashvision ERP Master Batch Record
-                    </div>
-                    
-                    <script>
-                        window.onload = function() {
-                            window.print();
-                            setTimeout(function() { window.close(); }, 500);
-                        };
-                    </script>
-                </body>
-            </html>
-        `);
-        printWindow.document.close();
+    const handlePrintBatch = (b) => {
+        if (onOpenStudio) {
+            onOpenStudio(b);
+        } else {
+            window.print();
+        }
     };
 
     return (

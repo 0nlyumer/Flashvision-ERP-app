@@ -7,6 +7,7 @@ import {
   DEFAULT_DOCUMENT_SCHEMAS,
   DEFAULT_LAYOUT_SETTINGS,
   discoverDocumentSchema,
+  sanitizeColumnsForDoc,
   getMockPreviewData,
   getSampleRecordFromState
 } from '../../utils/printSchemaRegistry';
@@ -100,6 +101,9 @@ export default function UniversalPrintStudioModal({
       ...(stateLayout || {}),
       ...(localSaved || {})
     };
+    if (initial.gridColumns) {
+      initial.gridColumns = sanitizeColumnsForDoc(documentType, initial.gridColumns);
+    }
     const discovered = discoverDocumentSchema(documentType, resolvedRecord, initial, state);
     return applyThemeToLayout(discovered, discovered.activeTheme || defaultTheme, documentType);
   });
@@ -124,6 +128,9 @@ export default function UniversalPrintStudioModal({
       ...(stateLayout || {}),
       ...(localSaved || {})
     };
+    if (merged.gridColumns) {
+      merged.gridColumns = sanitizeColumnsForDoc(documentType, merged.gridColumns);
+    }
     const discovered = discoverDocumentSchema(documentType, resolvedRecord, merged, state);
     setLayoutConfig(applyThemeToLayout(discovered, discovered.activeTheme || defaultTheme, documentType));
   }, [documentType, resolvedRecord, state]);
@@ -705,17 +712,122 @@ export default function UniversalPrintStudioModal({
                   </div>
                 </div>
 
-                {/* Company Logo & Address toggles */}
-                <div className="space-y-2 pt-2 border-t border-slate-800">
-                  <label className="flex items-center justify-between p-2 rounded-xl bg-slate-950 border border-slate-800 cursor-pointer">
-                    <span className="text-[11px] text-slate-200">Show Company Logo</span>
+                {/* Company Logo Configuration & Controls */}
+                <div className="space-y-3 pt-3 border-t border-slate-800">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                      <span className="material-symbols-outlined text-sm text-blue-400">branding_watermark</span>
+                      Company Logo Configuration
+                    </span>
+                    <label className="flex items-center gap-1.5 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={layoutConfig.showHeaderLogo !== false}
+                        onChange={(e) => updateLayout('showHeaderLogo', e.target.checked)}
+                        className="w-4 h-4 rounded accent-blue-500 cursor-pointer"
+                      />
+                      <span className="text-[11px] text-slate-300 font-semibold">Show Logo</span>
+                    </label>
+                  </div>
+
+                  {/* Logo Preview or Clean Omission notice */}
+                  <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 flex items-center justify-between gap-3">
+                    {layoutConfig.logoUrl || companyLogo ? (
+                      <div className="flex items-center gap-3">
+                        <img
+                          src={layoutConfig.logoUrl || companyLogo}
+                          alt="Logo Preview"
+                          className="h-10 max-h-10 max-w-[100px] object-contain rounded bg-white p-1"
+                        />
+                        <div className="text-[10px] space-y-0.5">
+                          <span className="text-white font-bold block">Configured Logo</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              updateLayout('logoUrl', '');
+                              if (setCollection) {
+                                setCollection('adminSetup', { ...(state?.adminSetup || {}), logo: '', logoUrl: '' });
+                              }
+                            }}
+                            className="text-red-400 hover:text-red-300 font-bold underline cursor-pointer"
+                          >
+                            Remove Logo
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-[11px] text-slate-400 italic flex items-center gap-1.5">
+                        <span className="material-symbols-outlined text-sm text-slate-500">hide_image</span>
+                        No logo configured (Clean omission on prints).
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Upload Logo File */}
+                  <div className="space-y-1">
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                      Upload Logo Image:
+                    </label>
                     <input
-                      type="checkbox"
-                      checked={layoutConfig.showHeaderLogo !== false}
-                      onChange={(e) => updateLayout('showHeaderLogo', e.target.checked)}
-                      className="w-4 h-4 rounded accent-blue-500"
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        const reader = new FileReader();
+                        reader.onload = (event) => {
+                          const dataUrl = event.target?.result;
+                          if (dataUrl) {
+                            updateLayout('logoUrl', dataUrl);
+                            updateLayout('showHeaderLogo', true);
+                            if (setCollection) {
+                              setCollection('adminSetup', {
+                                ...(state?.adminSetup || {}),
+                                logo: dataUrl,
+                                logoUrl: dataUrl
+                              });
+                            }
+                          }
+                        };
+                        reader.readAsDataURL(file);
+                      }}
+                      className="w-full text-xs text-slate-400 file:mr-2 file:py-1 file:px-2.5 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-blue-600 file:text-white hover:file:bg-blue-500 cursor-pointer"
                     />
-                  </label>
+                  </div>
+
+                  {/* Logo Size and Position Controls */}
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                        Logo Size
+                      </label>
+                      <select
+                        value={layoutConfig.logoSize || 'medium'}
+                        onChange={(e) => updateLayout('logoSize', e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2 py-1.5 text-xs text-white font-medium"
+                      >
+                        <option value="small">Small (32px)</option>
+                        <option value="medium">Medium (48px)</option>
+                        <option value="large">Large (64px)</option>
+                        <option value="xl">Extra Large (80px)</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                        Logo Position
+                      </label>
+                      <select
+                        value={layoutConfig.logoPosition || 'left'}
+                        onChange={(e) => updateLayout('logoPosition', e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2 py-1.5 text-xs text-white font-medium"
+                      >
+                        <option value="left">Left Aligned</option>
+                        <option value="center">Center</option>
+                        <option value="right">Right Aligned</option>
+                      </select>
+                    </div>
+                  </div>
 
                   <label className="flex items-center justify-between p-2 rounded-xl bg-slate-950 border border-slate-800 cursor-pointer">
                     <span className="text-[11px] text-slate-200">Show Address & Contact Info</span>
@@ -723,7 +835,7 @@ export default function UniversalPrintStudioModal({
                       type="checkbox"
                       checked={layoutConfig.showHeaderDetails !== false}
                       onChange={(e) => updateLayout('showHeaderDetails', e.target.checked)}
-                      className="w-4 h-4 rounded accent-blue-500"
+                      className="w-4 h-4 rounded accent-blue-500 cursor-pointer"
                     />
                   </label>
                 </div>

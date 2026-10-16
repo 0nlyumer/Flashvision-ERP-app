@@ -1,7 +1,8 @@
 import FGCombinationBuilder from "../ui/FGCombinationBuilder";
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useDialog } from '../../context/DialogContext';
+import UniversalPrintStudioModal from '../ui/UniversalPrintStudioModal';
 
 export default function CreateNewBOM({ onClose, initialBom, isViewOnly = false }) {
   const { state, setCollection, setDirty, isDirty } = useApp();
@@ -72,6 +73,38 @@ export default function CreateNewBOM({ onClose, initialBom, isViewOnly = false }
          setPackingSpecs(getInitialPhase(packingMaterials, []));
      }
   }, [initialBom, state.items]);
+
+  const [showStudioModal, setShowStudioModal] = useState(false);
+
+  const selectedFgItem = state.items.find(i => String(i.id) === String(selectedFG)) || { name: fgSearchStr || 'Finished Good', sku: 'FG-001' };
+
+  const allMaterials = useMemo(() => [
+    ...topPhase.filter(p => p.value).map(p => ({ ...p, stage: 'Top Layer' })),
+    ...foamPhase.filter(p => p.value).map(p => ({ ...p, stage: 'Foam Layer' })),
+    ...adhesivePhase.filter(p => p.value).map(p => ({ ...p, stage: 'Adhesive Layer' })),
+    ...packingSpecs.filter(p => p.value).map(p => ({ ...p, stage: 'Packing' }))
+  ], [topPhase, foamPhase, adhesivePhase, packingSpecs]);
+
+  const bomPrintData = useMemo(() => ({
+    header: {
+      bom_no: initialBom?.id || `BOM-${selectedFgItem.sku || 'NEW'}`,
+      product_name: selectedFgItem.name || 'Finished Good',
+      product_code: selectedFgItem.sku || '-',
+      batch_size: `${batchSize || 1000} M`,
+      version: initialBom?.version || 'v1.0',
+      date: new Date().toLocaleDateString('en-GB', { month: 'short', day: 'numeric', year: 'numeric'}),
+      created_by: 'BOM Master Architect'
+    },
+    items: allMaterials.map((mat, idx) => ({
+      step_no: idx + 1,
+      item_code: mat.rmId || `RM-${idx + 1}`,
+      material_name: mat.name,
+      qty_required: mat.value,
+      uom: 'Kg',
+      stage: mat.stage,
+      cost: '-'
+    }))
+  }), [initialBom, selectedFgItem, batchSize, allMaterials]);
 
   // Handle outside click for searchable dropdown
   useEffect(() => {
@@ -247,7 +280,7 @@ export default function CreateNewBOM({ onClose, initialBom, isViewOnly = false }
                 <span className="material-symbols-outlined text-[20px]">check</span> Save Configuration
             </button>
           ) : (
-            <button onClick={() => window.print()} className="px-6 py-3 rounded-xl font-semibold bg-secondary/10 text-secondary hover:bg-secondary/20 shadow-sm flex items-center gap-2 transition-transform hover:scale-[1.02] print:hidden">
+            <button onClick={() => setShowStudioModal(true)} className="px-6 py-3 rounded-xl font-semibold bg-secondary/10 text-secondary hover:bg-secondary/20 shadow-sm flex items-center gap-2 transition-transform hover:scale-[1.02] print:hidden">
                 <span className="material-symbols-outlined text-[20px]">print</span> Print BOM
             </button>
           )}
@@ -370,6 +403,16 @@ export default function CreateNewBOM({ onClose, initialBom, isViewOnly = false }
 
           </div>
       </div>
+
+      {showStudioModal && (
+        <UniversalPrintStudioModal
+          isOpen={showStudioModal}
+          onClose={() => setShowStudioModal(false)}
+          documentType="bom_master"
+          documentData={bomPrintData}
+          documentTitle={`Bill of Materials - ${selectedFgItem.name || 'BOM'}`}
+        />
+      )}
     </div>
   );
 }

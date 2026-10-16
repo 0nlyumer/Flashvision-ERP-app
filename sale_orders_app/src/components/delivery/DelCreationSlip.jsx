@@ -27,6 +27,7 @@ export default function DelCreationSlip({ items = [], dcMode = 'Sale Orders', on
   const [consigneeDetails, setConsigneeDetails] = useState({ contactPerson: '', deliveryAddress: '', contactNumber: '' });
   const [logisticsDetails, setLogisticsDetails] = useState({ driverName: '', driverNumber: '', vehicleNumber: '' });
   const [showErrors, setShowErrors] = useState(false);
+  const [showStudioModal, setShowStudioModal] = useState(false);
 
   const getAvailableTypes = (itemId) => {
       const product = state?.items?.find(x => x.id === itemId || x.sku === itemId);
@@ -156,6 +157,35 @@ export default function DelCreationSlip({ items = [], dcMode = 'Sale Orders', on
       return { sub, grand: sub };
   }, [slipItems]);
 
+  const challanPrintData = useMemo(() => ({
+    header: {
+      challan_no: challanId,
+      date: today,
+      customer: customerName || 'N/A',
+      dc_mode: dcMode,
+      driver_name: logisticsDetails?.driverName || '—',
+      driver_contact: logisticsDetails?.driverNumber || '—',
+      vehicle_no: logisticsDetails?.vehicleNumber || '—',
+      contact_person: consigneeDetails?.contactPerson || '—',
+      contact_number: consigneeDetails?.contactNumber || '—',
+      delivery_address: consigneeDetails?.deliveryAddress || '—',
+      destination: consigneeDetails?.deliveryAddress || '—',
+      status: 'Draft Challan'
+    },
+    consignee: consigneeDetails,
+    logistics: logisticsDetails,
+    items: slipItems.filter(i => !i.isDraft).map((item, idx) => ({
+      serial_no: idx + 1,
+      item_code: item.itemCode || item.sku || item.itemId || '—',
+      item_name: item.productName || item.name || 'Item',
+      ordered_qty: item.orderedQty || item.quantity || item.readyQty || 0,
+      dispatch_qty: item.editedQty || item.dispatchedQty || item.quantity || 0,
+      packing_type: item.type || item.stockType || 'Standard',
+      weight: item.rolls || item.grossWeight || 0,
+      remarks: item.remarks || '—'
+    }))
+  }), [challanId, today, customerName, dcMode, logisticsDetails, consigneeDetails, slipItems]);
+
   const handleBackWarning = async () => {
       if (slipItems.length > 0) {
           const confirmLeave = await appConfirm("You have unsaved changes. Are you sure you want to leave? All entered data will be lost.");
@@ -264,9 +294,9 @@ export default function DelCreationSlip({ items = [], dcMode = 'Sale Orders', on
             </div>
           </div>
           <div className="flex flex-wrap gap-3">
-            <button onClick={() => window.print()} className="flex items-center gap-2 px-5 py-2.5 text-primary font-semibold text-sm hover:bg-surface-container transition-colors rounded-xl outline-none focus:ring-2 focus:ring-primary/20">
+            <button onClick={() => setShowStudioModal(true)} className="flex items-center gap-2 px-5 py-2.5 text-primary font-semibold text-sm hover:bg-surface-container transition-colors rounded-xl outline-none focus:ring-2 focus:ring-primary/20 cursor-pointer">
               <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 0" }}>print</span>
-              Print Challan
+              Print Challan (Studio)
             </button>
             <button className="flex items-center gap-2 px-5 py-2.5 text-secondary font-semibold text-sm bg-secondary-container hover:bg-secondary-container/80 transition-colors rounded-xl outline-none focus:ring-2 focus:ring-secondary/20">
               <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 0" }}>picture_as_pdf</span>
@@ -689,6 +719,16 @@ export default function DelCreationSlip({ items = [], dcMode = 'Sale Orders', on
               </div>
           );
       })()}
+
+      {showStudioModal && (
+        <UniversalPrintStudioModal
+          isOpen={showStudioModal}
+          onClose={() => setShowStudioModal(false)}
+          documentType="delivery_challan"
+          documentData={challanPrintData}
+          documentTitle={`Delivery Challan ${challanId}`}
+        />
+      )}
     </div>
   );
 }

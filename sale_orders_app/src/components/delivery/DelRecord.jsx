@@ -20,14 +20,29 @@ export default function DelRecord() {
   const [sortOrder, setSortOrder] = useState('latest');
   const itemsPerPage = 10;
 
-  useEffect(() => {
-    if (printData && !showStudio) {
-      window.print();
-    }
-  }, [printData, showStudio]);
-
   const handlePrint = (dc) => {
-      setPrintData(dc);
+    const richDc = {
+      ...dc,
+      header: {
+        challan_no: dc.id,
+        date: new Date(dc.date).toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' }),
+        customer: dc.customerName || 'N/A',
+        dc_mode: dc.dcMode || 'Sale Orders',
+        driver_name: dc.logistics?.driverName || dc.driverName || '—',
+        driver_contact: dc.logistics?.driverNumber || dc.driverContact || '—',
+        vehicle_no: dc.logistics?.vehicleNumber || dc.vehicleNumber || '—',
+        contact_person: dc.consignee?.contactPerson || dc.contactPerson || '—',
+        contact_number: dc.consignee?.contactNumber || dc.contactNumber || '—',
+        delivery_address: dc.consignee?.deliveryAddress || dc.deliveryAddress || '—',
+        destination: dc.consignee?.deliveryAddress || '—',
+        status: dc.status || 'Dispatched'
+      },
+      consignee: dc.consignee || {},
+      logistics: dc.logistics || {},
+      items: dc.items || []
+    };
+    setPrintData(richDc);
+    setShowStudio(true);
   };
 
   const filteredDeliveries = useMemo(() => {

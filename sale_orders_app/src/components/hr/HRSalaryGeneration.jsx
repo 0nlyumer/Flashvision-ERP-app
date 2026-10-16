@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
+import UniversalPrintStudioModal from '../ui/UniversalPrintStudioModal';
 
 // Defensive number helpers to guarantee 0 crashes
 const safeNum = (val) => {
@@ -30,6 +31,52 @@ export default function HRSalaryGeneration({ isMobile }) {
   const [processingMessage, setProcessingMessage] = useState('');
   const [toastMessage, setToastMessage] = useState('');
   const [selectedRecordForDetail, setSelectedRecordForDetail] = useState(null);
+  const [studioRecord, setStudioRecord] = useState(null);
+
+  const payslipPrintData = useMemo(() => {
+    if (!studioRecord) return null;
+    const r = studioRecord;
+    const items = [];
+    if (safeNum(r.basicSalary) > 0) {
+      items.push({ description: 'Basic Salary', earnings: safeNum(r.basicSalary), deductions: 0, remarks: 'Monthly Base' });
+    }
+    if (safeNum(r.overtime) > 0) {
+      items.push({ description: `Overtime (${safeNum(r.otHours)} hrs)`, earnings: safeNum(r.overtime), deductions: 0, remarks: 'OT Payout' });
+    }
+    if (safeNum(r.allowance) > 0) {
+      items.push({ description: 'Allowances', earnings: safeNum(r.allowance), deductions: 0, remarks: 'Standard Allowances' });
+    }
+    if (safeNum(r.lateDeduction) > 0) {
+      items.push({ description: `Late Coming Deduction (${safeNum(r.lateComingHours)} hrs)`, earnings: 0, deductions: safeNum(r.lateDeduction), remarks: 'Time Penalty' });
+    }
+    if (safeNum(r.absents) > 0) {
+      items.push({ description: `Absents Deduction (${safeNum(r.absentsCount)} days)`, earnings: 0, deductions: safeNum(r.absents), remarks: 'Leave Balance Exceeded' });
+    }
+    if (safeNum(r.fine) > 0) {
+      items.push({ description: 'Fines / Penalties', earnings: 0, deductions: safeNum(r.fine), remarks: 'Disciplinary Penalty' });
+    }
+    if (safeNum(r.loan) > 0) {
+      items.push({ description: 'Loan Installment', earnings: 0, deductions: safeNum(r.loan), remarks: 'Loan Recovery' });
+    }
+    if (safeNum(r.advanceAmount) > 0) {
+      items.push({ description: 'Salary Advance Deduction', earnings: 0, deductions: safeNum(r.advanceAmount), remarks: 'Advance Recovery' });
+    }
+    items.push({ description: 'NET SALARY PAYOUT', earnings: safeNum(r.netSalary), deductions: 0, remarks: 'Final Disbursed Amount' });
+
+    return {
+      header: {
+        employee_name: r.employeeName || 'Staff Member',
+        employee_id: r.employeeId || r.empId || '-',
+        designation: r.designation || 'Staff',
+        department: r.department || 'Operations',
+        month: payrollPeriod || 'Current Month',
+        basic_salary: `${currSym} ${safeMoney(r.basicSalary)}`,
+        bank_name: r.bankName || 'Company Payroll Account',
+        account_no: r.accountNo || '-'
+      },
+      items
+    };
+  }, [studioRecord, payrollPeriod, currSym]);
   
   // Column options / 3-dot menu popover state
   const [isColumnPickerOpen, setIsColumnPickerOpen] = useState(false);
@@ -948,10 +995,17 @@ export default function HRSalaryGeneration({ isMobile }) {
                         {renderCellContent(col.id, req)}
                       </td>
                     ))}
-                    <td className="p-3.5 text-right">
+                    <td className="p-3.5 text-right flex items-center justify-end gap-1">
+                      <button 
+                        onClick={() => setStudioRecord(req)}
+                        className="p-1.5 hover:bg-secondary/10 rounded-lg text-secondary transition-colors flex items-center justify-center cursor-pointer"
+                        title="Print Payslip (Studio)"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">print</span>
+                      </button>
                       <button 
                         onClick={() => setSelectedRecordForDetail(req)}
-                        className="p-1.5 hover:bg-primary/10 rounded-lg text-primary transition-colors flex items-center justify-center ml-auto cursor-pointer"
+                        className="p-1.5 hover:bg-primary/10 rounded-lg text-primary transition-colors flex items-center justify-center cursor-pointer"
                         title="View Detailed Payslip"
                       >
                         <span className="material-symbols-outlined text-[18px]">visibility</span>
@@ -1135,6 +1189,13 @@ export default function HRSalaryGeneration({ isMobile }) {
             {/* Modal Actions */}
             <div className="p-4 bg-surface-container-low/50 border-t border-outline-variant/10 flex justify-end gap-2">
               <button 
+                onClick={() => setStudioRecord(selectedRecordForDetail)}
+                className="bg-secondary/10 text-secondary hover:bg-secondary/20 px-4 py-2 rounded-xl text-xs font-bold transition-all active:scale-95 shadow-sm cursor-pointer flex items-center gap-1.5"
+              >
+                <span className="material-symbols-outlined text-[16px]">print</span>
+                Print Payslip (Studio)
+              </button>
+              <button 
                 onClick={() => setSelectedRecordForDetail(null)}
                 className="bg-primary text-on-primary px-5 py-2 rounded-xl text-xs font-bold hover:bg-primary-container transition-all active:scale-95 shadow-sm cursor-pointer"
               >
@@ -1144,6 +1205,16 @@ export default function HRSalaryGeneration({ isMobile }) {
 
           </div>
         </div>
+      )}
+
+      {studioRecord && payslipPrintData && (
+        <UniversalPrintStudioModal
+          isOpen={Boolean(studioRecord)}
+          onClose={() => setStudioRecord(null)}
+          documentType="hr_payslip"
+          documentData={payslipPrintData}
+          documentTitle={`Payslip - ${studioRecord.employeeName || 'Staff'}`}
+        />
       )}
 
     </div>
