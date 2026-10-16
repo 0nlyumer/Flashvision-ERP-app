@@ -14,6 +14,12 @@ import { applyTheme } from '../utils/theme';
 import { supabase } from '../utils/supabaseClient';
 import { getInitialFGConfig, saveFGConfig } from '../utils/fgCombinationUtils';
 import { DEFAULT_CHART_OF_ACCOUNTS } from '../utils/financeEngine';
+import hrEmployeeSeed from '../data/hrEmployeeSeed.json';
+
+export const DEFAULT_HR_DIVISIONS = [
+  { id: 'div_aj_synthetic', name: 'AJ Synthetic', code: 'AJS', description: 'AJ Synthetic Leather & footware Industries Pvt. Limited' },
+  { id: 'div_aaa', name: 'AAA', code: 'AAA', description: 'AAA Division' }
+];
 
 const AppContext = createContext();
 const BUILD_VERSION = '20260715_v5';
@@ -209,6 +215,7 @@ const seedStateIfEmpty = (stateObj) => {
     'chartOfAccounts',
     'vouchers',
     'chats',
+    'hr_divisions',
     'hr_employees_list',
     'hr_uploaded_attendance',
     'hr_overtime_requests',
@@ -228,6 +235,61 @@ const seedStateIfEmpty = (stateObj) => {
       seeded[key] = [];
     }
   });
+
+  if (!seeded.hr_divisions || seeded.hr_divisions.length === 0) {
+    try {
+      const savedDivs = localStorage.getItem('hr_divisions_config');
+      seeded.hr_divisions = savedDivs ? JSON.parse(savedDivs) : DEFAULT_HR_DIVISIONS;
+    } catch (e) {
+      seeded.hr_divisions = DEFAULT_HR_DIVISIONS;
+    }
+  }
+
+  // Ensure HR departments configuration: all existing under AJ Synthetic, AAA under AAA division with hrOnly: true
+  try {
+    const savedDepts = localStorage.getItem('hr_departments_config');
+    let deptsList = savedDepts ? JSON.parse(savedDepts) : [];
+    let deptsChanged = false;
+
+    // Ensure all existing departments have division assigned
+    deptsList = deptsList.map(d => {
+      if (!d.division) {
+        deptsChanged = true;
+        return { ...d, division: d.name === 'AAA' ? 'AAA' : 'AJ Synthetic' };
+      }
+      return d;
+    });
+
+    // Ensure AAA department exists under AAA division with hrOnly: true
+    const hasAAA = deptsList.some(d => d.name === 'AAA');
+    if (!hasAAA) {
+      deptsList.push({
+        id: 'dept_aaa',
+        name: 'AAA',
+        division: 'AAA',
+        tagline: 'AAA Division',
+        hrOnly: true,
+        managers: [],
+        operators: [],
+        incharges: [],
+        sections: [],
+        subSections: []
+      });
+      deptsChanged = true;
+    } else {
+      const aaaIdx = deptsList.findIndex(d => d.name === 'AAA');
+      if (aaaIdx > -1 && (!deptsList[aaaIdx].hrOnly || deptsList[aaaIdx].division !== 'AAA')) {
+        deptsList[aaaIdx] = { ...deptsList[aaaIdx], hrOnly: true, division: 'AAA' };
+        deptsChanged = true;
+      }
+    }
+
+    if (deptsChanged || !savedDepts) {
+      localStorage.setItem('hr_departments_config', JSON.stringify(deptsList));
+    }
+  } catch (e) {
+    console.warn("Could not ensure HR departments config:", e);
+  }
 
   if (!seeded.rawMaterialPhases || seeded.rawMaterialPhases.length === 0) {
     seeded.rawMaterialPhases = initialMockState.rawMaterialPhases || [];
@@ -276,7 +338,109 @@ const seedStateIfEmpty = (stateObj) => {
     });
   }
 
-  return reconcileHRApprovalsAndLedgers(seeded);
+  const seededWithEmployees = mergeHREmployeeSeed(seeded);
+  return reconcileHRApprovalsAndLedgers(seededWithEmployees);
+};
+
+export const mergeHREmployeeSeed = (stateObj) => {
+  if (!stateObj) return stateObj;
+
+  const currentVersion = 'round_8_v1';
+  let storedVersion = null;
+  try {
+    storedVersion = localStorage.getItem('hr_employee_seed_version');
+  } catch (e) {}
+
+  let employeesList = [...(stateObj.hr_employees_list || [])];
+
+  if (storedVersion === currentVersion && employeesList.length > 0) {
+    return stateObj;
+  }
+
+  let addedCount = 0;
+  let skippedAsDuplicateCount = 0;
+  let blankIdCount = 0;
+
+  const extractNum = (idStr) => {
+    if (!idStr) return null;
+    const m = String(idStr).match(/\d+/);
+    return m ? parseInt(m[0], 10) : null;
+  };
+
+  const usedIds = new Set(employeesList.map(e => e.id).filter(Boolean));
+
+  (hrEmployeeSeed || []).forEach(seed => {
+    const seedNum = extractNum(seed.id);
+    const seedNameNorm = (seed.name || '').trim().toLowerCase();
+
+    // Matching against existing entries: by EMP ID NUMERIC part or trimmed case-insensitive name
+    const matchIdx = employeesList.findIndex(existing => {
+      const exNameNorm = (existing.name || '').trim().toLowerCase();
+      if (exNameNorm && seedNameNorm && exNameNorm === seedNameNorm) {
+        return true;
+      }
+      const exNum = extractNum(existing.id);
+      if (seedNum !== null && exNum !== null && seedNum === exNum) {
+        if (!exNameNorm || !seedNameNorm || exNameNorm === seedNameNorm) {
+          return true;
+        }
+      }
+      return false;
+    });
+
+    if (matchIdx !== -1) {
+      skippedAsDuplicateCount++;
+      const existing = employeesList[matchIdx];
+      employeesList[matchIdx] = {
+        ...existing,
+        sheetId: existing.sheetId || seed.sheetId,
+        division: seed.division,
+        // employees in the AAA division -> 'AAA' department; everyone else KEEPS their existing department
+        department: seed.division === 'AAA' ? 'AAA' : (existing.department || seed.department),
+        designation: existing.designation || seed.designation,
+        basicSalary: (existing.basicSalary !== undefined && existing.basicSalary !== null && existing.basicSalary !== '') 
+          ? existing.basicSalary 
+          : seed.basicSalary,
+        salary: (existing.salary !== undefined && existing.salary !== null && existing.salary !== '') 
+          ? existing.salary 
+          : seed.basicSalary,
+        shift: existing.shift || seed.shift,
+        dutyHours: existing.dutyHours || seed.dutyHours,
+        dutyHoursAdjustable: existing.dutyHoursAdjustable !== undefined ? existing.dutyHoursAdjustable : seed.dutyHoursAdjustable,
+        onboarding: existing.onboarding || seed.onboarding,
+        dateOfJoining: existing.dateOfJoining || seed.dateOfJoining,
+        status: existing.status || seed.status
+      };
+    } else {
+      let finalId = seed.id;
+      if (finalId && usedIds.has(finalId)) {
+        finalId = '';
+      }
+      if (finalId) {
+        usedIds.add(finalId);
+      } else {
+        blankIdCount++;
+      }
+      addedCount++;
+      employeesList.push({
+        ...seed,
+        id: finalId,
+        avatar: `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(seed.name)}`
+      });
+    }
+  });
+
+  try {
+    localStorage.setItem('hr_employee_seed_version', currentVersion);
+    localStorage.setItem('hr_employees_list', JSON.stringify(employeesList));
+  } catch (e) {}
+
+  console.log(`[HR Import] Added: ${addedCount}, Skipped as duplicate: ${skippedAsDuplicateCount}, Blank ID: ${blankIdCount}`);
+
+  return {
+    ...stateObj,
+    hr_employees_list: employeesList
+  };
 };
 
 export const reconcileHRApprovalsAndLedgers = (stateObj) => {
@@ -2020,6 +2184,9 @@ export const AppProvider = ({ children }) => {
     
     // Write key items to separate localStorage keys for backwards compatibility/sync!
     isLocalStorageWriting.current = true;
+    if (state.hr_divisions) {
+      safeLocalStorageSet('hr_divisions_config', JSON.stringify(state.hr_divisions));
+    }
     if (state.hr_employees_list) {
       safeLocalStorageSet('hr_employees_list', JSON.stringify(state.hr_employees_list));
       // Dispatch storage event to trigger updates in the same window context

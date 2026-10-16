@@ -47,10 +47,10 @@ export default function HRSettings({ isMobile }) {
 
       let hasChanges = false;
       
-      // 1. Remove departments from hrDepts that no longer exist in globalDepts
+      // 1. Remove departments from hrDepts that no longer exist in globalDepts (skip hrOnly departments like AAA)
       const initialLength = hrDepts.length;
       hrDepts = hrDepts.filter(hrD => 
-        globalDepts.some(gD => gD.id === hrD.id || (gD.name || gD.label) === hrD.name)
+        hrD.hrOnly || globalDepts.some(gD => gD.id === hrD.id || (gD.name || gD.label) === hrD.name)
       );
       if (hrDepts.length !== initialLength) {
         hasChanges = true;
@@ -68,10 +68,15 @@ export default function HRSettings({ isMobile }) {
             hrDepts[existingIdx].id = gD.id;
             hasChanges = true;
           }
+          if (!hrDepts[existingIdx].division) {
+            hrDepts[existingIdx].division = hrDepts[existingIdx].name === 'AAA' ? 'AAA' : 'AJ Synthetic';
+            hasChanges = true;
+          }
         } else {
           hrDepts.push({
             id: gD.id,
             name: gName,
+            division: 'AJ Synthetic',
             tagline: gD.tagline || 'Custom Division',
             managers: [],
             operators: [],
@@ -82,6 +87,30 @@ export default function HRSettings({ isMobile }) {
           hasChanges = true;
         }
       });
+
+      // 3. Ensure AAA department exists under AAA division with hrOnly: true
+      const hasAAA = hrDepts.some(d => d.name === 'AAA');
+      if (!hasAAA) {
+        hrDepts.push({
+          id: 'dept_aaa',
+          name: 'AAA',
+          division: 'AAA',
+          tagline: 'AAA Division',
+          hrOnly: true,
+          managers: [],
+          operators: [],
+          incharges: [],
+          sections: [],
+          subSections: []
+        });
+        hasChanges = true;
+      } else {
+        const aaaIdx = hrDepts.findIndex(d => d.name === 'AAA');
+        if (aaaIdx > -1 && (!hrDepts[aaaIdx].hrOnly || hrDepts[aaaIdx].division !== 'AAA')) {
+          hrDepts[aaaIdx] = { ...hrDepts[aaaIdx], hrOnly: true, division: 'AAA' };
+          hasChanges = true;
+        }
+      }
 
       if (hasChanges) {
         localStorage.setItem('hr_departments_config', JSON.stringify(hrDepts));
@@ -140,6 +169,8 @@ export default function HRSettings({ isMobile }) {
     id: null,
     name: '',
     tagline: '',
+    division: 'AJ Synthetic',
+    hrOnly: false,
     managers: [], // Array of employee IDs
     operators: [], // Array of employee IDs
     incharges: [], // Array of employee IDs
@@ -147,10 +178,28 @@ export default function HRSettings({ isMobile }) {
   });
 
   const employees = state?.hr_employees_list || [];
+  const divisions = state?.hr_divisions || [
+    { id: 'div_aj_synthetic', name: 'AJ Synthetic', code: 'AJS', description: 'AJ Synthetic Leather & footware Industries Pvt. Limited' },
+    { id: 'div_aaa', name: 'AAA', code: 'AAA', description: 'AAA Division' }
+  ];
 
-  // Category list
+  // Division filter for departments view
+  const [selectedDivisionFilter, setSelectedDivisionFilter] = useState('ALL');
+
+  // Duty Hours & Shifts state
+  const [dutyHoursSearch, setDutyHoursSearch] = useState('');
+  const [dutyHoursDivisionFilter, setDutyHoursDivisionFilter] = useState('ALL');
+  const [dutyHoursDeptFilter, setDutyHoursDeptFilter] = useState('ALL');
+  const [editingDutyHoursId, setEditingDutyHoursId] = useState(null);
+  const [dutyHoursVal, setDutyHoursVal] = useState(8);
+  const [dutyShiftVal, setDutyShiftVal] = useState('GENERAL SHIFT');
+  const [dutySuccessToast, setDutySuccessToast] = useState('');
+
+  // Category list with Divisions above Department
   const categories = [
+    { id: 'divisions', label: 'Divisions', icon: 'corporate_fare' },
     { id: 'departments', label: 'Departments', icon: 'domain' },
+    { id: 'duty_hours', label: 'Duty Hours & Shifts', icon: 'schedule' },
     { id: 'payroll_mapping', label: 'Payroll Account Mapping', icon: 'account_balance' },
     { id: 'salary_allowance_config', label: 'Salary & Allowance Configuration', icon: 'payments' },
     { id: 'subsections', label: 'Sub-sections', icon: 'account_tree' },
@@ -174,6 +223,8 @@ export default function HRSettings({ isMobile }) {
       id: null,
       name: '',
       tagline: '',
+      division: 'AJ Synthetic',
+      hrOnly: false,
       managers: [],
       operators: [],
       incharges: [],
@@ -188,6 +239,8 @@ export default function HRSettings({ isMobile }) {
       id: dept.id,
       name: dept.name,
       tagline: dept.tagline || '',
+      division: dept.division || (dept.name === 'AAA' ? 'AAA' : 'AJ Synthetic'),
+      hrOnly: dept.hrOnly || false,
       managers: dept.managers || [],
       operators: dept.operators || [],
       incharges: dept.incharges || [],
@@ -210,9 +263,14 @@ export default function HRSettings({ isMobile }) {
     const subList = activeDept.sections ? activeDept.sections.map(s => s.name) : [];
     const newId = departments.length ? Math.max(...departments.map(d => d.id)) + 1 : 1;
 
+    const divName = activeDept.division || (activeDept.name === 'AAA' ? 'AAA' : 'AJ Synthetic');
+    const isHrOnly = divName === 'AAA' || activeDept.name === 'AAA' || !!activeDept.hrOnly;
+
     const payload = {
       id: activeDept.id || newId,
       name: activeDept.name,
+      division: divName,
+      hrOnly: isHrOnly,
       tagline: activeDept.tagline || 'Custom Division',
       managers: activeDept.managers || [],
       operators: activeDept.operators || [],
@@ -256,10 +314,34 @@ export default function HRSettings({ isMobile }) {
   };
 
   // Filtered departments list
-  const filteredDepts = departments.filter(d => 
-    d.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (d.tagline && d.tagline.toLowerCase().includes(searchQuery.toLowerCase()))
-  );
+  const filteredDepts = departments.filter(d => {
+    const matchesSearch = d.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (d.tagline && d.tagline.toLowerCase().includes(searchQuery.toLowerCase()));
+    const divOfDept = d.division || (d.name === 'AAA' ? 'AAA' : 'AJ Synthetic');
+    const matchesDiv = selectedDivisionFilter === 'ALL' || divOfDept === selectedDivisionFilter;
+    return matchesSearch && matchesDiv;
+  });
+
+  const handleSaveDutyHours = (empId, newHours, newShift) => {
+    const updatedEmployees = employees.map(emp => {
+      const match = emp.id === empId || (emp.sheetId && emp.sheetId === empId);
+      if (match) {
+        return {
+          ...emp,
+          dutyHours: Number(newHours) || 8,
+          shift: newShift || emp.shift || 'GENERAL SHIFT'
+        };
+      }
+      return emp;
+    });
+    setCollection('hr_employees_list', updatedEmployees);
+    try {
+      localStorage.setItem('hr_employees_list', JSON.stringify(updatedEmployees));
+    } catch (e) {}
+    setDutySuccessToast(`Saved duty hours config (${newHours}h / ${newShift})`);
+    setTimeout(() => setDutySuccessToast(''), 3000);
+    setEditingDutyHoursId(null);
+  };
 
   if (isMobile) {
     return renderMobileView();
@@ -282,6 +364,36 @@ export default function HRSettings({ isMobile }) {
             </div>
             
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+              {/* Divisions App-Style Card */}
+              <div 
+                onClick={() => {
+                  setActiveCategory('divisions');
+                  setViewMode('departments');
+                }}
+                className="group relative bg-gradient-to-br from-surface-container-lowest via-surface-container-lowest to-indigo-500/5 border border-outline-variant/15 hover:border-indigo-500/30 rounded-3xl p-6 shadow-sm hover:shadow-xl hover:shadow-indigo-500/5 hover:-translate-y-1.5 transition-all duration-300 ease-out cursor-pointer flex flex-col justify-between min-h-[190px] overflow-hidden"
+              >
+                <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/5 rounded-full blur-3xl group-hover:bg-indigo-500/10 transition-all duration-300 animate-pulse"></div>
+                
+                <div className="flex items-start justify-between relative z-10">
+                  <div className="w-14 h-14 rounded-2xl bg-indigo-500/10 text-indigo-600 flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
+                    <span className="material-symbols-outlined text-[32px] icon-fill">corporate_fare</span>
+                  </div>
+                  <span className="material-symbols-outlined text-outline-variant group-hover:text-indigo-600 transition-colors text-[20px] font-bold">arrow_forward</span>
+                </div>
+                
+                <div className="mt-6 relative z-10">
+                  <h3 className="font-headline text-md font-black text-on-surface leading-tight group-hover:text-indigo-600 transition-colors">Divisions</h3>
+                  <p className="font-body text-[11px] text-on-surface-variant mt-1.5 font-medium leading-relaxed">
+                    Corporate & entity structure: AJ Synthetic & AAA divisions for payroll segmentation.
+                  </p>
+                </div>
+                
+                <div className="mt-4 pt-4 border-t border-outline-variant/10 flex items-center justify-between relative z-10 text-[10px] uppercase tracking-wider font-bold">
+                  <span className="text-indigo-600 font-body">2 Divisions Configured</span>
+                  <span className="text-on-surface-variant font-body">HR-Scoped</span>
+                </div>
+              </div>
+
               {/* Departments App-Style Card */}
               <div 
                 onClick={() => {
@@ -308,8 +420,38 @@ export default function HRSettings({ isMobile }) {
                 </div>
                 
                 <div className="mt-4 pt-4 border-t border-outline-variant/10 flex items-center justify-between relative z-10 text-[10px] uppercase tracking-wider font-bold">
-                  <span className="text-primary font-body">{departments.length} Active Divisions</span>
-                  <span className="text-on-surface-variant font-body">{departments.reduce((sum, d) => sum + d.headcount, 0)} Headcount</span>
+                  <span className="text-primary font-body">{departments.length} Departments</span>
+                  <span className="text-on-surface-variant font-body">{employees.length} Headcount</span>
+                </div>
+              </div>
+
+              {/* Duty Hours & Shifts App-Style Card */}
+              <div 
+                onClick={() => {
+                  setActiveCategory('duty_hours');
+                  setViewMode('departments');
+                }}
+                className="group relative bg-gradient-to-br from-surface-container-lowest via-surface-container-lowest to-emerald-500/5 border border-outline-variant/15 hover:border-emerald-500/30 rounded-3xl p-6 shadow-sm hover:shadow-xl hover:shadow-emerald-500/5 hover:-translate-y-1.5 transition-all duration-300 ease-out cursor-pointer flex flex-col justify-between min-h-[190px] overflow-hidden"
+              >
+                <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/5 rounded-full blur-3xl group-hover:bg-emerald-500/10 transition-all duration-300 animate-pulse"></div>
+                
+                <div className="flex items-start justify-between relative z-10">
+                  <div className="w-14 h-14 rounded-2xl bg-emerald-500/10 text-emerald-600 flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
+                    <span className="material-symbols-outlined text-[32px] icon-fill">schedule</span>
+                  </div>
+                  <span className="material-symbols-outlined text-outline-variant group-hover:text-emerald-600 transition-colors text-[20px] font-bold">arrow_forward</span>
+                </div>
+                
+                <div className="mt-6 relative z-10">
+                  <h3 className="font-headline text-md font-black text-on-surface leading-tight group-hover:text-emerald-600 transition-colors">Duty Hours & Shifts</h3>
+                  <p className="font-body text-[11px] text-on-surface-variant mt-1.5 font-medium leading-relaxed">
+                    Per-employee shift hours (8h standard, 240h monthly divisor) and shift schedules.
+                  </p>
+                </div>
+                
+                <div className="mt-4 pt-4 border-t border-outline-variant/10 flex items-center justify-between relative z-10 text-[10px] uppercase tracking-wider font-bold">
+                  <span className="text-emerald-600 font-body">Hourly = Basic / 240</span>
+                  <span className="text-on-surface-variant font-body">Configurable</span>
                 </div>
               </div>
 
@@ -393,7 +535,17 @@ export default function HRSettings({ isMobile }) {
                   </h2>
                   {activeCategory === 'departments' && (
                     <span className="px-2.5 py-0.5 bg-primary-fixed/20 text-primary text-[10px] font-bold rounded-full">
-                      {departments.length} Active
+                      {filteredDepts.length} Active
+                    </span>
+                  )}
+                  {activeCategory === 'divisions' && (
+                    <span className="px-2.5 py-0.5 bg-indigo-500/15 text-indigo-600 text-[10px] font-bold rounded-full">
+                      {divisions.length} Divisions
+                    </span>
+                  )}
+                  {activeCategory === 'duty_hours' && (
+                    <span className="px-2.5 py-0.5 bg-emerald-500/15 text-emerald-600 text-[10px] font-bold rounded-full">
+                      {employees.length} Employees
                     </span>
                   )}
                 </div>
@@ -407,7 +559,7 @@ export default function HRSettings({ isMobile }) {
                       type="text"
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
-                      placeholder="Search divisions..."
+                      placeholder="Search departments..."
                       className="w-full bg-surface-container-low border border-outline-variant/20 rounded-xl pl-9 pr-4 py-1.5 text-xs text-on-surface focus:bg-surface-container-lowest focus:border-primary/50 focus:ring-0 transition-all placeholder:text-outline/75"
                     />
                   </div>
@@ -417,7 +569,9 @@ export default function HRSettings({ isMobile }) {
 
             {/* Canvas Scroll Area */}
             <div className={`flex-1 flex flex-col h-full min-h-0 overflow-y-auto ${activeCategory === 'payroll_mapping' ? 'p-4' : 'p-8'} custom-scrollbar w-full`}>
+              {activeCategory === 'divisions' && renderDesktopDivisions()}
               {activeCategory === 'departments' && renderDesktopDepartments()}
+              {activeCategory === 'duty_hours' && renderDesktopDutyHours()}
               {activeCategory === 'payroll_mapping' && <PayrollAccountMapping isMobile={isMobile} onBack={() => setViewMode('grid')} />}
               {activeCategory === 'salary_allowance_config' && <SalaryAllowanceConfig isMobile={isMobile} onBack={() => setViewMode('grid')} />}
               {activeCategory === 'subsections' && renderDesktopSubsections()}
@@ -441,104 +595,529 @@ export default function HRSettings({ isMobile }) {
   // DESKTOP CATEGORY RENDERERS
   // ==========================================
   
-  function renderDesktopDepartments() {
+  function renderDesktopDivisions() {
+    const ajEmployees = employees.filter(e => (e.division || 'AJ Synthetic').toLowerCase().includes('aj') || !e.division);
+    const aaaEmployees = employees.filter(e => (e.division || '').toUpperCase() === 'AAA');
+    const ajDepts = departments.filter(d => (d.division || (d.name === 'AAA' ? 'AAA' : 'AJ Synthetic')) === 'AJ Synthetic');
+    const aaaDepts = departments.filter(d => (d.division || (d.name === 'AAA' ? 'AAA' : 'AJ Synthetic')) === 'AAA');
+
     return (
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 animate-fade-in pb-8">
-        {filteredDepts.length === 0 ? (
-          <div className="col-span-full text-center py-12 text-on-surface-variant font-body text-sm">
-            No departments found matching your search.
+      <div className="flex flex-col gap-6 animate-fade-in pb-8">
+        {/* Banner Notice */}
+        <div className="p-5 bg-gradient-to-r from-primary/10 via-primary/5 to-transparent border border-primary/20 rounded-2xl flex items-start gap-4">
+          <div className="w-10 h-10 rounded-xl bg-primary text-on-primary flex items-center justify-center shrink-0 shadow-sm">
+            <span className="material-symbols-outlined text-[22px]">corporate_fare</span>
           </div>
-        ) : (
-          filteredDepts.map(dept => {
-            const deptEmployees = getActiveEmployees().filter(e => 
-              e.department && e.department.toLowerCase() === dept.name.toLowerCase()
-            );
-            const dynamicHeadcount = deptEmployees.length;
-            
-            const managerNames = (dept.managers || [])
-              .map(id => employees.find(e => e.id === id)?.name || id)
-              .join(', ') || 'Not Assigned';
-            
-            const operatorCount = dept.operators?.length || 0;
-            const inchargeCount = dept.incharges?.length || 0;
-            const sectionsList = dept.sections || [];
+          <div className="flex-1">
+            <h3 className="font-headline text-sm font-bold text-on-surface">HR Enterprise Divisions</h3>
+            <p className="font-body text-xs text-on-surface-variant mt-1 leading-relaxed">
+              Divisions sit above departments as the primary organizational & payroll boundary. 
+              The two designated divisions are <strong className="text-on-surface">AJ Synthetic</strong> (encompassing primary manufacturing departments) and <strong className="text-on-surface">AAA</strong> (HR-scoped standalone unit). 
+              Divisions are strictly HR/payroll scoped and preserve global manufacturing pipeline integrity.
+            </p>
+          </div>
+        </div>
 
-            return (
-              <div 
-                key={dept.id} 
-                className="bg-surface-container-lowest rounded-2xl p-5 shadow-sm border border-outline-variant/10 hover:shadow-md hover:border-primary/20 transition-all group relative overflow-hidden flex flex-col h-auto min-h-[220px] justify-between"
-              >
-                <div className="absolute top-0 left-0 right-0 h-[3px] bg-primary-fixed group-hover:bg-primary transition-colors"></div>
-                
-                <div className="flex justify-between items-start mb-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-primary-fixed/20 flex items-center justify-center text-primary shrink-0">
-                      <span className="material-symbols-outlined text-[20px]">
-                        {dept.name.includes('Eng') ? 'developer_mode' : 
-                         dept.name.includes('Log') ? 'local_shipping' : 
-                         dept.name.includes('Prod') ? 'precision_manufacturing' : 'domain'}
-                      </span>
+        {/* Division Cards */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Card 1: AJ Synthetic */}
+          <div className="bg-surface-container-lowest rounded-3xl p-6 border border-outline-variant/15 shadow-sm hover:shadow-md transition-all flex flex-col justify-between relative overflow-hidden">
+            <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-primary to-primary-fixed"></div>
+            <div>
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-2xl bg-primary/10 text-primary flex items-center justify-center font-black text-lg">
+                    AJS
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h2 className="font-headline text-lg font-black text-on-surface">AJ Synthetic</h2>
+                      <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-primary-fixed/30 text-primary">Primary</span>
                     </div>
-                    <div>
-                      <h3 className="font-headline text-sm font-bold text-on-surface leading-tight">{dept.name}</h3>
-                      <p className="font-body text-[10px] text-on-surface-variant mt-0.5">{dept.tagline}</p>
-                    </div>
-                  </div>
-                  
-                  <div className="flex gap-1 shrink-0">
-                    <button 
-                      onClick={() => handleOpenEditModal(dept)}
-                      className="w-7 h-7 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-surface-container hover:text-primary transition-colors cursor-pointer"
-                    >
-                      <span className="material-symbols-outlined text-[15px]">edit</span>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Managers Row */}
-                <div className="mb-3 px-3 py-2 bg-surface rounded-xl border border-outline-variant/10 text-xs">
-                  <span className="font-body text-[8px] text-on-surface-variant uppercase tracking-wider font-bold block mb-0.5">Managers</span>
-                  <span className="font-sans font-bold text-on-surface line-clamp-1">{managerNames}</span>
-                </div>
-
-                {/* Stats Row */}
-                <div className="grid grid-cols-4 gap-2 mb-3 text-center p-2.5 bg-surface-container-low rounded-xl border border-outline-variant/5">
-                  <div className="flex flex-col">
-                    <span className="font-body text-[8px] text-on-surface-variant uppercase tracking-wider font-bold">Incharges</span>
-                    <span className="font-headline text-xs font-black text-on-surface mt-0.5">{inchargeCount}</span>
-                  </div>
-                  <div className="flex flex-col">
-                    <span className="font-body text-[8px] text-on-surface-variant uppercase tracking-wider font-bold">Operators</span>
-                    <span className="font-headline text-xs font-black text-on-surface mt-0.5">{operatorCount}</span>
-                  </div>
-                  <div className="flex flex-col">
-                    <span className="font-body text-[8px] text-on-surface-variant uppercase tracking-wider font-bold">Sections</span>
-                    <span className="font-headline text-xs font-black text-on-surface mt-0.5">{sectionsList.length}</span>
-                  </div>
-                  <div className="flex flex-col">
-                    <span className="font-body text-[8px] text-on-surface-variant uppercase tracking-wider font-bold">Headcount</span>
-                    <span className="font-headline text-xs font-black text-primary mt-0.5">{dynamicHeadcount}</span>
-                  </div>
-                </div>
-
-                {/* Sections Chips list */}
-                <div className="mt-1">
-                  <div className="flex flex-wrap gap-1.5 max-h-[50px] overflow-hidden">
-                    {sectionsList.length === 0 ? (
-                      <span className="text-[9px] text-outline/50 italic">No sections defined</span>
-                    ) : (
-                      sectionsList.map((sec, idx) => (
-                        <span key={sec.id || idx} className="px-2 py-0.5 bg-surface border border-outline-variant/10 text-on-surface-variant text-[9px] font-semibold rounded-md whitespace-nowrap">
-                          {sec.name}
-                        </span>
-                      ))
-                    )}
+                    <p className="font-body text-xs text-on-surface-variant">AJ Synthetic Leather & Footwear Industries Pvt. Limited</p>
                   </div>
                 </div>
               </div>
-            );
-          })
+
+              {/* Stats */}
+              <div className="grid grid-cols-3 gap-3 my-4 p-3 bg-surface-container-low rounded-2xl border border-outline-variant/10 text-center">
+                <div>
+                  <span className="font-body text-[9px] text-on-surface-variant uppercase font-bold block">Headcount</span>
+                  <span className="font-headline text-base font-black text-primary mt-0.5">{ajEmployees.length}</span>
+                </div>
+                <div>
+                  <span className="font-body text-[9px] text-on-surface-variant uppercase font-bold block">Departments</span>
+                  <span className="font-headline text-base font-black text-on-surface mt-0.5">{ajDepts.length}</span>
+                </div>
+                <div>
+                  <span className="font-body text-[9px] text-on-surface-variant uppercase font-bold block">Active Roster</span>
+                  <span className="font-headline text-base font-black text-emerald-600 mt-0.5">
+                    {ajEmployees.filter(e => (e.status || '').toUpperCase() === 'ACTIVE').length}
+                  </span>
+                </div>
+              </div>
+
+              {/* Sub-departments listing */}
+              <div className="mb-4">
+                <span className="font-body text-[10px] text-on-surface-variant font-bold uppercase tracking-wider block mb-2">Attached Departments:</span>
+                <div className="flex flex-wrap gap-2">
+                  {ajDepts.map(d => (
+                    <span key={d.id} className="px-2.5 py-1 bg-surface-container rounded-lg text-xs font-semibold text-on-surface border border-outline-variant/10">
+                      {d.name}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-4 border-t border-outline-variant/10 flex justify-end">
+              <button
+                onClick={() => {
+                  setSelectedDivisionFilter('AJ Synthetic');
+                  setActiveCategory('departments');
+                }}
+                className="flex items-center gap-1.5 px-4 py-2 bg-primary/10 hover:bg-primary/20 text-primary font-bold text-xs rounded-xl cursor-pointer transition-colors"
+              >
+                <span>Manage AJ Synthetic Departments</span>
+                <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Card 2: AAA */}
+          <div className="bg-surface-container-lowest rounded-3xl p-6 border border-outline-variant/15 shadow-sm hover:shadow-md transition-all flex flex-col justify-between relative overflow-hidden">
+            <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-secondary to-secondary-fixed"></div>
+            <div>
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-2xl bg-secondary/10 text-secondary flex items-center justify-center font-black text-lg">
+                    AAA
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h2 className="font-headline text-lg font-black text-on-surface">AAA</h2>
+                      <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-secondary-fixed/30 text-secondary">Division</span>
+                      <span className="px-1.5 py-0.5 rounded text-[8px] font-bold bg-amber-500/15 text-amber-700 dark:text-amber-300">HR Scoped</span>
+                    </div>
+                    <p className="font-body text-xs text-on-surface-variant">AAA Division Operations & Staff</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Stats */}
+              <div className="grid grid-cols-3 gap-3 my-4 p-3 bg-surface-container-low rounded-2xl border border-outline-variant/10 text-center">
+                <div>
+                  <span className="font-body text-[9px] text-on-surface-variant uppercase font-bold block">Headcount</span>
+                  <span className="font-headline text-base font-black text-secondary mt-0.5">{aaaEmployees.length}</span>
+                </div>
+                <div>
+                  <span className="font-body text-[9px] text-on-surface-variant uppercase font-bold block">Departments</span>
+                  <span className="font-headline text-base font-black text-on-surface mt-0.5">{aaaDepts.length}</span>
+                </div>
+                <div>
+                  <span className="font-body text-[9px] text-on-surface-variant uppercase font-bold block">Active Roster</span>
+                  <span className="font-headline text-base font-black text-emerald-600 mt-0.5">
+                    {aaaEmployees.filter(e => (e.status || '').toUpperCase() === 'ACTIVE').length}
+                  </span>
+                </div>
+              </div>
+
+              {/* Sub-departments listing */}
+              <div className="mb-4">
+                <span className="font-body text-[10px] text-on-surface-variant font-bold uppercase tracking-wider block mb-2">Attached Departments:</span>
+                <div className="flex flex-wrap gap-2">
+                  {aaaDepts.map(d => (
+                    <span key={d.id} className="px-2.5 py-1 bg-surface-container rounded-lg text-xs font-semibold text-on-surface border border-outline-variant/10 flex items-center gap-1.5">
+                      {d.name}
+                      <span className="text-[9px] text-amber-600 font-bold">(hrOnly)</span>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-4 border-t border-outline-variant/10 flex justify-end">
+              <button
+                onClick={() => {
+                  setSelectedDivisionFilter('AAA');
+                  setActiveCategory('departments');
+                }}
+                className="flex items-center gap-1.5 px-4 py-2 bg-secondary/10 hover:bg-secondary/20 text-secondary font-bold text-xs rounded-xl cursor-pointer transition-colors"
+              >
+                <span>Manage AAA Departments</span>
+                <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  function renderDesktopDepartments() {
+    return (
+      <div className="flex flex-col gap-6 animate-fade-in pb-8">
+        {/* Division Filter Bar & Add Department Button */}
+        <div className="flex flex-wrap items-center justify-between gap-4 p-4 bg-surface-container-lowest rounded-2xl border border-outline-variant/10 shadow-sm">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold text-on-surface-variant uppercase tracking-wider mr-2">Filter Division:</span>
+            {['ALL', 'AJ Synthetic', 'AAA'].map(divKey => (
+              <button
+                key={divKey}
+                onClick={() => setSelectedDivisionFilter(divKey)}
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  selectedDivisionFilter === divKey
+                    ? 'bg-primary text-on-primary shadow-sm'
+                    : 'bg-surface-container hover:bg-surface-container-high text-on-surface-variant'
+                }`}
+              >
+                {divKey === 'ALL' ? 'All Divisions' : divKey}
+              </button>
+            ))}
+          </div>
+          <button
+            onClick={handleOpenAddModal}
+            className="flex items-center gap-2 px-4 py-2 bg-primary text-on-primary rounded-xl font-bold text-xs shadow-sm hover:shadow transition-all cursor-pointer"
+          >
+            <span className="material-symbols-outlined text-[16px]">add</span>
+            Add Department
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+          {filteredDepts.length === 0 ? (
+            <div className="col-span-full text-center py-12 text-on-surface-variant font-body text-sm bg-surface-container-lowest rounded-2xl border border-outline-variant/10">
+              No departments found matching your search and division filter.
+            </div>
+          ) : (
+            filteredDepts.map(dept => {
+              const deptEmployees = getActiveEmployees().filter(e => 
+                e.department && e.department.toLowerCase() === dept.name.toLowerCase()
+              );
+              const dynamicHeadcount = deptEmployees.length;
+              
+              const managerNames = (dept.managers || [])
+                .map(id => employees.find(e => e.id === id)?.name || id)
+                .join(', ') || 'Not Assigned';
+              
+              const operatorCount = dept.operators?.length || 0;
+              const inchargeCount = dept.incharges?.length || 0;
+              const sectionsList = dept.sections || [];
+              const deptDiv = dept.division || (dept.name === 'AAA' ? 'AAA' : 'AJ Synthetic');
+
+              return (
+                <div 
+                  key={dept.id} 
+                  className="bg-surface-container-lowest rounded-2xl p-5 shadow-sm border border-outline-variant/10 hover:shadow-md hover:border-primary/20 transition-all group relative overflow-hidden flex flex-col h-auto min-h-[220px] justify-between"
+                >
+                  <div className="absolute top-0 left-0 right-0 h-[3px] bg-primary-fixed group-hover:bg-primary transition-colors"></div>
+                  
+                  <div className="flex justify-between items-start mb-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-primary-fixed/20 flex items-center justify-center text-primary shrink-0">
+                        <span className="material-symbols-outlined text-[20px]">
+                          {dept.name.includes('Eng') ? 'developer_mode' : 
+                           dept.name.includes('Log') ? 'local_shipping' : 
+                           dept.name.includes('Prod') ? 'precision_manufacturing' : 'domain'}
+                        </span>
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-headline text-sm font-bold text-on-surface leading-tight">{dept.name}</h3>
+                          <span className={`px-2 py-0.5 rounded-md text-[9px] font-extrabold uppercase ${
+                            deptDiv === 'AAA'
+                              ? 'bg-secondary/15 text-secondary border border-secondary/20'
+                              : 'bg-primary/15 text-primary border border-primary/20'
+                          }`}>
+                            {deptDiv}
+                          </span>
+                          {dept.hrOnly && (
+                            <span className="px-1.5 py-0.5 rounded text-[8px] font-bold bg-amber-500/15 text-amber-700 dark:text-amber-300">
+                              HR-Only
+                            </span>
+                          )}
+                        </div>
+                        <p className="font-body text-[10px] text-on-surface-variant mt-0.5">{dept.tagline}</p>
+                      </div>
+                    </div>
+                    
+                    <div className="flex gap-1 shrink-0">
+                      <button 
+                        onClick={() => handleOpenEditModal(dept)}
+                        className="w-7 h-7 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-surface-container hover:text-primary transition-colors cursor-pointer"
+                      >
+                        <span className="material-symbols-outlined text-[15px]">edit</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Managers Row */}
+                  <div className="mb-3 px-3 py-2 bg-surface rounded-xl border border-outline-variant/10 text-xs">
+                    <span className="font-body text-[8px] text-on-surface-variant uppercase tracking-wider font-bold block mb-0.5">Managers</span>
+                    <span className="font-sans font-bold text-on-surface line-clamp-1">{managerNames}</span>
+                  </div>
+
+                  {/* Stats Row */}
+                  <div className="grid grid-cols-4 gap-2 mb-3 text-center p-2.5 bg-surface-container-low rounded-xl border border-outline-variant/5">
+                    <div className="flex flex-col">
+                      <span className="font-body text-[8px] text-on-surface-variant uppercase tracking-wider font-bold">Incharges</span>
+                      <span className="font-headline text-xs font-black text-on-surface mt-0.5">{inchargeCount}</span>
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="font-body text-[8px] text-on-surface-variant uppercase tracking-wider font-bold">Operators</span>
+                      <span className="font-headline text-xs font-black text-on-surface mt-0.5">{operatorCount}</span>
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="font-body text-[8px] text-on-surface-variant uppercase tracking-wider font-bold">Sections</span>
+                      <span className="font-headline text-xs font-black text-on-surface mt-0.5">{sectionsList.length}</span>
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="font-body text-[8px] text-on-surface-variant uppercase tracking-wider font-bold">Headcount</span>
+                      <span className="font-headline text-xs font-black text-primary mt-0.5">{dynamicHeadcount}</span>
+                    </div>
+                  </div>
+
+                  {/* Sections Chips list */}
+                  <div className="mt-1">
+                    <div className="flex flex-wrap gap-1.5 max-h-[50px] overflow-hidden">
+                      {sectionsList.length === 0 ? (
+                        <span className="text-[9px] text-outline/50 italic">No sections defined</span>
+                      ) : (
+                        sectionsList.map((sec, idx) => (
+                          <span key={sec.id || idx} className="px-2 py-0.5 bg-surface border border-outline-variant/10 text-on-surface-variant text-[9px] font-semibold rounded-md whitespace-nowrap">
+                            {sec.name}
+                          </span>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  function renderDesktopDutyHours() {
+    const filteredEmployees = employees.filter(emp => {
+      const q = dutyHoursSearch.toLowerCase();
+      const matchSearch = !q || (emp.name && emp.name.toLowerCase().includes(q)) || (emp.id && emp.id.toLowerCase().includes(q)) || (emp.designation && emp.designation.toLowerCase().includes(q));
+      const empDiv = emp.division || 'AJ Synthetic';
+      const matchDiv = dutyHoursDivisionFilter === 'ALL' || empDiv === dutyHoursDivisionFilter;
+      const empDept = emp.department || '';
+      const matchDept = dutyHoursDeptFilter === 'ALL' || empDept.toLowerCase() === dutyHoursDeptFilter.toLowerCase();
+      return matchSearch && matchDiv && matchDept;
+    });
+
+    return (
+      <div className="flex flex-col gap-6 animate-fade-in pb-8">
+        {/* Toast Alert */}
+        {dutySuccessToast && (
+          <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-700/50 rounded-xl text-emerald-800 dark:text-emerald-200 text-xs font-bold flex items-center gap-2">
+            <span className="material-symbols-outlined text-[18px]">check_circle</span>
+            {dutySuccessToast}
+          </div>
         )}
+
+        {/* Rule Summary Card */}
+        <div className="p-5 bg-surface-container-lowest rounded-2xl border border-outline-variant/10 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-600 flex items-center justify-center shrink-0">
+              <span className="material-symbols-outlined text-[22px]">timer</span>
+            </div>
+            <div>
+              <h3 className="font-headline text-sm font-bold text-on-surface">Standard Salary Calculation Core</h3>
+              <p className="font-body text-xs text-on-surface-variant mt-0.5">
+                Hourly Rate = <code className="px-1.5 py-0.5 bg-surface-container rounded text-primary font-bold">Basic Salary / 240</code> (based on 30 calendar days × 8 hours daily shift).
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 text-xs font-bold text-on-surface-variant bg-surface-container-low px-3 py-1.5 rounded-xl border border-outline-variant/10">
+            <span>OT Amount = OT Hrs × Hourly</span>
+            <span>•</span>
+            <span>Ded Amount = Ded Hrs × Hourly</span>
+          </div>
+        </div>
+
+        {/* Filters and Search Bar */}
+        <div className="p-4 bg-surface-container-lowest rounded-2xl border border-outline-variant/10 shadow-sm flex flex-wrap items-center justify-between gap-4">
+          <div className="flex flex-wrap items-center gap-3 flex-1 min-w-[280px]">
+            {/* Search */}
+            <div className="relative flex-1 min-w-[200px]">
+              <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline-variant text-[16px]">search</span>
+              <input
+                type="text"
+                value={dutyHoursSearch}
+                onChange={(e) => setDutyHoursSearch(e.target.value)}
+                placeholder="Search employee name, EMP ID, or designation..."
+                className="w-full bg-surface-container-low border border-outline-variant/20 rounded-xl pl-9 pr-3 py-2 text-xs text-on-surface outline-none focus:border-primary/50"
+              />
+            </div>
+
+            {/* Division Filter */}
+            <select
+              value={dutyHoursDivisionFilter}
+              onChange={(e) => setDutyHoursDivisionFilter(e.target.value)}
+              className="bg-surface-container-low border border-outline-variant/20 rounded-xl px-3 py-2 text-xs text-on-surface font-semibold outline-none cursor-pointer"
+            >
+              <option value="ALL">All Divisions</option>
+              <option value="AJ Synthetic">AJ Synthetic</option>
+              <option value="AAA">AAA</option>
+            </select>
+
+            {/* Department Filter */}
+            <select
+              value={dutyHoursDeptFilter}
+              onChange={(e) => setDutyHoursDeptFilter(e.target.value)}
+              className="bg-surface-container-low border border-outline-variant/20 rounded-xl px-3 py-2 text-xs text-on-surface font-semibold outline-none cursor-pointer"
+            >
+              <option value="ALL">All Departments</option>
+              {departments.map(d => (
+                <option key={d.id} value={d.name}>{d.name}</option>
+              ))}
+            </select>
+          </div>
+
+          <span className="text-xs font-bold text-on-surface-variant">
+            Showing {filteredEmployees.length} of {employees.length} employees
+          </span>
+        </div>
+
+        {/* Employee Duty Hours Table */}
+        <div className="bg-surface-container-lowest rounded-2xl border border-outline-variant/10 shadow-sm overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-surface-container-low text-on-surface-variant font-body text-[10px] uppercase font-bold tracking-wider border-b border-outline-variant/10">
+                  <th className="p-3.5 pl-5">EMP ID</th>
+                  <th className="p-3.5">Employee</th>
+                  <th className="p-3.5">Division</th>
+                  <th className="p-3.5">Department</th>
+                  <th className="p-3.5">Basic Salary</th>
+                  <th className="p-3.5">Assigned Shift</th>
+                  <th className="p-3.5 text-center">Duty Hours / Day</th>
+                  <th className="p-3.5 text-center">Hourly Divisor</th>
+                  <th className="p-3.5 text-right pr-5">Action</th>
+                </tr>
+              </thead>
+              <tbody className="text-xs font-medium divide-y divide-outline-variant/5">
+                {filteredEmployees.length === 0 ? (
+                  <tr>
+                    <td colSpan="9" className="p-8 text-center text-on-surface-variant">
+                      No employees found matching the filters.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredEmployees.slice(0, 100).map(emp => {
+                    const isEditing = editingDutyHoursId === (emp.id || emp.sheetId);
+                    const dutyHrs = emp.dutyHours || 8;
+                    const shiftName = emp.shift || 'GENERAL SHIFT';
+                    const empDiv = emp.division || 'AJ Synthetic';
+
+                    return (
+                      <tr key={emp.id || emp.sheetId} className="hover:bg-surface-container-low/40 transition-colors">
+                        <td className="p-3.5 pl-5 font-mono font-bold text-primary">
+                          {emp.id || <span className="text-[10px] font-normal text-outline italic">No ID</span>}
+                        </td>
+                        <td className="p-3.5">
+                          <div className="flex items-center gap-2.5">
+                            <img src={emp.avatar} className="w-7 h-7 rounded-full object-cover border border-outline-variant/20" alt="" />
+                            <div>
+                              <div className="font-bold text-on-surface">{emp.name}</div>
+                              <div className="text-[10px] text-on-surface-variant">{emp.designation || 'Staff'}</div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="p-3.5">
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                            empDiv === 'AAA' ? 'bg-secondary/15 text-secondary' : 'bg-primary/15 text-primary'
+                          }`}>
+                            {empDiv}
+                          </span>
+                        </td>
+                        <td className="p-3.5 text-on-surface-variant font-medium">
+                          {emp.department || '—'}
+                        </td>
+                        <td className="p-3.5 font-mono font-bold text-on-surface">
+                          ₨ {Number(emp.basicSalary || emp.salary || 0).toLocaleString()}
+                        </td>
+                        <td className="p-3.5">
+                          {isEditing ? (
+                            <select
+                              value={dutyShiftVal}
+                              onChange={(e) => setDutyShiftVal(e.target.value)}
+                              className="bg-surface border border-primary/40 rounded-lg px-2 py-1 text-xs text-on-surface font-semibold outline-none"
+                            >
+                              <option value="GENERAL SHIFT">GENERAL SHIFT</option>
+                              <option value="8 HOURS SHIFT">8 HOURS SHIFT</option>
+                            </select>
+                          ) : (
+                            <span className="text-on-surface font-semibold">{shiftName}</span>
+                          )}
+                        </td>
+                        <td className="p-3.5 text-center">
+                          {isEditing ? (
+                            <input
+                              type="number"
+                              min="4"
+                              max="16"
+                              value={dutyHoursVal}
+                              onChange={(e) => setDutyHoursVal(e.target.value)}
+                              className="w-16 bg-surface border border-primary/40 rounded-lg px-2 py-1 text-xs text-center font-bold text-primary outline-none"
+                            />
+                          ) : (
+                            <span className="px-2.5 py-1 bg-surface-container rounded-lg font-bold text-primary">
+                              {dutyHrs}h
+                            </span>
+                          )}
+                        </td>
+                        <td className="p-3.5 text-center font-mono text-[11px] text-on-surface-variant">
+                          {30 * (isEditing ? (Number(dutyHoursVal) || 8) : dutyHrs)} hrs
+                        </td>
+                        <td className="p-3.5 text-right pr-5">
+                          {isEditing ? (
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                onClick={() => handleSaveDutyHours(emp.id || emp.sheetId, dutyHoursVal, dutyShiftVal)}
+                                className="px-2.5 py-1 bg-primary text-on-primary rounded-lg text-xs font-bold hover:opacity-90 cursor-pointer"
+                              >
+                                Save
+                              </button>
+                              <button
+                                onClick={() => setEditingDutyHoursId(null)}
+                                className="px-2 py-1 bg-surface-container hover:bg-surface-container-high rounded-lg text-xs text-on-surface-variant cursor-pointer"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => {
+                                setEditingDutyHoursId(emp.id || emp.sheetId);
+                                setDutyHoursVal(dutyHrs);
+                                setDutyShiftVal(shiftName);
+                              }}
+                              className="px-2.5 py-1 bg-surface-container hover:bg-primary/10 hover:text-primary rounded-lg text-xs font-bold text-on-surface-variant cursor-pointer transition-colors"
+                            >
+                              Edit
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+          {filteredEmployees.length > 100 && (
+            <div className="p-3 text-center text-xs text-on-surface-variant bg-surface-container-low border-t border-outline-variant/10">
+              Showing first 100 employees. Use search to find specific personnel.
+            </div>
+          )}
+        </div>
       </div>
     );
   }
@@ -1162,7 +1741,7 @@ export default function HRSettings({ isMobile }) {
           <form onSubmit={handleSaveDept} className="flex-1 overflow-y-auto space-y-6 pr-2 custom-scrollbar pb-4">
             
             {/* Row 1: General Specs */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="flex flex-col gap-1.5">
                 <label className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">Department Name</label>
                 <input 
@@ -1173,6 +1752,18 @@ export default function HRSettings({ isMobile }) {
                   placeholder="e.g. Mixing Division, Quality Control"
                   className="w-full bg-surface-container-low border border-outline-variant/30 rounded-xl px-3.5 py-2.5 text-xs text-on-surface focus:bg-surface-container-lowest focus:border-primary/50 focus:ring-0 outline-none transition-all placeholder:text-outline/60 font-bold"
                 />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">Parent Division (HR Scoped)</label>
+                <select
+                  value={activeDept.division || (activeDept.name === 'AAA' ? 'AAA' : 'AJ Synthetic')}
+                  onChange={(e) => setActiveDept({...activeDept, division: e.target.value, hrOnly: e.target.value === 'AAA' || activeDept.name === 'AAA'})}
+                  className="w-full bg-surface-container-low border border-outline-variant/30 rounded-xl px-3.5 py-2.5 text-xs text-on-surface focus:bg-surface-container-lowest focus:border-primary/50 focus:ring-0 outline-none transition-all font-bold"
+                >
+                  <option value="AJ Synthetic">AJ Synthetic</option>
+                  <option value="AAA">AAA</option>
+                </select>
               </div>
 
               <div className="flex flex-col gap-1.5">

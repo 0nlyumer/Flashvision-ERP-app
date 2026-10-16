@@ -431,8 +431,7 @@ export default function HRAttendance({ isMobile }) {
     const d = new Date();
     const y = d.getFullYear();
     const m = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${y}-${m}-${day}`;
+    return `${y}-${m}-01`;
   });
 
   const [endDate, setEndDate] = useState(() => {
@@ -440,8 +439,8 @@ export default function HRAttendance({ isMobile }) {
     const d = new Date();
     const y = d.getFullYear();
     const m = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${y}-${m}-${day}`;
+    const lastDay = new Date(y, d.getMonth() + 1, 0).getDate();
+    return `${y}-${m}-${String(lastDay).padStart(2, '0')}`;
   });
   const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
 
@@ -714,25 +713,32 @@ export default function HRAttendance({ isMobile }) {
     const temp = new Date(start);
 
     let count = 0;
-    while (temp <= end && count < 32) {
+    while (temp <= end && count < 35) {
       count++;
       const dayName = temp.toLocaleDateString('en-US', { weekday: 'short' }); // "Mon", "Tue"...
       const dayNum = temp.getDate();
-      const dateString = temp.toISOString().split('T')[0];
+      const y = temp.getFullYear();
+      const m = String(temp.getMonth() + 1).padStart(2, '0');
+      const d = String(temp.getDate()).padStart(2, '0');
+      const dateString = `${y}-${m}-${d}`;
+      const isSunday = temp.getDay() === 0 || dayName === 'Sun';
 
       result.push({
         key: dayName,
         num: dayNum,
-        date: dateString
+        date: dateString,
+        isSunday: isSunday
       });
       temp.setDate(temp.getDate() + 1);
     }
     return result.length > 0 ? result : [
-      { key: 'Mon', num: 20 },
-      { key: 'Tue', num: 21 },
-      { key: 'Wed', num: 22 },
-      { key: 'Thu', num: 23 },
-      { key: 'Fri', num: 24 }
+      { key: 'Mon', num: 1, isSunday: false },
+      { key: 'Tue', num: 2, isSunday: false },
+      { key: 'Wed', num: 3, isSunday: false },
+      { key: 'Thu', num: 4, isSunday: false },
+      { key: 'Fri', num: 5, isSunday: false },
+      { key: 'Sat', num: 6, isSunday: false },
+      { key: 'Sun', num: 7, isSunday: true }
     ];
   };
 
@@ -1407,15 +1413,20 @@ export default function HRAttendance({ isMobile }) {
     if (!isNaN(start.getTime()) && !isNaN(end.getTime())) {
       const temp = new Date(start);
       let count = 0;
-      while (temp <= end && count < 32) {
+      while (temp <= end && count < 35) {
         count++;
         const dayName = temp.toLocaleDateString('en-US', { weekday: 'short' });
         const dayNum = temp.getDate();
-        const dateString = temp.toISOString().split('T')[0];
+        const y = temp.getFullYear();
+        const m = String(temp.getMonth() + 1).padStart(2, '0');
+        const d = String(temp.getDate()).padStart(2, '0');
+        const dateString = `${y}-${m}-${d}`;
+        const isSunday = temp.getDay() === 0 || dayName === 'Sun';
         dates.push({
           key: dayName,
           num: dayNum,
-          date: dateString
+          date: dateString,
+          isSunday: isSunday
         });
         temp.setDate(temp.getDate() + 1);
       }
@@ -1655,9 +1666,15 @@ export default function HRAttendance({ isMobile }) {
                     <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Employee Details</span>
                   </th>
                   {dates.map(day => (
-                    <th key={day.date} colSpan="2" className="px-4 py-2 border-b border-l border-outline-variant/20 text-center bg-surface-container-low font-headline min-w-[240px]">
+                    <th key={day.date} colSpan="2" className={`px-4 py-2 border-b border-l border-outline-variant/20 text-center font-headline min-w-[240px] ${
+                      day.isSunday ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300' : 'bg-surface-container-low'
+                    }`}>
                       <div className="flex flex-col items-center">
-                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">{day.key}</span>
+                        <span className={`text-[9px] font-bold uppercase tracking-wider ${
+                          day.isSunday ? 'text-amber-600 dark:text-amber-400 font-black' : 'text-slate-400'
+                        }`}>
+                          {day.key} {day.isSunday ? '• OFF' : ''}
+                        </span>
                         <span className="text-sm font-black text-on-surface">{day.num} ({new Date(day.date).toLocaleDateString('en-US', { month: 'short' })})</span>
                       </div>
                     </th>
@@ -2258,7 +2275,9 @@ export default function HRAttendance({ isMobile }) {
                     return (
                       <div 
                         key={colKey}
-                        className={`flex-none w-[190px] border border-outline-variant/20 rounded-xl p-3 snap-center space-y-2.5 transition-all ${
+                        className={`flex-none w-[190px] border rounded-xl p-3 snap-center space-y-2.5 transition-all ${
+                          (day.isSunday || day.key === 'Sun') ? 'ring-1 ring-amber-500/30 bg-amber-500/[0.04] border-amber-500/30' : 'border-outline-variant/20'
+                        } ${
                           rec.status === 'present' ? 'bg-emerald-500/5 border-emerald-500/20' :
                           rec.status === 'absent' ? 'bg-red-500/5 border-red-500/20' :
                           rec.status === 'leave' ? 'bg-amber-500/5 border-amber-500/20' :
@@ -2268,7 +2287,11 @@ export default function HRAttendance({ isMobile }) {
                       >
                         {/* Day & Date Header */}
                         <div className="text-center border-b border-outline-variant/10 pb-1.5">
-                          <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block leading-none">{day.key}</span>
+                          <span className={`text-[9px] font-bold uppercase tracking-wider block leading-none ${
+                            (day.isSunday || day.key === 'Sun') ? 'text-amber-600 dark:text-amber-400 font-black' : 'text-slate-400'
+                          }`}>
+                            {day.key} {(day.isSunday || day.key === 'Sun') ? '• OFF' : ''}
+                          </span>
                           <span className="text-sm font-black text-on-surface block leading-tight mt-0.5">{day.num}</span>
                         </div>
 
@@ -2746,10 +2769,16 @@ export default function HRAttendance({ isMobile }) {
                       <th 
                         key={colKey} 
                         style={{ width: cWidth, minWidth: cWidth, maxWidth: cWidth }}
-                        className="px-6 py-3 border-b border-l border-outline-variant/20 relative bg-surface-container-low text-center"
+                        className={`px-6 py-3 border-b border-l border-outline-variant/20 relative text-center ${
+                          (day.isSunday || day.key === 'Sun') ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300' : 'bg-surface-container-low'
+                        }`}
                       >
                         <div className="flex flex-col items-center relative">
-                          <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">{day.key}</span>
+                          <span className={`text-[9px] font-bold uppercase tracking-wider ${
+                            (day.isSunday || day.key === 'Sun') ? 'text-amber-600 dark:text-amber-400 font-black' : 'text-slate-400'
+                          }`}>
+                            {day.key} {(day.isSunday || day.key === 'Sun') ? '• OFF' : ''}
+                          </span>
                           <div className="flex items-center gap-1.5 mt-0.5 justify-center">
                             <span className="text-base font-black text-on-surface">{day.num}</span>
                             {canEditAttendance && (
@@ -2914,6 +2943,7 @@ export default function HRAttendance({ isMobile }) {
                             key={colKey} 
                             style={{ width: cWidth, minWidth: cWidth, maxWidth: cWidth }}
                             className={`p-4 border-l border-outline-variant/20 transition-all ${
+                              (day.isSunday || day.key === 'Sun') ? 'ring-1 ring-inset ring-amber-500/20 bg-amber-500/[0.04]' :
                               rec.status === 'present' ? 'bg-emerald-500/5' :
                               rec.status === 'absent' ? 'bg-red-500/5' :
                               rec.status === 'leave' ? 'bg-amber-500/5' :

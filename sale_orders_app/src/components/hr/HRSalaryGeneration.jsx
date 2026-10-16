@@ -1,13 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import UniversalPrintPreviewModal from '../ui/UniversalPrintPreviewModal';
-
-// Defensive number helpers to guarantee 0 crashes
-const safeNum = (val) => {
-  if (val === null || val === undefined) return 0;
-  const n = parseFloat(val);
-  return isNaN(n) ? 0 : n;
-};
+import { calculateEmployeeSalary, amountInWords, safeNum, formatMoney } from '../../utils/salaryEngine';
 
 const safeMoney = (val, decimals = 2) => {
   const n = safeNum(val);
@@ -18,9 +12,17 @@ export default function HRSalaryGeneration({ isMobile }) {
   const { state, setCollection, currencySymbol } = useApp();
   const currSym = currencySymbol || 'Rs.';
 
-  // Selected payroll month
-  const [payrollPeriod, setPayrollPeriod] = useState('2026-07'); // Default YYYY-MM
+  // Selected payroll month - defaults to current YYYY-MM
+  const [payrollPeriod, setPayrollPeriod] = useState(() => {
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    return `${y}-${m}`;
+  });
   
+  // Selected Division ('ALL', 'AJ Synthetic', 'AAA')
+  const [divisionFilter, setDivisionFilter] = useState('ALL');
+
   // Selected departments multi-select state
   const [selectedDepartments, setSelectedDepartments] = useState(['ALL']);
   const [isDeptDropdownOpen, setIsDeptDropdownOpen] = useState(false);
@@ -37,31 +39,40 @@ export default function HRSalaryGeneration({ isMobile }) {
     if (!studioRecord) return null;
     const r = studioRecord;
     const items = [];
-    if (safeNum(r.basicSalary) > 0) {
-      items.push({ description: 'Basic Salary', earnings: safeNum(r.basicSalary), deductions: 0, remarks: 'Monthly Base' });
+    const basicVal = safeNum(r.basic ?? r.basicSalary);
+    if (basicVal > 0) {
+      items.push({ description: 'Basic Salary', earnings: basicVal, deductions: 0, remarks: 'Monthly Base' });
     }
-    if (safeNum(r.overtime) > 0) {
-      items.push({ description: `Overtime (${safeNum(r.otHours)} hrs)`, earnings: safeNum(r.overtime), deductions: 0, remarks: 'OT Payout' });
+    const otVal = safeNum(r.otAmount ?? r.overtime);
+    if (otVal > 0) {
+      items.push({ description: `Overtime (${safeNum(r.otHours)} hrs @ ${currSym} ${safeMoney(r.hourly || (basicVal / 240))}/hr)`, earnings: otVal, deductions: 0, remarks: 'OT Amount' });
     }
-    if (safeNum(r.allowance) > 0) {
-      items.push({ description: 'Allowances', earnings: safeNum(r.allowance), deductions: 0, remarks: 'Standard Allowances' });
+    const allowVal = safeNum(r.allowance);
+    if (allowVal > 0) {
+      items.push({ description: 'Allowance', earnings: allowVal, deductions: 0, remarks: 'Standard / Attendance Allowance' });
     }
-    if (safeNum(r.lateDeduction) > 0) {
-      items.push({ description: `Late Coming Deduction (${safeNum(r.lateComingHours)} hrs)`, earnings: 0, deductions: safeNum(r.lateDeduction), remarks: 'Time Penalty' });
+    const dedVal = safeNum(r.deductionAmount ?? r.lateDeduction);
+    if (dedVal > 0) {
+      items.push({ description: `Deduction Hours (${safeNum(r.deductionHours ?? r.lateComingHours)} hrs @ ${currSym} ${safeMoney(r.hourly || (basicVal / 240))}/hr)`, earnings: 0, deductions: dedVal, remarks: 'Hourly Deduction' });
     }
-    if (safeNum(r.absents) > 0) {
-      items.push({ description: `Absents Deduction (${safeNum(r.absentsCount)} days)`, earnings: 0, deductions: safeNum(r.absents), remarks: 'Leave Balance Exceeded' });
+    const absVal = safeNum(r.absentDeduction ?? r.absents);
+    if (absVal > 0) {
+      items.push({ description: `Absent Deduction (${safeNum(r.absentDays ?? r.absentsCount)} days @ Basic / 30)`, earnings: 0, deductions: absVal, remarks: 'Absent Days Penalty' });
     }
-    if (safeNum(r.fine) > 0) {
-      items.push({ description: 'Fines / Penalties', earnings: 0, deductions: safeNum(r.fine), remarks: 'Disciplinary Penalty' });
+    const fineVal = safeNum(r.fine);
+    if (fineVal > 0) {
+      items.push({ description: 'Fine / Penalty', earnings: 0, deductions: fineVal, remarks: 'Disciplinary Penalty' });
     }
-    if (safeNum(r.loan) > 0) {
-      items.push({ description: 'Loan Installment', earnings: 0, deductions: safeNum(r.loan), remarks: 'Loan Recovery' });
+    const advVal = safeNum(r.advance ?? r.advanceAmount);
+    if (advVal > 0) {
+      items.push({ description: 'Salary Advance', earnings: 0, deductions: advVal, remarks: 'Advance Recovery' });
     }
-    if (safeNum(r.advanceAmount) > 0) {
-      items.push({ description: 'Salary Advance Deduction', earnings: 0, deductions: safeNum(r.advanceAmount), remarks: 'Advance Recovery' });
+    const loanVal = safeNum(r.loan);
+    if (loanVal > 0) {
+      items.push({ description: 'Loan Installment', earnings: 0, deductions: loanVal, remarks: 'Loan Recovery' });
     }
-    items.push({ description: 'NET SALARY PAYOUT', earnings: safeNum(r.netSalary), deductions: 0, remarks: 'Final Disbursed Amount' });
+    const netVal = safeNum(r.totalSalary ?? r.netSalary);
+    items.push({ description: 'TOTAL SALARY PAYABLE', earnings: netVal, deductions: 0, remarks: r.words || amountInWords(netVal) });
 
     return {
       header: {
@@ -69,12 +80,20 @@ export default function HRSalaryGeneration({ isMobile }) {
         employee_id: r.employeeId || r.empId || '-',
         designation: r.designation || 'Staff',
         department: r.department || 'Operations',
+        division: r.division || 'AJ Synthetic',
         month: payrollPeriod || 'Current Month',
-        basic_salary: `${currSym} ${safeMoney(r.basicSalary)}`,
+        basic_salary: `${currSym} ${safeMoney(basicVal)}`,
+        duty_hours: `${r.dutyHours || 8} hrs/day (${r.shift || 'GENERAL SHIFT'})`,
         bank_name: r.bankName || 'Company Payroll Account',
         account_no: r.accountNo || '-'
       },
-      items
+      items,
+      totals: {
+        totalEarnings: basicVal + otVal + allowVal,
+        totalDeductions: dedVal + absVal + fineVal + advVal + loanVal,
+        grandTotal: netVal,
+        netSalary: netVal
+      }
     };
   }, [studioRecord, payrollPeriod, currSym]);
   
@@ -95,23 +114,26 @@ export default function HRSalaryGeneration({ isMobile }) {
   // Dragging state for column reorder
   const [draggedColId, setDraggedColId] = useState(null);
 
-  // Default Columns Definition
+  // Default Columns Definition matching the owner's Google Sheet
   const DEFAULT_COLUMNS = [
-    { id: 'employeeId', label: 'Employee ID', visible: true, width: 110, align: 'left', numeric: false },
-    { id: 'doj', label: 'Date of Joining', visible: true, width: 120, align: 'left', numeric: false },
-    { id: 'designation', label: 'Designation', visible: true, width: 140, align: 'left', numeric: false },
-    { id: 'department', label: 'Department', visible: true, width: 140, align: 'left', numeric: false },
-    { id: 'section', label: 'Section', visible: true, width: 110, align: 'left', numeric: false },
+    { id: 'employeeId', label: 'EMP ID', visible: true, width: 95, align: 'left', numeric: false },
     { id: 'employeeName', label: 'Employee Name', visible: true, width: 160, align: 'left', numeric: false },
-    { id: 'basicSalary', label: `Basic Salary (${currSym})`, visible: true, width: 120, align: 'right', numeric: true },
-    { id: 'overtime', label: `Overtime (${currSym})`, visible: true, width: 110, align: 'right', numeric: true },
-    { id: 'lateComingHours', label: 'Late Deduction (Hrs)', visible: true, width: 150, align: 'right', numeric: true },
-    { id: 'absents', label: `Absents (${currSym})`, visible: true, width: 110, align: 'right', numeric: true },
-    { id: 'fine', label: `Fine (${currSym})`, visible: true, width: 90, align: 'right', numeric: true },
-    { id: 'allowance', label: `Allowance (${currSym})`, visible: true, width: 110, align: 'right', numeric: true },
-    { id: 'advanceAmount', label: `Advance Amount (${currSym})`, visible: true, width: 140, align: 'right', numeric: true },
-    { id: 'loan', label: `Loan (${currSym})`, visible: true, width: 100, align: 'right', numeric: true },
-    { id: 'netSalary', label: `Net Salary (${currSym})`, visible: true, width: 130, align: 'right', numeric: true }
+    { id: 'division', label: 'Division', visible: true, width: 105, align: 'left', numeric: false },
+    { id: 'department', label: 'Department', visible: true, width: 130, align: 'left', numeric: false },
+    { id: 'designation', label: 'Designation', visible: true, width: 130, align: 'left', numeric: false },
+    { id: 'basic', label: `Basic (${currSym})`, visible: true, width: 110, align: 'right', numeric: true },
+    { id: 'presentDays', label: 'Present', visible: true, width: 75, align: 'center', numeric: true },
+    { id: 'absentDays', label: 'Absent', visible: true, width: 75, align: 'center', numeric: true },
+    { id: 'otHours', label: 'OT Hrs', visible: true, width: 75, align: 'right', numeric: true },
+    { id: 'otAmount', label: `OT Amt (${currSym})`, visible: true, width: 105, align: 'right', numeric: true },
+    { id: 'deductionHours', label: 'Ded Hrs', visible: true, width: 75, align: 'right', numeric: true },
+    { id: 'deductionAmount', label: `Ded Amt (${currSym})`, visible: true, width: 105, align: 'right', numeric: true },
+    { id: 'absentDeduction', label: `Absent Ded (${currSym})`, visible: true, width: 115, align: 'right', numeric: true },
+    { id: 'allowance', label: `Allowance (${currSym})`, visible: true, width: 100, align: 'right', numeric: true },
+    { id: 'fine', label: `Fine (${currSym})`, visible: true, width: 85, align: 'right', numeric: true },
+    { id: 'advance', label: `Advance (${currSym})`, visible: true, width: 100, align: 'right', numeric: true },
+    { id: 'loan', label: `Loan (${currSym})`, visible: true, width: 90, align: 'right', numeric: true },
+    { id: 'totalSalary', label: `Total Salary (${currSym})`, visible: true, width: 125, align: 'right', numeric: true }
   ];
 
   // Column Configuration State with Persistence
@@ -184,14 +206,20 @@ export default function HRSalaryGeneration({ isMobile }) {
     };
   }, [resizingColId, startX, startWidth]);
 
-  // Month periods list helper
-  const monthsList = [
-    { key: '2026-07', label: 'July 2026' },
-    { key: '2026-06', label: 'June 2026' },
-    { key: '2026-05', label: 'May 2026' },
-    { key: '2026-04', label: 'April 2026' },
-    { key: '2023-10', label: 'October 2023' }
-  ];
+  // Dynamically generated months list covering past year to future
+  const monthsList = useMemo(() => {
+    const list = [];
+    const now = new Date();
+    for (let i = -10; i <= 2; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const key = `${y}-${m}`;
+      const label = d.toLocaleString('en-US', { month: 'long', year: 'numeric' });
+      list.push({ key, label });
+    }
+    return list.reverse();
+  }, []);
 
   const getPeriodLabel = (periodKey) => {
     const found = monthsList.find(m => m.key === periodKey);
@@ -220,50 +248,52 @@ export default function HRSalaryGeneration({ isMobile }) {
     const existingPeriodRecord = generatedList.find(record => record.month === payrollPeriod);
     
     if (existingPeriodRecord && Array.isArray(existingPeriodRecord.records)) {
-      let salaryConfig = null;
-      try {
-        const savedConfig = localStorage.getItem('hr_salary_allowance_config');
-        if (savedConfig) salaryConfig = JSON.parse(savedConfig);
-      } catch (e) {}
-
       const normalized = existingPeriodRecord.records.map(rec => {
-        const absentsCount = safeNum(rec.absentsCount || 0);
-        const absentsDeduction = safeNum(rec.absents || rec.deductions || 0);
-
-        const configuredAllowance = (absentsCount === 0 && absentsDeduction === 0) 
-          ? safeNum(salaryConfig?.attendanceAllowance?.bonusAmount ?? 150)
-          : 0;
-
-        const basicSalary = safeNum(rec.basicSalary || rec.baseSalary || 35000);
-        const overtime = safeNum(rec.overtime || rec.otValue || 0);
-        const lateDeduction = safeNum(rec.lateDeduction || 0);
-        const fine = safeNum(rec.fine || rec.fines || 0);
-        const advanceAmount = safeNum(rec.advanceAmount || rec.advance || 0);
-        const loan = safeNum(rec.loan || 0);
-
-        const totalAdditions = overtime + configuredAllowance;
-        const totalDeductions = absentsDeduction + lateDeduction + fine + advanceAmount + loan;
-        const exactNetSalary = Math.max(0, basicSalary + totalAdditions - totalDeductions);
+        const basic = safeNum(rec.basic ?? rec.basicSalary ?? rec.baseSalary);
+        const hourly = basic > 0 ? (basic / 240) : 0;
+        const presentDays = safeNum(rec.presentDays);
+        const absentDays = safeNum(rec.absentDays ?? rec.absentsCount);
+        const otHours = safeNum(rec.otHours);
+        const otAmount = safeNum(rec.otAmount ?? rec.overtime);
+        const deductionHours = safeNum(rec.deductionHours ?? rec.lateComingHours);
+        const deductionAmount = safeNum(rec.deductionAmount ?? rec.lateDeduction);
+        const absentDeduction = safeNum(rec.absentDeduction ?? rec.absents);
+        const allowance = safeNum(rec.allowance);
+        const fine = safeNum(rec.fine ?? rec.fines);
+        const advance = safeNum(rec.advance ?? rec.advanceAmount);
+        const loan = safeNum(rec.loan);
+        const totalSalary = safeNum(rec.totalSalary ?? rec.netSalary);
 
         return {
-          employeeId: rec.employeeId || rec.id || `EMP-${Date.now()}`,
-          doj: rec.doj || rec.dateOfJoining || '2024-01-15',
-          designation: rec.designation || rec.jobTitle || rec.role || 'Associate',
-          department: rec.department || 'Global Logistics',
-          section: rec.section || rec.subSection || 'Operations',
+          ...rec,
+          employeeId: rec.employeeId || rec.id || '',
           employeeName: rec.employeeName || rec.name || 'Employee',
-          basicSalary: parseFloat(basicSalary.toFixed(2)),
-          overtime: parseFloat(overtime.toFixed(2)),
-          otHours: safeNum(rec.otHours || 0),
-          lateComingHours: safeNum(rec.lateComingHours || 0),
-          lateDeduction: parseFloat(lateDeduction.toFixed(2)),
-          absents: parseFloat(absentsDeduction.toFixed(2)),
-          absentsCount: absentsCount,
-          fine: parseFloat(fine.toFixed(2)),
-          allowance: parseFloat(configuredAllowance.toFixed(2)),
-          advanceAmount: parseFloat(advanceAmount.toFixed(2)),
-          loan: parseFloat(loan.toFixed(2)),
-          netSalary: parseFloat(exactNetSalary.toFixed(2)),
+          division: rec.division || 'AJ Synthetic',
+          department: rec.department || (rec.division === 'AAA' ? 'AAA' : 'AJ Synthetic'),
+          designation: rec.designation || rec.jobTitle || rec.role || 'Staff',
+          basic: basic,
+          basicSalary: basic,
+          hourly: hourly,
+          presentDays: presentDays,
+          absentDays: absentDays,
+          absentsCount: absentDays,
+          otHours: otHours,
+          otAmount: otAmount,
+          overtime: otAmount,
+          deductionHours: deductionHours,
+          lateComingHours: deductionHours,
+          deductionAmount: deductionAmount,
+          lateDeduction: deductionAmount,
+          absentDeduction: absentDeduction,
+          absents: absentDeduction,
+          allowance: allowance,
+          fine: fine,
+          advance: advance,
+          advanceAmount: advance,
+          loan: loan,
+          totalSalary: totalSalary,
+          netSalary: totalSalary,
+          words: rec.words || amountInWords(totalSalary),
           status: rec.status || 'Calculated'
         };
       });
@@ -300,167 +330,65 @@ export default function HRSalaryGeneration({ isMobile }) {
     });
   };
 
-  // Dynamic REAL Data Salary Calculation Engine EXACTLY synced with Attendance Management
+  // Dynamic REAL Data Salary Calculation Engine using the single calculateEmployeeSalary core
   const runCalculationEngine = () => {
     setIsProcessing(true);
-    setProcessingMessage('Fetching saved Attendance Management records, approved overtime claims, and employee profiles...');
+    setProcessingMessage('Fetching saved Attendance records, approved overtime claims, and employee profiles...');
     
     setTimeout(() => {
       const allEmployees = state.hr_employees_list || [];
       const attendanceLogs = state.hr_uploaded_attendance || [];
       const overtimeRequests = state.hr_overtime_requests || [];
+      const advanceRequests = state.hr_advance_requests || [];
       const loanRequests = state.hr_loan_requests || [];
+      const loanLedger = state.hr_loan_ledger || [];
+      const leaveRequests = state.hr_leave_requests || [];
 
-      // Filter employees by selected departments
+      let salaryConfig = null;
+      try {
+        const savedConfig = localStorage.getItem('hr_salary_allowance_config');
+        if (savedConfig) salaryConfig = JSON.parse(savedConfig);
+      } catch (e) {}
+
+      // Filter employees by Division and Multi-Department selection
       const filteredEmployees = allEmployees.filter(emp => {
-        if (selectedDepartments.includes('ALL')) return true;
-        const empDept = emp.department || 'Global Logistics';
-        return selectedDepartments.includes(empDept);
+        // Division filter
+        if (divisionFilter !== 'ALL') {
+          const empDiv = emp.division || 'AJ Synthetic';
+          if (empDiv !== divisionFilter) return false;
+        }
+        // Department filter
+        if (!selectedDepartments.includes('ALL')) {
+          const empDept = emp.department || (emp.division === 'AAA' ? 'AAA' : 'AJ Synthetic');
+          if (!selectedDepartments.includes(empDept)) return false;
+        }
+        return true;
       });
 
+      const monthContext = {
+        payrollPeriod,
+        uploadedAttendance: attendanceLogs,
+        overtimeRequests,
+        advanceRequests,
+        loanRequests,
+        loanLedger,
+        leaveRequests,
+        salaryConfig
+      };
+
       const calculatedRecords = filteredEmployees.map(emp => {
-        const baseSalary = safeNum(emp.basicSalary || emp.salary || emp.baseSalary || 35000);
-        const doj = emp.doj || emp.dateOfJoining || emp.createdAt?.substring(0, 10) || '2024-01-15';
-        const designation = emp.designation || emp.jobTitle || emp.role || 'Associate';
-        const department = emp.department || 'Global Logistics';
-        const section = emp.section || emp.subSection || emp.departmentSection || 'Operations';
-
-        // REAL Attendance Processing from Attendance Management screen saved data
-        let workedDays = 0;
-        let absentsCount = 0;
-        let lateComingHours = 0;
-        let totalFines = 0;
-        let otHours = 0;
-
-        // Match saved attendance logs for employee in Attendance Management
-        const empAttendanceLogs = attendanceLogs.filter(a => 
-          (String(a.employeeId) === String(emp.id) || a.employeeName === emp.name || (a.id && String(a.id) === String(emp.id))) && 
-          (a.date && a.date.startsWith(payrollPeriod))
-        );
-
-        let hasExplicitAttendanceLogs = false;
-
-        if (empAttendanceLogs.length > 0) {
-          hasExplicitAttendanceLogs = true;
-          empAttendanceLogs.forEach(a => {
-            const st = (a.status || '').toLowerCase();
-            if (st === 'present') workedDays += 1;
-            else if (st === 'absent') absentsCount += 1;
-            lateComingHours += safeNum(a.deductions || a.lateHours || a.lateComingHours);
-            totalFines += safeNum(a.fines || a.fine);
-            otHours += safeNum(a.ot || a.overtimeHours);
-          });
-        } else if (emp.attendance) {
-          // Embedded attendance object saved from Attendance Management
-          Object.entries(emp.attendance).forEach(([dayKey, rec]) => {
-            if (dayKey.startsWith(payrollPeriod)) {
-              hasExplicitAttendanceLogs = true;
-              const st = (rec.status || '').toLowerCase();
-              if (st === 'present') workedDays += 1;
-              else if (st === 'absent') absentsCount += 1;
-              lateComingHours += safeNum(rec.deductions || rec.lateHours);
-              totalFines += safeNum(rec.fines || rec.fine);
-              otHours += safeNum(rec.ot || rec.overtime);
-            }
-          });
-        }
-
-        workedDays = Math.round(workedDays);
-        absentsCount = Math.round(absentsCount);
-        const totalWorkingDays = 22; // Standard monthly working days
-
-        // EXACT Attendance Rule: If employee has 0 present logs or default absent in Attendance Management, workedDays = 0, absentsCount = 22!
-        if (hasExplicitAttendanceLogs) {
-          if (absentsCount === 0 && workedDays < totalWorkingDays) {
-            absentsCount = totalWorkingDays - workedDays;
-          }
-        } else {
-          // By default in Attendance Management, if all entries are absent or empty for this month:
-          workedDays = 0;
-          absentsCount = totalWorkingDays;
-        }
-        absentsCount = Math.max(0, absentsCount);
-
-        // Approved Overtime Requests
-        const empOtReqs = overtimeRequests.filter(req => 
-          (req.employeeName === emp.name || String(req.employeeId) === String(emp.id)) &&
-          (req.status === 'Approved') &&
-          (req.date && req.date.startsWith(payrollPeriod))
-        );
-        empOtReqs.forEach(r => {
-          otHours += safeNum(r.hours);
-        });
-
-        // Load Salary & Allowance Configuration rules
-        let salaryConfig = null;
-        try {
-          const savedConfig = localStorage.getItem('hr_salary_allowance_config');
-          if (savedConfig) salaryConfig = JSON.parse(savedConfig);
-        } catch (e) {}
-
-        const otMultiplier = safeNum(salaryConfig?.overtimeMultipliers?.weekday || 1.5);
-        
-        // Financial Calculations
-        const hourlyRate = baseSalary / 176; // 8 hrs * 22 days
-        const otPay = otHours * (hourlyRate * otMultiplier);
-        const absentDeduction = absentsCount * (baseSalary / totalWorkingDays);
-        const lateDeduction = lateComingHours * hourlyRate;
-
-        // Approved Loan Ledger & Requests sync
-        let loanAmount = safeNum(emp.loan || emp.loanAmount);
-        const loanLedger = state.hr_loan_ledger || [];
-        const activeLedgerItem = loanLedger.find(l => 
-          (String(l.employeeId) === String(emp.id) || l.employeeName === emp.name) && 
-          l.status === 'Active' && 
-          safeNum(l.remainingBalance) > 0
-        );
-        if (activeLedgerItem && activeLedgerItem.monthlyInstallment) {
-          loanAmount = Math.min(safeNum(activeLedgerItem.monthlyInstallment), safeNum(activeLedgerItem.remainingBalance));
-        } else {
-          const activeLoanReq = loanRequests.find(r => 
-            (String(r.employeeId) === String(emp.id) || r.employeeName === emp.name) && r.status === 'Approved'
-          );
-          if (activeLoanReq && activeLoanReq.monthlyInstallment) {
-            loanAmount = safeNum(activeLoanReq.monthlyInstallment);
-          }
-        }
-
-        // Attendance Allowance Calculation: ALLOWANCE IS ONLY GRANTED IF ABSENTS COUNT IS EXACTLY 0!
-        let allowanceAmount = 0;
-        if (absentsCount === 0) {
-          const configuredBonus = salaryConfig?.attendanceAllowance?.bonusAmount !== undefined 
-            ? safeNum(salaryConfig.attendanceAllowance.bonusAmount) 
-            : 150;
-          allowanceAmount = configuredBonus;
-        } else {
-          allowanceAmount = 0;
-        }
-
-        const advanceAmount = safeNum(emp.advance || emp.advanceAmount);
-
-        const totalAdditions = otPay + allowanceAmount;
-        const totalDeductions = absentDeduction + lateDeduction + totalFines + advanceAmount + loanAmount;
-        const netSalary = Math.max(0, baseSalary + totalAdditions - totalDeductions);
-
+        const calc = calculateEmployeeSalary(emp, monthContext);
         return {
-          employeeId: emp.id || `EMP-${Date.now()}`,
-          doj: doj,
-          designation: designation,
-          department: department,
-          section: section,
-          employeeName: emp.name,
-          basicSalary: parseFloat(baseSalary.toFixed(2)),
-          overtime: parseFloat(otPay.toFixed(2)),
-          otHours: parseFloat(otHours.toFixed(1)),
-          lateComingHours: parseFloat(lateComingHours.toFixed(1)),
-          lateDeduction: parseFloat(lateDeduction.toFixed(2)),
-          absents: parseFloat(absentDeduction.toFixed(2)),
-          absentsCount: absentsCount,
-          fine: parseFloat(totalFines.toFixed(2)),
-          allowance: parseFloat(allowanceAmount.toFixed(2)),
-          advanceAmount: parseFloat(advanceAmount.toFixed(2)),
-          loan: parseFloat(loanAmount.toFixed(2)),
-          netSalary: parseFloat(netSalary.toFixed(2)),
+          ...calc,
+          // Backward compatibility aliases
+          basicSalary: calc.basic,
+          netSalary: calc.totalSalary,
+          overtime: calc.otAmount,
+          lateComingHours: calc.deductionHours,
+          lateDeduction: calc.deductionAmount,
+          absents: calc.absentDeduction,
+          absentsCount: calc.absentDays,
+          advanceAmount: calc.advance,
           status: 'Calculated'
         };
       });
@@ -482,8 +410,8 @@ export default function HRSalaryGeneration({ isMobile }) {
 
       setCollection('hr_generated_salaries', [...filterOtherMonths, newMonthRecord]);
       setIsProcessing(false);
-      triggerToast(`Calculated payroll for ${calculatedRecords.length} employees based on Attendance Management logs!`);
-    }, 1200);
+      triggerToast(`Calculated payroll for ${calculatedRecords.length} employees using Google Sheet rules!`);
+    }, 800);
   };
 
   // Finalize payroll handler
@@ -531,26 +459,42 @@ export default function HRSalaryGeneration({ isMobile }) {
   // Calculate Summary Totals for Header Cards with safe numerical reduction
   const summaryTotals = React.useMemo(() => {
     return {
-      netPayout: localPayrollList.reduce((acc, curr) => acc + safeNum(curr.netSalary), 0),
+      netPayout: localPayrollList.reduce((acc, curr) => acc + safeNum(curr.totalSalary ?? curr.netSalary), 0),
       headcount: localPayrollList.length,
-      overtime: localPayrollList.reduce((acc, curr) => acc + safeNum(curr.overtime), 0),
-      deductions: localPayrollList.reduce((acc, curr) => acc + safeNum(curr.lateDeduction) + safeNum(curr.absents) + safeNum(curr.fine) + safeNum(curr.loan) + safeNum(curr.advanceAmount), 0)
+      overtime: localPayrollList.reduce((acc, curr) => acc + safeNum(curr.otAmount ?? curr.overtime), 0),
+      deductions: localPayrollList.reduce((acc, curr) => 
+        acc + safeNum(curr.deductionAmount ?? curr.lateDeduction) + 
+        safeNum(curr.absentDeduction ?? curr.absents) + 
+        safeNum(curr.fine) + 
+        safeNum(curr.advance ?? curr.advanceAmount) + 
+        safeNum(curr.loan), 0)
     };
   }, [localPayrollList]);
 
   // Calculate Table Footer Totals with safe numerical reduction
   const footerTotals = React.useMemo(() => {
     return {
-      basicSalary: localPayrollList.reduce((sum, r) => sum + safeNum(r.basicSalary), 0),
-      overtime: localPayrollList.reduce((sum, r) => sum + safeNum(r.overtime), 0),
-      lateComingHours: localPayrollList.reduce((sum, r) => sum + safeNum(r.lateComingHours), 0),
-      lateDeduction: localPayrollList.reduce((sum, r) => sum + safeNum(r.lateDeduction), 0),
-      absents: localPayrollList.reduce((sum, r) => sum + safeNum(r.absents), 0),
-      fine: localPayrollList.reduce((sum, r) => sum + safeNum(r.fine), 0),
+      basic: localPayrollList.reduce((sum, r) => sum + safeNum(r.basic ?? r.basicSalary), 0),
+      presentDays: localPayrollList.reduce((sum, r) => sum + safeNum(r.presentDays), 0),
+      absentDays: localPayrollList.reduce((sum, r) => sum + safeNum(r.absentDays ?? r.absentsCount), 0),
+      otHours: localPayrollList.reduce((sum, r) => sum + safeNum(r.otHours), 0),
+      otAmount: localPayrollList.reduce((sum, r) => sum + safeNum(r.otAmount ?? r.overtime), 0),
+      deductionHours: localPayrollList.reduce((sum, r) => sum + safeNum(r.deductionHours ?? r.lateComingHours), 0),
+      deductionAmount: localPayrollList.reduce((sum, r) => sum + safeNum(r.deductionAmount ?? r.lateDeduction), 0),
+      absentDeduction: localPayrollList.reduce((sum, r) => sum + safeNum(r.absentDeduction ?? r.absents), 0),
       allowance: localPayrollList.reduce((sum, r) => sum + safeNum(r.allowance), 0),
-      advanceAmount: localPayrollList.reduce((sum, r) => sum + safeNum(r.advanceAmount), 0),
+      fine: localPayrollList.reduce((sum, r) => sum + safeNum(r.fine), 0),
+      advance: localPayrollList.reduce((sum, r) => sum + safeNum(r.advance ?? r.advanceAmount), 0),
       loan: localPayrollList.reduce((sum, r) => sum + safeNum(r.loan), 0),
-      netSalary: localPayrollList.reduce((sum, r) => sum + safeNum(r.netSalary), 0)
+      totalSalary: localPayrollList.reduce((sum, r) => sum + safeNum(r.totalSalary ?? r.netSalary), 0),
+      // legacy aliases
+      basicSalary: localPayrollList.reduce((sum, r) => sum + safeNum(r.basic ?? r.basicSalary), 0),
+      overtime: localPayrollList.reduce((sum, r) => sum + safeNum(r.otAmount ?? r.overtime), 0),
+      lateComingHours: localPayrollList.reduce((sum, r) => sum + safeNum(r.deductionHours ?? r.lateComingHours), 0),
+      lateDeduction: localPayrollList.reduce((sum, r) => sum + safeNum(r.deductionAmount ?? r.lateDeduction), 0),
+      absents: localPayrollList.reduce((sum, r) => sum + safeNum(r.absentDeduction ?? r.absents), 0),
+      advanceAmount: localPayrollList.reduce((sum, r) => sum + safeNum(r.advance ?? r.advanceAmount), 0),
+      netSalary: localPayrollList.reduce((sum, r) => sum + safeNum(r.totalSalary ?? r.netSalary), 0)
     };
   }, [localPayrollList]);
 
@@ -600,60 +544,84 @@ export default function HRSalaryGeneration({ isMobile }) {
   const renderCellContent = (colId, record) => {
     switch (colId) {
       case 'employeeId':
-        return <span className="font-mono text-xs font-bold text-on-surface">{record.employeeId}</span>;
+        return <span className="font-mono text-xs font-bold text-on-surface">{record.employeeId || '-'}</span>;
       case 'doj':
-        return <span className="text-xs text-on-surface-variant font-medium">{record.doj}</span>;
+        return <span className="text-xs text-on-surface-variant font-medium">{record.doj || record.dateOfJoining || '-'}</span>;
       case 'designation':
         return <span className="text-xs font-semibold text-on-surface-variant">{record.designation}</span>;
+      case 'division': {
+        const divName = record.division || 'AJ Synthetic';
+        return (
+          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+            divName === 'AAA' 
+              ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20' 
+              : 'bg-primary/10 text-primary border border-primary/20'
+          }`}>
+            {divName}
+          </span>
+        );
+      }
       case 'department':
-        return <span className="text-xs font-bold text-primary">{record.department}</span>;
+        return <span className="text-xs font-bold text-on-surface-variant">{record.department}</span>;
       case 'section':
-        return <span className="text-xs text-on-surface-variant">{record.section}</span>;
+        return <span className="text-xs text-on-surface-variant">{record.section || '-'}</span>;
       case 'employeeName':
         return <span className="text-sm font-bold text-on-surface">{record.employeeName}</span>;
+      case 'basic':
       case 'basicSalary':
-        return <span className="text-xs font-bold text-on-surface">{currSym} {safeMoney(record.basicSalary)}</span>;
-      case 'overtime':
-        const otVal = safeNum(record.overtime);
+        return <span className="text-xs font-bold text-on-surface">{currSym} {safeMoney(record.basic ?? record.basicSalary)}</span>;
+      case 'presentDays':
+        return <span className="text-xs font-semibold text-teal-600 dark:text-teal-400">{record.presentDays ?? 0}</span>;
+      case 'absentDays': {
+        const absCnt = safeNum(record.absentDays ?? record.absentsCount);
+        return <span className={`text-xs font-bold ${absCnt > 0 ? 'text-red-600 dark:text-red-400' : 'text-on-surface-variant'}`}>{absCnt}</span>;
+      }
+      case 'otHours': {
         const otH = safeNum(record.otHours);
-        return (
-          <div className="flex flex-col items-end">
-            <span className="text-xs font-bold text-secondary">{currSym} {safeMoney(otVal)}</span>
-            {otH > 0 && <span className="text-[10px] text-on-surface-variant">{otH} hrs</span>}
-          </div>
-        );
-      case 'lateComingHours':
-        const lDed = safeNum(record.lateDeduction);
-        const lHrs = safeNum(record.lateComingHours);
-        return (
-          <div className="flex flex-col items-end">
-            <span className="text-xs font-bold text-error">-{currSym} {safeMoney(lDed)}</span>
-            {lHrs > 0 && <span className="text-[10px] text-on-surface-variant">{lHrs} hrs late</span>}
-          </div>
-        );
-      case 'absents':
-        const absDed = safeNum(record.absents);
-        const absCnt = safeNum(record.absentsCount);
-        return (
-          <div className="flex flex-col items-end">
-            <span className="text-xs font-bold text-error">-{currSym} {safeMoney(absDed)}</span>
-            {absCnt > 0 && <span className="text-[10px] text-on-surface-variant">{absCnt} days</span>}
-          </div>
-        );
-      case 'fine':
-        const fn = safeNum(record.fine);
-        return <span className={`text-xs font-bold ${fn > 0 ? 'text-error' : 'text-on-surface-variant'}`}>{currSym} {safeMoney(fn)}</span>;
-      case 'allowance':
+        return <span className={`text-xs ${otH > 0 ? 'font-bold text-teal-600 dark:text-teal-400' : 'text-on-surface-variant'}`}>{otH > 0 ? `${otH}h` : '-'}</span>;
+      }
+      case 'otAmount':
+      case 'overtime': {
+        const otVal = safeNum(record.otAmount ?? record.overtime);
+        return <span className={`text-xs font-bold ${otVal > 0 ? 'text-teal-600 dark:text-teal-400' : 'text-on-surface-variant'}`}>{otVal > 0 ? `+${currSym} ${safeMoney(otVal)}` : '-'}</span>;
+      }
+      case 'deductionHours':
+      case 'lateComingHours': {
+        const dH = safeNum(record.deductionHours ?? record.lateComingHours);
+        return <span className={`text-xs ${dH > 0 ? 'font-bold text-red-600 dark:text-red-400' : 'text-on-surface-variant'}`}>{dH > 0 ? `${dH}h` : '-'}</span>;
+      }
+      case 'deductionAmount':
+      case 'lateDeduction': {
+        const dVal = safeNum(record.deductionAmount ?? record.lateDeduction);
+        return <span className={`text-xs font-bold ${dVal > 0 ? 'text-red-600 dark:text-red-400' : 'text-on-surface-variant'}`}>{dVal > 0 ? `-${currSym} ${safeMoney(dVal)}` : '-'}</span>;
+      }
+      case 'absentDeduction':
+      case 'absents': {
+        const aDed = safeNum(record.absentDeduction ?? record.absents);
+        return <span className={`text-xs font-bold ${aDed > 0 ? 'text-red-600 dark:text-red-400' : 'text-on-surface-variant'}`}>{aDed > 0 ? `-${currSym} ${safeMoney(aDed)}` : '-'}</span>;
+      }
+      case 'allowance': {
         const al = safeNum(record.allowance);
-        return <span className={`text-xs font-bold ${al > 0 ? 'text-green-600' : 'text-on-surface-variant'}`}>+{currSym} {safeMoney(al)}</span>;
-      case 'advanceAmount':
-        const adv = safeNum(record.advanceAmount);
-        return <span className={`text-xs font-bold ${adv > 0 ? 'text-purple-600' : 'text-on-surface-variant'}`}>-{currSym} {safeMoney(adv)}</span>;
-      case 'loan':
+        return <span className={`text-xs font-bold ${al > 0 ? 'text-teal-600 dark:text-teal-400' : 'text-on-surface-variant'}`}>{al > 0 ? `+${currSym} ${safeMoney(al)}` : '-'}</span>;
+      }
+      case 'fine': {
+        const fn = safeNum(record.fine);
+        return <span className={`text-xs font-bold ${fn > 0 ? 'text-red-600 dark:text-red-400' : 'text-on-surface-variant'}`}>{fn > 0 ? `-${currSym} ${safeMoney(fn)}` : '-'}</span>;
+      }
+      case 'advance':
+      case 'advanceAmount': {
+        const adv = safeNum(record.advance ?? record.advanceAmount);
+        return <span className={`text-xs font-bold ${adv > 0 ? 'text-purple-600 dark:text-purple-400' : 'text-on-surface-variant'}`}>{adv > 0 ? `-${currSym} ${safeMoney(adv)}` : '-'}</span>;
+      }
+      case 'loan': {
         const ln = safeNum(record.loan);
-        return <span className={`text-xs font-bold ${ln > 0 ? 'text-purple-600' : 'text-on-surface-variant'}`}>-{currSym} {safeMoney(ln)}</span>;
-      case 'netSalary':
-        return <span className="text-sm font-black text-primary">{currSym} {safeMoney(record.netSalary)}</span>;
+        return <span className={`text-xs font-bold ${ln > 0 ? 'text-purple-600 dark:text-purple-400' : 'text-on-surface-variant'}`}>{ln > 0 ? `-${currSym} ${safeMoney(ln)}` : '-'}</span>;
+      }
+      case 'totalSalary':
+      case 'netSalary': {
+        const tot = safeNum(record.totalSalary ?? record.netSalary);
+        return <span className="text-sm font-black text-primary font-headline">{currSym} {safeMoney(tot)}</span>;
+      }
       default:
         return null;
     }
@@ -664,24 +632,39 @@ export default function HRSalaryGeneration({ isMobile }) {
     switch (colId) {
       case 'employeeId':
         return <span className="font-bold text-xs text-on-surface">TOTALS</span>;
+      case 'basic':
       case 'basicSalary':
-        return <span className="font-bold text-xs text-on-surface">{currSym} {safeMoney(footerTotals.basicSalary)}</span>;
+        return <span className="font-bold text-xs text-on-surface">{currSym} {safeMoney(footerTotals.basic)}</span>;
+      case 'presentDays':
+        return <span className="font-bold text-xs text-teal-600 dark:text-teal-400">{footerTotals.presentDays}</span>;
+      case 'absentDays':
+        return <span className="font-bold text-xs text-red-600 dark:text-red-400">{footerTotals.absentDays}</span>;
+      case 'otHours':
+        return <span className="font-bold text-xs text-teal-600 dark:text-teal-400">{safeNum(footerTotals.otHours)}h</span>;
+      case 'otAmount':
       case 'overtime':
-        return <span className="font-bold text-xs text-secondary">{currSym} {safeMoney(footerTotals.overtime)}</span>;
+        return <span className="font-bold text-xs text-teal-600 dark:text-teal-400">+{currSym} {safeMoney(footerTotals.otAmount)}</span>;
+      case 'deductionHours':
       case 'lateComingHours':
-        return <span className="font-bold text-xs text-error">-{currSym} {safeMoney(footerTotals.lateDeduction)}</span>;
+        return <span className="font-bold text-xs text-red-600 dark:text-red-400">{safeNum(footerTotals.deductionHours)}h</span>;
+      case 'deductionAmount':
+      case 'lateDeduction':
+        return <span className="font-bold text-xs text-red-600 dark:text-red-400">-{currSym} {safeMoney(footerTotals.deductionAmount)}</span>;
+      case 'absentDeduction':
       case 'absents':
-        return <span className="font-bold text-xs text-error">-{currSym} {safeMoney(footerTotals.absents)}</span>;
+        return <span className="font-bold text-xs text-red-600 dark:text-red-400">-{currSym} {safeMoney(footerTotals.absentDeduction)}</span>;
       case 'fine':
-        return <span className="font-bold text-xs text-error">-{currSym} {safeMoney(footerTotals.fine)}</span>;
+        return <span className="font-bold text-xs text-red-600 dark:text-red-400">-{currSym} {safeMoney(footerTotals.fine)}</span>;
       case 'allowance':
-        return <span className="font-bold text-xs text-green-600">+{currSym} {safeMoney(footerTotals.allowance)}</span>;
+        return <span className="font-bold text-xs text-teal-600 dark:text-teal-400">+{currSym} {safeMoney(footerTotals.allowance)}</span>;
+      case 'advance':
       case 'advanceAmount':
-        return <span className="font-bold text-xs text-purple-600">-{currSym} {safeMoney(footerTotals.advanceAmount)}</span>;
+        return <span className="font-bold text-xs text-purple-600 dark:text-purple-400">-{currSym} {safeMoney(footerTotals.advance)}</span>;
       case 'loan':
-        return <span className="font-bold text-xs text-purple-600">-{currSym} {safeMoney(footerTotals.loan)}</span>;
+        return <span className="font-bold text-xs text-purple-600 dark:text-purple-400">-{currSym} {safeMoney(footerTotals.loan)}</span>;
+      case 'totalSalary':
       case 'netSalary':
-        return <span className="font-black text-sm text-primary">{currSym} {safeMoney(footerTotals.netSalary)}</span>;
+        return <span className="font-black text-sm text-primary font-headline">{currSym} {safeMoney(footerTotals.totalSalary)}</span>;
       default:
         return null;
     }
@@ -734,6 +717,23 @@ export default function HRSalaryGeneration({ isMobile }) {
                 ))}
               </select>
               <span className="material-symbols-outlined absolute right-3 top-3 pointer-events-none text-outline">calendar_month</span>
+            </div>
+          </div>
+
+          {/* Division Filter */}
+          <div className="space-y-2 min-w-[170px]">
+            <label className="text-xs font-bold text-on-surface-variant uppercase tracking-wider block">Division Filter</label>
+            <div className="relative w-full">
+              <select 
+                value={divisionFilter}
+                onChange={(e) => setDivisionFilter(e.target.value)}
+                className="w-full h-11 pl-4 pr-10 text-sm border border-outline-variant rounded-xl bg-surface-container-lowest hover:border-primary transition-colors focus:border-primary focus:ring-4 focus:ring-primary/10 appearance-none cursor-pointer font-medium text-on-surface"
+              >
+                <option value="ALL">All Divisions</option>
+                <option value="AJ Synthetic">AJ Synthetic</option>
+                <option value="AAA">AAA</option>
+              </select>
+              <span className="material-symbols-outlined absolute right-3 top-3 pointer-events-none text-outline">domain</span>
             </div>
           </div>
 
@@ -1104,84 +1104,114 @@ export default function HRSalaryGeneration({ isMobile }) {
             <div className="p-6 space-y-6 text-sm">
               
               {/* Employee Info Header */}
-              <div className="bg-surface-container-low p-4 rounded-xl flex justify-between items-center">
-                <div>
-                  <p className="font-bold text-on-surface">{selectedRecordForDetail.employeeName}</p>
-                  <p className="text-[11px] font-semibold text-on-surface-variant">{selectedRecordForDetail.designation} • {selectedRecordForDetail.department}</p>
+              <div className="bg-surface-container-low p-4 rounded-xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <p className="font-bold text-on-surface text-base">{selectedRecordForDetail.employeeName}</p>
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                      selectedRecordForDetail.division === 'AAA' 
+                        ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20' 
+                        : 'bg-primary/10 text-primary border border-primary/20'
+                    }`}>
+                      {selectedRecordForDetail.division || 'AJ Synthetic'}
+                    </span>
+                  </div>
+                  <p className="text-[11px] font-medium text-on-surface-variant">
+                    {selectedRecordForDetail.designation} • {selectedRecordForDetail.department} • {selectedRecordForDetail.shift || 'GENERAL SHIFT'} ({selectedRecordForDetail.dutyHours || 8}h)
+                  </p>
                 </div>
-                <span className="px-2.5 py-0.5 rounded-full text-[9px] font-extrabold uppercase tracking-wider bg-primary/10 text-primary border border-primary/20">
+                <span className="px-2.5 py-0.5 rounded-full text-[9px] font-extrabold uppercase tracking-wider bg-primary/10 text-primary border border-primary/20 shrink-0">
                   {selectedRecordForDetail.status}
                 </span>
+              </div>
+
+              {/* Exact Formula Breakdown Card */}
+              <div className="bg-primary/[0.03] border border-primary/15 rounded-xl p-3.5 space-y-2 text-xs">
+                <div className="flex items-center gap-1.5 font-bold text-primary">
+                  <span className="material-symbols-outlined text-[16px]">calculate</span>
+                  <span>Sheet-Exact Calculation Formula</span>
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-[11px] text-on-surface-variant font-mono">
+                  <div>Hourly: <span className="text-on-surface font-semibold">{currSym} {safeMoney(selectedRecordForDetail.hourly || ((selectedRecordForDetail.basic ?? selectedRecordForDetail.basicSalary) / 240))}</span> (basic/240)</div>
+                  <div>Cal Days: <span className="text-on-surface font-semibold">{selectedRecordForDetail.calDays || 30} days</span></div>
+                  <div>Present: <span className="text-teal-600 font-semibold">{selectedRecordForDetail.presentDays ?? 0} days</span></div>
+                  <div>Absent: <span className="text-error font-semibold">{selectedRecordForDetail.absentDays ?? selectedRecordForDetail.absentsCount ?? 0} days</span></div>
+                </div>
               </div>
 
               {/* Earnings Breakdown */}
               <div className="space-y-2">
                 <p className="text-xs font-bold text-on-surface-variant uppercase tracking-wider border-b border-outline-variant/10 pb-1">Earnings</p>
                 <div className="flex justify-between items-center">
-                  <span className="text-on-surface-variant">Base Salary</span>
-                  <span className="font-bold text-on-surface">{currSym} {safeMoney(selectedRecordForDetail.basicSalary)}</span>
+                  <span className="text-on-surface-variant">Basic Monthly Salary</span>
+                  <span className="font-bold text-on-surface">{currSym} {safeMoney(selectedRecordForDetail.basic ?? selectedRecordForDetail.basicSalary)}</span>
                 </div>
-                {safeNum(selectedRecordForDetail.overtime) > 0 && (
+                {safeNum(selectedRecordForDetail.otAmount ?? selectedRecordForDetail.overtime) > 0 && (
                   <div className="flex justify-between items-center">
-                    <span className="text-on-surface-variant">Overtime ({safeNum(selectedRecordForDetail.otHours)} hours)</span>
-                    <span className="font-bold text-secondary">+{currSym} {safeMoney(selectedRecordForDetail.overtime)}</span>
+                    <span className="text-on-surface-variant">Overtime ({safeNum(selectedRecordForDetail.otHours)} hrs @ {currSym} {safeMoney(selectedRecordForDetail.hourly || ((selectedRecordForDetail.basic ?? selectedRecordForDetail.basicSalary) / 240))}/hr)</span>
+                    <span className="font-bold text-teal-600 dark:text-teal-400">+{currSym} {safeMoney(selectedRecordForDetail.otAmount ?? selectedRecordForDetail.overtime)}</span>
                   </div>
                 )}
                 {safeNum(selectedRecordForDetail.allowance) > 0 && (
                   <div className="flex justify-between items-center">
-                    <span className="text-on-surface-variant">Allowances</span>
-                    <span className="font-bold text-green-600">+{currSym} {safeMoney(selectedRecordForDetail.allowance)}</span>
+                    <span className="text-on-surface-variant">Attendance / Duty Allowance</span>
+                    <span className="font-bold text-teal-600 dark:text-teal-400">+{currSym} {safeMoney(selectedRecordForDetail.allowance)}</span>
                   </div>
                 )}
               </div>
 
               {/* Deductions Breakdown */}
-              {(safeNum(selectedRecordForDetail.lateDeduction) > 0 || 
-                safeNum(selectedRecordForDetail.absents) > 0 || 
+              {(safeNum(selectedRecordForDetail.deductionAmount ?? selectedRecordForDetail.lateDeduction) > 0 || 
+                safeNum(selectedRecordForDetail.absentDeduction ?? selectedRecordForDetail.absents) > 0 || 
                 safeNum(selectedRecordForDetail.fine) > 0 || 
                 safeNum(selectedRecordForDetail.loan) > 0 || 
-                safeNum(selectedRecordForDetail.advanceAmount) > 0) && (
+                safeNum(selectedRecordForDetail.advance ?? selectedRecordForDetail.advanceAmount) > 0) && (
                 <div className="space-y-2">
                   <p className="text-xs font-bold text-on-surface-variant uppercase tracking-wider border-b border-outline-variant/10 pb-1">Deductions</p>
-                  {safeNum(selectedRecordForDetail.lateDeduction) > 0 && (
+                  {safeNum(selectedRecordForDetail.deductionAmount ?? selectedRecordForDetail.lateDeduction) > 0 && (
                     <div className="flex justify-between items-center">
-                      <span className="text-on-surface-variant">Late Coming ({safeNum(selectedRecordForDetail.lateComingHours)} hours)</span>
-                      <span className="font-bold text-error">-{currSym} {safeMoney(selectedRecordForDetail.lateDeduction)}</span>
+                      <span className="text-on-surface-variant">Late / Short Hours ({safeNum(selectedRecordForDetail.deductionHours ?? selectedRecordForDetail.lateComingHours)} hrs)</span>
+                      <span className="font-bold text-error">-{currSym} {safeMoney(selectedRecordForDetail.deductionAmount ?? selectedRecordForDetail.lateDeduction)}</span>
                     </div>
                   )}
-                  {safeNum(selectedRecordForDetail.absents) > 0 && (
+                  {safeNum(selectedRecordForDetail.absentDeduction ?? selectedRecordForDetail.absents) > 0 && (
                     <div className="flex justify-between items-center">
-                      <span className="text-on-surface-variant">Absents ({safeNum(selectedRecordForDetail.absentsCount)} days)</span>
-                      <span className="font-bold text-error">-{currSym} {safeMoney(selectedRecordForDetail.absents)}</span>
+                      <span className="text-on-surface-variant">Unpaid Absent Days ({safeNum(selectedRecordForDetail.absentDays ?? selectedRecordForDetail.absentsCount)} days @ basic/30)</span>
+                      <span className="font-bold text-error">-{currSym} {safeMoney(selectedRecordForDetail.absentDeduction ?? selectedRecordForDetail.absents)}</span>
                     </div>
                   )}
                   {safeNum(selectedRecordForDetail.fine) > 0 && (
                     <div className="flex justify-between items-center">
-                      <span className="text-on-surface-variant">Late Fines Penalty</span>
+                      <span className="text-on-surface-variant">Fine / Penalty</span>
                       <span className="font-bold text-error">-{currSym} {safeMoney(selectedRecordForDetail.fine)}</span>
                     </div>
                   )}
                   {safeNum(selectedRecordForDetail.loan) > 0 && (
                     <div className="flex justify-between items-center">
                       <span className="text-on-surface-variant">Loan Installment Deduction</span>
-                      <span className="font-bold text-purple-600">-{currSym} {safeMoney(selectedRecordForDetail.loan)}</span>
+                      <span className="font-bold text-purple-600 dark:text-purple-400">-{currSym} {safeMoney(selectedRecordForDetail.loan)}</span>
                     </div>
                   )}
-                  {safeNum(selectedRecordForDetail.advanceAmount) > 0 && (
+                  {safeNum(selectedRecordForDetail.advance ?? selectedRecordForDetail.advanceAmount) > 0 && (
                     <div className="flex justify-between items-center">
                       <span className="text-on-surface-variant">Salary Advance Return</span>
-                      <span className="font-bold text-purple-600">-{currSym} {safeMoney(selectedRecordForDetail.advanceAmount)}</span>
+                      <span className="font-bold text-purple-600 dark:text-purple-400">-{currSym} {safeMoney(selectedRecordForDetail.advance ?? selectedRecordForDetail.advanceAmount)}</span>
                     </div>
                   )}
                 </div>
               )}
 
               {/* Net Payout Details */}
-              <div className="pt-4 border-t border-outline-variant/20 flex justify-between items-center">
-                <span className="text-base font-bold text-on-surface">Net Payout Salary</span>
-                <span className="text-xl font-black text-primary font-headline">
-                  {currSym} {safeMoney(selectedRecordForDetail.netSalary)}
-                </span>
+              <div className="pt-4 border-t border-outline-variant/20 space-y-1.5">
+                <div className="flex justify-between items-center">
+                  <span className="text-base font-bold text-on-surface">TOTAL SALARY PAYABLE</span>
+                  <span className="text-xl font-black text-primary font-headline">
+                    {currSym} {safeMoney(selectedRecordForDetail.totalSalary ?? selectedRecordForDetail.netSalary)}
+                  </span>
+                </div>
+                <p className="text-[11px] italic text-on-surface-variant">
+                  {selectedRecordForDetail.words || amountInWords(selectedRecordForDetail.totalSalary ?? selectedRecordForDetail.netSalary)}
+                </p>
               </div>
 
             </div>

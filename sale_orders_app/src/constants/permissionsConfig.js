@@ -458,6 +458,15 @@ export const permissionsConfig = {
         ]
       },
       {
+        id: 'hrPayslip',
+        title: 'Pay Slip',
+        description: 'View and print official monthly employee salary slips and time logs.',
+        icon: 'receipt_long',
+        perms: [
+          { id: 'view', label: 'View Pay Slips', desc: 'Access and print employee salary slips.' }
+        ]
+      },
+      {
         id: 'salaryAllowanceConfig',
         title: 'Salary & Allowance Config',
         description: 'Configure global payroll percentages, allowances, and tax brackets.',

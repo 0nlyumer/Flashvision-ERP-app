@@ -34,7 +34,9 @@ export const normalizeEmployeeRecord = (emp, idx = 0) => {
   ];
 
   if (!next.department || next.department === 'Global Logistics') {
-    if (desig.includes('hr') || desig.includes('human')) {
+    if (next.division === 'AAA') {
+      next.department = 'AAA';
+    } else if (desig.includes('hr') || desig.includes('human')) {
       next.department = 'Human Resources & Admin';
     } else if (desig.includes('finance') || desig.includes('account')) {
       next.department = 'Finance & Accounts';
@@ -49,23 +51,21 @@ export const normalizeEmployeeRecord = (emp, idx = 0) => {
     }
   }
 
-  let salary = parseFloat(next.basicSalary || next.salary || 0);
+  const existingSalary = parseFloat(next.basicSalary ?? next.salary ?? 0);
+  let salary = existingSalary;
 
-  if (desig.includes('helper') || desig.includes('worker') || desig.includes('labor') || desig.includes('peon')) {
-    if (salary > 50000 || salary === 18000) {
+  // Only apply fallback salary heuristic if employee has NO valid salary configured
+  if (!salary || salary <= 0) {
+    if (desig.includes('helper') || desig.includes('worker') || desig.includes('labor') || desig.includes('peon')) {
       salary = 35000;
-    }
-  } else if (desig.includes('manager') || desig.includes('lead') || desig.includes('director') || desig.includes('head')) {
-    if (salary < 60000) {
+    } else if (desig.includes('manager') || desig.includes('lead') || desig.includes('director') || desig.includes('head')) {
       salary = 140000;
-    }
-  } else if (desig.includes('supervisor') || desig.includes('engineer')) {
-    if (salary < 50000) {
+    } else if (desig.includes('supervisor') || desig.includes('engineer')) {
       salary = 85000;
-    }
-  } else if (desig.includes('operator')) {
-    if (salary < 30000 || salary > 65000) {
+    } else if (desig.includes('operator')) {
       salary = 45000;
+    } else {
+      salary = 32000;
     }
   }
 

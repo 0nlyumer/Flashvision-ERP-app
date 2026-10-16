@@ -25,3 +25,7 @@ extracted_main_state.json
 
 # Agent skills library
 /.agents/
+
+# round-8 helper files (not part of the app)
+agy-round8-run.log
+round8-brief.md
