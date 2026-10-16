@@ -2,12 +2,14 @@ import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useNavigate } from 'react-router-dom';
 import { useDialog } from '../../context/DialogContext';
+import UniversalPrintPreviewModal from '../ui/UniversalPrintPreviewModal';
 
 export default function HRAdvanceRequest({ isMobile }) {
   const { state, setCollection, startRoutingWorkflow, currencySymbol, currentUser } = useApp();
   const { appAlert } = useDialog();
   const navigate = useNavigate();
   const currSym = currencySymbol || 'Rs.';
+  const [printData, setPrintData] = useState(null);
 
   // Employees list from global state
   const employees = state.hr_employees_list || [];
@@ -237,11 +239,68 @@ export default function HRAdvanceRequest({ isMobile }) {
   };
 
   const handlePrintRequest = (req) => {
-    navigate(`/print?docType=hr_advance_request&id=${encodeURIComponent(req.id)}`);
+    const target = req || advanceRequests[0] || {
+      id: 'ADV-DRAFT',
+      employeeId: selectedEmployee?.id || 'EMP-304',
+      employeeName: selectedEmployee?.name || 'Staff Member',
+      department: selectedEmployee?.department || 'Operations',
+      amount: parseFloat(advanceAmount) || 25000,
+      deductionMonth: deductionMonth || getCurrentMonthISO(),
+      purpose: justification || 'Salary Advance Request',
+      dateApplied: new Date().toISOString().substring(0, 10),
+      status: 'Pending'
+    };
+
+    const amountVal = parseFloat(target.amount || target.advanceAmount || 0);
+    const dedMonth = target.deductionMonth || deductionMonth || getCurrentMonthISO();
+
+    setPrintData({
+      ...target,
+      id: target.id || 'ADV-DRAFT',
+      request_id: target.id || 'ADV-DRAFT',
+      date_applied: target.dateApplied || new Date().toISOString().substring(0, 10),
+      employee_id: target.employeeId || selectedEmployee?.id || '—',
+      employee_name: target.employeeName || selectedEmployee?.name || 'Staff Member',
+      department: target.department || selectedEmployee?.department || 'Operations',
+      advance_amount: amountVal,
+      deduction_month: dedMonth,
+      header: {
+        request_id: target.id || 'ADV-DRAFT',
+        date_applied: target.dateApplied || new Date().toISOString().substring(0, 10),
+        employee_id: target.employeeId || selectedEmployee?.id || '—',
+        employee_name: target.employeeName || selectedEmployee?.name || 'Staff Member',
+        department: target.department || selectedEmployee?.department || 'Operations',
+        advance_amount: amountVal,
+        deduction_month: dedMonth,
+        purpose: target.purpose || justification || 'Salary Advance Request',
+        status: target.status || 'Pending'
+      },
+      items: [
+        {
+          serial_no: 1,
+          recovery_month: dedMonth,
+          deduction_amount: amountVal
+        }
+      ],
+      totals: {
+        'Advance Amount': amountVal,
+        'Deduction Total': amountVal,
+        grandTotal: amountVal
+      }
+    });
   };
 
   return (
     <div className="w-full flex-1 bg-surface py-6 px-4 md:px-8 font-body animate-in fade-in duration-300">
+      {printData && (
+        <UniversalPrintPreviewModal
+          isOpen={Boolean(printData)}
+          onClose={() => setPrintData(null)}
+          documentType="hr_advance_request"
+          documentData={printData}
+          documentTitle={`Salary Advance Slip - ${printData.id}`}
+        />
+      )}
       {/* Toast Notification */}
       {toastMessage && (
         <div className="fixed top-20 right-8 z-50 bg-emerald-600 text-white px-5 py-3 rounded-2xl shadow-xl flex items-center gap-3 animate-in slide-in-from-top-4 duration-200">
@@ -270,8 +329,8 @@ export default function HRAdvanceRequest({ isMobile }) {
           <div className="flex items-center gap-3 w-full md:w-auto">
             <button 
               type="button"
-              onClick={() => window.print()}
-              className="flex-1 md:flex-none primary-gradient text-on-primary px-5 py-2.5 rounded-xl text-xs font-bold shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2"
+              onClick={() => handlePrintRequest(null)}
+              className="flex-1 md:flex-none primary-gradient text-on-primary px-5 py-2.5 rounded-xl text-xs font-bold shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer"
             >
               <span className="material-symbols-outlined text-[18px]">print</span>
               Print Document

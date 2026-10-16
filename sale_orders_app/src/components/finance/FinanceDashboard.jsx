@@ -1,10 +1,12 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { generateFinanceOverviewKpis, formatMoney, round2 } from '../../utils/financeEngine';
+import UniversalPrintPreviewModal from '../ui/UniversalPrintPreviewModal';
 
 export default function FinanceDashboard({ onNavigateTab }) {
   const { state } = useApp();
   const currencyCode = state.adminSetup?.baseCurrency ? state.adminSetup.baseCurrency.split(' ')[0] : 'PKR';
+  const [showPrintModal, setShowPrintModal] = useState(false);
 
   // Compute live real-time financial metrics from financeEngine
   const kpis = useMemo(() => {
@@ -53,12 +55,59 @@ export default function FinanceDashboard({ onNavigateTab }) {
     return { label: 'Insolvent / At Risk', className: 'text-rose-600 font-bold' };
   }, [hasFinanceData, currentRatio, quickRatio]);
 
+  const printData = useMemo(() => {
+    const txItems = (recentTransactions || []).map((tx, idx) => ({
+      serial_no: idx + 1,
+      date: tx.date || new Date().toISOString().split('T')[0],
+      voucher_no: tx.voucherNo || tx.ref || `TX-${idx + 1}`,
+      account_name: tx.accountName || tx.account || 'General Ledger Entry',
+      party: tx.party || tx.narration || '—',
+      debit: tx.debit || 0,
+      credit: tx.credit || 0
+    }));
+
+    return {
+      report_title: 'EXECUTIVE FINANCIAL PERFORMANCE BRIEF',
+      as_of_date: new Date().toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' }),
+      operating_health: operatingHealth.label,
+      solvency_status: solvencyStatus.label,
+      currency: currencyCode,
+      header: {
+        report_title: 'EXECUTIVE FINANCIAL PERFORMANCE BRIEF',
+        as_of_date: new Date().toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' }),
+        operating_health: operatingHealth.label,
+        solvency_status: solvencyStatus.label,
+        currency: currencyCode
+      },
+      items: txItems.length > 0 ? txItems : [
+        { serial_no: 1, date: new Date().toISOString().split('T')[0], voucher_no: 'GL-POSTED', account_name: 'Operating Cash & Bank', party: 'Treasury Portfolio', debit: cashAndBank, credit: 0 }
+      ],
+      totals: {
+        'Net Revenue': netRevenue,
+        'Gross Profit': grossProfit,
+        'Net Profit': netProfit,
+        'Cash & Bank': cashAndBank,
+        'Total Receivables': totalReceivables,
+        'Total Payables': totalPayables
+      }
+    };
+  }, [recentTransactions, operatingHealth, solvencyStatus, currencyCode, cashAndBank, netRevenue, grossProfit, netProfit, totalReceivables, totalPayables]);
+
   const handleExport = () => {
-    window.print();
+    setShowPrintModal(true);
   };
 
   return (
     <div className="flex-1 w-full max-w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 flex flex-col gap-6">
+      {showPrintModal && (
+        <UniversalPrintPreviewModal
+          isOpen={showPrintModal}
+          onClose={() => setShowPrintModal(false)}
+          documentType="finance_dashboard"
+          documentData={printData}
+          documentTitle="Finance & Accounts Executive Brief"
+        />
+      )}
       {/* Page Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
         <div>

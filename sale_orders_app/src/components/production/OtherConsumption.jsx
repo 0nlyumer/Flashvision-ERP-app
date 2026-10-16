@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useDialog } from '../../context/DialogContext';
 import CustomMultiSelect from '../ui/CustomMultiSelect';
+import UniversalPrintPreviewModal from '../ui/UniversalPrintPreviewModal';
 
 export default function OtherConsumption() {
     const { state, setCollection, setDirty } = useApp();
@@ -13,6 +14,7 @@ export default function OtherConsumption() {
     const [selectedItemId, setSelectedItemId] = useState('');
     const [qtyInput, setQtyInput] = useState('');
     const [pendingEntries, setPendingEntries] = useState([]);
+    const [printData, setPrintData] = useState(null);
 
     // Modal open states
     const [historyOpen, setHistoryOpen] = useState(false);
@@ -297,80 +299,39 @@ export default function OtherConsumption() {
 
     // Print a specific consumption voucher
     const handlePrintRecord = (oc) => {
-        const printWindow = window.open('', '_blank');
-        printWindow.document.write(`
-            <html>
-                <head>
-                    <title>Other Consumption Voucher - ${oc.id}</title>
-                    <style>
-                        body { font-family: 'Segoe UI', Arial, sans-serif; padding: 40px; color: #333; }
-                        .header { border-bottom: 2px solid #333; padding-bottom: 20px; margin-bottom: 30px; text-align: center; }
-                        .title { font-size: 24px; font-weight: bold; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 1px; }
-                        .subtitle { font-size: 14px; color: #666; }
-                        .details-table { width: 100%; border-collapse: collapse; margin-top: 30px; }
-                        .details-table th, .details-table td { border: 1px solid #ddd; padding: 12px 15px; text-align: left; }
-                        .details-table th { background-color: #f5f5f5; font-weight: bold; text-transform: uppercase; font-size: 11px; }
-                        .details-table td { font-size: 13px; }
-                        .footer { margin-top: 60px; font-size: 12px; color: #888; text-align: center; border-top: 1px solid #eee; padding-top: 20px; }
-                        .signatures { display: flex; justify-content: space-between; margin-top: 85px; }
-                        .signature-line { border-top: 1px solid #333; width: 220px; text-align: center; font-size: 11px; padding-top: 8px; font-weight: bold; }
-                    </style>
-                </head>
-                <body>
-                    <div class="header">
-                        <div class="title">Flashvision ERP</div>
-                        <div class="subtitle">Other Material Consumption Voucher</div>
-                    </div>
-                    
-                    <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 20px;">
-                        <div><strong>Voucher ID:</strong> ${oc.id}</div>
-                        <div><strong>Date:</strong> ${new Date(oc.date).toLocaleString()}</div>
-                    </div>
-                    
-                    <table class="details-table">
-                        <thead>
-                            <tr>
-                                <th>Plan ID</th>
-                                <th>Source Department</th>
-                                <th>Item Code</th>
-                                <th>Item Name</th>
-                                <th>Unit Price</th>
-                                <th>Quantity</th>
-                                <th>Total Cost</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td>${oc.planId}</td>
-                                <td>${oc.department}</td>
-                                <td>${oc.itemCode}</td>
-                                <td>${oc.itemName}</td>
-                                <td>Rs. ${parseFloat(oc.price || 0).toFixed(2)}</td>
-                                <td>${oc.quantity} ${oc.unit}</td>
-                                <td><strong>Rs. ${parseFloat(oc.cost || 0).toFixed(2)}</strong></td>
-                            </tr>
-                        </tbody>
-                    </table>
-                    
-                    <div class="signatures">
-                        <div class="signature-line">Prepared By</div>
-                        <div class="signature-line">Authorized Signature</div>
-                    </div>
-
-                    <div class="footer">
-                        System Generated Voucher &bull; Flashvision ERP
-                    </div>
-                    
-                    <script>
-                        window.onload = function() {
-                            window.print();
-                            setTimeout(function() { window.close(); }, 500);
-                        };
-                    </script>
-                </body>
-            </html>
-        `);
-        printWindow.document.close();
+        if (!oc) return;
+        setPrintData({
+            ...oc,
+            id: oc.id,
+            ref_no: oc.id,
+            date: oc.date ? new Date(oc.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+            cost_center: oc.department || 'Production Department',
+            category: 'Material Consumption',
+            header: {
+                ref_no: oc.id,
+                date: oc.date ? new Date(oc.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+                cost_center: oc.department || 'Production Department',
+                category: 'Material Consumption',
+                plan_id: oc.planId || '—',
+                department: oc.department || 'Production'
+            },
+            items: [
+                {
+                    serial_no: 1,
+                    item_code: oc.itemCode || 'RM',
+                    item_name: oc.itemName || 'Material Item',
+                    qty: parseFloat(oc.quantity || 0),
+                    uom: oc.unit || 'Kg',
+                    unit_price: parseFloat(oc.price || 0),
+                    total_cost: parseFloat(oc.cost || (oc.quantity * oc.price) || 0),
+                    remarks: `Plan Ref: ${oc.planId || 'Direct'}`
+                }
+            ],
+            totals: {
+                totalConsumedQty: parseFloat(oc.quantity || 0),
+                totalCost: parseFloat(oc.cost || (oc.quantity * oc.price) || 0)
+            }
+        });
     };
 
     // Filter history entries by search query
@@ -721,6 +682,16 @@ export default function OtherConsumption() {
                         </div>
                     </div>
                 </div>
+            )}
+
+            {printData && (
+                <UniversalPrintPreviewModal
+                    isOpen={Boolean(printData)}
+                    onClose={() => setPrintData(null)}
+                    documentType="other_consumptions"
+                    documentData={printData}
+                    documentTitle={`Other Consumption Voucher #${printData.id}`}
+                />
             )}
         </div>
     );

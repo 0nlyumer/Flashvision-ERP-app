@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import PrintLayout from '../ui/PrintLayout';
+import UniversalPrintPreviewModal from '../ui/UniversalPrintPreviewModal';
 import { useApp } from '../../context/AppContext';
 import GlobalPagination from '../ui/GlobalPagination';
 
 export default function OmsSlip({ activeRuns = [] }) {
     const { state } = useApp();
     const [currentPage, setCurrentPage] = useState(1);
+    const [printData, setPrintData] = useState(null);
     const itemsPerPage = 20;
 
     const displayedData = state?.isGlobalPaginated 
@@ -24,15 +25,57 @@ export default function OmsSlip({ activeRuns = [] }) {
         );
     }
 
-    // Function to trigger a mock print
-    const handlePrint = (runId) => {
-        window.print();
+    const handlePrint = (run) => {
+        if (!run) return;
+        const cust = state.customers?.find(c => (run.customerId && c.id === run.customerId) || c.name === run.customerName);
+        const canonicalCustomer = cust?.name || run.customerName || 'Customer Party';
+
+        setPrintData({
+            ...run,
+            id: run.id,
+            manifest_no: run.id,
+            plan_id: run.planId || run.id,
+            date: run.startTime ? new Date(run.startTime).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+            production_line: run.line || run.productionLine || 'Main Factory Floor',
+            supervisor: run.supervisor || state?.currentUser?.name || 'Shift Supervisor',
+            shift: run.shift || 'General Shift',
+            customer_name: canonicalCustomer,
+            header: {
+                manifest_no: run.id,
+                plan_id: run.planId || run.id,
+                date: run.startTime ? new Date(run.startTime).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+                production_line: run.line || run.productionLine || 'Main Factory Floor',
+                supervisor: run.supervisor || state?.currentUser?.name || 'Shift Supervisor',
+                shift: run.shift || 'General Shift',
+                sale_order: run.orderId || '—',
+                customer: canonicalCustomer
+            },
+            items: [
+                {
+                    serial_no: 1,
+                    item_code: run.itemCode || '—',
+                    item_name: run.productName || '—',
+                    target_qty: run.quantity || 0,
+                    uom: 'Meters',
+                    batch_no: run.batchNo || run.id,
+                    status: run.remaining === 0 ? 'Completed' : 'Running',
+                    output_qty: run.outputQty || 0,
+                    remaining_qty: run.remaining !== undefined ? run.remaining : run.quantity,
+                    required_material: run.requiredFabricName || '—'
+                }
+            ],
+            totals: {
+                totalTargetQty: `${run.quantity || 0} Meters`,
+                totalOutputQty: `${run.outputQty || 0} Meters`,
+                totalRemainingQty: `${run.remaining !== undefined ? run.remaining : run.quantity} Meters`
+            }
+        });
     };
 
     return (
         <>
         {/* ON-SCREEN UI */}
-        <div className="animate-in fade-in duration-500 max-w-[1920px] mx-auto pb-20 print:hidden">
+        <div className="animate-in fade-in duration-500 max-w-[1920px] mx-auto pb-20">
             {/* Header Section */}
             <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-8 gap-4 px-2">
                 <div>
@@ -59,7 +102,7 @@ export default function OmsSlip({ activeRuns = [] }) {
                                     <p className="text-sm font-medium text-on-surface-variant mt-1">Generated: {new Date(run.startTime).toLocaleString()}</p>
                                 </div>
                                 <button 
-                                    onClick={() => handlePrint(run.id)}
+                                    onClick={() => handlePrint(run)}
                                     className="w-full bg-surface-container-low hover:bg-primary/10 text-primary font-bold py-3 px-4 rounded-xl transition-colors border border-outline-variant/20 flex items-center justify-center gap-2"
                                 >
                                     <span className="material-symbols-outlined text-[20px]" style={{ fontVariationSettings: "'FILL' 1" }}>print</span>
@@ -138,62 +181,15 @@ export default function OmsSlip({ activeRuns = [] }) {
             </div>
         </div>
 
-        {/* PRINT-ONLY UI (Clean Table format) */}
-        <div className="hidden print:block w-full">
-            {activeRuns.map((run, idx) => {
-                const slipSettings = state?.adminSetup?.printSettings?.moduleSettings?.production_slip || {};
-                const rowSize = slipSettings.rowSize || 'normal';
-                const cellPadding = rowSize === 'compact' ? 'py-1 px-2' : rowSize === 'spacious' ? 'py-4 px-4' : 'py-2 px-3';
-                
-                let colWidths = [];
-                if (slipSettings.columnWidths) {
-                    colWidths = slipSettings.columnWidths.split(',').map(s => s.trim());
-                }
-
-                return (
-                <div key={run.id} className="mb-10 page-break-after-always" style={{ pageBreakAfter: idx === activeRuns.length - 1 ? 'auto' : 'always' }}>
-                    <PrintLayout 
-                        documentTitle="Production Routing Slip"
-                        documentId={run.id}
-                        date={new Date(run.startTime).toLocaleDateString()}
-                        disclaimerKey="production"
-                        extraMeta={[
-                            { label: 'Sale Order', value: run.orderId || 'N/A' },
-                            { label: 'Customer', value: run.customerName || 'Unknown' }
-                        ]}
-                    >
-                        <div className="border border-gray-300 mt-4">
-                            <table className="w-full text-left border-collapse">
-                                <thead>
-                                    <tr className="bg-gray-100">
-                                        <th className="py-2 px-3 text-[11px] font-black text-gray-700 uppercase border border-gray-300" style={{ width: colWidths[0] || '15%' }}>Item Code</th>
-                                        <th className="py-2 px-3 text-[11px] font-black text-gray-700 uppercase border border-gray-300" style={{ width: colWidths[1] || 'auto' }}>Product</th>
-                                        <th className="py-2 px-3 text-[11px] font-black text-gray-700 uppercase border border-gray-300" style={{ width: colWidths[2] || '20%' }}>Req. Material</th>
-                                        <th className="py-2 px-3 text-[11px] font-black text-gray-700 uppercase border border-gray-300 text-right" style={{ width: colWidths[3] || '12%' }}>Target (m)</th>
-                                        <th className="py-2 px-3 text-[11px] font-black text-gray-700 uppercase border border-gray-300 text-right" style={{ width: colWidths[4] || '12%' }}>Output (m)</th>
-                                        <th className="py-2 px-3 text-[11px] font-black text-gray-700 uppercase border border-gray-300 text-right" style={{ width: colWidths[5] || '12%' }}>Balance (m)</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <tr>
-                                        <td className={`${cellPadding} text-[11px] font-bold border border-gray-300`}>{run.itemCode}</td>
-                                        <td className={`${cellPadding} text-[11px] border border-gray-300`}>{run.productName}</td>
-                                        <td className={`${cellPadding} text-[11px] border border-gray-300`}>{run.requiredFabricName || 'None'}</td>
-                                        <td className={`${cellPadding} text-[11px] font-bold text-right border border-gray-300`}>{run.quantity}</td>
-                                        <td className={`${cellPadding} text-[11px] font-bold text-right border border-gray-300`}>{run.outputQty || 0}</td>
-                                        <td className={`${cellPadding} text-[11px] font-bold text-right border border-gray-300`}>{run.remaining !== undefined ? run.remaining : run.quantity}</td>
-                                    </tr>
-                                </tbody>
-                            </table>
-                            <div className="p-4 bg-gray-50 flex justify-between items-center border-t border-gray-300">
-                                <div><strong className="text-[10px] text-gray-500">MACHINE ALLOCATION:</strong> ________________________</div>
-                                <div><strong className="text-[10px] text-gray-500">OPERATOR SIGN:</strong> ________________________</div>
-                            </div>
-                        </div>
-                    </PrintLayout>
-                </div>
-            )})}
-        </div>
+        {printData && (
+            <UniversalPrintPreviewModal
+                isOpen={Boolean(printData)}
+                onClose={() => setPrintData(null)}
+                documentType="production_manifest"
+                documentData={printData}
+                documentTitle={`Production Slip #${printData.id}`}
+            />
+        )}
         </>
     );
 }

@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { generateTaxRegisters, formatMoney, round2 } from '../../utils/financeEngine';
 import ResizableHeader from '../ui/ResizableHeader';
+import UniversalPrintPreviewModal from '../ui/UniversalPrintPreviewModal';
 
 export default function TaxManagement() {
   const { state } = useApp();
@@ -12,6 +13,7 @@ export default function TaxManagement() {
 
   // Selected WHT Certificate for Modal
   const [selectedCert, setSelectedCert] = useState(null);
+  const [printData, setPrintData] = useState(null);
 
   // Compute Tax Registers
   const taxData = useMemo(() => {
@@ -28,12 +30,85 @@ export default function TaxManagement() {
     totalWht
   } = taxData;
 
-  const handlePrint = () => {
-    window.print();
+  const handlePrint = (customCert = null) => {
+    const cert = customCert || selectedCert;
+    if (cert) {
+      setPrintData({
+        report_title: 'WITHHOLDING TAX DEDUCTION CERTIFICATE (RULE 44)',
+        tax_period: cert.period || new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
+        jurisdiction: 'Federal Board of Revenue (FBR) - Section 153',
+        currency: currencyCode,
+        header: {
+          report_title: 'WITHHOLDING TAX DEDUCTION CERTIFICATE (RULE 44)',
+          tax_period: cert.period || new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
+          jurisdiction: 'Federal Board of Revenue (FBR) - Section 153',
+          currency: currencyCode,
+          certificate_id: cert.id,
+          vendor_name: cert.vendorName,
+          cpr_number: cert.cprNo || '—'
+        },
+        items: [
+          {
+            serial_no: 1,
+            date: cert.date || new Date().toISOString().split('T')[0],
+            ref_no: cert.cprNo || cert.id,
+            party_name: cert.vendorName,
+            taxable_value: cert.grossAmount || 0,
+            tax_rate: `${cert.rate}%`,
+            tax_amount: cert.whtAmount || 0
+          }
+        ],
+        totals: {
+          'Gross Taxable Value': cert.grossAmount || 0,
+          'Total WHT Deducted': cert.whtAmount || 0
+        }
+      });
+      return;
+    }
+
+    // Default: Print full monthly return / register
+    const items = (outputRegister || []).map((it, idx) => ({
+      serial_no: idx + 1,
+      date: it.date || new Date().toISOString().split('T')[0],
+      ref_no: it.invoiceNo || it.id || `TX-${idx + 1}`,
+      party_name: it.customerName || it.party || 'Customer Party',
+      taxable_value: it.taxableValue || it.grossAmount || 0,
+      tax_rate: `${it.taxRate || 18}%`,
+      tax_amount: it.taxAmount || 0
+    }));
+
+    setPrintData({
+      report_title: 'MONTHLY SALES TAX RETURN & WITHHOLDING REGISTER',
+      tax_period: new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
+      jurisdiction: 'Federal Board of Revenue (FBR) & Provincial Authorities',
+      currency: currencyCode,
+      header: {
+        report_title: 'MONTHLY SALES TAX RETURN & WITHHOLDING REGISTER',
+        tax_period: new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
+        jurisdiction: 'Federal Board of Revenue (FBR) & Provincial Authorities',
+        currency: currencyCode
+      },
+      items,
+      totals: {
+        'Total Output Tax (18%)': totalOutputTax,
+        'Input Tax Credit': totalInputTax,
+        'Net Sales Tax Payable': netSalesTaxPayable,
+        'Total WHT Deducted': totalWht
+      }
+    });
   };
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-full w-full mx-auto space-y-6">
+      {printData && (
+        <UniversalPrintPreviewModal
+          isOpen={Boolean(printData)}
+          onClose={() => setPrintData(null)}
+          documentType="tax_ledger_reports"
+          documentData={printData}
+          documentTitle={printData.report_title}
+        />
+      )}
       {/* Top Header */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
@@ -369,7 +444,7 @@ export default function TaxManagement() {
 
             <div className="pt-2 flex justify-end gap-2">
               <button
-                onClick={handlePrint}
+                onClick={() => handlePrint(selectedCert)}
                 className="px-4 py-2 bg-primary text-on-primary rounded-xl font-bold text-xs hover:opacity-90 transition-all cursor-pointer flex items-center gap-1.5"
               >
                 <span className="material-symbols-outlined text-[16px]">print</span>

@@ -2,11 +2,69 @@ import React, { useState } from 'react';
 import ResizableHeader from '../ui/ResizableHeader';
 import { useApp } from '../../context/AppContext';
 import GlobalPagination from '../ui/GlobalPagination';
+import UniversalPrintPreviewModal from '../ui/UniversalPrintPreviewModal';
 
 export default function StockReceivingHistory({ onNewReceiptClick }) {
     const { state, deleteStockReceivingNote } = useApp();
     const [currentPage, setCurrentPage] = useState(1);
+    const [printData, setPrintData] = useState(null);
     const itemsPerPage = 20;
+
+    const handlePrintReceipt = (receipt) => {
+        if (!receipt) return;
+        const t = receipt.originalTransfer || {};
+        const rawItems = t.receivedItems || t.items || [];
+        const items = rawItems.map((itm, idx) => {
+            const received = parseFloat(itm.receivedQty || itm.qty || itm.transfer_qty || 0);
+            const accepted = parseFloat(itm.acceptedQty !== undefined ? itm.acceptedQty : received);
+            const rejected = parseFloat(itm.rejectedQty !== undefined ? itm.rejectedQty : 0);
+            return {
+                serial_no: idx + 1,
+                item_code: itm.sku || itm.itemCode || itm.itemId || `RM-${idx + 1}`,
+                item_name: itm.name || itm.itemName || 'Material Item',
+                received_qty: received,
+                accepted_qty: accepted,
+                rejected_qty: rejected,
+                uom: itm.uom || itm.unit || 'Kg'
+            };
+        });
+
+        const totalReceived = items.reduce((sum, itm) => sum + (Number(itm.received_qty) || 0), 0);
+        const totalAccepted = items.reduce((sum, itm) => sum + (Number(itm.accepted_qty) || 0), 0);
+        const totalRejected = items.reduce((sum, itm) => sum + (Number(itm.rejected_qty) || 0), 0);
+
+        setPrintData({
+            ...receipt,
+            id: receipt.id,
+            receiving_no: receipt.id,
+            date: t.date ? new Date(t.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+            supplier: t.source || 'Main Plant Store',
+            grn_ref: receipt.transferRef || receipt.demandId || '—',
+            header: {
+                receiving_no: receipt.id,
+                date: t.date ? new Date(t.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+                supplier: t.source || 'Main Plant Store',
+                grn_ref: receipt.transferRef || receipt.demandId || '—',
+                destination: t.destination || 'Production Store',
+                status: receipt.status || 'Received'
+            },
+            items: items.length > 0 ? items : [
+                {
+                    serial_no: 1,
+                    item_code: 'RM-DEFAULT',
+                    item_name: 'Received Material Item',
+                    received_qty: 0,
+                    accepted_qty: 0,
+                    rejected_qty: 0
+                }
+            ],
+            totals: {
+                totalReceived,
+                totalAccepted,
+                totalRejected
+            }
+        });
+    };
 
     const realData = (state?.stockTransfers || []).filter(t => t.status === 'Received').map(t => ({
         id: t.id.replace('TRF', 'RCV'),
@@ -134,7 +192,7 @@ export default function StockReceivingHistory({ onNewReceiptClick }) {
                                             <button 
                                                 className="text-on-surface-variant hover:text-secondary transition-colors p-1" 
                                                 title="Print"
-                                                onClick={() => window.print()}
+                                                onClick={() => handlePrintReceipt(item)}
                                             >
                                                 <span className="material-symbols-outlined text-sm">print</span>
                                             </button>
@@ -165,6 +223,16 @@ export default function StockReceivingHistory({ onNewReceiptClick }) {
                     setCurrentPage={setCurrentPage}
                 />
             </div>
+
+            {printData && (
+                <UniversalPrintPreviewModal
+                    isOpen={Boolean(printData)}
+                    onClose={() => setPrintData(null)}
+                    documentType="stock_receiving_history"
+                    documentData={printData}
+                    documentTitle={`Stock Receipt #${printData.id}`}
+                />
+            )}
         </div>
     );
 }

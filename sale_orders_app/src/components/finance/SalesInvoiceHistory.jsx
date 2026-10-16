@@ -54,13 +54,19 @@ export default function SalesInvoiceHistory({ onViewCreate }) {
     const discount = invoice.discount || 0;
     const grandTotal = invoice.totalAmount || (subtotal + tax - discount);
 
+    const cust = state.customers?.find(c => (invoice.customerId && c.id === invoice.customerId) || c.name === invoice.customerName);
+    const resolvedCustomer = cust?.name || invoice.customerName || invoice.customer || 'Customer Party';
+
     setPrintInvoiceData({
       ...invoice,
       id: invoice.id,
+      customer: resolvedCustomer,
+      customer_name: resolvedCustomer,
       header: {
         invoice_no: invoice.id,
         date: invoice.date ? invoice.date.split('T')[0] : new Date().toISOString().split('T')[0],
-        customer_name: invoice.customerName || invoice.customer || 'Customer',
+        customer_name: resolvedCustomer,
+        customer: resolvedCustomer,
         dc_number: invoice.deliveryId || invoice.dc_number || '—',
         so_number: invoice.soId || invoice.so_number || invoice.soNumber || '—',
         payment_terms: invoice.paymentTerms || '30 Days Net',

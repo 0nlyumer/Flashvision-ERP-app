@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import ResizableHeader from '../ui/ResizableHeader';
+import UniversalPrintPreviewModal from '../ui/UniversalPrintPreviewModal';
 
 export default function LedgerTaxDashboard() {
   const { state } = useApp();
   const currencyCode = state.adminSetup?.baseCurrency ? state.adminSetup.baseCurrency.split(' ')[0] : 'PKR';
+  const [printData, setPrintData] = useState(null);
 
   // state lists read karna
   const salesInvoices = state.salesInvoices || [];
@@ -140,106 +142,58 @@ export default function LedgerTaxDashboard() {
   const startIndex = (currentPage - 1) * itemsPerPage;
   const paginatedEntries = filteredEntries.slice(startIndex, startIndex + itemsPerPage);
 
-  // Print voucher window action handler
+  // Print voucher action handler using UniversalPrintPreviewModal
   const handlePrint = (entry) => {
-    const printWindow = window.open('', '_blank', 'width=850,height=900');
-    if (!printWindow) return;
-    
-    const content = `
-      <html>
-        <head>
-          <title>Ledger Transaction Voucher - ${entry.id}</title>
-          <style>
-            body { font-family: 'Inter', sans-serif; padding: 40px; color: #1e293b; line-height: 1.5; }
-            .header { border-bottom: 2px solid #004277; padding-bottom: 20px; margin-bottom: 30px; display: flex; justify-content: space-between; align-items: center; }
-            .company { font-size: 24px; font-weight: 800; color: #004277; text-transform: uppercase; letter-spacing: -0.02em; }
-            .title { font-size: 14px; font-weight: 600; color: #64748b; text-transform: uppercase; tracking-wider; }
-            .grid { display: grid; grid-template-cols: 1fr 1fr; gap: 24px; margin-bottom: 40px; }
-            .card-info { background: #f8fafc; border: 1px solid #f1f5f9; padding: 16px; rounded-lg: 8px; }
-            .label { font-size: 10px; font-weight: 800; text-transform: uppercase; color: #64748b; margin-bottom: 4px; letter-spacing: 0.05em; }
-            .value { font-size: 14px; font-weight: 600; color: #0f172a; }
-            .table-container { margin-top: 30px; }
-            table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-            th { background-color: #f1f5f9; padding: 12px 16px; font-size: 11px; font-weight: 800; text-align: left; text-transform: uppercase; color: #475569; border-bottom: 2px solid #cbd5e1; }
-            td { padding: 14px 16px; font-size: 13px; border-bottom: 1px solid #e2e8f0; color: #334155; }
-            .total-row { font-weight: bold; background-color: #f8fafc; }
-            .total-row td { border-top: 2px solid #e2e8f0; border-bottom: 2px solid #e2e8f0; }
-            .footer { margin-top: 80px; font-size: 11px; color: #94a3b8; text-align: center; border-top: 1px dashed #e2e8f0; padding-top: 20px; }
-            .signatures { display: flex; justify-content: space-between; margin-top: 80px; }
-            .sig-line { width: 200px; border-top: 1px solid #cbd5e1; text-align: center; font-size: 11px; padding-top: 8px; color: #64748b; font-weight: 500; }
-          </style>
-        </head>
-        <body>
-          <div class="header">
-            <div class="company">Flashvision ERP</div>
-            <div class="title">General Ledger Voucher</div>
-          </div>
-          
-          <div class="grid">
-            <div class="card-info">
-              <div class="label">Transaction Reference ID</div>
-              <div class="value">${entry.id}</div>
-            </div>
-            <div class="card-info">
-              <div class="label">Date of Entry</div>
-              <div class="value">${entry.date}</div>
-            </div>
-            <div class="card-info">
-              <div class="label">Ledger Account Name</div>
-              <div class="value">${entry.accountName}</div>
-            </div>
-            <div class="card-info">
-              <div class="label">Transaction Category</div>
-              <div class="value" style="text-transform: capitalize;">${entry.type.replace('-', ' ')}</div>
-            </div>
-          </div>
-          
-          <div class="table-container">
-            <table>
-              <thead>
-                <tr>
-                  <th>Description</th>
-                  <th>Tax Code / VAT ID</th>
-                  <th>Status</th>
-                  <th style="text-align: right;">Amount (${currencyCode})</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td>Consolidated ledger post matching reference voucher for ${entry.type.replace('-', ' ')}</td>
-                  <td>${entry.taxId || 'N/A'}</td>
-                  <td>${entry.status}</td>
-                  <td style="text-align: right;">${entry.amount.toLocaleString()}</td>
-                </tr>
-                <tr class="total-row">
-                  <td colspan="3" style="text-align: right;">Grand Net Amount (${currencyCode}):</td>
-                  <td style="text-align: right; color: #004277;">${entry.amount.toLocaleString()}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          
-          <div class="signatures">
-            <div class="sig-line">Authorized Representative</div>
-            <div class="sig-line">Audited & Verified By</div>
-            <div class="sig-line">Chief Financial Officer</div>
-          </div>
-          
-          <div class="footer">
-            Flashvision Corporate Financial Accounting Services. System generated voucher.
-          </div>
-          <script>
-            window.onload = function() { window.print(); }
-          </script>
-        </body>
-      </html>
-    `;
-    printWindow.document.write(content);
-    printWindow.document.close();
+    if (!entry) return;
+    const isCredit = entry.type === 'sales-revenue' || entry.type === 'accounts-payable';
+    const debit = isCredit ? 0 : entry.amount;
+    const credit = isCredit ? entry.amount : 0;
+
+    setPrintData({
+      id: entry.id,
+      ledger_title: `${entry.accountName} (${entry.type?.replace('-', ' ')})`,
+      account_code: entry.id,
+      date_range: entry.date,
+      currency: currencyCode,
+      header: {
+        ledger_title: `${entry.accountName} (${entry.type?.replace('-', ' ')})`,
+        account_code: entry.id,
+        date_range: entry.date,
+        currency: currencyCode,
+        voucher_id: entry.id,
+        tax_id: entry.taxId || '—',
+        posting_status: entry.status || 'Posted'
+      },
+      items: [
+        {
+          serial_no: 1,
+          date: entry.date,
+          voucher_no: entry.id,
+          narration: `Consolidated ledger post matching reference voucher for ${entry.type?.replace('-', ' ')}`,
+          debit,
+          credit,
+          balance: entry.amount
+        }
+      ],
+      totals: {
+        'Debit Amount': debit,
+        'Credit Amount': credit,
+        'Net Amount': entry.amount
+      }
+    });
   };
 
   return (
     <div className="p-8 max-w-full w-full mx-auto space-y-8">
+      {printData && (
+        <UniversalPrintPreviewModal
+          isOpen={Boolean(printData)}
+          onClose={() => setPrintData(null)}
+          documentType="general_ledger"
+          documentData={printData}
+          documentTitle={`GL Voucher #${printData.id}`}
+        />
+      )}
       {/* Page Header */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
         <div>

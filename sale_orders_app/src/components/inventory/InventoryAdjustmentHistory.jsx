@@ -2,12 +2,14 @@ import React, { useState, useMemo } from 'react';
 import ResizableHeader from '../ui/ResizableHeader';
 import { useApp } from '../../context/AppContext';
 import GlobalPagination from '../ui/GlobalPagination';
+import UniversalPrintPreviewModal from '../ui/UniversalPrintPreviewModal';
 
 export default function InventoryAdjustmentHistory({ onBack }) {
     const { state, setCollection, addNotification } = useApp();
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedDepartment, setSelectedDepartment] = useState('All');
     const [currentPage, setCurrentPage] = useState(1);
+    const [printData, setPrintData] = useState(null);
     const itemsPerPage = 20;
 
     const departmentOptions = useMemo(() => {
@@ -79,6 +81,43 @@ export default function InventoryAdjustmentHistory({ onBack }) {
         newCols.splice(index, 0, draggedItem);
         setColumns(newCols);
         setDraggedColIdx(null);
+    };
+
+    const handlePrint = (act) => {
+        if (!act) return;
+        const isSub = act.type === 'sub' || act.type === 'Subtraction';
+        const varianceVal = isSub ? -Math.abs(parseFloat(act.qty) || 0) : Math.abs(parseFloat(act.qty) || 0);
+
+        setPrintData({
+            ...act,
+            id: act.id,
+            adj_id: act.id,
+            date: act.date || new Date().toISOString().split('T')[0],
+            approved_by: act.approvedBy || act.addedBy || act.user || 'Warehouse Manager',
+            reason: act.reason || act.remarks || 'Periodic Stock Audit',
+            header: {
+                adj_id: act.id,
+                date: act.date || new Date().toISOString().split('T')[0],
+                approved_by: act.approvedBy || act.addedBy || act.user || 'Warehouse Manager',
+                reason: act.reason || act.remarks || 'Periodic Stock Audit',
+                department: act.department || 'Warehouse',
+                type: isSub ? 'Negative Adjustment (Reduction)' : 'Positive Adjustment (Addition)'
+            },
+            items: [
+                {
+                    serial_no: 1,
+                    item_code: act.itemCode || act.itemId || 'ITEM-001',
+                    item_name: act.itemName || 'Adjusted Inventory Item',
+                    system_qty: act.prevQty ?? act.systemQty ?? '—',
+                    physical_qty: act.newQty ?? act.physicalQty ?? '—',
+                    adj_qty: `${varianceVal > 0 ? '+' : ''}${varianceVal}`
+                }
+            ],
+            totals: {
+                'Adjusted Quantity': Math.abs(parseFloat(act.qty) || 0),
+                'Net Variance': varianceVal
+            }
+        });
     };
 
     // --- CRUD Handlers ---
@@ -241,7 +280,7 @@ export default function InventoryAdjustmentHistory({ onBack }) {
             case 'actions':
                 return (
                     <div className="flex items-center gap-1">
-                        <button onClick={() => window.print()} className="p-1.5 text-on-surface-variant hover:text-primary hover:bg-surface-container-low rounded-lg transition-colors" title="Print">
+                        <button onClick={() => handlePrint(adj)} className="p-1.5 text-on-surface-variant hover:text-primary hover:bg-surface-container-low rounded-lg transition-colors" title="Print">
                             <span className="material-symbols-outlined text-[1rem]">print</span>
                         </button>
                         <button onClick={() => setEditingAdjustment({...adj})} className="p-1.5 text-on-surface-variant hover:text-primary hover:bg-surface-container-low rounded-lg transition-colors" title="Edit">
@@ -447,6 +486,15 @@ export default function InventoryAdjustmentHistory({ onBack }) {
                         </div>
                     </div>
                 </div>
+            )}
+            {printData && (
+                <UniversalPrintPreviewModal
+                    isOpen={Boolean(printData)}
+                    onClose={() => setPrintData(null)}
+                    documentType="inventory_adjustment"
+                    documentData={printData}
+                    documentTitle={`Stock Adjustment #${printData.id}`}
+                />
             )}
         </div>
     );

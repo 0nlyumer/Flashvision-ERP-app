@@ -472,7 +472,8 @@ export default function SaleOrderModule() {
   const saleOrderPrintData = useMemo(() => {
     if (!printOrder) return null;
     const o = printOrder;
-    const cust = state.customers?.find(c => c.id === o.customerId || c.name === o.customerName);
+    const cust = state.customers?.find(c => (o.customerId && c.id === o.customerId) || c.name === o.customerName);
+    const canonicalCustomer = cust?.name || o.customerName || 'Customer Party';
     const formattedItems = (o.items || []).map((it, idx) => {
       const prod = state.items?.find(p => p.id === it.itemId || p.sku === it.itemCode);
       const qty = Number(it.quantity || it.qty || 0);
@@ -502,21 +503,25 @@ export default function SaleOrderModule() {
 
     return {
       ...o,
+      customer_name: canonicalCustomer,
+      customer: canonicalCustomer,
       header: {
         ...o,
         so_number: o.id,
         id: o.id,
         date: o.date ? new Date(o.date).toLocaleDateString() : new Date().toLocaleDateString(),
         status: o.status || 'Active',
-        customer_name: o.customerName || cust?.name || 'Customer Party',
-        contact_person: cust?.contactPerson || 'N/A',
-        contact_number: cust?.phone || cust?.contactNumber || 'N/A',
+        customer_name: canonicalCustomer,
+        customer: canonicalCustomer,
+        salesperson: o.salesperson || state?.currentUser?.name || '—',
+        contact_person: cust?.contactPerson || '—',
+        contact_number: cust?.phone || cust?.contactNumber || '—',
         shipping_address: o.shippingAddress || cust?.address || 'Site Delivery',
         payment_terms: o.paymentTerms || 'Net 30',
         delivery_date: o.expectedDelivery || o.deliveryDate || 'Standard',
         dispatch_mode: o.dispatchMode || o.shippingMethod || 'Direct Road Dispatch',
         delivery_mode: o.deliveryMode || 'Doorstep Delivery',
-        special_instructions: o.notes || o.remarks || 'None'
+        special_instructions: o.notes || o.remarks || '—'
       },
       items: formattedItems,
       totals: {
@@ -644,7 +649,7 @@ export default function SaleOrderModule() {
        expectedDelivery: order.expectedDelivery || '',
        notes: order.notes || '',
        paymentTerms: order.paymentTerms || 'Net 30',
-       salesperson: order.salesperson || 'Alexander Pierce'
+       salesperson: order.salesperson || state?.currentUser?.name || ''
     });
     setItems(order.items.map(it => {
        const prod = state.items.find(p => p.id === it.itemId);

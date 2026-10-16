@@ -174,22 +174,33 @@ export default function DelCreationSlip({ items = [], dcMode = 'Sale Orders', on
     const activeItems = slipItems.filter(i => !i.isDraft);
     const sumQty = activeItems.reduce((acc, i) => acc + (parseFloat(i.editedQty) || 0), 0);
     const sumRolls = activeItems.reduce((acc, i) => acc + (parseFloat(i.rolls) || 0), 0);
+    const orderRef = activeItems[0]?.orderId || items[0]?.orderId || '—';
+    const cust = state.customers?.find(c => (selectedCustomer && c.id === selectedCustomer) || c.name === customerName);
+    const resolvedCustomer = cust?.name || customerName || 'Consignee Party';
     return {
       id: challanId,
+      customer: resolvedCustomer,
+      customer_name: resolvedCustomer,
+      so_ref: orderRef,
+      order_ref: orderRef,
       header: {
         challan_no: challanId,
         challan_number: challanId,
         date: today,
-        customer: customerName || 'N/A',
-        customer_name: customerName || 'N/A',
+        so_ref: orderRef,
+        order_ref: orderRef,
+        sale_order_ref: orderRef,
+        customer: resolvedCustomer,
+        customer_name: resolvedCustomer,
         dc_mode: dcMode,
         driver_name: logisticsDetails?.driverName || '—',
         driver_contact: logisticsDetails?.driverNumber || '—',
         vehicle_no: logisticsDetails?.vehicleNumber || '—',
-        contact_person: consigneeDetails?.contactPerson || '—',
-        contact_number: consigneeDetails?.contactNumber || '—',
-        delivery_address: consigneeDetails?.deliveryAddress || '—',
-        destination: consigneeDetails?.deliveryAddress || '—',
+        contact_person: consigneeDetails?.contactPerson || cust?.contactPerson || '—',
+        contact_number: consigneeDetails?.contactNumber || cust?.phone || cust?.contactNumber || '—',
+        delivery_address: consigneeDetails?.deliveryAddress || cust?.address || '—',
+        shipping_address: consigneeDetails?.deliveryAddress || cust?.address || '—',
+        destination: consigneeDetails?.deliveryAddress || cust?.address || '—',
         status: 'Draft Challan'
       },
       consignee: consigneeDetails,
@@ -211,7 +222,7 @@ export default function DelCreationSlip({ items = [], dcMode = 'Sale Orders', on
         'Grand Total': sumQty
       }
     };
-  }, [challanId, today, customerName, dcMode, logisticsDetails, consigneeDetails, slipItems]);
+  }, [challanId, today, customerName, dcMode, logisticsDetails, consigneeDetails, slipItems, items, selectedCustomer, state.customers]);
 
   const handleBackWarning = async () => {
       if (slipItems.length > 0) {

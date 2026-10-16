@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import Layout from '../components/Layout';
 import { useNavigate } from 'react-router-dom';
-import PrintLayout from '../components/ui/PrintLayout';
+import UniversalPrintPreviewModal from '../components/ui/UniversalPrintPreviewModal';
 
 export default function SaleOrderReturn() {
   const navigate = useNavigate();
@@ -10,17 +10,35 @@ export default function SaleOrderReturn() {
   const [printData, setPrintData] = useState(null);
 
   const handlePrint = () => {
-      // Mocking data since page is a placeholder
       setPrintData({ 
           id: returnId, 
-          orderId: "SO-2024-8842", 
-          customerName: "Auto-filled on SO selection", 
+          return_no: returnId,
+          order_id: "SO-2024-8842", 
+          customer_name: "Customer Party", 
           reason: "Defective Product",
-          date: new Date().toLocaleDateString()
+          date: new Date().toISOString().split('T')[0],
+          header: {
+              return_no: returnId,
+              order_id: "SO-2024-8842",
+              customer_name: "Customer Party",
+              party_name: "Customer Party",
+              reason: "Defective Product",
+              date: new Date().toISOString().split('T')[0]
+          },
+          items: [
+              {
+                  serial_no: 1,
+                  item_code: "FG-ITEM-01",
+                  item_name: "Returned Merchandise",
+                  returned_qty: 1,
+                  inv_qty: 1,
+                  unit_price: 0
+              }
+          ],
+          totals: {
+              totalReturnedQty: 1
+          }
       });
-      setTimeout(() => {
-          window.print();
-      }, 100);
   };
 
   return (
@@ -128,27 +146,14 @@ export default function SaleOrderReturn() {
         </div>
       </div>
 
-      {/* PRINT ONLY UI */}
       {printData && (
-          <div className="hidden print:block w-full">
-              <PrintLayout 
-                  documentTitle="Return Authorization Slip"
-                  documentId={printData.id}
-                  date={printData.date}
-                  disclaimerKey="returns"
-                  extraMeta={[
-                      { label: 'Order Ref', value: printData.orderId },
-                      { label: 'Customer', value: printData.customerName },
-                      { label: 'Reason', value: printData.reason }
-                  ]}
-              >
-                  <div className="mt-8 border border-outline-variant/30 rounded-lg p-6 text-center">
-                      <span className="material-symbols-outlined text-4xl text-outline-variant/50 mb-2">inventory_2</span>
-                      <p className="font-bold text-on-surface-variant">Pending physical verification of returned goods.</p>
-                      <p className="text-xs text-outline mt-1">Detailed item breakdown will be populated upon QA inspection.</p>
-                  </div>
-              </PrintLayout>
-          </div>
+          <UniversalPrintPreviewModal
+              isOpen={Boolean(printData)}
+              onClose={() => setPrintData(null)}
+              documentType="inventory_return"
+              documentData={printData}
+              documentTitle={`Return Authorization #${printData.id}`}
+          />
       )}
     </Layout>
   );

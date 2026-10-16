@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useDialog } from '../../context/DialogContext';
-import PrintLayout from '../ui/PrintLayout';
+import UniversalPrintPreviewModal from '../ui/UniversalPrintPreviewModal';
 import GlobalPagination from '../ui/GlobalPagination';
 
 export default function BatchClosing() {
@@ -20,17 +20,82 @@ export default function BatchClosing() {
     const [activeView, setActiveView] = useState('list');
     const [selectedPlan, setSelectedPlan] = useState(null);
     const [showManageTypes, setShowManageTypes] = useState(false);
-    const [printPlan, setPrintPlan] = useState(null);
+    const [printData, setPrintData] = useState(null);
 
     const [currentPage, setCurrentPage] = useState(1);
     const itemsPerPage = 20;
 
     const handlePrint = (plan) => {
-        setPrintPlan(plan);
-        setTimeout(() => {
-            window.print();
-            setPrintPlan(null);
-        }, 100);
+        if (!plan) return;
+        const items = [];
+        let totalPlanned = 0;
+        let totalActual = 0;
+        let totalWaste = 0;
+
+        (plan.items || []).forEach((item, itemIdx) => {
+            const planned = parseFloat(item.outputQty || 0);
+            totalPlanned += planned;
+            const outputs = item.outputs || [];
+            if (outputs.length > 0) {
+                outputs.forEach((out, outIdx) => {
+                    const qty = parseFloat(out.quantity || 0);
+                    const isWaste = (out.typeName || '').toLowerCase().includes('waste');
+                    if (isWaste) {
+                        totalWaste += qty;
+                    } else {
+                        totalActual += qty;
+                    }
+                    items.push({
+                        serial_no: items.length + 1,
+                        step_name: `${item.productName || item.itemCode} (${out.typeName || 'Output'})`,
+                        item_code: item.itemCode || '—',
+                        item_name: item.productName || item.itemCode || '—',
+                        planned_qty: outIdx === 0 ? planned : '—',
+                        actual_output: qty,
+                        waste_qty: isWaste ? qty : 0,
+                        uom: out.uom || 'Meters',
+                        variance: planned > 0 ? `${(((qty - planned) / planned) * 100).toFixed(1)}%` : '0%'
+                    });
+                });
+            } else {
+                items.push({
+                    serial_no: items.length + 1,
+                    step_name: item.productName || item.itemCode || 'Process Stage 1',
+                    item_code: item.itemCode || '—',
+                    item_name: item.productName || item.itemCode || '—',
+                    planned_qty: planned,
+                    actual_output: 0,
+                    waste_qty: 0,
+                    uom: 'Meters',
+                    variance: '-100%'
+                });
+            }
+        });
+
+        const yieldPercent = totalPlanned > 0 ? `${((totalActual / totalPlanned) * 100).toFixed(1)}%` : '100%';
+
+        setPrintData({
+            ...plan,
+            id: plan.id,
+            batch_no: plan.id,
+            closing_date: plan.date || plan.createdAt ? new Date(plan.createdAt || plan.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+            supervisor: plan.supervisor || plan.closedBy || plan.createdBy || state?.currentUser?.name || 'Batch Supervisor',
+            output_yield_percent: yieldPercent,
+            header: {
+                batch_no: plan.id,
+                closing_date: plan.date || plan.createdAt ? new Date(plan.createdAt || plan.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+                supervisor: plan.supervisor || plan.closedBy || plan.createdBy || state?.currentUser?.name || 'Batch Supervisor',
+                output_yield_percent: yieldPercent,
+                status: plan.status || 'Closed'
+            },
+            items,
+            totals: {
+                totalInput: totalPlanned,
+                totalOutput: totalActual,
+                totalWaste: totalWaste,
+                overallYield: yieldPercent
+            }
+        });
     };
 
     const verifyBatchClosingLocks = (plan) => {
@@ -151,61 +216,6 @@ export default function BatchClosing() {
     if (activeView === 'history') {
         return (
             <div className="animate-in fade-in duration-300">
-                {/* Print View container */}
-                {printPlan && (
-                    <div className="hidden print:block w-full page-break-after-always">
-                        <PrintLayout 
-                            documentTitle="Production Batch Output"
-                            documentId={printPlan.id}
-                            date={printPlan.date || printPlan.createdAt ? new Date(printPlan.createdAt || printPlan.date).toLocaleDateString('en-GB') : 'N/A'}
-                            disclaimerKey="production"
-                            extraMeta={[
-                                { label: 'Status', value: printPlan.status }
-                            ]}
-                        >
-                            <div className="border border-gray-300 mt-4">
-                                {printPlan.items?.map((item, idx) => (
-                                    <div key={item.itemCode} className={`${idx !== printPlan.items.length - 1 ? 'border-b border-gray-300' : ''} p-4`}>
-                                        <div className="flex justify-between items-end mb-4">
-                                            <div>
-                                                <h3 className="text-sm font-bold uppercase">{item.productName || 'Unknown Product'}</h3>
-                                                <p className="text-xs text-gray-500 font-mono">CODE: {item.itemCode}</p>
-                                            </div>
-                                            <div className="text-sm font-bold">
-                                                Target: <span className="text-gray-700">{item.outputQty || 0} M</span>
-                                            </div>
-                                        </div>
-                                        
-                                        <table className="w-full text-left border-collapse text-sm border border-gray-200">
-                                            <thead>
-                                                <tr className="bg-gray-100 border-b border-gray-200">
-                                                    <th className="py-2 px-3 font-bold text-xs uppercase text-gray-600">Output Type</th>
-                                                    <th className="py-2 px-3 font-bold text-xs uppercase text-gray-600 text-right">Quantity</th>
-                                                    <th className="py-2 px-3 font-bold text-xs uppercase text-gray-600 text-left pl-2">UOM</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody className="divide-y divide-gray-200">
-                                                {item.outputs && item.outputs.length > 0 ? (
-                                                    item.outputs.map((out, outIdx) => (
-                                                        <tr key={outIdx}>
-                                                            <td className="py-2 px-3 font-medium">{out.typeName || 'Unknown'}</td>
-                                                            <td className="py-2 px-3 text-right font-bold">{out.quantity}</td>
-                                                            <td className="py-2 px-3 text-left pl-2 text-gray-600">{out.uom || 'Unit'}</td>
-                                                        </tr>
-                                                    ))
-                                                ) : (
-                                                    <tr>
-                                                        <td colSpan="3" className="py-4 px-3 text-center italic text-gray-500 text-xs">No output entries recorded.</td>
-                                                    </tr>
-                                                )}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                ))}
-                            </div>
-                        </PrintLayout>
-                    </div>
-                )}
                 <div className="flex items-center gap-4 mb-8 border-b border-outline-variant/20 pb-6 print:hidden">
                     <button onClick={() => setActiveView('list')} className="p-2 bg-surface-container-low hover:bg-surface-container rounded-full text-on-surface transition-colors flex items-center justify-center border border-outline-variant/30 font-bold hover:shadow-md">
                         <span className="material-symbols-outlined font-bold text-xl">arrow_back</span>
@@ -341,6 +351,16 @@ export default function BatchClosing() {
                         setCurrentPage={setCurrentPage}
                     />
                 </div>
+
+                {printData && (
+                    <UniversalPrintPreviewModal
+                        isOpen={Boolean(printData)}
+                        onClose={() => setPrintData(null)}
+                        documentType="batch_closing_history"
+                        documentData={printData}
+                        documentTitle={`Batch Closing #${printData.id}`}
+                    />
+                )}
             </div>
         );
     }

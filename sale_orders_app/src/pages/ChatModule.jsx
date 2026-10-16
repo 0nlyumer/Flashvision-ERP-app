@@ -4516,13 +4516,13 @@ export default function ChatModule() {
         }
         case 'contact': {
           const c = (state.customers || []).find(cust => cust.id === order.customerId);
-          return c ? c.contactPerson || 'N/A' : (order.contactPerson || 'N/A');
+          return (c ? c.contactPerson : order.contactPerson) || '—';
         }
-        case 'shipping_address': return order.shippingAddress || 'No shipping address provided.';
-        case 'salesperson': return order.salesperson || 'Alexander Pierce';
+        case 'shipping_address': return order.shippingAddress || '—';
+        case 'salesperson': return order.salesperson || state?.currentUser?.name || '—';
         case 'payment_terms': return order.paymentTerms || 'Net 30';
-        case 'delivery_date': return order.expectedDelivery || 'N/A';
-        default: return '---';
+        case 'delivery_date': return order.expectedDelivery || '—';
+        default: return '—';
       }
     };
 

@@ -1,11 +1,13 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { generateCostCenterReport, formatMoney, round2 } from '../../utils/financeEngine';
 import ResizableHeader from '../ui/ResizableHeader';
+import UniversalPrintPreviewModal from '../ui/UniversalPrintPreviewModal';
 
 export default function CostCenters() {
   const { state } = useApp();
   const currencyCode = state.adminSetup?.baseCurrency ? state.adminSetup.baseCurrency.split(' ')[0] : 'PKR';
+  const [showPrintModal, setShowPrintModal] = useState(false);
 
   const costCenterData = useMemo(() => {
     return generateCostCenterReport(state);
@@ -13,12 +15,54 @@ export default function CostCenters() {
 
   const { rows, totalBudget, totalSpent, netVariance } = costCenterData;
 
+  const printData = useMemo(() => {
+    const items = rows.map((r, idx) => ({
+      serial_no: idx + 1,
+      center_code: r.code || `CC-${idx + 1}`,
+      center_name: r.name || 'Cost Center',
+      department: r.department || r.category || 'Operations',
+      budget_allocated: r.monthlyBudget || 0,
+      actual_expense: r.actualSpent || 0,
+      variance: r.variance || 0,
+      utilization: `${r.percentUsed || 0}%`,
+      status: r.isOverBudget ? 'Over Budget' : 'On Track'
+    }));
+
+    return {
+      report_title: 'COST CENTER ALLOCATION & VARIANCE AUDIT',
+      cost_period: new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
+      department: 'Manufacturing, Dyeing & Plant Operations',
+      generated_on: new Date().toISOString().split('T')[0],
+      header: {
+        report_title: 'COST CENTER ALLOCATION & VARIANCE AUDIT',
+        cost_period: new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
+        department: 'Manufacturing, Dyeing & Plant Operations',
+        generated_on: new Date().toISOString().split('T')[0]
+      },
+      items,
+      totals: {
+        'Total Budget': totalBudget,
+        'Actual Spent': totalSpent,
+        'Net Variance': netVariance
+      }
+    };
+  }, [rows, totalBudget, totalSpent, netVariance]);
+
   const handlePrint = () => {
-    window.print();
+    setShowPrintModal(true);
   };
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-full w-full mx-auto space-y-6">
+      {showPrintModal && (
+        <UniversalPrintPreviewModal
+          isOpen={showPrintModal}
+          onClose={() => setShowPrintModal(false)}
+          documentType="cost_centers"
+          documentData={printData}
+          documentTitle="Cost Centers & Variance Report"
+        />
+      )}
       {/* Top Header */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>

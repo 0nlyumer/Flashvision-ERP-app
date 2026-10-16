@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { generateBankReconciliation, formatMoney, round2 } from '../../utils/financeEngine';
 import ResizableHeader from '../ui/ResizableHeader';
+import UniversalPrintPreviewModal from '../ui/UniversalPrintPreviewModal';
 
 export default function BankReconciliation() {
   const { state } = useApp();
@@ -15,6 +16,7 @@ export default function BankReconciliation() {
 
   // Cleared Status Tracking Map: entryId -> boolean
   const [clearedMap, setClearedMap] = useState({});
+  const [showPrintModal, setShowPrintModal] = useState(false);
 
   // Bank Account Options
   const bankAccounts = [
@@ -73,12 +75,59 @@ export default function BankReconciliation() {
     setClearedMap(nextMap);
   };
 
+  const currentBank = bankAccounts.find(b => b.id === selectedBankId) || bankAccounts[0];
+
+  const printData = useMemo(() => {
+    const reconcilingItems = allReconEntries.map((e, idx) => ({
+      serial_no: idx + 1,
+      date: e.date || new Date().toISOString().split('T')[0],
+      reference_no: e.ref || e.voucherNo || e.id || '—',
+      description: `${e.party ? e.party + ' — ' : ''}${e.narration || e.description || (e.isCleared ? 'Cleared Entry' : 'In-Transit Entry')}`,
+      debit: e.debit || 0,
+      credit: e.credit || 0
+    }));
+
+    return {
+      statement_date: new Date().toISOString().split('T')[0],
+      bank_name: `${currentBank.name} (${currentBank.branch})`,
+      account_number: currentBank.id,
+      closing_bank_balance: effectiveStatementBalance.toLocaleString('en-US', { minimumFractionDigits: 2 }),
+      header: {
+        statement_date: new Date().toISOString().split('T')[0],
+        bank_name: `${currentBank.name} (${currentBank.branch})`,
+        account_number: currentBank.id,
+        closing_bank_balance: effectiveStatementBalance.toLocaleString('en-US', { minimumFractionDigits: 2 }),
+        book_balance: bookBalance.toLocaleString('en-US', { minimumFractionDigits: 2 }),
+        adjusted_bank_balance: adjustedBankBalance.toLocaleString('en-US', { minimumFractionDigits: 2 }),
+        reconciliation_status: isReconciled ? '100% Reconciled' : 'Variance Pending'
+      },
+      items: reconcilingItems,
+      totals: {
+        'Book Balance': bookBalance,
+        'Bank Statement Balance': effectiveStatementBalance,
+        'Uncleared Deposits': totalUnclearedDeposits,
+        'Uncleared Payments': totalUnclearedPayments,
+        'Adjusted Bank Balance': adjustedBankBalance,
+        'Variance / Difference': difference
+      }
+    };
+  }, [currentBank, effectiveStatementBalance, bookBalance, adjustedBankBalance, isReconciled, allReconEntries, totalUnclearedDeposits, totalUnclearedPayments, difference]);
+
   const handlePrint = () => {
-    window.print();
+    setShowPrintModal(true);
   };
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-full w-full mx-auto space-y-6">
+      {showPrintModal && (
+        <UniversalPrintPreviewModal
+          isOpen={showPrintModal}
+          onClose={() => setShowPrintModal(false)}
+          documentType="bank_reconciliation"
+          documentData={printData}
+          documentTitle={`BRS - ${currentBank.name}`}
+        />
+      )}
       {/* Top Header */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>

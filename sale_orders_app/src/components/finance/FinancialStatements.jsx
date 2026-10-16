@@ -9,6 +9,7 @@ import {
   round2
 } from '../../utils/financeEngine';
 import ResizableHeader from '../ui/ResizableHeader';
+import UniversalPrintPreviewModal from '../ui/UniversalPrintPreviewModal';
 
 export default function FinancialStatements() {
   const { state } = useApp();
@@ -16,6 +17,7 @@ export default function FinancialStatements() {
 
   // Active Sub-statement tab
   const [statementTab, setStatementTab] = useState('trial-balance'); // 'trial-balance', 'pnl', 'balance-sheet', 'cash-flow'
+  const [showPrintModal, setShowPrintModal] = useState(false);
 
   // Date Filters
   const [datePreset, setDatePreset] = useState('all');
@@ -68,12 +70,142 @@ export default function FinancialStatements() {
     return generateCashFlow(state, fromDate || null, toDate || null);
   }, [state, fromDate, toDate]);
 
+  const printData = useMemo(() => {
+    let title = 'FINANCIAL STATEMENTS';
+    let items = [];
+    let totals = {};
+
+    const fiscalPeriod = `${fromDate || 'FY-Start'} to ${toDate || new Date().toISOString().split('T')[0]}`;
+
+    if (statementTab === 'trial-balance') {
+      title = 'TRIAL BALANCE STATEMENT';
+      const rows = [];
+      Object.entries(trialBalanceData.grouped || {}).forEach(([cat, accs]) => {
+        accs.forEach(acc => {
+          rows.push({
+            line_code: acc.code,
+            line_title: `${acc.name} (${cat})`,
+            current_period: acc.closingDebit || 0,
+            prior_period: acc.closingCredit || 0
+          });
+        });
+      });
+      items = rows;
+      totals = {
+        'Closing Debits': trialBalanceData.totals?.closingDebit || 0,
+        'Closing Credits': trialBalanceData.totals?.closingCredit || 0,
+        'Difference': trialBalanceData.totals?.difference || 0
+      };
+    } else if (statementTab === 'pnl') {
+      title = 'STATEMENT OF PROFIT OR LOSS';
+      const rows = [
+        { line_code: '4000', line_title: 'Gross Finished Synthetic Leather Sales', current_period: pnlData.revenue?.grossSales || 0, prior_period: 0 },
+        { line_code: '4100', line_title: 'Net Sales Revenue', current_period: pnlData.revenue?.netSales || 0, prior_period: 0 },
+        ...(pnlData.cogs?.breakdown || []).map(b => ({
+          line_code: b.code || '5000',
+          line_title: b.name || 'COGS',
+          current_period: -(b.amount || 0),
+          prior_period: 0
+        })),
+        { line_code: 'GP', line_title: 'Gross Profit', current_period: pnlData.grossProfit || 0, prior_period: 0 },
+        ...(pnlData.operatingExpenses?.breakdown || []).map(b => ({
+          line_code: b.code || '6000',
+          line_title: b.name || 'Operating Expense',
+          current_period: -(b.amount || 0),
+          prior_period: 0
+        })),
+        { line_code: 'NP', line_title: 'Net Operating Profit', current_period: pnlData.netProfit || 0, prior_period: 0 }
+      ];
+      items = rows;
+      totals = {
+        'Net Revenue': pnlData.revenue?.netSales || 0,
+        'COGS Total': pnlData.cogs?.total || 0,
+        'Gross Profit': pnlData.grossProfit || 0,
+        'Operating Expenses': pnlData.operatingExpenses?.total || 0,
+        'Net Operating Profit': pnlData.netProfit || 0
+      };
+    } else if (statementTab === 'balance-sheet') {
+      title = 'BALANCE SHEET (STATEMENT OF FINANCIAL POSITION)';
+      const rows = [
+        ...(balanceSheetData.assets?.current?.breakdown || []).map(b => ({
+          line_code: b.code || '1000',
+          line_title: b.name || 'Current Asset',
+          current_period: b.amount || 0,
+          prior_period: 0
+        })),
+        ...(balanceSheetData.assets?.nonCurrent?.breakdown || []).map(b => ({
+          line_code: b.code || '1500',
+          line_title: b.name || 'Non-Current Asset',
+          current_period: b.amount || 0,
+          prior_period: 0
+        })),
+        ...(balanceSheetData.liabilities?.current?.breakdown || []).map(b => ({
+          line_code: b.code || '2000',
+          line_title: b.name || 'Current Liability',
+          current_period: b.amount || 0,
+          prior_period: 0
+        })),
+        ...(balanceSheetData.equity?.breakdown || []).map(b => ({
+          line_code: b.code || '3000',
+          line_title: b.name || 'Equity Head',
+          current_period: b.amount || 0,
+          prior_period: 0
+        }))
+      ];
+      items = rows;
+      totals = {
+        'Total Assets': balanceSheetData.totalAssets || 0,
+        'Total Liabilities': balanceSheetData.totalLiabilities || 0,
+        'Total Equity': balanceSheetData.totalEquity || 0,
+        'Total Liab & Equity': balanceSheetData.totalLiabilitiesAndEquity || 0
+      };
+    } else {
+      title = 'STATEMENT OF CASH FLOWS';
+      const rows = [
+        { line_code: 'CF-OPS', line_title: 'Cash Flow from Operating Activities', current_period: cashFlowData.operating?.netCash || 0, prior_period: 0 },
+        { line_code: 'CF-INV', line_title: 'Cash Flow from Investing Activities', current_period: cashFlowData.investing?.netCash || 0, prior_period: 0 },
+        { line_code: 'CF-FIN', line_title: 'Cash Flow from Financing Activities', current_period: cashFlowData.financing?.netCash || 0, prior_period: 0 }
+      ];
+      items = rows;
+      totals = {
+        'Operating Cash Flow': cashFlowData.operating?.netCash || 0,
+        'Investing Cash Flow': cashFlowData.investing?.netCash || 0,
+        'Financing Cash Flow': cashFlowData.financing?.netCash || 0,
+        'Net Cash Movement': cashFlowData.netChange || 0
+      };
+    }
+
+    return {
+      statement_title: title,
+      financial_period: fiscalPeriod,
+      currency: currencyCode,
+      generated_on: new Date().toISOString().split('T')[0],
+      header: {
+        statement_title: title,
+        financial_period: fiscalPeriod,
+        currency: currencyCode,
+        generated_on: new Date().toISOString().split('T')[0]
+      },
+      items,
+      totals
+    };
+  }, [statementTab, trialBalanceData, pnlData, balanceSheetData, cashFlowData, fromDate, toDate, currencyCode]);
+
   const handlePrint = () => {
-    window.print();
+    setShowPrintModal(true);
   };
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-full w-full mx-auto space-y-6">
+      {showPrintModal && (
+        <UniversalPrintPreviewModal
+          isOpen={showPrintModal}
+          onClose={() => setShowPrintModal(false)}
+          documentType="financial_statements"
+          documentData={printData}
+          documentTitle={printData.statement_title}
+        />
+      )}
       {/* Top Header */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>

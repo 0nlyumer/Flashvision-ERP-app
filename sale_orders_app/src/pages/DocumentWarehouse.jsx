@@ -48,17 +48,21 @@ export default function DocumentWarehouse({ insideDashboard = false }) {
   useEffect(() => {
     // 1. Finance Documents
     const salesList = state?.saleOrders || [];
-    const financeDocs = salesList.length > 0 ? salesList.map(so => ({
-      id: so.id || `SO-${so.orderId}`,
-      title: so.customerName || 'Walk-in Customer',
-      date: so.date || 'Today',
-      details: [
-        { label: 'Invoice Reference', value: so.id || `SO-${so.orderId}` },
-        { label: 'Customer Entity', value: so.customerName || 'N/A' },
-        { label: 'Grand Total Value', value: `Rs. ${Number(so.total || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` },
-        { label: 'Dispatched Status', value: so.status || 'Pending' }
-      ]
-    })) : [
+    const financeDocs = salesList.length > 0 ? salesList.map(so => {
+      const cust = state?.customers?.find(c => (so.customerId && c.id === so.customerId) || c.name === so.customerName);
+      const custName = cust?.name || so.customerName || 'Customer Party';
+      return {
+        id: so.id || `SO-${so.orderId}`,
+        title: custName,
+        date: so.date || 'Today',
+        details: [
+          { label: 'Invoice Reference', value: so.id || `SO-${so.orderId}` },
+          { label: 'Customer Entity', value: custName },
+          { label: 'Grand Total Value', value: `Rs. ${Number(so.total || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` },
+          { label: 'Dispatched Status', value: so.status || 'Pending' }
+        ]
+      };
+    }) : [
       { id: 'SO-FN-201', title: 'Al-Haq Textile Corp', date: '2026-05-20', details: [{ label: 'Invoice Reference', value: 'SO-FN-201' }, { label: 'Customer Entity', value: 'Al-Haq Textile Corp' }, { label: 'Grand Total Value', value: 'Rs. 8,240.00' }, { label: 'Dispatched Status', value: 'Dispatched' }] }
     ];
 

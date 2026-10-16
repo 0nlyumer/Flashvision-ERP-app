@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useDialog } from '../../context/DialogContext';
 import ResizableHeader from '../ui/ResizableHeader';
-import PrintLayout from '../ui/PrintLayout';
+import UniversalPrintPreviewModal from '../ui/UniversalPrintPreviewModal';
 import GlobalPagination from '../ui/GlobalPagination';
 
 export default function OmsHistory({ completedRuns = [], onEditPlan }) {
@@ -11,13 +11,51 @@ export default function OmsHistory({ completedRuns = [], onEditPlan }) {
     const [viewPlan, setViewPlan] = useState(null);
     const [currentPage, setCurrentPage] = useState(1);
     const [searchTerm, setSearchTerm] = useState('');
+    const [printData, setPrintData] = useState(null);
     const itemsPerPage = 20;
 
     const handlePrint = (plan) => {
-        setViewPlan(plan);
-        setTimeout(() => {
-            window.print();
-        }, 100);
+        if (!plan) return;
+        const items = (plan.items || []).map((itm, idx) => {
+            const cust = state.customers?.find(c => (itm.customerId && c.id === itm.customerId) || c.name === itm.customerName || c.name === itm.customer);
+            const canonicalCustomer = cust?.name || itm.customerName || itm.customer || '—';
+            return {
+                serial_no: idx + 1,
+                order_ref: itm.orderId || itm.order_ref || '—',
+                customer: canonicalCustomer,
+                customer_name: canonicalCustomer,
+                item_name: itm.productName || itm.itemName || itm.itemCode || '—',
+                item_code: itm.itemCode || '—',
+                target_qty: itm.outputQty || itm.quantity || 0,
+                order_qty: itm.quantity || 0,
+                allocated_shift: itm.shift || itm.allocated_shift || 'Day',
+                est_hours: itm.estHours || itm.est_hours || '—'
+            };
+        });
+
+        const totalPlannedQty = items.reduce((sum, i) => sum + (Number(i.target_qty) || 0), 0);
+
+        setPrintData({
+            ...plan,
+            id: plan.id,
+            plan_id: plan.id,
+            plan_date: plan.date ? new Date(plan.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+            planner_name: plan.createdBy || state?.currentUser?.name || 'System Admin',
+            production_line: plan.line || plan.productionLine || 'Standard Line',
+            status: plan.status || 'Active',
+            header: {
+                plan_id: plan.id,
+                plan_date: plan.date ? new Date(plan.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+                planner_name: plan.createdBy || state?.currentUser?.name || 'System Admin',
+                production_line: plan.line || plan.productionLine || 'Standard Line',
+                status: plan.status || 'Active'
+            },
+            items,
+            totals: {
+                totalPlannedQty,
+                totalItems: items.length
+            }
+        });
     };
 
     const handleDelete = async (planId) => {
@@ -308,57 +346,15 @@ export default function OmsHistory({ completedRuns = [], onEditPlan }) {
                 </div>
             )}
 
-            {/* Print-Only DOM */}
-            {viewPlan && (
-                <div className="hidden print:block w-full">
-                    <PrintLayout
-                        documentTitle="Production Plan Document"
-                        documentId={viewPlan.id}
-                        date={viewPlan.date}
-                        disclaimerKey="production"
-                        extraMeta={[
-                            { label: 'Status', value: viewPlan.status },
-                            { label: 'Created By', value: viewPlan.createdBy || 'System Admin' },
-                            { label: 'Total Items', value: viewPlan.items ? viewPlan.items.length.toString() : '0' }
-                        ]}
-                    >
-                        <table className="w-full text-left border-collapse mt-6">
-                            <thead>
-                                <tr className="border-b-2 border-outline-variant/30 text-on-surface-variant">
-                                    <th className="py-3 px-2 text-[10px] font-extrabold uppercase tracking-widest">Sale Order</th>
-                                    <th className="py-3 px-2 text-[10px] font-extrabold uppercase tracking-widest">Customer</th>
-                                    <th className="py-3 px-2 text-[10px] font-extrabold uppercase tracking-widest">Item</th>
-                                    <th className="py-3 px-2 text-[10px] font-extrabold uppercase tracking-widest text-right">Order Qty</th>
-                                    <th className="py-3 px-2 text-[10px] font-extrabold uppercase tracking-widest text-right">Prod Target</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-outline-variant/10">
-                                {viewPlan.items && viewPlan.items.map((item, idx) => (
-                                    <tr key={idx}>
-                                        <td className="py-4 px-2 font-bold text-sm">{item.orderId}</td>
-                                        <td className="py-4 px-2 text-sm font-medium">{item.customerName || item.customer || 'Unknown'}</td>
-                                        <td className="py-4 px-2 text-sm font-medium">
-                                            {item.productName} <br />
-                                            <span className="text-xs font-mono text-outline">{item.itemCode}</span>
-                                        </td>
-                                        <td className="py-4 px-2 text-sm font-bold text-right text-on-surface-variant">{item.quantity}m</td>
-                                        <td className="py-4 px-2 text-sm font-bold text-right">{item.outputQty || 0}m</td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                            <tfoot>
-                                <tr className="border-t-2 border-outline-variant/30">
-                                    <th colSpan="4" className="py-4 px-2 text-right text-[11px] font-extrabold uppercase tracking-widest text-on-surface-variant">Total Production Target:</th>
-                                    <th className="py-4 px-2 text-right text-lg font-black text-on-surface">
-                                        {viewPlan.items ? viewPlan.items.reduce((acc, i) => acc + parseInt(i.outputQty || 0), 0) : 0}m
-                                    </th>
-                                </tr>
-                            </tfoot>
-                        </table>
-                    </PrintLayout>
-                </div>
+            {printData && (
+                <UniversalPrintPreviewModal
+                    isOpen={Boolean(printData)}
+                    onClose={() => setPrintData(null)}
+                    documentType="planning_history"
+                    documentData={printData}
+                    documentTitle={`Production Plan #${printData.id}`}
+                />
             )}
-
         </div>
     );
 }

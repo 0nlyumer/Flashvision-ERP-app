@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import ResizableHeader from '../ui/ResizableHeader';
-import PrintLayout from '../ui/PrintLayout';
+import UniversalPrintPreviewModal from '../ui/UniversalPrintPreviewModal';
 import GlobalPagination from '../ui/GlobalPagination';
 
 export default function InvReturn({ selectedDepartments = [] }) {
@@ -128,15 +128,51 @@ export default function InvReturn({ selectedDepartments = [] }) {
   };
 
   const handlePrintReturn = (ret) => {
-      setPrintData(ret);
-      setTimeout(() => {
-          window.print();
-      }, 100);
+      if (!ret) return;
+      const cust = state.customers?.find(c => c.name === ret.customerName || (ret.customerId && c.id === ret.customerId));
+      const resolvedCustomer = cust?.name || ret.customerName || 'Customer Party';
+      const rawItems = ret.items || [];
+      const formattedItems = rawItems.map((it, idx) => ({
+          serial_no: idx + 1,
+          item_code: it.itemCode || it.itemId || `ITM-${idx + 1}`,
+          item_name: it.name || it.productName || it.item_name || 'Returned Item',
+          inv_qty: it.invoicedQty || it.origQty || it.dispatchedQty || '—',
+          returned_qty: it.qty || it.returnQty || 0,
+          unit_price: it.price || it.rate || 0,
+          reason: it.reason || ret.reason || 'Return'
+      }));
+      const totalQty = formattedItems.reduce((s, it) => s + (parseFloat(it.returned_qty) || 0), 0);
+
+      setPrintData({
+          ...ret,
+          id: ret.id,
+          return_no: ret.id,
+          date: ret.date || new Date().toISOString().split('T')[0],
+          party_name: resolvedCustomer,
+          customer_name: resolvedCustomer,
+          customer: resolvedCustomer,
+          reason: ret.reason || ret.remarks || 'Customer Return',
+          header: {
+              return_no: ret.id,
+              date: ret.date || new Date().toISOString().split('T')[0],
+              party_name: resolvedCustomer,
+              customer_name: resolvedCustomer,
+              order_ref: ret.orderId || '—',
+              so_ref: ret.orderId || '—',
+              reason: ret.reason || ret.remarks || 'Customer Return',
+              remarks: ret.remarks || 'None'
+          },
+          items: formattedItems,
+          totals: {
+              'Total Items': formattedItems.length,
+              'Total Returned Qty': totalQty
+          }
+      });
   };
 
   return (
     <>
-    <div className="animate-in fade-in duration-500 max-w-full px-6 mx-auto pb-4 print:hidden">
+    <div className="animate-in fade-in duration-500 max-w-full px-6 mx-auto pb-4">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-6">
         <div>
           <h1 className="text-4xl font-extrabold tracking-tight text-on-surface mb-2 font-headline">Process Stock Return</h1>
@@ -432,67 +468,15 @@ export default function InvReturn({ selectedDepartments = [] }) {
       )}
     </div>
 
-    {/* PRINT ONLY UI */}
-    {printData && (() => {
-        const returnSettings = state?.adminSetup?.printSettings?.moduleSettings?.inv_return || {};
-        const rowSize = returnSettings.rowSize || 'normal';
-        const cellPadding = rowSize === 'compact' ? 'py-1 px-2' : rowSize === 'spacious' ? 'py-4 px-4' : 'py-2 px-3';
-        const maxRows = parseInt(returnSettings.maxRows) || 25;
-        
-        let colWidths = [];
-        if (returnSettings.columnWidths) {
-            colWidths = returnSettings.columnWidths.split(',').map(s => s.trim());
-        }
-
-        const printChunks = [];
-        for (let i = 0; i < printData.items.length; i += maxRows) {
-            printChunks.push(printData.items.slice(i, i + maxRows));
-        }
-
-        return (
-            <div className="hidden print:block w-full">
-                {printChunks.map((chunk, pageIndex) => (
-                    <div key={pageIndex} className="print:break-after-page">
-                        <PrintLayout 
-                            documentTitle="Return Receipt"
-                            documentId={printData.id}
-                            date={printData.date}
-                            disclaimerKey="returns"
-                            extraMeta={[
-                                { label: 'Order Ref', value: printData.orderId },
-                                { label: 'Customer', value: printData.customerName },
-                                { label: 'Remarks', value: printData.remarks || 'None' },
-                                ...(printChunks.length > 1 ? [{ label: 'Page', value: `${pageIndex + 1} of ${printChunks.length}` }] : [])
-                            ]}
-                        >
-                            <div className="border border-outline-variant/30 mt-4 rounded overflow-hidden">
-                                <table className="w-full text-left border-collapse">
-                                    <thead>
-                                        <tr className="bg-surface-container-low">
-                                            <th style={{ width: colWidths[0] || 'auto' }} className={`${cellPadding} text-[10px] font-bold text-on-surface-variant uppercase border-b border-outline-variant/30`}>Item Code</th>
-                                            <th style={{ width: colWidths[1] || 'auto' }} className={`${cellPadding} text-[10px] font-bold text-on-surface-variant uppercase border-b border-outline-variant/30`}>Item Name</th>
-                                            <th style={{ width: colWidths[2] || 'auto' }} className={`${cellPadding} text-[10px] font-bold text-on-surface-variant uppercase border-b border-outline-variant/30 text-right`}>Qty Returned</th>
-                                            <th style={{ width: colWidths[3] || 'auto' }} className={`${cellPadding} text-[10px] font-bold text-on-surface-variant uppercase border-b border-outline-variant/30`}>Reason</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {chunk.map((i, idx) => (
-                                            <tr key={`pr-${idx}`} className="border-b border-outline-variant/10 last:border-0">
-                                                <td className={`${cellPadding} text-[11px] text-on-surface`}>{i.itemCode}</td>
-                                                <td className={`${cellPadding} text-[11px] text-on-surface`}>{i.name || '-'}</td>
-                                                <td className={`${cellPadding} text-[11px] text-on-surface text-right font-bold`}>{i.qty}</td>
-                                                <td className={`${cellPadding} text-[11px] text-on-surface`}>{i.reason}</td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                        </PrintLayout>
-                    </div>
-                ))}
-            </div>
-        );
-    })()}
+    {printData && (
+      <UniversalPrintPreviewModal
+        isOpen={Boolean(printData)}
+        onClose={() => setPrintData(null)}
+        documentType="inventory_return"
+        documentData={printData}
+        documentTitle={`Stock Return Note #${printData.id}`}
+      />
+    )}
     </>
   );
 }

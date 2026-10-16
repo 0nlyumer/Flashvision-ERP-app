@@ -173,19 +173,18 @@ export default function UniversalPrintPreviewModal({
     const fallback = getMockPreviewData(documentType) || { header: {}, items: [], totals: {} };
     if (documentData && typeof documentData === 'object' && Object.keys(documentData).length > 0) {
       return {
-        ...fallback,
         ...documentData,
-        header: { ...(fallback.header || {}), ...(documentData.header || documentData) },
+        header: { ...(documentData.header || documentData) },
         items: (Array.isArray(documentData.items) && documentData.items.length > 0)
           ? documentData.items
           : (Array.isArray(documentData.lineItems) && documentData.lineItems.length > 0)
           ? documentData.lineItems
           : (Array.isArray(documentData.rows) && documentData.rows.length > 0)
           ? documentData.rows
-          : fallback.items,
+          : (fallback.items || []),
         totals: (documentData.totals && typeof documentData.totals === 'object' && Object.keys(documentData.totals).length > 0)
           ? documentData.totals
-          : fallback.totals
+          : (documentData.totals || fallback.totals || {})
       };
     }
     const fromState = getSampleRecordFromState ? getSampleRecordFromState(documentType, state) : null;

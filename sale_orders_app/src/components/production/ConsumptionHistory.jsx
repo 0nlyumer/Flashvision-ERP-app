@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useDialog } from '../../context/DialogContext';
 import ResizableHeader from '../ui/ResizableHeader';
+import UniversalPrintPreviewModal from '../ui/UniversalPrintPreviewModal';
 
 export default function ConsumptionHistory({ onEdit }) {
     const { state, setCollection, setState, currencySymbol } = useApp();
@@ -10,6 +11,7 @@ export default function ConsumptionHistory({ onEdit }) {
     const [viewMode, setViewMode] = useState('plan'); // 'plan' | 'item'
     const [searchTerm, setSearchTerm] = useState('');
     const [currentPage, setCurrentPage] = useState(1);
+    const [printData, setPrintData] = useState(null);
     
     // For pagination
     const isPaginated = state?.isGlobalPaginated !== undefined ? state.isGlobalPaginated : true;
@@ -17,6 +19,85 @@ export default function ConsumptionHistory({ onEdit }) {
 
     const [activeDropdown, setActiveDropdown] = useState(null);
     const [viewModalData, setViewModalData] = useState(null);
+
+    const handlePrintConsumption = (target) => {
+        if (!target) return;
+        setActiveDropdown(null);
+
+        const isPlan = Boolean(target.consumptions || target.items);
+        const plan = isPlan ? target : target.planRef || {};
+        const consumptions = isPlan ? target.consumptions : { [target.itemCode]: target.consumptionData };
+        const meta = isPlan ? getPlanMetadata(target) : target.metadata || {};
+
+        const items = [];
+        if (consumptions) {
+            const itemKeys = Object.keys(consumptions).filter(k => k !== 'metadata');
+            itemKeys.forEach(itemCode => {
+                const itemData = consumptions[itemCode];
+                if (!itemData) return;
+                const phaseConfig = itemData.phaseConfig || [];
+                const materials = itemData.materials || {};
+
+                if (itemData.clothName && parseFloat(itemData.clothQuantity || 0) > 0) {
+                    items.push({
+                        serial_no: items.length + 1,
+                        material_code: itemCode,
+                        material_name: `${itemData.clothName} (Back Cloth)`,
+                        consumed_qty: parseFloat(itemData.clothQuantity || 0),
+                        uom: 'Meters'
+                    });
+                }
+
+                phaseConfig.filter(p => p.enabled).forEach(phase => {
+                    const list = materials[phase.id] || [];
+                    list.forEach(m => {
+                        const val = parseFloat(m.value || 0);
+                        if (val > 0) {
+                            items.push({
+                                serial_no: items.length + 1,
+                                material_code: m.itemCode || m.rmId || 'RM',
+                                material_name: `${m.name || 'Chemical'} (${phase.title || 'Process'})`,
+                                consumed_qty: val,
+                                uom: phase.unit || 'Kg'
+                            });
+                        }
+                    });
+                });
+            });
+        }
+
+        const totalConsumed = items.reduce((sum, itm) => sum + (Number(itm.consumed_qty) || 0), 0);
+
+        setPrintData({
+            ...target,
+            id: isPlan ? target.id : `${target.planId}-${target.itemCode}`,
+            log_id: isPlan ? target.id : `${target.planId}-${target.itemCode}`,
+            date: meta.createdAt ? new Date(meta.createdAt).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+            batch_no: plan.id || target.planId || 'BATCH',
+            department: 'Production Department',
+            header: {
+                log_id: isPlan ? target.id : `${target.planId}-${target.itemCode}`,
+                date: meta.createdAt ? new Date(meta.createdAt).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+                batch_no: plan.id || target.planId || 'BATCH',
+                department: 'Production Department',
+                created_by: meta.createdBy || state?.currentUser?.name || 'Supervisor',
+                sale_order_no: target.saleOrderNo || plan.saleOrderNo || '—'
+            },
+            items: items.length > 0 ? items : [
+                {
+                    serial_no: 1,
+                    material_code: 'RM-DEFAULT',
+                    material_name: 'Raw Material Consumption',
+                    consumed_qty: 0,
+                    uom: 'Kg'
+                }
+            ],
+            totals: {
+                totalConsumed,
+                totalItems: items.length
+            }
+        });
+    };
 
     // Build data
     const allPlans = state.productionPlans || [];
@@ -307,7 +388,7 @@ export default function ConsumptionHistory({ onEdit }) {
                                                             <span className="material-symbols-outlined text-[18px]">edit</span> Edit
                                                         </button>
                                                         <button 
-                                                            onClick={() => { setActiveDropdown(null); window.print(); }}
+                                                            onClick={() => handlePrintConsumption(row)}
                                                             className="w-full text-left px-4 py-2 hover:bg-surface-container text-sm font-medium flex items-center gap-2"
                                                         >
                                                             <span className="material-symbols-outlined text-[18px]">print</span> Print
@@ -359,7 +440,7 @@ export default function ConsumptionHistory({ onEdit }) {
                                                             <span className="material-symbols-outlined text-[18px]">edit</span> Edit Plan
                                                         </button>
                                                         <button 
-                                                            onClick={() => { setActiveDropdown(null); window.print(); }}
+                                                            onClick={() => handlePrintConsumption(row)}
                                                             className="w-full text-left px-4 py-2 hover:bg-surface-container text-sm font-medium flex items-center gap-2"
                                                         >
                                                             <span className="material-symbols-outlined text-[18px]">print</span> Print
@@ -475,6 +556,16 @@ export default function ConsumptionHistory({ onEdit }) {
                     </div>
                 )}
             </div>
+
+            {printData && (
+                <UniversalPrintPreviewModal
+                    isOpen={Boolean(printData)}
+                    onClose={() => setPrintData(null)}
+                    documentType="consumption_history"
+                    documentData={printData}
+                    documentTitle={`Consumption Record #${printData.id}`}
+                />
+            )}
         </div>
     );
 }

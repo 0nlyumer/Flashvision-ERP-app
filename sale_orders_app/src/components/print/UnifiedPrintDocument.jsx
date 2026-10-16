@@ -167,7 +167,7 @@ export default function UnifiedPrintDocument({
       return headerData.dispatch_date || headerData.date || record.date || new Date().toISOString().split('T')[0];
     }
     if (normKey === 'customer' || normKey === 'customername') {
-      return headerData.customer_name || headerData.customerName || headerData.customer || record.customerName || 'Al-Haq Enterprises';
+      return headerData.customer_name || headerData.customerName || headerData.customer || record.customer_name || record.customerName || 'Customer Party';
     }
 
     // HR Leave & Attendance Fields
@@ -233,7 +233,7 @@ export default function UnifiedPrintDocument({
     if (key.includes('date')) return headerData.date || new Date().toISOString().split('T')[0];
     if (key.includes('status')) return headerData.status || 'Approved';
     if (key.includes('customer') || key.includes('supplier') || key.includes('party')) {
-      return headerData.customerName || headerData.supplierName || headerData.party_name || 'Al-Haq Industrial Corp';
+      return headerData.customer_name || headerData.customerName || headerData.supplierName || headerData.party_name || headerData.party || record.party || record.customerName || '—';
     }
 
     return '—';

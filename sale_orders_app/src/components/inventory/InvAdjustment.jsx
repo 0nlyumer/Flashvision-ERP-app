@@ -1,7 +1,7 @@
 import FGCombinationBuilder from "../ui/FGCombinationBuilder";
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
-import PrintLayout from '../ui/PrintLayout';
+import UniversalPrintPreviewModal from '../ui/UniversalPrintPreviewModal';
 import InventoryAdjustmentHistory from './InventoryAdjustmentHistory';
 import CustomMultiSelect from '../ui/CustomMultiSelect';
 import { useDialog } from '../../context/DialogContext';
@@ -198,10 +198,40 @@ export default function InvAdjustment({ selectedDepartments = [], onBack }) {
   };
 
   const handlePrint = (act) => {
-      setPrintData(act);
-      setTimeout(() => {
-          window.print();
-      }, 100);
+      if (!act) return;
+      const isSub = act.type === 'sub' || act.type === 'Subtraction';
+      const varianceVal = isSub ? -Math.abs(parseFloat(act.qty) || 0) : Math.abs(parseFloat(act.qty) || 0);
+
+      setPrintData({
+          ...act,
+          id: act.id,
+          adj_id: act.id,
+          date: act.date || new Date().toISOString().split('T')[0],
+          approved_by: act.approvedBy || act.user || 'Warehouse Manager',
+          reason: act.reason || act.remarks || 'Periodic Stock Audit',
+          header: {
+              adj_id: act.id,
+              date: act.date || new Date().toISOString().split('T')[0],
+              approved_by: act.approvedBy || act.user || 'Warehouse Manager',
+              reason: act.reason || act.remarks || 'Periodic Stock Audit',
+              department: act.department || 'Main Godown',
+              type: isSub ? 'Negative Adjustment (Reduction)' : 'Positive Adjustment (Addition)'
+          },
+          items: [
+              {
+                  serial_no: 1,
+                  item_code: act.itemCode || 'ITEM-001',
+                  item_name: act.itemName || 'Adjusted Inventory Item',
+                  system_qty: act.prevQty ?? act.systemQty ?? '—',
+                  physical_qty: act.newQty ?? act.physicalQty ?? '—',
+                  adj_qty: `${varianceVal > 0 ? '+' : ''}${varianceVal}`
+              }
+          ],
+          totals: {
+              'Adjusted Quantity': Math.abs(parseFloat(act.qty) || 0),
+              'Net Variance': varianceVal
+          }
+      });
   };
 
   // Activity generator based on the selected items
@@ -220,7 +250,7 @@ export default function InvAdjustment({ selectedDepartments = [], onBack }) {
 
   return (
     <>
-    <div className="animate-in fade-in duration-500 max-w-full px-6 mx-auto pb-4 print:hidden">
+    <div className="animate-in fade-in duration-500 max-w-full px-6 mx-auto pb-4">
       {/* Header section */}
       <header className="mb-10 flex justify-between items-end">
         <div>
@@ -548,44 +578,15 @@ export default function InvAdjustment({ selectedDepartments = [], onBack }) {
       </div>
     </div>
 
-    {/* PRINT ONLY UI */}
-    {printData && (() => {
-        const adjSettings = state?.adminSetup?.printSettings?.moduleSettings?.inv_adjustment || {};
-        const rowSize = adjSettings.rowSize || 'normal';
-        const paddingClass = rowSize === 'compact' ? 'p-2' : rowSize === 'spacious' ? 'p-6' : 'p-4';
-        
-        return (
-            <div className="hidden print:block w-full">
-                <PrintLayout 
-                    documentTitle="Stock Adjustment Slip"
-                    documentId={printData.id}
-                    date={printData.date}
-                    disclaimerKey="inventory"
-                    extraMeta={[
-                        { label: 'Item Code', value: printData.itemCode },
-                        { label: 'Item Name', value: printData.itemName },
-                        { label: 'Reason', value: printData.reason }
-                    ]}
-                >
-                    <div className="mt-8">
-                        <h3 className="text-sm font-bold uppercase tracking-widest text-on-surface-variant border-b border-outline-variant/30 pb-2 mb-4">Adjustment Details</h3>
-                        <div className={`flex justify-between items-center ${paddingClass} bg-surface-container-low rounded-lg`}>
-                            <span className="text-sm font-bold">Adjusted Quantity:</span>
-                            <span className={`text-lg font-black ${printData.type === 'sub' ? 'text-error' : 'text-primary'}`}>
-                                {printData.type === 'sub' ? '-' : '+'}{printData.qty} Units
-                            </span>
-                        </div>
-                        {printData.remarks && (
-                            <div className={`mt-6 ${paddingClass} border border-outline-variant/30 rounded-lg`}>
-                                <span className="text-xs font-bold uppercase text-on-surface-variant block mb-1">Remarks</span>
-                                <p className="text-sm font-medium">{printData.remarks}</p>
-                            </div>
-                        )}
-                    </div>
-                </PrintLayout>
-            </div>
-        );
-    })()}
+    {printData && (
+      <UniversalPrintPreviewModal
+        isOpen={Boolean(printData)}
+        onClose={() => setPrintData(null)}
+        documentType="inventory_adjustment"
+        documentData={printData}
+        documentTitle={`Stock Adjustment #${printData.id}`}
+      />
+    )}
     </>
   );
 }

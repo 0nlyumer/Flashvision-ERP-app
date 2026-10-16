@@ -5,6 +5,7 @@ import useDynamicColumns from '../../hooks/useDynamicColumns';
 import { useApp } from '../../context/AppContext';
 import { useDialog } from '../../context/DialogContext';
 import GlobalPagination from '../ui/GlobalPagination';
+import UniversalPrintPreviewModal from '../ui/UniversalPrintPreviewModal';
 
 const DEFAULT_COLUMNS = [
   { id: 'transferId', label: 'Transfer ID & Date', visible: true, width: 250 },
@@ -19,9 +20,43 @@ export default function StockTransferHistory({ onNewTransferClick }) {
     const { appConfirm, appAlert } = useDialog();
     const [searchQuery, setSearchQuery] = useState('');
     const [currentPage, setCurrentPage] = useState(1);
+    const [printData, setPrintData] = useState(null);
     const itemsPerPage = 20;
     
     const { columns, visibleColumns, toggleColumn, resizeColumn, moveColumn } = useDynamicColumns(DEFAULT_COLUMNS, 'StockTransferHistory_columns');
+
+    const handlePrint = (transfer) => {
+        if (!transfer) return;
+        const items = (transfer.items || []).map((itm, idx) => ({
+            serial_no: idx + 1,
+            item_code: itm.sku || itm.itemCode || itm.itemId || '—',
+            item_name: itm.name || itm.itemName || '—',
+            transfer_qty: parseFloat(itm.qty || itm.transfer_qty || 0),
+            uom: itm.uom || itm.unit || 'Units'
+        }));
+
+        const totalQty = items.reduce((sum, i) => sum + (Number(i.transfer_qty) || 0), 0);
+
+        setPrintData({
+            ...transfer,
+            id: transfer.id,
+            transfer_no: transfer.id,
+            date: transfer.date || new Date().toISOString().split('T')[0],
+            from_warehouse: transfer.source || '—',
+            to_warehouse: transfer.destination || '—',
+            header: {
+                transfer_no: transfer.id,
+                date: transfer.date || new Date().toISOString().split('T')[0],
+                from_warehouse: transfer.source || '—',
+                to_warehouse: transfer.destination || '—',
+                status: transfer.status || 'Pending'
+            },
+            items,
+            totals: {
+                totalTransferQty: totalQty
+            }
+        });
+    };
 
     const transfers = (state.stockTransfers || []).filter(t => 
         t.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -189,7 +224,7 @@ export default function StockTransferHistory({ onNewTransferClick }) {
                                                     return (
                                                         <td key={col.id} className="py-4 px-6 align-middle text-right opacity-0 group-hover:opacity-100 transition-opacity">
                                                             <div className="flex items-center justify-end gap-2">
-                                                                <button className="p-1.5 text-secondary hover:bg-secondary-container hover:text-on-secondary-container rounded-md transition-colors" title="Print" onClick={() => window.print()}>
+                                                                <button className="p-1.5 text-secondary hover:bg-secondary-container hover:text-on-secondary-container rounded-md transition-colors" title="Print" onClick={() => handlePrint(t)}>
                                                                     <span className="material-symbols-outlined text-[1.25rem]">print</span>
                                                                 </button>
                                                                 <button className="p-1.5 text-secondary hover:bg-secondary-container hover:text-on-secondary-container rounded-md transition-colors" title="View">
@@ -231,6 +266,16 @@ export default function StockTransferHistory({ onNewTransferClick }) {
                     />
                 </div>
             </div>
+
+            {printData && (
+                <UniversalPrintPreviewModal
+                    isOpen={Boolean(printData)}
+                    onClose={() => setPrintData(null)}
+                    documentType="stock_transfer"
+                    documentData={printData}
+                    documentTitle={`Stock Transfer #${printData.id}`}
+                />
+            )}
         </div>
     );
 }

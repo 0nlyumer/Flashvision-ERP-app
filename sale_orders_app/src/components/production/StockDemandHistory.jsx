@@ -3,12 +3,56 @@ import ResizableHeader from '../ui/ResizableHeader';
 import { useApp } from '../../context/AppContext';
 import { useDialog } from '../../context/DialogContext';
 import GlobalPagination from '../ui/GlobalPagination';
+import UniversalPrintPreviewModal from '../ui/UniversalPrintPreviewModal';
 
 export default function StockDemandHistory({ onNewRequestClick, onBackClick, onViewClick, onEditClick }) {
     const { state, setCollection } = useApp();
     const { appConfirm, appAlert } = useDialog();
     const [currentPage, setCurrentPage] = useState(1);
     const [showCriticalPopup, setShowCriticalPopup] = useState(false);
+    const [printData, setPrintData] = useState(null);
+
+    const handlePrintDemand = (demand) => {
+        if (!demand) return;
+        const items = (demand.items || []).map((itm, idx) => ({
+            serial_no: idx + 1,
+            item_code: itm.sku || itm.itemCode || itm.itemId || `RM-${idx + 1}`,
+            item_name: itm.name || itm.itemName || 'Material Item',
+            demanded_qty: parseFloat(itm.itemQuantity || itm.qty || itm.demanded_qty || 0),
+            uom: itm.unit || itm.uom || 'Kg'
+        }));
+
+        const totalQty = items.reduce((sum, itm) => sum + (Number(itm.demanded_qty) || 0), 0);
+
+        setPrintData({
+            ...demand,
+            id: demand.id,
+            demand_no: demand.id,
+            date: demand.date || new Date().toISOString().split('T')[0],
+            from_dept: demand.department || 'Production Department',
+            to_store: demand.targetDepartment || 'Main Store',
+            header: {
+                demand_no: demand.id,
+                date: demand.date || new Date().toISOString().split('T')[0],
+                from_dept: demand.department || 'Production Department',
+                to_store: demand.targetDepartment || 'Main Store',
+                requested_by: demand.requestedBy || state?.currentUser?.name || 'Requisitioner',
+                status: demand.status || 'Pending'
+            },
+            items: items.length > 0 ? items : [
+                {
+                    serial_no: 1,
+                    item_code: 'RM-DEFAULT',
+                    item_name: 'Raw Material Requisition',
+                    demanded_qty: 0,
+                    uom: 'Kg'
+                }
+            ],
+            totals: {
+                totalDemandedItems: totalQty
+            }
+        });
+    };
     
     // Real Data calculations
     const demands = state.stockDemands || [];
@@ -150,7 +194,7 @@ export default function StockDemandHistory({ onNewRequestClick, onBackClick, onV
                                     </td>
                                     <td className="py-4 px-6 text-right">
                                         <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                            <button className="p-1.5 text-secondary hover:bg-secondary-container hover:text-on-secondary-container rounded-md transition-colors" title="Print" onClick={() => window.print()}>
+                                            <button className="p-1.5 text-secondary hover:bg-secondary-container hover:text-on-secondary-container rounded-md transition-colors" title="Print" onClick={() => handlePrintDemand(item)}>
                                                 <span className="material-symbols-outlined text-[1.25rem]">print</span>
                                             </button>
                                             <button onClick={() => onViewClick?.(item)} className="p-1.5 text-secondary hover:bg-secondary-container hover:text-on-secondary-container rounded-md transition-colors" title="View">
@@ -212,6 +256,15 @@ export default function StockDemandHistory({ onNewRequestClick, onBackClick, onV
                         </div>
                     </div>
                 </div>
+            )}
+            {printData && (
+                <UniversalPrintPreviewModal
+                    isOpen={Boolean(printData)}
+                    onClose={() => setPrintData(null)}
+                    documentType="stock_demand"
+                    documentData={printData}
+                    documentTitle={`Stock Demand #${printData.id}`}
+                />
             )}
         </div>
     );

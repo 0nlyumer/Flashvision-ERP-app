@@ -22,24 +22,35 @@ export default function DelRecord() {
     const rawItems = dc.items || [];
     const sumDispatched = rawItems.reduce((acc, it) => acc + (parseFloat(it.dispatchedQty ?? it.editedQty ?? it.dispatch_qty ?? it.quantity ?? it.qty ?? 0) || 0), 0);
     const sumRolls = rawItems.reduce((acc, it) => acc + (parseFloat(it.dispatchedRolls ?? it.rolls ?? it.weight ?? 0) || 0), 0);
+    const cust = state.customers?.find(c => (dc.customerId && c.id === dc.customerId) || c.name === dc.customerName);
+    const customerName = cust?.name || dc.customerName || 'Consignee Party';
+    const orderRef = dc.items?.[0]?.orderId || dc.saleOrderId || dc.orderRef || dc.so_ref || '—';
 
     const richDc = {
       ...dc,
       id: dc.id,
+      customer: customerName,
+      customer_name: customerName,
+      so_ref: orderRef,
+      order_ref: orderRef,
       header: {
         challan_no: dc.id,
         challan_number: dc.id,
         date: dc.date ? new Date(dc.date).toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' }) : new Date().toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' }),
-        customer: dc.customerName || 'N/A',
-        customer_name: dc.customerName || 'N/A',
+        so_ref: orderRef,
+        order_ref: orderRef,
+        sale_order_ref: orderRef,
+        customer: customerName,
+        customer_name: customerName,
         dc_mode: dc.dcMode || 'Sale Orders',
         driver_name: dc.logistics?.driverName || dc.driverName || '—',
         driver_contact: dc.logistics?.driverNumber || dc.driverContact || '—',
         vehicle_no: dc.logistics?.vehicleNumber || dc.vehicleNumber || '—',
-        contact_person: dc.consignee?.contactPerson || dc.contactPerson || '—',
-        contact_number: dc.consignee?.contactNumber || dc.contactNumber || '—',
-        delivery_address: dc.consignee?.deliveryAddress || dc.deliveryAddress || '—',
-        destination: dc.consignee?.deliveryAddress || '—',
+        contact_person: dc.consignee?.contactPerson || dc.contactPerson || cust?.contactPerson || '—',
+        contact_number: dc.consignee?.contactNumber || dc.contactNumber || cust?.phone || cust?.contactNumber || '—',
+        delivery_address: dc.consignee?.deliveryAddress || dc.deliveryAddress || cust?.address || '—',
+        shipping_address: dc.consignee?.deliveryAddress || dc.deliveryAddress || cust?.address || '—',
+        destination: dc.consignee?.deliveryAddress || cust?.address || '—',
         status: dc.status || 'Dispatched'
       },
       consignee: dc.consignee || {},

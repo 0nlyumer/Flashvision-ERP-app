@@ -54,6 +54,8 @@ export const SYSTEM_DOCUMENTS = [
   { id: 'financial_statements', name: 'Financial Statements (Balance Sheet / P&L)', module: 'finance', icon: 'balance', code: 'FST' },
   { id: 'bank_reconciliation', name: 'Bank Reconciliation', module: 'finance', icon: 'account_balance', code: 'BRC' },
   { id: 'cost_centers', name: 'Cost Centers Report', module: 'finance', icon: 'hub', code: 'CCR' },
+  { id: 'finance_dashboard', name: 'Finance Executive Brief', module: 'finance', icon: 'dashboard', code: 'FEB' },
+
 
   // 6. HR Module
   { id: 'hr_onboarding', name: 'Onboarding Wizard Slip', module: 'hr', icon: 'person_add', code: 'ONB' },
@@ -749,6 +751,27 @@ export const DEFAULT_DOCUMENT_SCHEMAS = {
     ]
   },
 
+  finance_dashboard: {
+    ...DEFAULT_LAYOUT_SETTINGS,
+    headerFields: [
+      { key: 'report_title', label: 'Executive Report', enabled: true, width: 'span-2' },
+      { key: 'as_of_date', label: 'As of Date', enabled: true, width: 'span-1' },
+      { key: 'operating_health', label: 'Operating Health', enabled: true, width: 'span-1' },
+      { key: 'solvency_status', label: 'Solvency Status', enabled: true, width: 'span-1' },
+      { key: 'currency', label: 'Currency', enabled: true, width: 'span-1' }
+    ],
+    gridColumns: [
+      { key: 'serial_no', label: 'Sr #', enabled: true, width: '6%', align: 'center' },
+      { key: 'date', label: 'Tx Date', enabled: true, width: '12%', align: 'center' },
+      { key: 'voucher_no', label: 'Voucher Ref', enabled: true, width: '15%', align: 'left' },
+      { key: 'account_name', label: 'Account', enabled: true, width: '25%', align: 'left' },
+      { key: 'party', label: 'Party / Description', enabled: true, width: '22%', align: 'left' },
+      { key: 'debit', label: 'Debit (PKR)', enabled: true, width: '10%', align: 'right' },
+      { key: 'credit', label: 'Credit (PKR)', enabled: true, width: '10%', align: 'right' }
+    ]
+  },
+
+
   hr_leave_request: {
     ...DEFAULT_LAYOUT_SETTINGS,
     headerFields: [
@@ -918,7 +941,19 @@ export function normalizeDocType(docType) {
     production_bom: 'bom_master',
     salary_slip: 'hr_payslip',
     payslip: 'hr_payslip',
-    stock_ledger: 'inventory_ledger'
+    stock_ledger: 'inventory_ledger',
+    stock_demand_history: 'stock_demand',
+    stock_receiving: 'stock_receiving_history',
+    stock_transfer_history: 'stock_transfer',
+    batch_closing: 'batch_closing_history',
+    consumption: 'consumption_history',
+    other_consumption: 'other_consumptions',
+    inventory_adjustments: 'inventory_adjustment',
+    inventory_returns: 'inventory_return',
+    planning: 'planning_history',
+    production_slip: 'production_manifest',
+    executive_brief: 'finance_dashboard',
+    finance_cockpit: 'finance_dashboard'
   };
   return aliasMap[clean] || clean;
 }
@@ -972,10 +1007,10 @@ export function getSampleRecordFromState(docType, state) {
 
       return {
         ...so,
-        customer: so.customerName || cust?.name || 'Customer Party',
-        customer_name: so.customerName || cust?.name || 'Customer Party',
-        contact: cust?.contactPerson || 'N/A',
-        contact_number: cust?.phone || cust?.contactNumber || 'N/A',
+        customer: cust?.name || so.customerName || 'Customer Party',
+        customer_name: cust?.name || so.customerName || 'Customer Party',
+        contact: cust?.contactPerson || '—',
+        contact_number: cust?.phone || cust?.contactNumber || '—',
         shipping_address: so.shippingAddress || cust?.address || 'Factory Gate, Industrial Estate',
         items: formattedItems.length > 0 ? formattedItems : mockFallback.items,
         totals: {
@@ -1004,6 +1039,7 @@ export function getSampleRecordFromState(docType, state) {
 
     delivery_challan: state.deliveries?.[0] ? (() => {
       const del = state.deliveries[0];
+      const cust = state.customers?.find(c => (del.customerId && c.id === del.customerId) || c.name === del.customerName);
       const items = (del.items || []).map((it, idx) => ({
         serial_no: idx + 1,
         item_code: it.itemCode || it.itemId || `ITEM-${idx + 1}`,
@@ -1014,18 +1050,21 @@ export function getSampleRecordFromState(docType, state) {
         weight: it.dispatchedRolls ? `${it.dispatchedRolls} Rolls` : (it.rolls ? `${it.rolls} Rolls` : '—')
       }));
       const totalPackages = items.reduce((s, it) => s + (parseInt(it.packing_type, 10) || 1), 0);
+      const orderRef = del.items?.[0]?.orderId || del.saleOrderId || '—';
       return {
         ...del,
         challan_no: del.id || 'DC-2026-001',
         dispatch_date: del.date || new Date().toISOString().split('T')[0],
-        customer_name: del.customerName || 'Consignee Party',
-        so_ref: del.items?.[0]?.orderId || del.saleOrderId || 'SO-2026-001',
-        contact_person: del.consignee?.contactPerson || 'N/A',
-        contact_number: del.consignee?.contactNumber || 'N/A',
-        shipping_address: del.consignee?.deliveryAddress || del.consignee?.address || 'Site Delivery',
-        vehicle_no: del.logistics?.vehicleNumber || 'N/A',
-        driver_name: del.logistics?.driverName || 'N/A',
-        driver_contact: del.logistics?.driverNumber || 'N/A',
+        customer_name: cust?.name || del.customerName || 'Consignee Party',
+        customer: cust?.name || del.customerName || 'Consignee Party',
+        so_ref: orderRef,
+        order_ref: orderRef,
+        contact_person: del.consignee?.contactPerson || cust?.contactPerson || '—',
+        contact_number: del.consignee?.contactNumber || cust?.phone || '—',
+        shipping_address: del.consignee?.deliveryAddress || del.consignee?.address || cust?.address || 'Site Delivery',
+        vehicle_no: del.logistics?.vehicleNumber || '—',
+        driver_name: del.logistics?.driverName || '—',
+        driver_contact: del.logistics?.driverNumber || '—',
         dc_mode: del.dcMode || 'Direct Delivery',
         items: items.length > 0 ? items : mockFallback.items,
         totals: {

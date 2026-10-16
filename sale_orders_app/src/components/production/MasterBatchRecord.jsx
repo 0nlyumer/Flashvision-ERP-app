@@ -264,7 +264,12 @@ export default function MasterBatchRecord() {
                     spec_limit: `Qty: ${o.quantity} ${o.uom} (PKR ${parseFloat(o.value || 0).toFixed(2)})`,
                     sign_off: o.isWastage ? 'Recorded Loss' : 'QC Passed'
                 }))
-            ]
+            ],
+            totals: {
+                totalCost: b.totalConsumedCost || 0,
+                totalOutput: `${b.totalOutputQty?.toLocaleString() || 0} units`,
+                efficiency: `${b.efficiency?.toFixed(1) || 0}%`
+            }
         };
     }, [activeStudioBatch]);
 
@@ -458,8 +463,6 @@ function BatchSpecificationDetail({ batch, onBack, formatCurrency, formatDate, o
     const handlePrintBatch = (b) => {
         if (onOpenStudio) {
             onOpenStudio(b);
-        } else {
-            window.print();
         }
     };
 

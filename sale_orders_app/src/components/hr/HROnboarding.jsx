@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import CustomSelect from '../ui/CustomSelect';
 import { useApp } from '../../context/AppContext';
+import UniversalPrintPreviewModal from '../ui/UniversalPrintPreviewModal';
 
 const INITIAL_WIZARD_DATA = {
   fullName: '',
@@ -30,6 +31,7 @@ export default function HROnboarding({ isMobile }) {
   const [formData, setFormData] = useState(INITIAL_WIZARD_DATA);
   const [photo, setPhoto] = useState(null); // Simulated photo upload
   const [isAutoSaving, setIsAutoSaving] = useState(false);
+  const [printRecordData, setPrintRecordData] = useState(null);
 
   // Layout View Mode & Active Editing State
   const [currentView, setCurrentView] = useState('wizard'); // 'wizard' | 'history'
@@ -1011,102 +1013,59 @@ export default function HROnboarding({ isMobile }) {
     };
 
     const handlePrint = (item) => {
-      const printWindow = window.open('', '_blank', 'width=800,height=900');
-      const styles = `
-        body { font-family: system-ui, -apple-system, sans-serif; padding: 40px; color: #1e293b; line-height: 1.5; }
-        .header { border-bottom: 2px solid #10b981; padding-bottom: 20px; margin-bottom: 30px; text-align: center; }
-        .title { font-size: 26px; font-weight: 900; color: #0f766e; margin: 0; }
-        .subtitle { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #64748b; margin-top: 5px; font-weight: bold; }
-        .section-title { font-size: 13px; font-weight: 900; color: #0f766e; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px; margin-top: 35px; margin-bottom: 15px; text-transform: uppercase; letter-spacing: 0.5px; }
-        .grid { display: grid; grid-template-cols: 1fr 1fr; gap: 15px; }
-        .field { font-size: 12px; margin-bottom: 8px; }
-        .label { font-weight: 700; color: #475569; }
-        .value { color: #0f172a; }
-        .signature-block { margin-top: 60px; display: flex; justify-content: space-between; align-items: flex-end; }
-        .sig-line { border-top: 1px solid #94a3b8; width: 220px; text-align: center; font-size: 11px; color: #64748b; padding-top: 6px; margin-top: 40px; }
-        .sig-image { max-height: 50px; display: block; margin: 0 auto 5px auto; }
-        .sig-typed { font-family: 'Brush Script MT', cursive, sans-serif; font-size: 26px; text-align: center; color: #0f766e; margin-bottom: 2px; }
-      `;
-      
-      let sigHTML = '';
-      if (item.signature) {
-        if (item.signature.startsWith('data:image')) {
-          sigHTML = `<img src="${item.signature}" class="sig-image" />`;
-        } else {
-          sigHTML = `<div class="sig-typed">${item.signature}</div>`;
+      if (!item) return;
+      const empName = item.formData?.fullName || item.fullName || 'Employee';
+      const desig = item.formData?.designation || 'Associate';
+      const dept = item.formData?.department || 'Operations';
+      const joinDate = item.joiningDate || new Date().toISOString().split('T')[0];
+
+      setPrintRecordData({
+        ...item,
+        id: item.id,
+        emp_id: item.id,
+        emp_name: empName,
+        designation: desig,
+        department: dept,
+        joining_date: joinDate,
+        header: {
+          emp_id: item.id,
+          emp_name: empName,
+          designation: desig,
+          department: dept,
+          joining_date: joinDate,
+          father_name: item.formData?.fatherName || '—',
+          cnic: item.formData?.cnic || '—',
+          phone: item.formData?.phone || '—',
+          shift: item.formData?.shift || 'Morning',
+          manager: item.formData?.manager || 'Sarah Jenkins'
+        },
+        items: [
+          { step_no: 1, clearance_item: 'Personal Bio-Data & CNIC Verification', status: 'Completed', sign: 'Verified' },
+          { step_no: 2, clearance_item: 'Contact & Residential Address Verification', status: 'Completed', sign: 'Verified' },
+          { step_no: 3, clearance_item: 'Educational Credentials & Experience Letters', status: 'Completed', sign: 'Verified' },
+          { step_no: 4, clearance_item: 'Bank Account & Payroll Setup', status: 'Completed', sign: 'Verified' },
+          { step_no: 5, clearance_item: 'Medical Fitness & Biometric Registration', status: 'Completed', sign: 'Verified' },
+          { step_no: 6, clearance_item: 'Company Assets (Access Card & Uniform) Issued', status: 'Completed', sign: 'Verified' },
+          { step_no: 7, clearance_item: 'Employee Handbook & Code of Conduct Signed', status: item.signature ? 'Signed' : 'Pending', sign: item.signature ? '✓ Signed' : 'Pending' }
+        ],
+        totals: {
+          'Basic Salary': Number(item.formData?.basicSalary || 0),
+          'Gross Salary': Number(item.formData?.grossSalary || 0)
         }
-      }
-      
-      printWindow.document.write(`
-        <html>
-          <head>
-            <title>Onboarding Document - ${item.fullName}</title>
-            <style>${styles}</style>
-          </head>
-          <body>
-            <div class="header">
-              <div class="title">Employee Onboarding Record</div>
-              <div class="subtitle">Official HR Department File • ID: ${item.id}</div>
-            </div>
-            
-            <div class="section-title">Personal Information</div>
-            <div class="grid">
-              <div class="field"><span class="label">Full Name:</span> <span class="value">${item.formData.fullName}</span></div>
-              <div class="field"><span class="label">Father's Name:</span> <span class="value">${item.formData.fatherName}</span></div>
-              <div class="field"><span class="label">Date of Birth:</span> <span class="value">${item.formData.dob}</span></div>
-              <div class="field"><span class="label">Marital Status:</span> <span class="value">${item.formData.maritalStatus}</span></div>
-            </div>
-
-            <div class="section-title">Contact &amp; Identification</div>
-            <div class="grid">
-              <div class="field"><span class="label">Phone Number:</span> <span class="value">${item.formData.phone}</span></div>
-              <div class="field"><span class="label">CNIC Number:</span> <span class="value">${item.formData.cnic}</span></div>
-            </div>
-
-            <div class="section-title">Joining &amp; Assignment Details</div>
-            <div class="grid">
-              <div class="field"><span class="label">Joining Date:</span> <span class="value">${item.joiningDate}</span></div>
-              <div class="field"><span class="label">Designation:</span> <span class="value">${item.formData.designation || 'Associate'}</span></div>
-              <div class="field"><span class="label">Department:</span> <span class="value">${item.formData.department}</span></div>
-              <div class="field"><span class="label">Section:</span> <span class="value">${item.formData.section || 'N/A'}</span></div>
-              <div class="field"><span class="label">Reporting Manager:</span> <span class="value">${item.formData.manager || 'Sarah Jenkins'}</span></div>
-              <div class="field"><span class="label">Shift Selection:</span> <span class="value">${item.formData.shift || 'Morning'}</span></div>
-            </div>
-
-            <div class="section-title">Compensation &amp; Salary Structure</div>
-            <div class="grid">
-              <div class="field"><span class="label">Gross Salary (Annual):</span> <span class="value">${currencySymbol} ${Number(item.formData.grossSalary || 0).toLocaleString()}</span></div>
-              <div class="field"><span class="label">Basic Salary (Monthly):</span> <span class="value">${currencySymbol} ${Number(item.formData.basicSalary || 0).toLocaleString()}</span></div>
-              <div class="field"><span class="label">Overtime Allowed:</span> <span class="value">${item.formData.overtimeAllowed ? 'Yes' : 'No'}</span></div>
-              <div class="field"><span class="label">Bonuses Eligible:</span> <span class="value">${item.formData.bonusesEligible ? 'Yes' : 'No'}</span></div>
-            </div>
-
-            <div class="signature-block">
-              <div class="sig-line">
-                HR Administrator Signature
-              </div>
-              <div class="sig-line">
-                ${sigHTML}
-                Employee Verification Signature
-              </div>
-            </div>
-            
-            <script>
-              window.onload = function() {
-                window.print();
-                window.onafterprint = function() {
-                  window.close();
-                };
-              };
-            </script>
-          </body>
-        </html>
-      `);
-      printWindow.document.close();
+      });
     };
 
     return (
       <div className="flex flex-col gap-8 animate-fade-in pb-16 select-none w-full font-body">
+        {printRecordData && (
+          <UniversalPrintPreviewModal
+            isOpen={Boolean(printRecordData)}
+            onClose={() => setPrintRecordData(null)}
+            documentType="hr_onboarding"
+            documentData={printRecordData}
+            documentTitle={`Onboarding Slip - ${printRecordData.emp_name}`}
+          />
+        )}
         
         {/* Header Panel */}
         <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6 shrink-0">
