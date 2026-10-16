@@ -4,7 +4,9 @@ const ALL_COLUMNS = [
   { id: 'id', label: 'Emp Code' },
   { id: 'name', label: 'Name' },
   { id: 'designation', label: 'Designation' },
+  { id: 'division', label: 'Division' },
   { id: 'department', label: 'Department' },
+  { id: 'shiftDutyHours', label: 'Shift / Duty Hours' },
   { id: 'status', label: 'Status' },
   { id: 'basicSalary', label: 'Basic Salary' },
   { id: 'joiningDate', label: 'Join Date' },
@@ -17,60 +19,25 @@ const ALL_COLUMNS = [
 
 import { useApp } from '../../context/AppContext';
 
-export const normalizeEmployeeRecord = (emp, idx = 0) => {
+export const normalizeEmployeeRecord = (emp) => {
   if (!emp) return emp;
   const next = { ...emp };
-  const desig = (next.designation || '').toLowerCase();
 
-  const variedDepartments = [
-    'Plant Operations & Extrusion',
-    'Finished Goods & Supply Chain',
-    'Human Resources & Admin',
-    'Quality Assurance & Lab',
-    'Finance & Accounts',
-    'Mechanical Maintenance',
-    'Raw Material Warehousing',
-    'Electrical & Utility Systems'
-  ];
-
+  // Department: AAA division -> 'AAA', else keep existing. If blank, stays blank (display "—")
   if (!next.department || next.department === 'Global Logistics') {
     if (next.division === 'AAA') {
       next.department = 'AAA';
-    } else if (desig.includes('hr') || desig.includes('human')) {
-      next.department = 'Human Resources & Admin';
-    } else if (desig.includes('finance') || desig.includes('account')) {
-      next.department = 'Finance & Accounts';
-    } else if (desig.includes('qa') || desig.includes('quality') || desig.includes('inspect')) {
-      next.department = 'Quality Assurance & Lab';
-    } else if (desig.includes('operator') || desig.includes('helper') || desig.includes('loom') || desig.includes('production')) {
-      next.department = 'Plant Operations & Extrusion';
-    } else if (desig.includes('store') || desig.includes('warehouse') || desig.includes('logistics') || desig.includes('dispatch')) {
-      next.department = 'Finished Goods & Supply Chain';
-    } else {
-      next.department = variedDepartments[idx % variedDepartments.length];
     }
   }
 
-  const existingSalary = parseFloat(next.basicSalary ?? next.salary ?? 0);
-  let salary = existingSalary;
+  // Basic salary: only valid positive numbers kept, no invented heuristics (display "—")
+  const rawSalary = parseFloat(next.basicSalary ?? next.salary ?? 0);
+  next.basicSalary = (rawSalary && rawSalary > 0) ? rawSalary : '';
+  next.salary = next.basicSalary;
 
-  // Only apply fallback salary heuristic if employee has NO valid salary configured
-  if (!salary || salary <= 0) {
-    if (desig.includes('helper') || desig.includes('worker') || desig.includes('labor') || desig.includes('peon')) {
-      salary = 35000;
-    } else if (desig.includes('manager') || desig.includes('lead') || desig.includes('director') || desig.includes('head')) {
-      salary = 140000;
-    } else if (desig.includes('supervisor') || desig.includes('engineer')) {
-      salary = 85000;
-    } else if (desig.includes('operator')) {
-      salary = 45000;
-    } else {
-      salary = 32000;
-    }
-  }
-
-  next.basicSalary = salary;
-  next.salary = salary;
+  // Normalize status to title case Active / Inactive
+  const s = String(next.status || '').trim().toLowerCase();
+  next.status = (s === 'inactive' || s === 'disabled' || s === 'terminated' || s === 'left') ? 'Inactive' : 'Active';
 
   if (next.email === 'N/A' || next.email === 'null') next.email = '';
   if (next.fatherName === 'N/A' || next.fatherName === 'null') next.fatherName = '';
@@ -81,9 +48,9 @@ export const normalizeEmployeeRecord = (emp, idx = 0) => {
 export default function HRDirectory({ isMobile }) {
   const { state, setCollection } = useApp();
   const rawEmployees = state.hr_employees_list || [];
-  const employees = useMemo(() => rawEmployees.map((emp, idx) => normalizeEmployeeRecord(emp, idx)), [rawEmployees]);
+  const employees = useMemo(() => rawEmployees.map((emp) => normalizeEmployeeRecord(emp)), [rawEmployees]);
   const setEmployees = (updater) => {
-    const nextList = typeof updater === 'function' ? updater(employees) : updater;
+    const nextList = typeof updater === 'function' ? updater(rawEmployees) : updater;
     setCollection('hr_employees_list', nextList);
   };
 
@@ -95,23 +62,59 @@ export default function HRDirectory({ isMobile }) {
   }, [searchQuery]);
   
   // Column Management States
+  const DEFAULT_VISIBLE_COLUMNS = ['id', 'name', 'designation', 'division', 'department', 'shiftDutyHours', 'status', 'phone', 'basicSalary'];
   const [visibleColumns, setVisibleColumns] = useState(() => {
-    const saved = localStorage.getItem('hr_directory_visible_columns');
-    return saved ? JSON.parse(saved) : ['id', 'name', 'designation', 'department', 'status', 'phone', 'basicSalary'];
+    try {
+      const saved = localStorage.getItem('hr_directory_visible_columns');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const list = [...parsed];
+          if (!list.includes('division')) {
+            const dIdx = list.indexOf('department');
+            if (dIdx !== -1) list.splice(dIdx, 0, 'division');
+            else list.push('division');
+          }
+          if (!list.includes('shiftDutyHours')) {
+            const dIdx = list.indexOf('department');
+            if (dIdx !== -1) list.splice(dIdx + 1, 0, 'shiftDutyHours');
+            else list.push('shiftDutyHours');
+          }
+          return list;
+        }
+      }
+    } catch (e) {}
+    return DEFAULT_VISIBLE_COLUMNS;
   });
 
+  const DEFAULT_COLUMN_ORDER = [
+    'id', 'name', 'designation', 'division', 'department', 'shiftDutyHours',
+    'status', 'basicSalary', 'joiningDate', 'email', 'cnic', 'phone', 'emergencyContact', 'gender'
+  ];
   const [columnOrder, setColumnOrder] = useState(() => {
-    const saved = localStorage.getItem('hr_directory_column_order');
-    return saved ? JSON.parse(saved) : ['id', 'name', 'designation', 'department', 'status', 'basicSalary', 'joiningDate', 'email', 'cnic', 'phone', 'emergencyContact', 'gender'];
+    try {
+      const saved = localStorage.getItem('hr_directory_column_order');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const list = [...parsed];
+          if (!list.includes('division')) list.splice(3, 0, 'division');
+          if (!list.includes('shiftDutyHours')) list.splice(5, 0, 'shiftDutyHours');
+          return list;
+        }
+      }
+    } catch (e) {}
+    return DEFAULT_COLUMN_ORDER;
   });
 
   const [columnWidths, setColumnWidths] = useState(() => {
-    const saved = localStorage.getItem('hr_directory_column_widths');
-    return saved ? JSON.parse(saved) : {
+    const defaults = {
       id: 110,
       name: 240,
       designation: 190,
+      division: 130,
       department: 150,
+      shiftDutyHours: 180,
       status: 120,
       basicSalary: 130,
       joiningDate: 130,
@@ -121,6 +124,13 @@ export default function HRDirectory({ isMobile }) {
       emergencyContact: 160,
       gender: 110
     };
+    try {
+      const saved = localStorage.getItem('hr_directory_column_widths');
+      if (saved) {
+        return { ...defaults, ...JSON.parse(saved) };
+      }
+    } catch (e) {}
+    return defaults;
   });
 
   // Dynamic persistence effects
@@ -520,10 +530,12 @@ export default function HRDirectory({ isMobile }) {
   };
 
   // Status direct toggler
-  const handleStatusToggle = (empId) => {
+  const handleStatusToggle = (empIdOrName) => {
     setEmployees(prev => prev.map(emp => {
-      if (emp.id === empId) {
-        return { ...emp, status: emp.status === 'Active' ? 'Inactive' : 'Active' };
+      const match = (emp.id && emp.id === empIdOrName) || (!emp.id && emp.name === empIdOrName);
+      if (match) {
+        const isAct = (emp.status || '').trim().toLowerCase() === 'active';
+        return { ...emp, status: isAct ? 'Inactive' : 'Active' };
       }
       return emp;
     }));
@@ -536,7 +548,10 @@ export default function HRDirectory({ isMobile }) {
       id: nextId,
       name: '',
       designation: '',
+      division: 'AJ Synthetic',
       department: '',
+      shift: 'GENERAL SHIFT',
+      dutyHours: 8,
       basicSalary: '',
       status: 'Active',
       joiningDate: new Date().toISOString().split('T')[0],
@@ -553,8 +568,11 @@ export default function HRDirectory({ isMobile }) {
     setFormData({
       id: emp.id || '',
       name: emp.name || '',
-      designation: emp.designation || 'Associate',
-      department: emp.department || 'Not Assigned',
+      designation: emp.designation || '',
+      division: emp.division || (emp.department === 'AAA' ? 'AAA' : 'AJ Synthetic'),
+      department: emp.department || '',
+      shift: emp.shift || 'GENERAL SHIFT',
+      dutyHours: emp.dutyHours || 8,
       basicSalary: emp.basicSalary || '',
       status: emp.status || 'Active',
       joiningDate: emp.joiningDate || '',
@@ -574,7 +592,7 @@ export default function HRDirectory({ isMobile }) {
 
     const newEmp = {
       ...formData,
-      basicSalary: Number(formData.basicSalary) || 0,
+      basicSalary: (formData.basicSalary !== '' && formData.basicSalary !== undefined && formData.basicSalary !== null) ? Number(formData.basicSalary) : '',
       avatar: formData.gender === 'Female' 
         ? 'https://lh3.googleusercontent.com/aida-public/AB6AXuCn3SSz92LFI9hxwIIua341y0Vk9RCfSUb73oEn-VVNj7TmuPAbUpxc5diuDgctbJLGZEYnB2NkxJOGQkAutKroqUzbiiPg5tZ35TZ4mB4deMWmghyInmaR-CKo6JQlhVlzoMcAOpwq474aLc5AN5HgChCuKEeEIRkWuADeVQjNG5dIiWhX8KCrnrGJpB9VnNVqxr4875Cv7-0C-Su2NM0tEUvAefPHo6hN550yGwLI2EfANf0_2TSNathkvq5nm8Z1gOtfXl2HlWA7'
         : 'https://lh3.googleusercontent.com/aida-public/AB6AXuClMLNdCsT5GgLghPen8kRTvtQ6NO8OmGafManVab4n1fSK2cEWQYaPVSZcrCtCNnXryjClCAWxFdcpBDkP77BTwlVEj_EAgY92iVUNIBSEt3YK7L0_6W4MXFCVvFNSWQLhN0wwRPdDrdbjUPxZDfckGiO-dU7o9X7r-iwDAuTbMGxQwE1rcpPjLJdo0hdNqhC7RCEFzkhQwFU3jAymjR_dgRqQryVcgMm7LVk91xP8IgRuDrZUKgwxFEAYGefnEtaIE-xV3X4oHFzg'
@@ -589,11 +607,12 @@ export default function HRDirectory({ isMobile }) {
     if (!formData.name.trim() || !formData.phone.trim()) return;
 
     setEmployees(prev => prev.map(emp => {
-      if (emp.id === activeEmployee.id) {
+      const match = (activeEmployee?.id && emp.id === activeEmployee.id) || (!activeEmployee?.id && emp.name === activeEmployee?.name);
+      if (match) {
         return {
           ...emp,
           ...formData,
-          basicSalary: Number(formData.basicSalary) || 0
+          basicSalary: (formData.basicSalary !== '' && formData.basicSalary !== undefined && formData.basicSalary !== null) ? Number(formData.basicSalary) : ''
         };
       }
       return emp;
@@ -608,7 +627,7 @@ export default function HRDirectory({ isMobile }) {
   };
 
   const executeDelete = () => {
-    setEmployees(prev => prev.filter(emp => emp.id !== activeEmployee.id));
+    setEmployees(prev => prev.filter(emp => (activeEmployee?.id ? emp.id !== activeEmployee.id : emp.name !== activeEmployee?.name)));
     setShowDeleteConfirm(false);
     setActiveEmployee(null);
   };
@@ -685,10 +704,16 @@ export default function HRDirectory({ isMobile }) {
         <div className="bg-surface-container-lowest rounded-2xl shadow-[0_20px_40px_rgba(0,28,56,0.04)] border border-outline-variant/10 flex-1 flex flex-col overflow-hidden relative">
           {/* Header Action Bar */}
           <div className="px-6 py-3 flex justify-between items-center border-b border-surface-container bg-surface/30 shrink-0">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <span className="font-headline font-extrabold text-on-surface text-xs tracking-tight">All Personnel</span>
               <span className="bg-primary/10 text-primary text-[10px] font-bold px-2 py-0.5 rounded-full">
-                {filteredEmployees.length} Found
+                {filteredEmployees.length} Total
+              </span>
+              <span className="bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/40 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                {filteredEmployees.filter(e => (e.status || '').trim().toLowerCase() === 'active').length} Active
+              </span>
+              <span className="bg-surface-container-high text-on-surface-variant border border-outline-variant/20 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                {filteredEmployees.filter(e => (e.status || '').trim().toLowerCase() === 'inactive').length} Inactive
               </span>
             </div>
             
@@ -795,7 +820,7 @@ export default function HRDirectory({ isMobile }) {
                     
                     return (
                       <tr 
-                        key={emp.id}
+                        key={emp.id || emp.name}
                         className={`group hover:bg-surface-container-low/40 transition-colors border-b border-surface-container last:border-0 ${
                           isInactive ? 'bg-surface-container-low/20 opacity-80' : ''
                         }`}
@@ -806,7 +831,9 @@ export default function HRDirectory({ isMobile }) {
                           // Format cell content
                           let content = '';
                           if (colId === 'id') {
-                            content = <span className="font-mono font-bold text-secondary text-[11px]">{emp.id}</span>;
+                            content = (emp.id && String(emp.id).trim() !== '') 
+                              ? <span className="font-mono font-bold text-secondary text-[11px]">{emp.id}</span>
+                              : <span className="text-on-surface-variant/40 font-mono">—</span>;
                           } else if (colId === 'name') {
                             content = (
                               <div className="flex items-center gap-3">
@@ -825,13 +852,38 @@ export default function HRDirectory({ isMobile }) {
                                 </div>
                               </div>
                             );
+                          } else if (colId === 'division') {
+                            const divVal = emp.division || (emp.department === 'AAA' ? 'AAA' : 'AJ Synthetic');
+                            const isAAA = divVal === 'AAA';
+                            content = (
+                              <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-extrabold uppercase tracking-wider border ${
+                                isAAA 
+                                  ? 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/30' 
+                                  : 'bg-primary/10 text-primary border-primary/20'
+                              }`}>
+                                {divVal}
+                              </span>
+                            );
+                          } else if (colId === 'department') {
+                            content = (emp.department && emp.department !== 'N/A' && emp.department !== 'null')
+                              ? <span className="font-medium text-xs text-on-surface truncate block">{emp.department}</span>
+                              : <span className="text-on-surface-variant/40">—</span>;
+                          } else if (colId === 'shiftDutyHours' || colId === 'shift') {
+                            const shiftVal = (emp.shift || 'GENERAL SHIFT').toUpperCase();
+                            const hoursVal = emp.dutyHours || 8;
+                            content = (
+                              <span className="inline-flex items-center gap-1 font-mono text-xs font-semibold text-on-surface">
+                                <span>{shiftVal}</span>
+                                <span className="text-[10px] text-on-surface-variant font-bold">({hoursVal}h)</span>
+                              </span>
+                            );
                           } else if (colId === 'status') {
                             content = (
                               <button 
-                                onClick={() => handleStatusToggle(emp.id)}
+                                onClick={() => handleStatusToggle(emp.id || emp.name)}
                                 className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[9px] font-bold border transition-colors cursor-pointer ${
                                   emp.status === 'Active' 
-                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
+                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800/40' 
                                     : 'bg-surface-container-high text-on-surface-variant border-outline-variant/20'
                                 }`}
                               >
@@ -839,11 +891,19 @@ export default function HRDirectory({ isMobile }) {
                               </button>
                             );
                           } else if (colId === 'basicSalary') {
-                            content = <span className="font-mono text-right font-bold">PKR {Number(emp.basicSalary).toLocaleString()}</span>;
+                            const salNum = Number(emp.basicSalary);
+                            content = (salNum && salNum > 0)
+                              ? <span className="font-mono text-right font-bold text-on-surface">PKR {salNum.toLocaleString()}</span>
+                              : <span className="text-on-surface-variant/40">—</span>;
                           } else if (colId === 'joiningDate') {
-                            content = <span>{emp.joiningDate || 'N/A'}</span>;
+                            content = (emp.joiningDate && emp.joiningDate !== 'N/A' && emp.joiningDate !== 'null') 
+                              ? <span>{emp.joiningDate}</span> 
+                              : <span className="text-on-surface-variant/40">—</span>;
                           } else {
-                            content = <span className="truncate block">{emp[colId] || 'N/A'}</span>;
+                            const val = emp[colId];
+                            content = (val && val !== 'N/A' && val !== 'null') 
+                              ? <span className="truncate block">{val}</span> 
+                              : <span className="text-on-surface-variant/40">—</span>;
                           }
 
                           return (
@@ -891,7 +951,7 @@ export default function HRDirectory({ isMobile }) {
             <div className="flex flex-wrap items-center gap-6">
               <span>Showing <b>{displayedEmployees.length}</b> employees of <b>{filteredEmployees.length}</b> total</span>
               <div className="font-semibold text-primary">
-                Active: {employees.filter(e => e.status === 'Active').length} • Inactive: {employees.filter(e => e.status === 'Inactive').length}
+                Active: {filteredEmployees.filter(e => (e.status || '').trim().toLowerCase() === 'active').length} • Inactive: {filteredEmployees.filter(e => (e.status || '').trim().toLowerCase() === 'inactive').length}
               </div>
             </div>
             
@@ -1014,7 +1074,7 @@ export default function HRDirectory({ isMobile }) {
               
               return (
                 <div 
-                  key={emp.id}
+                  key={emp.id || emp.name}
                   className={`bg-surface-container-lowest rounded-2xl p-4 shadow-sm border border-outline-variant/10 flex flex-col gap-3 relative transition-all ${
                     isInactive ? 'opacity-70 bg-surface-container-low/30' : ''
                   }`}
@@ -1033,15 +1093,15 @@ export default function HRDirectory({ isMobile }) {
                         <h3 className={`font-headline text-xs font-black text-on-surface leading-tight truncate ${isInactive ? 'line-through' : ''}`}>
                           {emp.name}
                         </h3>
-                        <p className="font-mono text-[9px] text-primary font-bold mt-0.5">{emp.id}</p>
+                        <p className="font-mono text-[9px] text-primary font-bold mt-0.5">{emp.id || '—'}</p>
                       </div>
                     </div>
 
                     <button 
-                      onClick={() => handleStatusToggle(emp.id)}
+                      onClick={() => handleStatusToggle(emp.id || emp.name)}
                       className={`px-2 py-0.5 rounded-full text-[8px] font-extrabold uppercase border tracking-wider transition-colors cursor-pointer ${
                         emp.status === 'Active' 
-                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
+                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800/40' 
                           : 'bg-surface text-on-surface-variant border-outline-variant/20'
                       }`}
                     >
@@ -1052,20 +1112,28 @@ export default function HRDirectory({ isMobile }) {
                   {/* Detail grids */}
                   <div className="grid grid-cols-2 gap-x-4 gap-y-2 p-2.5 bg-surface-container-low/55 rounded-xl text-[10px] font-semibold text-on-surface-variant font-body">
                     <div>
-                      <span className="text-[8px] uppercase tracking-wider text-outline block">Designation</span>
-                      <span className="text-on-surface truncate block">{emp.designation || 'Associate'}</span>
+                      <span className="text-[8px] uppercase tracking-wider text-outline block">Division</span>
+                      <span className="text-on-surface truncate block font-bold">{emp.division || (emp.department === 'AAA' ? 'AAA' : 'AJ Synthetic')}</span>
                     </div>
                     <div>
                       <span className="text-[8px] uppercase tracking-wider text-outline block">Department</span>
-                      <span className="text-on-surface truncate block">{emp.department || 'Not Assigned'}</span>
+                      <span className="text-on-surface truncate block">{(emp.department && emp.department !== 'N/A') ? emp.department : '—'}</span>
+                    </div>
+                    <div>
+                      <span className="text-[8px] uppercase tracking-wider text-outline block">Designation</span>
+                      <span className="text-on-surface truncate block">{emp.designation || '—'}</span>
+                    </div>
+                    <div>
+                      <span className="text-[8px] uppercase tracking-wider text-outline block">Shift / Hours</span>
+                      <span className="text-on-surface truncate block font-mono">{emp.shift || 'GENERAL SHIFT'} ({emp.dutyHours || 8}h)</span>
                     </div>
                     <div>
                       <span className="text-[8px] uppercase tracking-wider text-outline block">Salary</span>
-                      <span className="font-mono text-on-surface font-bold">PKR {Number(emp.basicSalary || 0).toLocaleString()}</span>
+                      <span className="font-mono text-on-surface font-bold">{(Number(emp.basicSalary) > 0) ? `PKR ${Number(emp.basicSalary).toLocaleString()}` : '—'}</span>
                     </div>
                     <div>
                       <span className="text-[8px] uppercase tracking-wider text-outline block">Primary Number</span>
-                      <span className="text-on-surface truncate block">{emp.phone || 'N/A'}</span>
+                      <span className="text-on-surface truncate block">{emp.phone || '—'}</span>
                     </div>
                   </div>
 
@@ -1174,6 +1242,19 @@ export default function HRDirectory({ isMobile }) {
                 />
               </div>
 
+              {/* Division */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">Division</label>
+                <select
+                  value={formData.division || 'AJ Synthetic'}
+                  onChange={(e) => setFormData({...formData, division: e.target.value, department: e.target.value === 'AAA' ? 'AAA' : formData.department})}
+                  className="w-full bg-surface-container-low border border-outline-variant/20 rounded-xl px-3.5 py-2 text-xs text-on-surface focus:bg-surface-container-lowest focus:border-primary/50 focus:ring-0 outline-none transition-all cursor-pointer"
+                >
+                  <option value="AJ Synthetic">AJ Synthetic</option>
+                  <option value="AAA">AAA</option>
+                </select>
+              </div>
+
               {/* Department */}
               <div className="flex flex-col gap-1.5">
                 <label className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">Department</label>
@@ -1181,20 +1262,43 @@ export default function HRDirectory({ isMobile }) {
                   type="text"
                   value={formData.department}
                   onChange={(e) => setFormData({...formData, department: e.target.value})}
-                  placeholder="e.g. Operations, Marketing"
+                  placeholder="e.g. Operations, Quality"
+                  className="w-full bg-surface-container-low border border-outline-variant/20 rounded-xl px-3.5 py-2 text-xs text-on-surface focus:bg-surface-container-lowest focus:border-primary/50 focus:ring-0 outline-none transition-all"
+                />
+              </div>
+
+              {/* Shift */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">Shift</label>
+                <input 
+                  type="text"
+                  value={formData.shift || 'GENERAL SHIFT'}
+                  onChange={(e) => setFormData({...formData, shift: e.target.value})}
+                  placeholder="e.g. GENERAL SHIFT, 8 HOURS SHIFT"
+                  className="w-full bg-surface-container-low border border-outline-variant/20 rounded-xl px-3.5 py-2 text-xs text-on-surface focus:bg-surface-container-lowest focus:border-primary/50 focus:ring-0 outline-none transition-all"
+                />
+              </div>
+
+              {/* Duty Hours */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">Duty Hours</label>
+                <input 
+                  type="number"
+                  value={formData.dutyHours || 8}
+                  onChange={(e) => setFormData({...formData, dutyHours: Number(e.target.value) || 8})}
+                  placeholder="8"
                   className="w-full bg-surface-container-low border border-outline-variant/20 rounded-xl px-3.5 py-2 text-xs text-on-surface focus:bg-surface-container-lowest focus:border-primary/50 focus:ring-0 outline-none transition-all"
                 />
               </div>
 
               {/* Basic Salary */}
               <div className="flex flex-col gap-1.5">
-                <label className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">Basic Salary *</label>
+                <label className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">Basic Salary (PKR)</label>
                 <input 
                   type="number"
-                  required
                   value={formData.basicSalary}
                   onChange={(e) => setFormData({...formData, basicSalary: e.target.value})}
-                  placeholder="e.g. 75000"
+                  placeholder="e.g. 75000 (leave empty if not configured)"
                   className="w-full bg-surface-container-low border border-outline-variant/20 rounded-xl px-3.5 py-2 text-xs text-on-surface focus:bg-surface-container-lowest focus:border-primary/50 focus:ring-0 outline-none transition-all"
                 />
               </div>

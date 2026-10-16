@@ -207,7 +207,10 @@ export default function HRAttendance({ isMobile }) {
     return employees;
   });
   const [isDirty, setIsDirty] = useState(false);
-  const [viewMode, setViewMode] = useState(() => savedUserFilters?.viewMode || 'grid'); // 'grid' | 'reconcile'
+  const [viewMode, setViewMode] = useState(() => savedUserFilters?.viewMode || 'grid'); // 'grid' | 'calendar' | 'reconcile'
+  const [selectedCalendarDate, setSelectedCalendarDate] = useState(null);
+  const [calendarDrillFilter, setCalendarDrillFilter] = useState('ALL');
+  const [calendarSearchQuery, setCalendarSearchQuery] = useState('');
   const [showStudioModal, setShowStudioModal] = useState(false);
 
   const attendancePrintData = useMemo(() => {
@@ -1200,11 +1203,66 @@ export default function HRAttendance({ isMobile }) {
     return <>{renderReconciliationView()}{modalNode}</>;
   }
 
+  if (viewMode === 'calendar') {
+    return <>{renderCalendarView()}{modalNode}</>;
+  }
+
   if (isMobile) {
     return <>{renderMobileView()}{modalNode}</>;
   }
 
   return <>{renderDesktopView()}{modalNode}</>;
+
+  // ========================================================
+  // REUSABLE VIEW MODE SWITCHER
+  // ========================================================
+  function renderViewModeSwitcher() {
+    return (
+      <div className="flex items-center bg-surface-container p-1 rounded-xl border border-outline-variant/15 shrink-0 shadow-xs">
+        <button 
+          type="button"
+          onClick={() => setViewMode('grid')}
+          className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+            viewMode === 'grid' 
+              ? 'bg-surface-container-lowest text-primary shadow-sm' 
+              : 'text-on-surface-variant hover:text-on-surface'
+          }`}
+          title="Verification Grid"
+        >
+          <span className="material-symbols-outlined text-[16px]">grid_on</span>
+          Grid
+        </button>
+        <button 
+          type="button"
+          onClick={() => setViewMode('calendar')}
+          className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+            viewMode === 'calendar' 
+              ? 'bg-surface-container-lowest text-primary shadow-sm' 
+              : 'text-on-surface-variant hover:text-on-surface'
+          }`}
+          title="Monthly Calendar"
+        >
+          <span className="material-symbols-outlined text-[16px]">calendar_month</span>
+          Calendar
+        </button>
+        {canReconcile && (
+          <button 
+            type="button"
+            onClick={() => setViewMode('reconcile')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+              viewMode === 'reconcile' 
+                ? 'bg-surface-container-lowest text-primary shadow-sm' 
+                : 'text-on-surface-variant hover:text-on-surface'
+            }`}
+            title="Verify & Reconcile"
+          >
+            <span className="material-symbols-outlined text-[16px]">compare_arrows</span>
+            Reconcile
+          </button>
+        )}
+      </div>
+    );
+  }
 
   // ========================================================
   // MOBILE VIEW (Supervisor Attendance Log)
@@ -1214,12 +1272,15 @@ export default function HRAttendance({ isMobile }) {
       <div className="flex flex-col gap-6 animate-fade-in pb-28 select-none">
         
         {/* Welcome Header */}
-        <header className="flex flex-col gap-1">
-          <h2 className="font-headline text-2xl font-black text-on-surface tracking-tight leading-tight">Shift Log</h2>
-          <p className="font-body text-xs text-on-surface-variant font-medium flex items-center gap-2">
-            <span className="material-symbols-outlined text-[16px] text-primary">calendar_today</span>
-            Oct 24, 2023 (Friday)
-          </p>
+        <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex flex-col gap-1">
+            <h2 className="font-headline text-2xl font-black text-on-surface tracking-tight leading-tight">Shift Log</h2>
+            <p className="font-body text-xs text-on-surface-variant font-medium flex items-center gap-2">
+              <span className="material-symbols-outlined text-[16px] text-primary">calendar_today</span>
+              Oct 24, 2023 (Friday)
+            </p>
+          </div>
+          {renderViewModeSwitcher()}
         </header>
 
         {/* Dynamic Condition Selector */}
@@ -1404,6 +1465,713 @@ export default function HRAttendance({ isMobile }) {
   }
 
   // ========================================================
+  // CALENDAR VIEW (Monthly Workforce Attendance Calendar)
+  // ========================================================
+  function renderCalendarView() {
+    const daysInMonth = new Date(selectedYear, selectedMonth + 1, 0).getDate();
+    const firstDayIndex = new Date(selectedYear, selectedMonth, 1).getDay(); // 0 = Sunday
+    const daysInPrevMonth = new Date(selectedYear, selectedMonth, 0).getDate();
+    const currentMonthName = monthsList.find(m => m.num === selectedMonth)?.name || 'Month';
+
+    const handlePrevMonth = () => {
+      if (selectedMonth === 0) {
+        const nextM = 11;
+        const nextY = selectedYear - 1;
+        setSelectedMonth(nextM);
+        setSelectedYear(nextY);
+        updateDateRangeFromMonthYear(nextM, nextY);
+      } else {
+        const nextM = selectedMonth - 1;
+        setSelectedMonth(nextM);
+        updateDateRangeFromMonthYear(nextM, selectedYear);
+      }
+    };
+
+    const handleNextMonth = () => {
+      if (selectedMonth === 11) {
+        const nextM = 0;
+        const nextY = selectedYear + 1;
+        setSelectedMonth(nextM);
+        setSelectedYear(nextY);
+        updateDateRangeFromMonthYear(nextM, nextY);
+      } else {
+        const nextM = selectedMonth + 1;
+        setSelectedMonth(nextM);
+        updateDateRangeFromMonthYear(nextM, selectedYear);
+      }
+    };
+
+    const handleToday = () => {
+      const now = new Date();
+      const m = now.getMonth();
+      const y = now.getFullYear();
+      setSelectedMonth(m);
+      setSelectedYear(y);
+      updateDateRangeFromMonthYear(m, y);
+    };
+
+    // Build the grid cells (Sundays on column 0)
+    const calendarCells = [];
+
+    // Previous month padding cells
+    for (let i = firstDayIndex - 1; i >= 0; i--) {
+      const dNum = daysInPrevMonth - i;
+      const prevM = selectedMonth === 0 ? 11 : selectedMonth - 1;
+      const prevY = selectedMonth === 0 ? selectedYear - 1 : selectedYear;
+      const mStr = String(prevM + 1).padStart(2, '0');
+      const dStr = String(dNum).padStart(2, '0');
+      const dateStr = `${prevY}-${mStr}-${dStr}`;
+      const dayOfWeek = new Date(prevY, prevM, dNum).getDay();
+      calendarCells.push({
+        dayNum: dNum,
+        date: dateStr,
+        isCurrentMonth: false,
+        isSunday: dayOfWeek === 0,
+        dayOfWeek
+      });
+    }
+
+    // Current month cells
+    const today = new Date();
+    const todayDateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    for (let d = 1; d <= daysInMonth; d++) {
+      const mStr = String(selectedMonth + 1).padStart(2, '0');
+      const dStr = String(d).padStart(2, '0');
+      const dateStr = `${selectedYear}-${mStr}-${dStr}`;
+      const dayOfWeek = new Date(selectedYear, selectedMonth, d).getDay();
+      calendarCells.push({
+        dayNum: d,
+        date: dateStr,
+        isCurrentMonth: true,
+        isSunday: dayOfWeek === 0,
+        isToday: dateStr === todayDateStr,
+        dayOfWeek
+      });
+    }
+
+    // Trailing padding cells to complete final row of 7
+    const remaining = 7 - (calendarCells.length % 7);
+    if (remaining < 7) {
+      const nextM = selectedMonth === 11 ? 0 : selectedMonth + 1;
+      const nextY = selectedMonth === 11 ? selectedYear + 1 : selectedYear;
+      for (let d = 1; d <= remaining; d++) {
+        const mStr = String(nextM + 1).padStart(2, '0');
+        const dStr = String(d).padStart(2, '0');
+        const dateStr = `${nextY}-${mStr}-${dStr}`;
+        const dayOfWeek = new Date(nextY, nextM, d).getDay();
+        calendarCells.push({
+          dayNum: d,
+          date: dateStr,
+          isCurrentMonth: false,
+          isSunday: dayOfWeek === 0,
+          dayOfWeek
+        });
+      }
+    }
+
+    // Compute summaries per cell date
+    const list = filteredEmployees || localEmployees || [];
+    const summariesByDate = {};
+    let monthTotalPresent = 0;
+    let monthTotalAbsent = 0;
+    let monthTotalLeave = 0;
+    let monthTotalOt = 0;
+
+    calendarCells.forEach(cell => {
+      const dateKey = cell.date;
+      const dayOfWeekName = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][cell.dayOfWeek];
+      let pCount = 0;
+      let aCount = 0;
+      let lCount = 0;
+      let otHours = 0;
+      let recordedCount = 0;
+      const employeeRecords = [];
+
+      list.forEach(emp => {
+        const att = emp.attendance || {};
+        const empIdStr = String(emp.id || '');
+        const empNameLower = String(emp.name || '').trim().toLowerCase();
+
+        let rec = att[dateKey] || att[normalizeDate(dateKey)];
+        if (!rec && cell.isCurrentMonth && att[dayOfWeekName]) {
+          rec = att[dayOfWeekName];
+        }
+
+        // Check realtime punch or uploaded attendance
+        if (!rec) {
+          const punch = (liveUploadedAttendance || uploadedAttendance || []).find(u =>
+            (
+              (u.employeeId && (String(u.employeeId) === empIdStr || String(u.employeeId) === String(emp.employeeId))) ||
+              (u.employeeName && String(u.employeeName).trim().toLowerCase() === empNameLower)
+            ) &&
+            (u.date === dateKey || normalizeDate(u.date) === normalizeDate(dateKey))
+          );
+          if (punch) {
+            rec = {
+              status: punch.status || 'present',
+              ot: punch.ot || 0,
+              fines: punch.fines || 0,
+              deductions: punch.deductions || 0
+            };
+          }
+        }
+
+        if (rec && rec.status) {
+          recordedCount++;
+          const st = String(rec.status).toLowerCase();
+          if (st === 'present') {
+            pCount++;
+            if (cell.isCurrentMonth) monthTotalPresent++;
+          } else if (st === 'absent') {
+            aCount++;
+            if (cell.isCurrentMonth) monthTotalAbsent++;
+          } else {
+            lCount++;
+            if (cell.isCurrentMonth) monthTotalLeave++;
+          }
+
+          const ot = parseFloat(rec.ot) || 0;
+          otHours += ot;
+          if (cell.isCurrentMonth) monthTotalOt += ot;
+
+          employeeRecords.push({
+            id: emp.id || '—',
+            name: emp.name || 'Unnamed',
+            department: emp.department || '—',
+            division: emp.division || '—',
+            shift: emp.shift || '—',
+            status: rec.status,
+            ot: ot,
+            fines: parseFloat(rec.fines) || 0,
+            deductions: parseFloat(rec.deductions) || 0
+          });
+        } else {
+          employeeRecords.push({
+            id: emp.id || '—',
+            name: emp.name || 'Unnamed',
+            department: emp.department || '—',
+            division: emp.division || '—',
+            shift: emp.shift || '—',
+            status: 'Not Marked',
+            ot: 0,
+            fines: 0,
+            deductions: 0
+          });
+        }
+      });
+
+      summariesByDate[dateKey] = {
+        dateKey,
+        present: pCount,
+        absent: aCount,
+        leave: lCount,
+        totalOt: Number(otHours.toFixed(1)),
+        recorded: recordedCount,
+        total: list.length,
+        employees: employeeRecords
+      };
+    });
+
+    const sundaysInMonth = calendarCells.filter(c => c.isCurrentMonth && c.isSunday).length;
+    const workingDaysInMonth = daysInMonth - sundaysInMonth;
+
+    // Filter employees in selected calendar date drill-down
+    const selectedDateSummary = selectedCalendarDate ? summariesByDate[selectedCalendarDate] : null;
+    let drillDownList = selectedDateSummary ? selectedDateSummary.employees : [];
+    if (drillDownList.length > 0) {
+      if (calendarDrillFilter !== 'ALL') {
+        drillDownList = drillDownList.filter(e => {
+          const st = (e.status || '').toLowerCase();
+          if (calendarDrillFilter === 'present') return st === 'present';
+          if (calendarDrillFilter === 'absent') return st === 'absent';
+          if (calendarDrillFilter === 'leave') return st !== 'present' && st !== 'absent' && st !== 'not marked';
+          if (calendarDrillFilter === 'not_marked') return st === 'not marked';
+          return true;
+        });
+      }
+      if (calendarSearchQuery.trim()) {
+        const q = calendarSearchQuery.toLowerCase().trim();
+        drillDownList = drillDownList.filter(e =>
+          (e.name && e.name.toLowerCase().includes(q)) ||
+          (e.id && String(e.id).toLowerCase().includes(q)) ||
+          (e.department && e.department.toLowerCase().includes(q))
+        );
+      }
+    }
+
+    return (
+      <div className="flex flex-col gap-6 animate-fade-in pb-12 select-none relative">
+        {/* Header */}
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-surface-container-lowest p-6 rounded-2xl border border-outline-variant/10 shadow-sm">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="material-symbols-outlined text-primary text-2xl">calendar_month</span>
+              <h1 className="font-headline text-2xl lg:text-3xl font-black text-on-surface tracking-tight leading-tight">
+                Workforce Attendance Calendar
+              </h1>
+            </div>
+            <p className="font-body text-xs text-on-surface-variant mt-1.5 font-medium">
+              Monthly attendance overview, daily headcount summaries, and weekly off schedule.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-3 shrink-0 flex-wrap">
+            {renderViewModeSwitcher()}
+
+            <button
+              type="button"
+              onClick={() => setShowStudioModal(true)}
+              className="px-4 py-2.5 bg-secondary/10 border border-secondary/20 text-secondary hover:bg-secondary/20 rounded-xl text-xs font-bold flex items-center gap-2 transition-all active:scale-[0.97] cursor-pointer shadow-sm"
+              title="Print Attendance Register"
+            >
+              <span className="material-symbols-outlined text-[18px]">print</span>
+              Print Register
+            </button>
+          </div>
+        </div>
+
+        {/* Month Navigation & Controls Toolbar */}
+        <div className="bg-surface-container-lowest p-4 rounded-2xl border border-outline-variant/10 shadow-sm flex flex-col md:flex-row gap-4 items-center justify-between">
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Month & Year Navigation */}
+            <div className="flex items-center gap-1.5 bg-surface-container-low p-1 rounded-xl border border-outline-variant/15">
+              <button
+                type="button"
+                onClick={handlePrevMonth}
+                className="p-1.5 hover:bg-surface-container-high rounded-lg text-on-surface-variant hover:text-on-surface transition-all cursor-pointer flex items-center justify-center"
+                title="Previous Month"
+              >
+                <span className="material-symbols-outlined text-[18px]">chevron_left</span>
+              </button>
+
+              <select
+                value={selectedMonth}
+                onChange={e => handleMonthChange(e.target.value)}
+                className="bg-transparent font-black text-xs text-on-surface px-2 py-1 outline-none cursor-pointer"
+              >
+                {monthsList.map(m => (
+                  <option key={m.num} value={m.num} className="bg-surface text-on-surface">
+                    {m.name}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                value={selectedYear}
+                onChange={e => handleYearChange(e.target.value)}
+                className="bg-transparent font-black text-xs text-on-surface px-2 py-1 outline-none cursor-pointer"
+              >
+                {yearsList.map(y => (
+                  <option key={y} value={y} className="bg-surface text-on-surface">
+                    {y}
+                  </option>
+                ))}
+              </select>
+
+              <button
+                type="button"
+                onClick={handleNextMonth}
+                className="p-1.5 hover:bg-surface-container-high rounded-lg text-on-surface-variant hover:text-on-surface transition-all cursor-pointer flex items-center justify-center"
+                title="Next Month"
+              >
+                <span className="material-symbols-outlined text-[18px]">chevron_right</span>
+              </button>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleToday}
+              className="px-3 py-2 bg-surface-container-low hover:bg-surface-container-high border border-outline-variant/15 rounded-xl text-xs font-bold text-on-surface transition-all active:scale-95 cursor-pointer"
+            >
+              Today
+            </button>
+
+            {/* Department Filter */}
+            <select
+              value={departmentFilter}
+              onChange={e => setDepartmentFilter(e.target.value)}
+              className="bg-surface-container-low hover:bg-surface-container-high px-3 py-2 rounded-xl border border-outline-variant/15 text-xs font-semibold text-on-surface transition-all outline-none cursor-pointer"
+            >
+              {departmentsList.map(dept => (
+                <option key={dept} value={dept} className="bg-surface text-on-surface">
+                  {dept === 'ALL' ? '🏢 All Departments' : dept}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Legend chips */}
+          <div className="flex items-center gap-2 flex-wrap text-[11px] font-bold text-on-surface-variant">
+            <span className="flex items-center gap-1.5 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 px-2 py-1 rounded-lg">
+              <span className="w-2 h-2 rounded-full bg-emerald-500"></span> Present
+            </span>
+            <span className="flex items-center gap-1.5 bg-rose-500/10 text-rose-700 dark:text-rose-400 px-2 py-1 rounded-lg">
+              <span className="w-2 h-2 rounded-full bg-rose-500"></span> Absent
+            </span>
+            <span className="flex items-center gap-1.5 bg-amber-500/10 text-amber-700 dark:text-amber-400 px-2 py-1 rounded-lg">
+              <span className="w-2 h-2 rounded-full bg-amber-500"></span> Leave/Late
+            </span>
+            <span className="flex items-center gap-1.5 bg-teal-500/10 text-teal-700 dark:text-teal-400 px-2 py-1 rounded-lg">
+              <span className="w-2 h-2 rounded-full bg-teal-500"></span> Overtime
+            </span>
+            <span className="flex items-center gap-1.5 bg-amber-500/20 text-amber-800 dark:text-amber-300 dark:bg-amber-950/50 border border-amber-300 dark:border-amber-700/60 px-2 py-1 rounded-lg">
+              <span className="material-symbols-outlined text-[13px]">wb_sunny</span> Sunday (Off)
+            </span>
+          </div>
+        </div>
+
+        {/* Monthly Summary KPI Banner */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          <div className="bg-surface-container-lowest p-3.5 rounded-2xl border border-outline-variant/10 shadow-xs flex flex-col">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-outline-variant">Headcount</span>
+            <span className="text-xl font-black text-on-surface mt-1">{list.length}</span>
+            <span className="text-[10px] text-on-surface-variant mt-0.5">Employees</span>
+          </div>
+          <div className="bg-surface-container-lowest p-3.5 rounded-2xl border border-outline-variant/10 shadow-xs flex flex-col">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-outline-variant">Working Days</span>
+            <span className="text-xl font-black text-on-surface mt-1">{workingDaysInMonth}</span>
+            <span className="text-[10px] text-on-surface-variant mt-0.5">In {currentMonthName}</span>
+          </div>
+          <div className="bg-amber-500/10 dark:bg-amber-950/30 p-3.5 rounded-2xl border border-amber-300/60 dark:border-amber-700/60 shadow-xs flex flex-col">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-amber-700 dark:text-amber-300">Sundays (Off)</span>
+            <span className="text-xl font-black text-amber-800 dark:text-amber-200 mt-1">{sundaysInMonth}</span>
+            <span className="text-[10px] text-amber-700/80 dark:text-amber-400/80 mt-0.5">Weekly holidays</span>
+          </div>
+          <div className="bg-surface-container-lowest p-3.5 rounded-2xl border border-outline-variant/10 shadow-xs flex flex-col">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">Total Present</span>
+            <span className="text-xl font-black text-emerald-700 dark:text-emerald-400 mt-1">{monthTotalPresent}</span>
+            <span className="text-[10px] text-on-surface-variant mt-0.5">Recorded logs</span>
+          </div>
+          <div className="bg-surface-container-lowest p-3.5 rounded-2xl border border-outline-variant/10 shadow-xs flex flex-col">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-rose-600 dark:text-rose-400">Total Absent</span>
+            <span className="text-xl font-black text-rose-700 dark:text-rose-400 mt-1">{monthTotalAbsent}</span>
+            <span className="text-[10px] text-on-surface-variant mt-0.5">Recorded logs</span>
+          </div>
+          <div className="bg-surface-container-lowest p-3.5 rounded-2xl border border-outline-variant/10 shadow-xs flex flex-col">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-teal-600 dark:text-teal-400">Overtime</span>
+            <span className="text-xl font-black text-teal-700 dark:text-teal-400 mt-1">{monthTotalOt.toFixed(1)}h</span>
+            <span className="text-[10px] text-on-surface-variant mt-0.5">Total hours</span>
+          </div>
+        </div>
+
+        {/* Month Calendar Grid */}
+        <div className="bg-surface-container-lowest border border-outline-variant/15 rounded-2xl shadow-sm overflow-hidden">
+          <div className="overflow-x-auto no-scrollbar">
+            <div className="min-w-[640px]">
+              {/* Day of Week Headers */}
+              <div className="grid grid-cols-7 border-b border-outline-variant/15 text-center">
+                {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((dName, idx) => {
+                  const isSundayCol = idx === 0;
+                  return (
+                    <div
+                      key={dName}
+                      className={`py-3 px-2 text-xs font-black uppercase tracking-wider ${
+                        isSundayCol
+                          ? 'bg-amber-500/15 text-amber-800 dark:text-amber-300 dark:bg-amber-950/40 border-r border-amber-300/60 dark:border-amber-700/60'
+                          : 'bg-surface-container-low text-on-surface-variant border-r last:border-r-0 border-outline-variant/15'
+                      }`}
+                    >
+                      <span>{dName}</span>
+                      {isSundayCol && (
+                        <span className="block text-[9px] font-bold text-amber-700 dark:text-amber-400 mt-0.5">
+                          WEEKLY OFF
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Grid of Days */}
+              <div className="grid grid-cols-7 divide-x divide-y divide-outline-variant/10">
+                {calendarCells.map((cell, idx) => {
+                  const summary = summariesByDate[cell.date];
+                  const isSelected = selectedCalendarDate === cell.date;
+
+                  let cellStyle = '';
+                  if (!cell.isCurrentMonth) {
+                    cellStyle = cell.isSunday
+                      ? 'bg-amber-500/[0.03] dark:bg-amber-950/10 text-on-surface-variant/40 border-amber-200/30 dark:border-amber-900/30 opacity-60'
+                      : 'bg-surface-container-low/40 text-on-surface-variant/40 opacity-50';
+                  } else if (cell.isSunday) {
+                    // Highlighted every Sunday in both light and dark themes
+                    cellStyle = 'bg-amber-500/[0.08] dark:bg-amber-950/30 border-amber-300/80 dark:border-amber-700/60 text-amber-950 dark:text-amber-200 hover:bg-amber-500/[0.12] dark:hover:bg-amber-950/45';
+                  } else {
+                    cellStyle = 'bg-surface-container-lowest text-on-surface hover:bg-surface-container-low/50';
+                  }
+
+                  return (
+                    <div
+                      key={`${cell.date}-${idx}`}
+                      onClick={() => {
+                        if (cell.isCurrentMonth) {
+                          setSelectedCalendarDate(prev => prev === cell.date ? null : cell.date);
+                        }
+                      }}
+                      className={`min-h-[125px] p-2.5 flex flex-col justify-between transition-all relative cursor-pointer group ${cellStyle} ${
+                        isSelected ? 'ring-2 ring-primary ring-inset shadow-md z-10' : ''
+                      }`}
+                    >
+                      {/* Top cell row: Day number and badges */}
+                      <div className="flex items-center justify-between w-full">
+                        <span
+                          className={`font-headline text-sm ${
+                            cell.isSunday
+                              ? 'font-black text-amber-700 dark:text-amber-300'
+                              : cell.isCurrentMonth
+                              ? 'font-bold text-on-surface'
+                              : 'font-normal text-on-surface-variant/40'
+                          }`}
+                        >
+                          {cell.dayNum}
+                        </span>
+
+                        <div className="flex items-center gap-1">
+                          {cell.isToday && (
+                            <span className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider bg-primary text-on-primary shadow-2xs">
+                              TODAY
+                            </span>
+                          )}
+                          {cell.isSunday && cell.isCurrentMonth && (
+                            <span className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider bg-amber-500/20 text-amber-800 dark:bg-amber-900/60 dark:text-amber-300 border border-amber-500/30">
+                              OFF
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Cell Body: Attendance Summary */}
+                      {cell.isCurrentMonth ? (
+                        summary && summary.recorded > 0 ? (
+                          <div className="flex flex-col gap-1 w-full my-1.5">
+                            <div className="flex items-center justify-between text-[10px] font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded">
+                              <span className="flex items-center gap-1 truncate">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0"></span>
+                                Present
+                              </span>
+                              <span>{summary.present}</span>
+                            </div>
+                            {summary.absent > 0 && (
+                              <div className="flex items-center justify-between text-[10px] font-bold text-rose-700 dark:text-rose-400 bg-rose-500/10 px-1.5 py-0.5 rounded">
+                                <span className="flex items-center gap-1 truncate">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-rose-500 shrink-0"></span>
+                                  Absent
+                                </span>
+                                <span>{summary.absent}</span>
+                              </div>
+                            )}
+                            {summary.leave > 0 && (
+                              <div className="flex items-center justify-between text-[10px] font-bold text-amber-700 dark:text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded">
+                                <span className="flex items-center gap-1 truncate">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0"></span>
+                                  Leave/Late
+                                </span>
+                                <span>{summary.leave}</span>
+                              </div>
+                            )}
+                            {summary.totalOt > 0 && (
+                              <div className="flex items-center justify-between text-[10px] font-bold text-teal-700 dark:text-teal-400 bg-teal-500/10 px-1.5 py-0.5 rounded">
+                                <span className="flex items-center gap-1 truncate">
+                                  <span className="material-symbols-outlined text-[11px]">schedule</span>
+                                  OT
+                                </span>
+                                <span>{summary.totalOt}h</span>
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="my-auto py-2">
+                            {cell.isSunday ? (
+                              <span className="text-[10px] font-bold text-amber-700/80 dark:text-amber-400/80 italic flex items-center gap-1">
+                                <span className="material-symbols-outlined text-[13px]">beach_access</span>
+                                Weekly Off
+                              </span>
+                            ) : (
+                              <span className="text-[10px] font-medium text-outline-variant/60 italic">
+                                No logs
+                              </span>
+                            )}
+                          </div>
+                        )
+                      ) : null}
+
+                      {/* Interactive hint on hover */}
+                      {cell.isCurrentMonth && (
+                        <div className="text-[9px] font-bold text-primary opacity-0 group-hover:opacity-100 transition-opacity text-right">
+                          {isSelected ? 'Selected' : 'View →'}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Read-only Safe Date Drill-Down Inspector */}
+        {selectedCalendarDate && selectedDateSummary && (
+          <div className="bg-surface-container-lowest border border-outline-variant/20 rounded-2xl p-5 shadow-sm animate-fade-in flex flex-col gap-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-outline-variant/10 pb-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="material-symbols-outlined text-primary text-xl">event_available</span>
+                  <h3 className="font-headline text-lg font-black text-on-surface">
+                    Attendance Log: {new Date(selectedCalendarDate + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                  </h3>
+                </div>
+                <p className="font-body text-xs text-on-surface-variant font-medium mt-0.5">
+                  Read-only day breakdown of workforce presence, overtime, and deductions.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSelectedCalendarDate(null)}
+                  className="px-3 py-1.5 bg-surface-container-low hover:bg-surface-container border border-outline-variant/20 rounded-xl text-xs font-bold text-on-surface flex items-center gap-1 transition-all cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-[15px]">close</span>
+                  Close Panel
+                </button>
+              </div>
+            </div>
+
+            {/* Quick stats for this day */}
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
+              <div className="bg-surface-container-low p-2.5 rounded-xl border border-outline-variant/10 text-center">
+                <span className="text-[9px] font-bold uppercase tracking-wider text-outline-variant">Total Headcount</span>
+                <p className="text-base font-black text-on-surface mt-0.5">{selectedDateSummary.total}</p>
+              </div>
+              <div className="bg-emerald-500/10 p-2.5 rounded-xl border border-emerald-500/20 text-center">
+                <span className="text-[9px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">Present</span>
+                <p className="text-base font-black text-emerald-700 dark:text-emerald-400 mt-0.5">{selectedDateSummary.present}</p>
+              </div>
+              <div className="bg-rose-500/10 p-2.5 rounded-xl border border-rose-500/20 text-center">
+                <span className="text-[9px] font-bold uppercase tracking-wider text-rose-700 dark:text-rose-300">Absent</span>
+                <p className="text-base font-black text-rose-700 dark:text-rose-400 mt-0.5">{selectedDateSummary.absent}</p>
+              </div>
+              <div className="bg-amber-500/10 p-2.5 rounded-xl border border-amber-500/20 text-center">
+                <span className="text-[9px] font-bold uppercase tracking-wider text-amber-700 dark:text-amber-300">Leave / Late</span>
+                <p className="text-base font-black text-amber-700 dark:text-amber-400 mt-0.5">{selectedDateSummary.leave}</p>
+              </div>
+              <div className="bg-teal-500/10 p-2.5 rounded-xl border border-teal-500/20 text-center">
+                <span className="text-[9px] font-bold uppercase tracking-wider text-teal-700 dark:text-teal-300">Overtime</span>
+                <p className="text-base font-black text-teal-700 dark:text-teal-400 mt-0.5">{selectedDateSummary.totalOt}h</p>
+              </div>
+            </div>
+
+            {/* Filter and Search Bar for Drill-down list */}
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
+              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar w-full sm:w-auto">
+                {[
+                  { key: 'ALL', label: `All (${selectedDateSummary.employees.length})` },
+                  { key: 'present', label: `Present (${selectedDateSummary.present})` },
+                  { key: 'absent', label: `Absent (${selectedDateSummary.absent})` },
+                  { key: 'leave', label: `Leave/Late (${selectedDateSummary.leave})` },
+                  { key: 'not_marked', label: `Not Marked (${selectedDateSummary.total - selectedDateSummary.recorded})` }
+                ].map(tab => (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    onClick={() => setCalendarDrillFilter(tab.key)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
+                      calendarDrillFilter === tab.key
+                        ? 'bg-primary text-on-primary shadow-xs'
+                        : 'bg-surface-container-low text-on-surface-variant hover:text-on-surface'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="relative w-full sm:w-64">
+                <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline-variant text-[15px]">search</span>
+                <input
+                  type="text"
+                  value={calendarSearchQuery}
+                  onChange={e => setCalendarSearchQuery(e.target.value)}
+                  placeholder="Filter by name, ID, or dept..."
+                  className="w-full bg-surface-container-low border border-outline-variant/15 rounded-xl pl-9 pr-3 py-1.5 text-xs text-on-surface font-semibold focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+              </div>
+            </div>
+
+            {/* Employee Records Table (Read-Only) */}
+            <div className="border border-outline-variant/15 rounded-xl overflow-hidden max-h-80 overflow-y-auto">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead className="bg-surface-container-low text-[10px] font-black uppercase tracking-wider text-outline-variant sticky top-0 z-10 shadow-2xs">
+                  <tr>
+                    <th className="px-4 py-2.5">ID</th>
+                    <th className="px-4 py-2.5">Employee Name</th>
+                    <th className="px-4 py-2.5">Department</th>
+                    <th className="px-4 py-2.5">Division</th>
+                    <th className="px-4 py-2.5">Shift</th>
+                    <th className="px-4 py-2.5 text-center">Status</th>
+                    <th className="px-4 py-2.5 text-right">OT Hours</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-outline-variant/10 font-medium text-on-surface">
+                  {drillDownList.length === 0 ? (
+                    <tr>
+                      <td colSpan="7" className="text-center py-6 text-on-surface-variant italic">
+                        No employees found matching filter criteria.
+                      </td>
+                    </tr>
+                  ) : (
+                    drillDownList.map((emp, i) => {
+                      const st = (emp.status || '').toLowerCase();
+                      let statusBadge = (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-surface-container text-on-surface-variant">
+                          Not Marked
+                        </span>
+                      );
+                      if (st === 'present') {
+                        statusBadge = (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20">
+                            Present
+                          </span>
+                        );
+                      } else if (st === 'absent') {
+                        statusBadge = (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/10 text-rose-700 dark:text-rose-400 border border-rose-500/20">
+                            Absent
+                          </span>
+                        );
+                      } else if (st === 'leave' || st === 'late' || st === 'half_day') {
+                        statusBadge = (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/20 capitalize">
+                            {emp.status}
+                          </span>
+                        );
+                      }
+
+                      return (
+                        <tr key={`${emp.id}-${i}`} className="hover:bg-surface-container-low/40 transition-colors">
+                          <td className="px-4 py-2 font-mono font-bold text-primary">{emp.id || '—'}</td>
+                          <td className="px-4 py-2 font-bold text-on-surface">{emp.name}</td>
+                          <td className="px-4 py-2 text-on-surface-variant">{emp.department || '—'}</td>
+                          <td className="px-4 py-2 text-on-surface-variant">{emp.division || '—'}</td>
+                          <td className="px-4 py-2 text-on-surface-variant">{emp.shift || '—'}</td>
+                          <td className="px-4 py-2 text-center">{statusBadge}</td>
+                          <td className="px-4 py-2 text-right font-mono font-bold text-teal-700 dark:text-teal-400">
+                            {emp.ot > 0 ? `${emp.ot}h` : '—'}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ========================================================
   // RECONCILIATION VIEW (Comparative Side-by-Side Dual Grid)
   // ========================================================
   function renderReconciliationView() {
@@ -1524,7 +2292,8 @@ export default function HRAttendance({ isMobile }) {
             <p className="font-body text-xs text-on-surface-variant mt-1.5 font-medium">Compare local database records side-by-side with uploaded CSV files.</p>
           </div>
           
-          <div className="flex items-center gap-3 shrink-0">
+          <div className="flex items-center gap-3 shrink-0 flex-wrap">
+            {renderViewModeSwitcher()}
             <button 
               onClick={() => setViewMode('grid')}
               className="px-4 py-2.5 bg-surface-container-low hover:bg-surface-container border border-outline-variant/15 rounded-xl text-xs font-bold text-on-surface flex items-center gap-2 transition-all active:scale-[0.97] cursor-pointer"
@@ -2488,6 +3257,8 @@ export default function HRAttendance({ isMobile }) {
           </div>
           
           <div className="flex items-center gap-3 shrink-0 flex-wrap">
+            {renderViewModeSwitcher()}
+
             {/* Pulsing Unsaved Changes Indicator Button */}
             {canEditAttendance && (
               <button 

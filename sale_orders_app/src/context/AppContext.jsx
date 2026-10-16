@@ -345,13 +345,23 @@ const seedStateIfEmpty = (stateObj) => {
 export const mergeHREmployeeSeed = (stateObj) => {
   if (!stateObj) return stateObj;
 
-  const currentVersion = 'round_8_v1';
+  const currentVersion = 'round_8_v2';
   let storedVersion = null;
   try {
     storedVersion = localStorage.getItem('hr_employee_seed_version');
   } catch (e) {}
 
-  let employeesList = [...(stateObj.hr_employees_list || [])];
+  const normalizeStatus = (st) => {
+    if (!st) return 'Active';
+    const s = String(st).trim().toLowerCase();
+    if (s === 'inactive' || s === 'disabled' || s === 'terminated' || s === 'left') return 'Inactive';
+    return 'Active';
+  };
+
+  let employeesList = [...(stateObj.hr_employees_list || [])].map(e => ({
+    ...e,
+    status: normalizeStatus(e.status)
+  }));
 
   if (storedVersion === currentVersion && employeesList.length > 0) {
     return stateObj;
@@ -361,36 +371,25 @@ export const mergeHREmployeeSeed = (stateObj) => {
   let skippedAsDuplicateCount = 0;
   let blankIdCount = 0;
 
-  const extractNum = (idStr) => {
-    if (!idStr) return null;
-    const m = String(idStr).match(/\d+/);
-    return m ? parseInt(m[0], 10) : null;
-  };
-
-  const usedIds = new Set(employeesList.map(e => e.id).filter(Boolean));
+  const usedIds = new Set(employeesList.map(e => (e.id !== undefined && e.id !== null) ? String(e.id).trim() : '').filter(Boolean));
 
   (hrEmployeeSeed || []).forEach(seed => {
-    const seedNum = extractNum(seed.id);
     const seedNameNorm = (seed.name || '').trim().toLowerCase();
 
-    // Matching against existing entries: by EMP ID NUMERIC part or trimmed case-insensitive name
+    // Matching against existing entries: by trimmed case-insensitive NAME ONLY
     const matchIdx = employeesList.findIndex(existing => {
       const exNameNorm = (existing.name || '').trim().toLowerCase();
-      if (exNameNorm && seedNameNorm && exNameNorm === seedNameNorm) {
-        return true;
-      }
-      const exNum = extractNum(existing.id);
-      if (seedNum !== null && exNum !== null && seedNum === exNum) {
-        if (!exNameNorm || !seedNameNorm || exNameNorm === seedNameNorm) {
-          return true;
-        }
-      }
-      return false;
+      return Boolean(exNameNorm && seedNameNorm && exNameNorm === seedNameNorm);
     });
 
     if (matchIdx !== -1) {
       skippedAsDuplicateCount++;
       const existing = employeesList[matchIdx];
+      // Mark verbatim seed ID as seen so later duplicate IDs in seed are blanked
+      const rawSeedId = (seed.id !== undefined && seed.id !== null) ? String(seed.id).trim() : '';
+      if (rawSeedId) {
+        usedIds.add(rawSeedId);
+      }
       employeesList[matchIdx] = {
         ...existing,
         sheetId: existing.sheetId || seed.sheetId,
@@ -409,10 +408,11 @@ export const mergeHREmployeeSeed = (stateObj) => {
         dutyHoursAdjustable: existing.dutyHoursAdjustable !== undefined ? existing.dutyHoursAdjustable : seed.dutyHoursAdjustable,
         onboarding: existing.onboarding || seed.onboarding,
         dateOfJoining: existing.dateOfJoining || seed.dateOfJoining,
-        status: existing.status || seed.status
+        status: normalizeStatus(existing.status || seed.status)
       };
     } else {
-      let finalId = seed.id;
+      const rawSeedId = (seed.id !== undefined && seed.id !== null) ? String(seed.id).trim() : '';
+      let finalId = rawSeedId;
       if (finalId && usedIds.has(finalId)) {
         finalId = '';
       }
@@ -425,7 +425,9 @@ export const mergeHREmployeeSeed = (stateObj) => {
       employeesList.push({
         ...seed,
         id: finalId,
-        avatar: `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(seed.name)}`
+        department: seed.division === 'AAA' ? 'AAA' : seed.department,
+        status: normalizeStatus(seed.status),
+        avatar: seed.avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(seed.name)}`
       });
     }
   });
@@ -1239,11 +1241,18 @@ export const AppProvider = ({ children }) => {
       }
 
       // Map remote items by unique identifier
+      const mergeKeyOf = (item) => {
+        const id = item?.id || item?.orderId || item?.invoiceNumber || item?.itemCode || item?.username;
+        if (id !== undefined && id !== null && String(id).trim() !== '') return String(id);
+        const nm = (item?.name || '').trim().toLowerCase();
+        return nm || undefined;
+      };
+
       const remoteMap = new Map();
       remoteArr.forEach(item => {
-        const id = item?.id || item?.orderId || item?.invoiceNumber || item?.itemCode || item?.username;
-        if (id !== undefined && id !== null) {
-          remoteMap.set(String(id), item);
+        const key = mergeKeyOf(item);
+        if (key !== undefined) {
+          remoteMap.set(key, item);
         }
       });
 
@@ -1251,8 +1260,8 @@ export const AppProvider = ({ children }) => {
 
       // Identify any locally created items that haven't reached remote database yet and PRESERVE them!
       prevArr.forEach(localItem => {
-        const id = localItem?.id || localItem?.orderId || localItem?.invoiceNumber || localItem?.itemCode || localItem?.username;
-        if (id !== undefined && id !== null && !remoteMap.has(String(id))) {
+        const key = mergeKeyOf(localItem);
+        if (key !== undefined && !remoteMap.has(key)) {
           result.unshift(localItem); // Retain locally saved document safely
         }
       });
