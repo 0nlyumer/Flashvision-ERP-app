@@ -5045,9 +5045,10 @@ export const AppProvider = ({ children }) => {
     }
   }, [state.approvals]);
 
-  const baseCurrencySetting = state.adminSetup?.baseCurrency || 'USD ($)';
-  const currencyCode = baseCurrencySetting.split(' ')[0] || 'USD';
-  const currencySymbol = baseCurrencySetting.match(/\(([^)]+)\)/)?.[1] || '$';
+  const rawCurrencySetting = state.adminSetup?.baseCurrency;
+  const baseCurrencySetting = (rawCurrencySetting && !rawCurrencySetting.includes('USD')) ? rawCurrencySetting : 'PKR (Rs)';
+  const currencyCode = baseCurrencySetting.split(' ')[0] || 'PKR';
+  const currencySymbol = baseCurrencySetting.match(/\(([^)]+)\)/)?.[1] || 'Rs';
 
   const getPermittedDepartments = (targetUser = state.currentUser) => {
     const allDepts = state.departments || [];

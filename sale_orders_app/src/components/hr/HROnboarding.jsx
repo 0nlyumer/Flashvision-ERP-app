@@ -654,7 +654,7 @@ export default function HROnboarding({ isMobile }) {
                 required
                 value={formData.phone}
                 onChange={e => handleInputChange('phone', e.target.value)}
-                placeholder="+1 (555) 000-0000"
+                placeholder="+92 300 1234567"
                 className="w-full bg-surface border border-outline-variant/30 rounded-xl px-4 py-3 text-sm text-on-surface focus:outline-none focus:ring-2 focus:ring-primary-container focus:border-transparent transition-all outline-none"
               />
               <label className="absolute -top-2 left-3 bg-surface px-1 text-[10px] font-bold uppercase tracking-wider text-primary">Phone Number <span className="required-mark">*</span></label>

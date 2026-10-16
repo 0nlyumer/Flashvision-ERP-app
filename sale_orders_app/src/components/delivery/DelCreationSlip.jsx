@@ -148,42 +148,70 @@ export default function DelCreationSlip({ items = [], dcMode = 'Sale Orders', on
   // Calculate totals
   const totals = useMemo(() => {
       let sub = 0;
+      let totalDispatched = 0;
+      let totalRolls = 0;
       slipItems.forEach(i => {
           if (!i.isDraft) {
-              sub += (parseFloat(i.editedQty) || 0) * (parseFloat(i.price) || 0);
+              const qty = parseFloat(i.editedQty) || 0;
+              const price = parseFloat(i.price) || 0;
+              const rolls = parseFloat(i.rolls) || 0;
+              sub += qty * price;
+              totalDispatched += qty;
+              totalRolls += rolls;
           }
       });
-      return { sub, grand: sub };
+      return { 
+        sub, 
+        grand: totalDispatched,
+        totalItems: slipItems.filter(i => !i.isDraft).length,
+        totalRolls,
+        totalDispatchedQty: totalDispatched,
+        grandTotal: totalDispatched 
+      };
   }, [slipItems]);
 
-  const challanPrintData = useMemo(() => ({
-    header: {
-      challan_no: challanId,
-      date: today,
-      customer: customerName || 'N/A',
-      dc_mode: dcMode,
-      driver_name: logisticsDetails?.driverName || '—',
-      driver_contact: logisticsDetails?.driverNumber || '—',
-      vehicle_no: logisticsDetails?.vehicleNumber || '—',
-      contact_person: consigneeDetails?.contactPerson || '—',
-      contact_number: consigneeDetails?.contactNumber || '—',
-      delivery_address: consigneeDetails?.deliveryAddress || '—',
-      destination: consigneeDetails?.deliveryAddress || '—',
-      status: 'Draft Challan'
-    },
-    consignee: consigneeDetails,
-    logistics: logisticsDetails,
-    items: slipItems.filter(i => !i.isDraft).map((item, idx) => ({
-      serial_no: idx + 1,
-      item_code: item.itemCode || item.sku || item.itemId || '—',
-      item_name: item.productName || item.name || 'Item',
-      ordered_qty: item.orderedQty || item.quantity || item.readyQty || 0,
-      dispatch_qty: item.editedQty || item.dispatchedQty || item.quantity || 0,
-      packing_type: item.type || item.stockType || 'Standard',
-      weight: item.rolls || item.grossWeight || 0,
-      remarks: item.remarks || '—'
-    }))
-  }), [challanId, today, customerName, dcMode, logisticsDetails, consigneeDetails, slipItems]);
+  const challanPrintData = useMemo(() => {
+    const activeItems = slipItems.filter(i => !i.isDraft);
+    const sumQty = activeItems.reduce((acc, i) => acc + (parseFloat(i.editedQty) || 0), 0);
+    const sumRolls = activeItems.reduce((acc, i) => acc + (parseFloat(i.rolls) || 0), 0);
+    return {
+      id: challanId,
+      header: {
+        challan_no: challanId,
+        challan_number: challanId,
+        date: today,
+        customer: customerName || 'N/A',
+        customer_name: customerName || 'N/A',
+        dc_mode: dcMode,
+        driver_name: logisticsDetails?.driverName || '—',
+        driver_contact: logisticsDetails?.driverNumber || '—',
+        vehicle_no: logisticsDetails?.vehicleNumber || '—',
+        contact_person: consigneeDetails?.contactPerson || '—',
+        contact_number: consigneeDetails?.contactNumber || '—',
+        delivery_address: consigneeDetails?.deliveryAddress || '—',
+        destination: consigneeDetails?.deliveryAddress || '—',
+        status: 'Draft Challan'
+      },
+      consignee: consigneeDetails,
+      logistics: logisticsDetails,
+      items: activeItems.map((item, idx) => ({
+        serial_no: idx + 1,
+        item_code: item.itemCode || item.sku || item.itemId || '—',
+        item_name: item.productName || item.name || 'Item',
+        ordered_qty: parseFloat(item.orderedQty || item.quantity || item.readyQty || 0) || 0,
+        dispatch_qty: parseFloat(item.editedQty || item.dispatchedQty || item.quantity || 0) || 0,
+        packing_type: item.type || item.stockType || 'Standard',
+        weight: parseFloat(item.rolls || item.grossWeight || 0) || 0,
+        remarks: item.remarks || '—'
+      })),
+      totals: {
+        'Total Items': activeItems.length,
+        ...(sumRolls > 0 ? { 'Total Rolls': sumRolls } : {}),
+        'Dispatched Qty': sumQty,
+        'Grand Total': sumQty
+      }
+    };
+  }, [challanId, today, customerName, dcMode, logisticsDetails, consigneeDetails, slipItems]);
 
   const handleBackWarning = async () => {
       if (slipItems.length > 0) {

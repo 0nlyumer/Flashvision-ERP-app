@@ -19,12 +19,19 @@ export default function DelRecord() {
   const itemsPerPage = 10;
 
   const handlePrint = (dc) => {
+    const rawItems = dc.items || [];
+    const sumDispatched = rawItems.reduce((acc, it) => acc + (parseFloat(it.dispatchedQty ?? it.editedQty ?? it.dispatch_qty ?? it.quantity ?? it.qty ?? 0) || 0), 0);
+    const sumRolls = rawItems.reduce((acc, it) => acc + (parseFloat(it.dispatchedRolls ?? it.rolls ?? it.weight ?? 0) || 0), 0);
+
     const richDc = {
       ...dc,
+      id: dc.id,
       header: {
         challan_no: dc.id,
-        date: new Date(dc.date).toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' }),
+        challan_number: dc.id,
+        date: dc.date ? new Date(dc.date).toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' }) : new Date().toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' }),
         customer: dc.customerName || 'N/A',
+        customer_name: dc.customerName || 'N/A',
         dc_mode: dc.dcMode || 'Sale Orders',
         driver_name: dc.logistics?.driverName || dc.driverName || '—',
         driver_contact: dc.logistics?.driverNumber || dc.driverContact || '—',
@@ -37,7 +44,23 @@ export default function DelRecord() {
       },
       consignee: dc.consignee || {},
       logistics: dc.logistics || {},
-      items: dc.items || []
+      items: rawItems.map((it, idx) => ({
+        ...it,
+        serial_no: idx + 1,
+        item_code: it.itemCode || it.sku || it.itemId || '—',
+        item_name: it.productName || it.name || it.item_name || 'Item',
+        ordered_qty: parseFloat(it.orderedQty ?? it.readyQty ?? it.quantity ?? it.dispatchedQty ?? 0) || 0,
+        dispatch_qty: parseFloat(it.dispatchedQty ?? it.editedQty ?? it.dispatch_qty ?? it.quantity ?? it.qty ?? 0) || 0,
+        packing_type: it.type || it.stockType || it.packing_type || 'Standard',
+        weight: parseFloat(it.dispatchedRolls ?? it.rolls ?? it.weight ?? 0) || 0,
+        remarks: it.remarks || '—'
+      })),
+      totals: {
+        'Total Items': rawItems.length,
+        ...(sumRolls > 0 ? { 'Total Rolls': sumRolls } : {}),
+        'Dispatched Qty': sumDispatched,
+        'Grand Total': sumDispatched
+      }
     };
     setPrintData(richDc);
   };

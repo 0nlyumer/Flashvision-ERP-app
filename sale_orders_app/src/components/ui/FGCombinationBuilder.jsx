@@ -211,12 +211,12 @@ export default function FGCombinationBuilder({
     }
 
     // Vertical positioning: below trigger if space available, otherwise above
-    const estimatedHeight = 110;
+    const estimatedHeight = 160;
     const spaceBelow = screenHeight - rect.bottom;
-    let top = rect.bottom + 6;
+    let top = rect.bottom + 8;
 
-    if (spaceBelow < estimatedHeight + 10 && rect.top > estimatedHeight + 10) {
-      top = rect.top - estimatedHeight - 6;
+    if (spaceBelow < estimatedHeight + 20 && rect.top > estimatedHeight + 20) {
+      top = rect.top - estimatedHeight - 8;
     }
 
     setPanelCoords({

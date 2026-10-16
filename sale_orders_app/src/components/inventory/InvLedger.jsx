@@ -9,13 +9,43 @@ export default function InvLedger({ selectedDepartments = [], onBack }) {
   const { state, toggleGlobalPagination } = useApp();
   
   // States
-  const [selectedItemIds, setSelectedItemIds] = useState([]);
+  const [selectedItemIds, setSelectedItemIds] = useState(() => {
+    try {
+      const saved = sessionStorage.getItem('inv_ledger_selected_items');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
   const [itemSearchQuery, setItemSearchQuery] = useState('');
   const [isItemDropdownOpen, setIsItemDropdownOpen] = useState(false);
   const itemDropdownRef = useRef(null);
   
-  const [activeItemIds, setActiveItemIds] = useState([]); // Controls what is actually fetched
+  const [activeItemIds, setActiveItemIds] = useState(() => {
+    try {
+      const saved = sessionStorage.getItem('inv_ledger_active_items');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  }); // Controls what is actually fetched
   const [showStudioModal, setShowStudioModal] = useState(false);
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem('inv_ledger_selected_items', JSON.stringify(selectedItemIds));
+    } catch (e) {}
+  }, [selectedItemIds]);
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem('inv_ledger_active_items', JSON.stringify(activeItemIds));
+    } catch (e) {}
+  }, [activeItemIds]);
+
+  const effectiveActiveIds = useMemo(() => {
+    return activeItemIds.length > 0 ? activeItemIds : selectedItemIds;
+  }, [activeItemIds, selectedItemIds]);
 
   // Local department filter for modules that don't pass it down (like ProductionModule)
   const [localDepartments, setLocalDepartments] = useState([]);
@@ -337,12 +367,12 @@ export default function InvLedger({ selectedDepartments = [], onBack }) {
               if (e.outputType && !selectedOutputTypes.includes(e.outputType)) return false;
           }
 
-          // Item Filter (Driven by activeItemIds instead of selectedItemIds)
-          if (activeItemIds.length > 0 && !activeItemIds.includes(e.matchedItem.id)) return false;
+          // Item Filter (Driven by effectiveActiveIds instead of unselected state)
+          if (effectiveActiveIds.length > 0 && !effectiveActiveIds.includes(e.matchedItem.id)) return false;
 
           return true;
       });
-  }, [allEntries, dateFrom, dateTo, selectedTypes, activeItemIds, selectedOutputTypes]);
+  }, [allEntries, dateFrom, dateTo, selectedTypes, effectiveActiveIds, selectedOutputTypes]);
 
   // Group entries by item and output type
   const groupedEntries = useMemo(() => {
@@ -377,7 +407,7 @@ export default function InvLedger({ selectedDepartments = [], onBack }) {
       let outward = 0;
       
       // Calculate current stock of active items
-      const targetItems = activeItemIds.length > 0 ? filteredItems.filter(i => activeItemIds.includes(i.id)) : filteredItems;
+      const targetItems = effectiveActiveIds.length > 0 ? filteredItems.filter(i => effectiveActiveIds.includes(i.id)) : filteredItems;
       targetItems.forEach(i => {
           let tStock = i.stock || 0;
           // Use stockByType if available to be accurate, especially with outputTypeFilter
@@ -402,7 +432,7 @@ export default function InvLedger({ selectedDepartments = [], onBack }) {
       });
 
       return { totalStock, itemCount: itemsCount.size, inward, outward, txCount: filteredEntries.length };
-  }, [filteredEntries, filteredItems, activeItemIds, selectedOutputTypes]);
+  }, [filteredEntries, filteredItems, effectiveActiveIds, selectedOutputTypes]);
 
   const handleGetLedger = () => {
       setActiveItemIds(selectedItemIds);
@@ -432,6 +462,9 @@ export default function InvLedger({ selectedDepartments = [], onBack }) {
   }), [filteredEntries, dateFrom, dateTo, effectiveDepartments, stats]);
 
   const handlePrint = () => {
+    if (activeItemIds.length === 0 && selectedItemIds.length > 0) {
+      setActiveItemIds(selectedItemIds);
+    }
     setShowStudioModal(true);
   };
 
@@ -454,6 +487,10 @@ export default function InvLedger({ selectedDepartments = [], onBack }) {
   const resetFilters = () => {
       setSelectedItemIds([]);
       setActiveItemIds([]);
+      try {
+        sessionStorage.removeItem('inv_ledger_selected_items');
+        sessionStorage.removeItem('inv_ledger_active_items');
+      } catch (e) {}
       setDateFrom('');
       setDateTo('');
       setSelectedTypes(['Purchase', 'Sale', 'Production', 'Adjustment', 'Return', 'Initial']);
@@ -730,7 +767,7 @@ export default function InvLedger({ selectedDepartments = [], onBack }) {
       </section>
 
       {/* Grouped Ledger Sections */}
-      {activeItemIds.length === 0 ? (
+      {effectiveActiveIds.length === 0 ? (
           <div className="bg-surface-container-lowest p-12 rounded-2xl flex flex-col items-center justify-center border border-outline-variant/10 shadow-sm text-center">
               <span className="material-symbols-outlined text-6xl text-outline-variant/50 mb-4" style={{ fontVariationSettings: "'FILL' 1" }}>receipt_long</span>
               <h3 className="text-xl font-bold text-on-surface mb-2">No Item Selected</h3>

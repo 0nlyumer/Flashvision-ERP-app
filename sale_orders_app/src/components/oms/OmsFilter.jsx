@@ -2,11 +2,20 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import ResizableHeader from '../ui/ResizableHeader';
 import GlobalPagination from '../ui/GlobalPagination';
+import UniversalPrintPreviewModal from '../ui/UniversalPrintPreviewModal';
+
+const formatDateSafe = (dateVal, fallback = '—') => {
+    if (!dateVal) return fallback;
+    const d = new Date(dateVal);
+    if (isNaN(d.getTime())) return fallback;
+    return d.toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' });
+};
 
 export default function OmsFilter({ pendingItems = [], customers = [] }) {
     const { state, toggleGlobalPagination, updateSaleOrderItemStatus, setCollection } = useApp();
     const [viewMode, setViewMode] = useState(() => localStorage.getItem('omsViewMode') || 'item');
     const [editingStatusItem, setEditingStatusItem] = useState(null);
+    const [printData, setPrintData] = useState(null);
 
     const defaultStatusColors = {
       'Pending': '#fcd34d',
@@ -231,10 +240,10 @@ export default function OmsFilter({ pendingItems = [], customers = [] }) {
             const outputs = state.productionOutputs?.filter(o => o.orderId === item.orderId && o.itemCode === item.itemCode);
             if (outputs && outputs.length > 0) {
                 const sorted = [...outputs].sort((a,b) => new Date(b.date) - new Date(a.date));
-                return new Date(sorted[0].date).toLocaleDateString();
+                return formatDateSafe(sorted[0].date);
             }
             const so = state.saleOrders.find(o => o.id === item.orderId);
-            return so?.modifiedDate ? new Date(so.modifiedDate).toLocaleDateString() : new Date().toLocaleDateString();
+            return so?.modifiedDate ? formatDateSafe(so.modifiedDate) : formatDateSafe(new Date());
         }
         return '-';
     };
@@ -244,10 +253,10 @@ export default function OmsFilter({ pendingItems = [], customers = [] }) {
 
         itemsToProcess = itemsToProcess.map(item => ({
             ...item,
-            customerName: customers.find(c => c.id === item.customerId)?.name || item.customer || 'Unknown',
+            customerName: customers.find(c => c.id === item.customerId)?.name || item.customerName || item.customer || (item.orderId === '-' || !item.orderId ? 'Internal / Buffer Stock' : 'Unassigned Customer'),
             completedDate: getCompletedDate(item),
             remaining: parseInt(item.quantity) - parseInt(item.producedQty || 0),
-            dateFormatted: new Date(item.date).toLocaleDateString()
+            dateFormatted: formatDateSafe(item.date)
         }));
 
         if (searchTerm) {
@@ -338,10 +347,10 @@ export default function OmsFilter({ pendingItems = [], customers = [] }) {
 
         itemsToProcess = itemsToProcess.map(item => ({
             ...item,
-            customerName: customers.find(c => c.id === item.customerId)?.name || item.customer || 'Unknown',
+            customerName: customers.find(c => c.id === item.customerId)?.name || item.customerName || item.customer || (item.orderId === '-' || !item.orderId ? 'Internal / Buffer Stock' : 'Unassigned Customer'),
             completedDate: getCompletedDate(item),
             remaining: parseInt(item.quantity) - parseInt(item.producedQty || 0),
-            dateFormatted: new Date(item.date).toLocaleDateString()
+            dateFormatted: formatDateSafe(item.date)
         }));
         
         if (searchTerm) {
@@ -397,22 +406,99 @@ export default function OmsFilter({ pendingItems = [], customers = [] }) {
         let outputs = [];
         (state.productionPlans || []).forEach(plan => {
             (plan.items || []).forEach(pItem => {
-                if (pItem.orderId === item.orderId && (pItem.itemCode === item.itemCode || pItem.itemId === item.itemId)) {
+                const matchOrder = pItem.orderId === item.orderId || (!item.orderId && !pItem.orderId) || (item.orderId === '-' && pItem.orderId === '-');
+                const matchItem = pItem.itemCode === item.itemCode || pItem.itemId === item.itemId;
+                if (matchOrder && matchItem) {
                     if (pItem.outputs && pItem.outputs.length > 0) {
-                        outputs = [...outputs, ...pItem.outputs.map(o => ({...o, planId: plan.id, planDate: plan.createdAt}))];
+                        outputs = [...outputs, ...pItem.outputs.map(o => ({
+                            ...o, 
+                            planId: plan.id, 
+                            planDate: plan.createdAt || plan.date,
+                            date: o.date || o.createdAt || plan.createdAt || plan.date
+                        }))];
                     }
                 }
             });
         });
-        outputs.sort((a,b) => new Date(a.date) - new Date(b.date));
+        outputs.sort((a,b) => {
+            const timeA = a.date ? new Date(a.date).getTime() : 0;
+            const timeB = b.date ? new Date(b.date).getTime() : 0;
+            return (isNaN(timeA) ? 0 : timeA) - (isNaN(timeB) ? 0 : timeB);
+        });
         setViewTimelinePopup({ ...item, outputs });
+    };
+
+    const handlePrint = (item) => {
+        let outputs = [];
+        (state.productionPlans || []).forEach(plan => {
+            (plan.items || []).forEach(pItem => {
+                const matchOrder = pItem.orderId === item.orderId || (!item.orderId && !pItem.orderId) || (item.orderId === '-' && pItem.orderId === '-');
+                const matchItem = pItem.itemCode === item.itemCode || pItem.itemId === item.itemId;
+                if (matchOrder && matchItem && pItem.outputs && pItem.outputs.length > 0) {
+                    outputs = [...outputs, ...pItem.outputs.map(o => ({
+                        ...o,
+                        planId: plan.id,
+                        date: o.date || o.createdAt || plan.createdAt || plan.date
+                    }))];
+                }
+            });
+        });
+
+        const items = outputs.length > 0
+            ? outputs.map((out, idx) => ({
+                serial_no: idx + 1,
+                item_code: item.itemCode || '—',
+                item_name: `${item.productName || 'Synthetic Leather'} (${out.typeName || 'Batch Item'})`,
+                target_qty: parseFloat(out.quantity) || 0,
+                uom: 'Meters',
+                batch_no: out.planId || item.orderId || 'B-001',
+                status: 'Recorded Step'
+            }))
+            : [{
+                serial_no: 1,
+                item_code: item.itemCode || '—',
+                item_name: item.productName || 'Synthetic Leather Item',
+                target_qty: parseFloat(item.quantity) || 0,
+                uom: 'Meters',
+                batch_no: item.orderId === '-' ? 'BUFFER-RUN' : item.orderId,
+                status: item.status || 'Scheduled'
+            }];
+
+        const printPayload = {
+            id: item.orderId === '-' ? `OMS-BUF-${item.itemCode}` : `OMS-SO-${item.orderId}`,
+            header: {
+                manifest_no: item.orderId === '-' ? `OMS-BUF-${item.itemCode}` : `OMS-SO-${item.orderId}`,
+                plan_id: item.orderId === '-' ? 'BUFFER-STOCK' : `SO-${item.orderId}`,
+                date: item.dateFormatted || formatDateSafe(item.date),
+                production_line: `Line #1 — ${item.customerName || 'Stock Buffer'}`,
+                supervisor: 'Shift Supervisor',
+                shift: 'General Floor Shift'
+            },
+            items,
+            totals: {
+                'Target Output': `${item.quantity} Meters`,
+                'Produced So Far': `${item.producedQty || 0} Meters`,
+                'Remaining': `${item.remaining} Meters`,
+                'Status': item.status || 'In Process'
+            }
+        };
+
+        setPrintData(printPayload);
     };
 
     const renderCellContent = (item, colId, statusColor, textColor, idx, totalLength) => {
         const cellStyle = statusColor ? { color: textColor } : {};
         switch(colId) {
             case 'orderId':
-                return <span onClick={() => handleOrderClick(item.orderId)} className={`font-manrope font-bold cursor-pointer hover:underline ${statusColor ? '' : 'text-primary'}`} style={cellStyle}>{item.orderId === '-' ? '-' : item.orderId}</span>;
+                if (item.orderId === '-' || !item.orderId || item.isManualPlanItem) {
+                    return (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-300/40" title="Unlinked Production Order (Buffer Stock)">
+                            <span className="material-symbols-outlined text-[12px]">link_off</span>
+                            Unlinked Buffer
+                        </span>
+                    );
+                }
+                return <span onClick={() => handleOrderClick(item.orderId)} className={`font-manrope font-bold cursor-pointer hover:underline ${statusColor ? '' : 'text-primary'}`} style={cellStyle}>{item.orderId}</span>;
             case 'date':
                 return <span className="text-sm font-semibold" style={cellStyle}>{item.dateFormatted}</span>;
             case 'itemCode':
@@ -420,6 +506,9 @@ export default function OmsFilter({ pendingItems = [], customers = [] }) {
             case 'productName':
                 return <span className="text-sm font-semibold" style={cellStyle}>{item.productName}</span>;
             case 'customerName':
+                if (item.customerName === 'Unknown' || !item.customerName) {
+                    return <span className="text-sm font-semibold text-on-surface-variant italic" style={cellStyle}>Internal / Buffer Stock</span>;
+                }
                 return <span className="text-sm font-semibold" style={cellStyle}>{item.customerName}</span>;
             case 'quantity':
                 return <span className="text-sm font-semibold" style={cellStyle}>{item.quantity}m</span>;
@@ -518,9 +607,19 @@ export default function OmsFilter({ pendingItems = [], customers = [] }) {
             }
             case 'actions':
                 return (
-                    <div className="flex gap-2">
-                        <button onClick={() => handleViewTimeline(item)} className="p-2 bg-surface-container-low hover:bg-primary/10 hover:text-primary text-on-surface-variant rounded-lg transition-colors flex items-center gap-2 text-xs font-bold" title="View Timeline" style={cellStyle}>
-                            <span className="material-symbols-outlined text-lg" style={{ fontVariationSettings: "'FILL' 0" }}>visibility</span>
+                    <div className="flex gap-1.5 items-center">
+                        <button 
+                            type="button"
+                            onClick={() => handlePrint(item)} 
+                            className="p-1.5 px-2 bg-surface-container-low hover:bg-primary/10 hover:text-primary text-on-surface-variant rounded-lg transition-colors flex items-center gap-1.5 text-xs font-bold cursor-pointer" 
+                            title="Print Production Order Manifest"
+                            style={cellStyle}
+                        >
+                            <span className="material-symbols-outlined text-[17px]">print</span>
+                            Print
+                        </button>
+                        <button onClick={() => handleViewTimeline(item)} className="p-1.5 px-2 bg-surface-container-low hover:bg-primary/10 hover:text-primary text-on-surface-variant rounded-lg transition-colors flex items-center gap-1.5 text-xs font-bold cursor-pointer" title="View Timeline" style={cellStyle}>
+                            <span className="material-symbols-outlined text-[17px]" style={{ fontVariationSettings: "'FILL' 0" }}>visibility</span>
                             View
                         </button>
                         {item.isCustom && (
@@ -916,7 +1015,7 @@ export default function OmsFilter({ pendingItems = [], customers = [] }) {
                                     return (
                                     <tr key={`group-${idx}`} style={rowStyle} className="hover:bg-surface-container-low/30 transition-colors group">
                                         <td className={`${paddingClass} font-manrope font-extrabold cursor-pointer hover:underline ${statusColor ? '' : 'text-primary'}`} style={statusColor ? { color: textColor } : {}} onClick={() => handleOrderClick(group.orderId)}>{group.orderId}</td>
-                                        <td className={`${paddingClass} text-sm font-semibold`} style={statusColor ? { color: textColor } : {}}>{new Date(group.date).toLocaleDateString()}</td>
+                                        <td className={`${paddingClass} text-sm font-semibold`} style={statusColor ? { color: textColor } : {}}>{formatDateSafe(group.date)}</td>
                                         <td className={`${paddingClass} text-sm font-semibold`} style={statusColor ? { color: textColor } : {}}>{group.customerName}</td>
                                         <td className={`${paddingClass} text-sm font-medium`} style={statusColor ? { color: textColor } : {}}>{group.totalItems}</td>
                                         <td className={`${paddingClass} text-sm font-medium`} style={statusColor ? { color: textColor } : {}}>{group.totalQuantity}m</td>
@@ -989,7 +1088,7 @@ export default function OmsFilter({ pendingItems = [], customers = [] }) {
                                 </div>
                                 <div className="bg-surface-container-lowest p-4 rounded-xl border border-outline-variant/10">
                                     <span className="text-[10px] uppercase font-bold text-on-surface-variant tracking-widest block mb-1">Date</span>
-                                    <span className="font-semibold">{new Date(viewOrderPopup.date).toLocaleDateString()}</span>
+                                    <span className="font-semibold">{formatDateSafe(viewOrderPopup.date)}</span>
                                 </div>
                                 <div className="bg-surface-container-lowest p-4 rounded-xl border border-outline-variant/10">
                                     <span className="text-[10px] uppercase font-bold text-on-surface-variant tracking-widest block mb-1">Status</span>
@@ -1061,7 +1160,7 @@ export default function OmsFilter({ pendingItems = [], customers = [] }) {
                                                         <span className="font-bold text-primary text-lg">{out.quantity}m</span>
                                                         {out.typeName && <span className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest bg-surface-container w-fit px-1.5 py-0.5 rounded mt-1">{out.typeName}</span>}
                                                     </div>
-                                                    <span className="text-xs font-semibold text-on-surface-variant bg-surface-container px-2 py-1 rounded">{new Date(out.date).toLocaleDateString()}</span>
+                                                    <span className="text-xs font-semibold text-on-surface-variant bg-surface-container px-2 py-1 rounded">{formatDateSafe(out.date || out.planDate)}</span>
                                                 </div>
                                                 <p className="text-xs text-on-surface-variant">Plan ID: <span className="font-mono font-bold text-on-surface">{out.planId}</span></p>
                                                 {out.rolls && <p className="text-[10px] font-bold uppercase tracking-widest text-outline mt-2">{out.rolls} Rolls Produced</p>}
@@ -1168,6 +1267,16 @@ export default function OmsFilter({ pendingItems = [], customers = [] }) {
                         </div>
                     </div>
                 </div>
+            )}
+
+            {/* Universal Print Preview Modal for OMS Production Orders */}
+            {printData && (
+                <UniversalPrintPreviewModal
+                    isOpen={!!printData}
+                    onClose={() => setPrintData(null)}
+                    documentType="production_manifest"
+                    data={printData}
+                />
             )}
         </div>
     );

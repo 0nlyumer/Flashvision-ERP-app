@@ -97,6 +97,23 @@ export default function UnifiedPrintDocument({
   const activeColumns = (layoutConfig.gridColumns || []).filter(c => c.enabled !== false);
   const activeHeaderFields = (layoutConfig.headerFields || []).filter(f => f.enabled !== false);
 
+  // Reconciled totals: For Delivery Challans, physical quantity lines strictly govern the grand total
+  const activeTotals = React.useMemo(() => {
+    if (!record.totals && (!lineItems || lineItems.length === 0)) return null;
+    const isChallan = documentType === 'delivery_challan' || layoutConfig?.id === 'delivery_challan' || (layoutConfig?.title && layoutConfig.title.toLowerCase().includes('challan'));
+    if (isChallan && lineItems && lineItems.length > 0) {
+      const sumDispatched = lineItems.reduce((acc, it) => acc + (parseFloat(it.dispatch_qty ?? it.dispatchedQty ?? it.editedQty ?? it.quantity ?? it.qty ?? 0) || 0), 0);
+      const sumRolls = lineItems.reduce((acc, it) => acc + (parseFloat(it.weight ?? it.dispatchedRolls ?? it.rolls ?? 0) || 0), 0);
+      return {
+        'Total Items': lineItems.length,
+        ...(sumRolls > 0 ? { 'Total Rolls': sumRolls } : {}),
+        'Dispatched Qty': sumDispatched,
+        'Grand Total': sumDispatched
+      };
+    }
+    return record.totals || {};
+  }, [record.totals, documentType, layoutConfig, lineItems]);
+
   // Field Value Resolver
   const getHeaderValue = (key) => {
     if (!key) return '—';
@@ -143,8 +160,8 @@ export default function UnifiedPrintDocument({
     if (normKey === 'soref' || normKey === 'orderref' || normKey === 'saleorderref') {
       return headerData.so_ref || headerData.saleOrderId || headerData.orderId || headerData.items?.[0]?.orderId || record.items?.[0]?.orderId || headerData.so_number || headerData.id || '—';
     }
-    if (normKey === 'challanno') {
-      return headerData.challan_no || headerData.challanNumber || headerData.dc_number || headerData.id || record.id || '—';
+    if (normKey === 'challanno' || normKey === 'challannumber' || normKey.includes('challan')) {
+      return headerData.challan_no || headerData.challanNumber || headerData.challan_number || headerData.dc_number || headerData.id || record.id || record.challan_no || record.challanNumber || '—';
     }
     if (normKey === 'dispatchdate') {
       return headerData.dispatch_date || headerData.date || record.date || new Date().toISOString().split('T')[0];
@@ -781,53 +798,53 @@ export default function UnifiedPrintDocument({
             {/* ============================================================== */}
             {/* 3. TOTALS & SUMMARY SECTION                                     */}
             {/* ============================================================== */}
-            {shouldShowTotals && record.totals && Object.keys(record.totals).length > 0 && (
+            {shouldShowTotals && activeTotals && Object.keys(activeTotals).length > 0 && (
               <div 
-                {...getInteractiveProps('totals', 'totals_block', record.totals)}
+                {...getInteractiveProps('totals', 'totals_block', activeTotals)}
                 className={`document-totals-block avoid-break mt-3 flex justify-end p-1 rounded ${getInteractiveProps('totals', 'totals_block').className || ''}`}
                 title={interactive ? "Click to customize totals & summary block" : undefined}
               >
                 {/* Classic Executive Totals Box */}
                 {isClassic && (
                   <div className="p-3 rounded-lg border border-slate-300 bg-slate-50 text-xs w-[40%] space-y-1.5 shadow-sm">
-                    {record.totals.subtotal !== undefined && (
+                    {activeTotals.subtotal !== undefined && (
                       <div className="flex justify-between text-[11px] text-slate-600">
                         <span>Subtotal:</span>
                         <span className="font-mono tabular-nums font-bold">
-                          {typeof record.totals.subtotal === 'number' ? record.totals.subtotal.toLocaleString() : record.totals.subtotal}
+                          {typeof activeTotals.subtotal === 'number' ? activeTotals.subtotal.toLocaleString() : activeTotals.subtotal}
                         </span>
                       </div>
                     )}
-                    {record.totals.tax !== undefined && (
+                    {activeTotals.tax !== undefined && (
                       <div className="flex justify-between text-[11px] text-slate-600">
                         <span>Tax / GST:</span>
                         <span className="font-mono tabular-nums font-bold">
-                          {typeof record.totals.tax === 'number' ? record.totals.tax.toLocaleString() : record.totals.tax}
+                          {typeof activeTotals.tax === 'number' ? activeTotals.tax.toLocaleString() : activeTotals.tax}
                         </span>
                       </div>
                     )}
-                    {record.totals.discount !== undefined && (
+                    {activeTotals.discount !== undefined && (
                       <div className="flex justify-between text-[11px] text-slate-600">
                         <span>Discount:</span>
                         <span className="font-mono tabular-nums font-bold">
-                          {typeof record.totals.discount === 'number' ? record.totals.discount.toLocaleString() : record.totals.discount}
+                          {typeof activeTotals.discount === 'number' ? activeTotals.discount.toLocaleString() : activeTotals.discount}
                         </span>
                       </div>
                     )}
-                    {record.totals.grandTotal !== undefined && (
+                    {activeTotals.grandTotal !== undefined && (
                       <div className="flex justify-between font-bold text-sm pt-2 border-t-2 border-slate-900 text-slate-900">
                         <span>Grand Total:</span>
                         <span className="font-mono tabular-nums" style={{ color: primaryColor }}>
-                          {typeof record.totals.grandTotal === 'number' ? `$${record.totals.grandTotal.toLocaleString()}` : record.totals.grandTotal}
+                          {typeof activeTotals.grandTotal === 'number' ? `PKR ${activeTotals.grandTotal.toLocaleString()}` : activeTotals.grandTotal}
                         </span>
                       </div>
                     )}
 
                     {/* Any other keys not among the standard 4 */}
-                    {Object.entries(record.totals)
+                    {Object.entries(activeTotals)
                       .filter(([k]) => !['subtotal', 'tax', 'discount', 'grandTotal'].includes(k))
                       .map(([tKey, tVal], i, arr) => {
-                        const isLastOrGrand = tKey.toLowerCase().includes('grand') || tKey.toLowerCase().includes('total') || (record.totals.grandTotal === undefined && i === arr.length - 1);
+                        const isLastOrGrand = tKey.toLowerCase().includes('grand') || tKey.toLowerCase().includes('total') || (activeTotals.grandTotal === undefined && i === arr.length - 1);
                         return (
                           <div
                             key={tKey}
@@ -850,7 +867,7 @@ export default function UnifiedPrintDocument({
                 {/* Modern Pill Totals Card */}
                 {isModern && (
                   <div className="p-3 rounded-2xl border border-slate-200 bg-slate-50/90 text-xs w-[42%] space-y-1.5">
-                    {Object.entries(record.totals).map(([tKey, tVal]) => {
+                    {Object.entries(activeTotals).map(([tKey, tVal]) => {
                       const isGrand = tKey.toLowerCase().includes('grand') || tKey.toLowerCase().includes('total');
                       return (
                         <div 
@@ -875,7 +892,7 @@ export default function UnifiedPrintDocument({
                     <div className="font-black text-[9px] uppercase border-b border-black pb-0.5 text-black">
                       PRODUCTION SUMMARY & AUDIT BALANCE
                     </div>
-                    {Object.entries(record.totals).map(([tKey, tVal]) => (
+                    {Object.entries(activeTotals).map(([tKey, tVal]) => (
                       <div key={tKey} className="flex justify-between text-[10px] text-black">
                         <span className="uppercase">{tKey.replace(/([A-Z])/g, ' $1').replace(/_/g, ' ')}:</span>
                         <span className="font-black">

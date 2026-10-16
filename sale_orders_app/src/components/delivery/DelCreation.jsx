@@ -25,15 +25,24 @@ export default function DelCreation({ onGenerateChallan }) {
       state?.items?.forEach(item => {
           if (item.category === 'Finished Goods' || item.category === 'Finish Good' || item.rawMaterialType === 'Finished Good') {
               if (item.department) {
-                  item.department.split(',').map(d => d.trim()).filter(Boolean).forEach(d => depts.add(d));
+                  item.department.split(',').map(d => d.trim()).filter(Boolean).forEach(d => {
+                      const cleanDept = (d.toLowerCase() === 'finishgood' || d.toLowerCase() === 'finishgood department' || d.toLowerCase() === 'finished goods') ? 'Finished Goods Department' : d;
+                      depts.add(cleanDept);
+                  });
               }
               if (item.stockByDepartment) {
                   Object.keys(item.stockByDepartment).forEach(d => {
-                      if (item.stockByDepartment[d] > 0) depts.add(d);
+                      if (item.stockByDepartment[d] > 0) {
+                          const cleanDept = (d.toLowerCase() === 'finishgood' || d.toLowerCase() === 'finishgood department' || d.toLowerCase() === 'finished goods') ? 'Finished Goods Department' : d;
+                          depts.add(cleanDept);
+                      }
                   });
               }
           }
       });
+      if (depts.size === 0) {
+          depts.add('Finished Goods Department');
+      }
       return Array.from(depts);
   }, [state?.items]);
 
@@ -653,7 +662,7 @@ export default function DelCreation({ onGenerateChallan }) {
         ) : (
             <div className="w-full">
                <InvStock 
-                   selectedDepartments={[dcMode]} 
+                   selectedDepartments={dcMode === 'Finished Goods Department' ? ['Finished Goods Department', 'Finishgood Department', 'Finishgood', 'Finished Goods'] : [dcMode]} 
                    selectable={true} 
                    selectedIds={selectedItemIds}
                    onToggleSelect={handleInvSelectToggle}

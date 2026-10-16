@@ -4,6 +4,7 @@ import ResizableHeader from '../ui/ResizableHeader';
 
 export default function InvDashboard({ selectedDepartments = [] }) {
   const { state } = useApp();
+  const currencyCode = state.adminSetup?.baseCurrency ? state.adminSetup.baseCurrency.split(' ')[0] : 'PKR';
   const [saleOrderViewType, setSaleOrderViewType] = useState('Sale Order Wise'); // 'Sale Order Wise', 'Item Wise'
 
   // Filter items based on selectedDepartments
@@ -140,7 +141,7 @@ export default function InvDashboard({ selectedDepartments = [] }) {
           <div className="z-10">
             <p className="text-xs font-label font-bold text-on-surface-variant uppercase tracking-widest">Total Stock Value</p>
             <h3 className="text-2xl font-headline font-extrabold text-on-surface mt-1">
-              ${isFinite(totalStockValue) && totalStockValue > 0 ? (totalStockValue / 1000).toFixed(1) : '0.0'}k
+              {currencyCode} {isFinite(totalStockValue) && totalStockValue > 0 ? (totalStockValue / 1000).toFixed(1) : '0.0'}k
             </h3>
           </div>
           <div className="flex items-center gap-1 text-xs font-bold text-emerald-600 z-10">

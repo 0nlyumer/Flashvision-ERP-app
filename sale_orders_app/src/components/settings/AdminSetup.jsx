@@ -10,7 +10,7 @@ export default function AdminSetup() {
     registrationNumber: '',
     fbaRegisteredId: '',
     logo: '',
-    baseCurrency: 'USD ($)',
+    baseCurrency: 'PKR (Rs)',
     timezone: 'UTC (Universal)',
     companyOwner: {
       name: '',

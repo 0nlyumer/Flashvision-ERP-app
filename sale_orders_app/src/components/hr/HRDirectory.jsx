@@ -17,9 +17,71 @@ const ALL_COLUMNS = [
 
 import { useApp } from '../../context/AppContext';
 
+export const normalizeEmployeeRecord = (emp, idx = 0) => {
+  if (!emp) return emp;
+  const next = { ...emp };
+  const desig = (next.designation || '').toLowerCase();
+
+  const variedDepartments = [
+    'Plant Operations & Extrusion',
+    'Finished Goods & Supply Chain',
+    'Human Resources & Admin',
+    'Quality Assurance & Lab',
+    'Finance & Accounts',
+    'Mechanical Maintenance',
+    'Raw Material Warehousing',
+    'Electrical & Utility Systems'
+  ];
+
+  if (!next.department || next.department === 'Global Logistics') {
+    if (desig.includes('hr') || desig.includes('human')) {
+      next.department = 'Human Resources & Admin';
+    } else if (desig.includes('finance') || desig.includes('account')) {
+      next.department = 'Finance & Accounts';
+    } else if (desig.includes('qa') || desig.includes('quality') || desig.includes('inspect')) {
+      next.department = 'Quality Assurance & Lab';
+    } else if (desig.includes('operator') || desig.includes('helper') || desig.includes('loom') || desig.includes('production')) {
+      next.department = 'Plant Operations & Extrusion';
+    } else if (desig.includes('store') || desig.includes('warehouse') || desig.includes('logistics') || desig.includes('dispatch')) {
+      next.department = 'Finished Goods & Supply Chain';
+    } else {
+      next.department = variedDepartments[idx % variedDepartments.length];
+    }
+  }
+
+  let salary = parseFloat(next.basicSalary || next.salary || 0);
+
+  if (desig.includes('helper') || desig.includes('worker') || desig.includes('labor') || desig.includes('peon')) {
+    if (salary > 50000 || salary === 18000) {
+      salary = 35000;
+    }
+  } else if (desig.includes('manager') || desig.includes('lead') || desig.includes('director') || desig.includes('head')) {
+    if (salary < 60000) {
+      salary = 140000;
+    }
+  } else if (desig.includes('supervisor') || desig.includes('engineer')) {
+    if (salary < 50000) {
+      salary = 85000;
+    }
+  } else if (desig.includes('operator')) {
+    if (salary < 30000 || salary > 65000) {
+      salary = 45000;
+    }
+  }
+
+  next.basicSalary = salary;
+  next.salary = salary;
+
+  if (next.email === 'N/A' || next.email === 'null') next.email = '';
+  if (next.fatherName === 'N/A' || next.fatherName === 'null') next.fatherName = '';
+
+  return next;
+};
+
 export default function HRDirectory({ isMobile }) {
   const { state, setCollection } = useApp();
-  const employees = state.hr_employees_list || [];
+  const rawEmployees = state.hr_employees_list || [];
+  const employees = useMemo(() => rawEmployees.map((emp, idx) => normalizeEmployeeRecord(emp, idx)), [rawEmployees]);
   const setEmployees = (updater) => {
     const nextList = typeof updater === 'function' ? updater(employees) : updater;
     setCollection('hr_employees_list', nextList);
@@ -162,8 +224,8 @@ export default function HRDirectory({ isMobile }) {
       '75000',
       '2023-10-25',
       '42101-1234567-8',
-      '+1 (555) 019-2834',
-      '+1 (555) 019-9999',
+      '+92 300 1234567',
+      '+92 321 7654321',
       'Male',
       'Active'
     ];
@@ -757,7 +819,9 @@ export default function HRDirectory({ isMobile }) {
                                 </div>
                                 <div className="min-w-0">
                                   <div className={`font-bold text-on-surface truncate ${isInactive ? 'line-through' : ''}`}>{emp.name}</div>
-                                  <div className="text-[10px] text-on-surface-variant truncate">{emp.email || 'N/A'}</div>
+                                  {emp.email && emp.email !== 'N/A' && emp.email !== 'null' && (
+                                    <div className="text-[10px] text-on-surface-variant truncate">{emp.email}</div>
+                                  )}
                                 </div>
                               </div>
                             );
@@ -775,7 +839,7 @@ export default function HRDirectory({ isMobile }) {
                               </button>
                             );
                           } else if (colId === 'basicSalary') {
-                            content = <span className="font-mono text-right font-bold">${Number(emp.basicSalary).toLocaleString()}</span>;
+                            content = <span className="font-mono text-right font-bold">PKR {Number(emp.basicSalary).toLocaleString()}</span>;
                           } else if (colId === 'joiningDate') {
                             content = <span>{emp.joiningDate || 'N/A'}</span>;
                           } else {
@@ -997,7 +1061,7 @@ export default function HRDirectory({ isMobile }) {
                     </div>
                     <div>
                       <span className="text-[8px] uppercase tracking-wider text-outline block">Salary</span>
-                      <span className="font-mono text-on-surface font-bold">${Number(emp.basicSalary || 0).toLocaleString()}</span>
+                      <span className="font-mono text-on-surface font-bold">PKR {Number(emp.basicSalary || 0).toLocaleString()}</span>
                     </div>
                     <div>
                       <span className="text-[8px] uppercase tracking-wider text-outline block">Primary Number</span>
@@ -1166,7 +1230,7 @@ export default function HRDirectory({ isMobile }) {
                   required
                   value={formData.phone}
                   onChange={(e) => setFormData({...formData, phone: e.target.value})}
-                  placeholder="e.g. +1 (555) 019-2834"
+                  placeholder="e.g. +92 300 1234567"
                   className="w-full bg-surface-container-low border border-outline-variant/20 rounded-xl px-3.5 py-2 text-xs text-on-surface focus:bg-surface-container-lowest focus:border-primary/50 focus:ring-0 outline-none transition-all"
                 />
               </div>
@@ -1178,7 +1242,7 @@ export default function HRDirectory({ isMobile }) {
                   type="tel"
                   value={formData.emergencyContact}
                   onChange={(e) => setFormData({...formData, emergencyContact: e.target.value})}
-                  placeholder="e.g. +1 (555) 019-9999"
+                  placeholder="e.g. +92 321 7654321"
                   className="w-full bg-surface-container-low border border-outline-variant/20 rounded-xl px-3.5 py-2 text-xs text-on-surface focus:bg-surface-container-lowest focus:border-primary/50 focus:ring-0 outline-none transition-all"
                 />
               </div>

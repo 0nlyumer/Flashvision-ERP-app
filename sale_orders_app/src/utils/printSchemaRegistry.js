@@ -147,9 +147,9 @@ export const DEFAULT_DOCUMENT_SCHEMAS = {
       { key: 'rolls', label: 'Rolls Qty', enabled: true, width: '8%', align: 'center' },
       { key: 'qty', label: 'Quantity / Meters', enabled: true, width: '12%', align: 'right' },
       { key: 'uom', label: 'UOM', enabled: true, width: '7%', align: 'center' },
-      { key: 'rate', label: 'Unit Rate ($)', enabled: true, width: '10%', align: 'right' },
+      { key: 'rate', label: 'Unit Rate (PKR)', enabled: true, width: '10%', align: 'right' },
       { key: 'discount', label: 'Discount', enabled: true, width: '7%', align: 'right' },
-      { key: 'sub_total', label: 'Sub-Total ($)', enabled: true, width: '12%', align: 'right' },
+      { key: 'sub_total', label: 'Sub-Total (PKR)', enabled: true, width: '12%', align: 'right' },
       { key: 'remarks', label: 'Item Notes', enabled: true, width: '14%', align: 'left' }
     ]
   },
@@ -345,7 +345,7 @@ export const DEFAULT_DOCUMENT_SCHEMAS = {
       { key: 'item_name', label: 'Item Description', enabled: true, width: '32%', align: 'left' },
       { key: 'inv_qty', label: 'Invoiced Qty', enabled: true, width: '12%', align: 'right' },
       { key: 'returned_qty', label: 'Returned Qty', enabled: true, width: '14%', align: 'right' },
-      { key: 'unit_price', label: 'Unit Price ($)', enabled: true, width: '14%', align: 'right' }
+      { key: 'unit_price', label: 'Unit Price (PKR)', enabled: true, width: '14%', align: 'right' }
     ]
   },
 
@@ -380,9 +380,9 @@ export const DEFAULT_DOCUMENT_SCHEMAS = {
       { key: 'item_code', label: 'Item Code', enabled: true, width: '18%', align: 'left' },
       { key: 'item_name', label: 'Description', enabled: true, width: '30%', align: 'left' },
       { key: 'qty', label: 'PO Qty', enabled: true, width: '12%', align: 'right' },
-      { key: 'unit_price', label: 'Unit Cost ($)', enabled: true, width: '14%', align: 'right' },
+      { key: 'unit_price', label: 'Unit Cost (PKR)', enabled: true, width: '14%', align: 'right' },
       { key: 'tax', label: 'Tax %', enabled: true, width: '8%', align: 'right' },
-      { key: 'amount', label: 'Total Amount ($)', enabled: true, width: '10%', align: 'right' }
+      { key: 'amount', label: 'Total Amount (PKR)', enabled: true, width: '10%', align: 'right' }
     ]
   },
 
@@ -482,9 +482,9 @@ export const DEFAULT_DOCUMENT_SCHEMAS = {
       { key: 'item_code', label: 'Item Code', enabled: true, width: '15%', align: 'left' },
       { key: 'item_name', label: 'Description', enabled: true, width: '30%', align: 'left' },
       { key: 'qty', label: 'Qty', enabled: true, width: '10%', align: 'right' },
-      { key: 'unit_price', label: 'Price ($)', enabled: true, width: '12%', align: 'right' },
+      { key: 'unit_price', label: 'Price (PKR)', enabled: true, width: '12%', align: 'right' },
       { key: 'tax_rate', label: 'Tax %', enabled: true, width: '10%', align: 'right' },
-      { key: 'amount', label: 'Total ($)', enabled: true, width: '15%', align: 'right' }
+      { key: 'amount', label: 'Total (PKR)', enabled: true, width: '15%', align: 'right' }
     ]
   },
 
@@ -502,8 +502,8 @@ export const DEFAULT_DOCUMENT_SCHEMAS = {
       { key: 'item_code', label: 'Item Code', enabled: true, width: '18%', align: 'left' },
       { key: 'item_name', label: 'Material Description', enabled: true, width: '32%', align: 'left' },
       { key: 'qty', label: 'Billed Qty', enabled: true, width: '12%', align: 'right' },
-      { key: 'unit_rate', label: 'Unit Rate ($)', enabled: true, width: '14%', align: 'right' },
-      { key: 'total_amount', label: 'Amount ($)', enabled: true, width: '16%', align: 'right' }
+      { key: 'unit_rate', label: 'Unit Rate (PKR)', enabled: true, width: '14%', align: 'right' },
+      { key: 'total_amount', label: 'Amount (PKR)', enabled: true, width: '16%', align: 'right' }
     ]
   },
 
@@ -518,7 +518,7 @@ export const DEFAULT_DOCUMENT_SCHEMAS = {
       { key: 'account_code', label: 'Account Code', enabled: true, width: '18%', align: 'left' },
       { key: 'account_name', label: 'Account Title', enabled: true, width: '38%', align: 'left' },
       { key: 'type', label: 'Type', enabled: true, width: '18%', align: 'center' },
-      { key: 'current_balance', label: 'Balance ($)', enabled: true, width: '26%', align: 'right' }
+      { key: 'current_balance', label: 'Balance (PKR)', enabled: true, width: '26%', align: 'right' }
     ]
   },
 
@@ -533,8 +533,8 @@ export const DEFAULT_DOCUMENT_SCHEMAS = {
       { key: 'date', label: 'Tx Date', enabled: true, width: '12%', align: 'center' },
       { key: 'voucher_no', label: 'Voucher Ref', enabled: true, width: '18%', align: 'left' },
       { key: 'party_name', label: 'Taxpayer / Customer', enabled: true, width: '30%', align: 'left' },
-      { key: 'taxable_val', label: 'Taxable Amount ($)', enabled: true, width: '20%', align: 'right' },
-      { key: 'tax_amount', label: 'Tax Output ($)', enabled: true, width: '20%', align: 'right' }
+      { key: 'taxable_val', label: 'Taxable Amount (PKR)', enabled: true, width: '20%', align: 'right' },
+      { key: 'tax_amount', label: 'Tax Output (PKR)', enabled: true, width: '20%', align: 'right' }
     ]
   },
 
@@ -550,7 +550,7 @@ export const DEFAULT_DOCUMENT_SCHEMAS = {
       { key: 'serial_no', label: 'Sr #', enabled: true, width: '8%', align: 'center' },
       { key: 'account_head', label: 'Account Head Code & Name', enabled: true, width: '42%', align: 'left' },
       { key: 'narration', label: 'Particulars / Description', enabled: true, width: '32%', align: 'left' },
-      { key: 'amount', label: 'Received Amount ($)', enabled: true, width: '18%', align: 'right' }
+      { key: 'amount', label: 'Received Amount (PKR)', enabled: true, width: '18%', align: 'right' }
     ]
   },
 
@@ -566,7 +566,7 @@ export const DEFAULT_DOCUMENT_SCHEMAS = {
       { key: 'serial_no', label: 'Sr #', enabled: true, width: '8%', align: 'center' },
       { key: 'account_head', label: 'Account Head', enabled: true, width: '42%', align: 'left' },
       { key: 'narration', label: 'Particulars', enabled: true, width: '32%', align: 'left' },
-      { key: 'amount', label: 'Paid Amount ($)', enabled: true, width: '18%', align: 'right' }
+      { key: 'amount', label: 'Paid Amount (PKR)', enabled: true, width: '18%', align: 'right' }
     ]
   },
 
@@ -582,8 +582,8 @@ export const DEFAULT_DOCUMENT_SCHEMAS = {
       { key: 'serial_no', label: 'Sr #', enabled: true, width: '8%', align: 'center' },
       { key: 'account_head', label: 'Account Title', enabled: true, width: '34%', align: 'left' },
       { key: 'narration', label: 'Narration Details', enabled: true, width: '30%', align: 'left' },
-      { key: 'debit', label: 'Debit ($)', enabled: true, width: '14%', align: 'right' },
-      { key: 'credit', label: 'Credit ($)', enabled: true, width: '14%', align: 'right' }
+      { key: 'debit', label: 'Debit (PKR)', enabled: true, width: '14%', align: 'right' },
+      { key: 'credit', label: 'Credit (PKR)', enabled: true, width: '14%', align: 'right' }
     ]
   },
 
@@ -597,8 +597,8 @@ export const DEFAULT_DOCUMENT_SCHEMAS = {
     gridColumns: [
       { key: 'serial_no', label: 'Sr #', enabled: true, width: '8%', align: 'center' },
       { key: 'account_head', label: 'Account Title', enabled: true, width: '40%', align: 'left' },
-      { key: 'debit', label: 'Deposit / Debit ($)', enabled: true, width: '26%', align: 'right' },
-      { key: 'credit', label: 'Withdrawal / Credit ($)', enabled: true, width: '26%', align: 'right' }
+      { key: 'debit', label: 'Deposit / Debit (PKR)', enabled: true, width: '26%', align: 'right' },
+      { key: 'credit', label: 'Withdrawal / Credit (PKR)', enabled: true, width: '26%', align: 'right' }
     ]
   },
 
@@ -654,9 +654,9 @@ export const DEFAULT_DOCUMENT_SCHEMAS = {
       { key: 'date', label: 'Date', enabled: true, width: '12%', align: 'center' },
       { key: 'voucher_no', label: 'Voucher #', enabled: true, width: '15%', align: 'left' },
       { key: 'narration', label: 'Particulars / Description', enabled: true, width: '37%', align: 'left' },
-      { key: 'debit', label: 'Debit ($)', enabled: true, width: '12%', align: 'right' },
-      { key: 'credit', label: 'Credit ($)', enabled: true, width: '12%', align: 'right' },
-      { key: 'balance', label: 'Running Balance ($)', enabled: true, width: '12%', align: 'right' }
+      { key: 'debit', label: 'Debit (PKR)', enabled: true, width: '12%', align: 'right' },
+      { key: 'credit', label: 'Credit (PKR)', enabled: true, width: '12%', align: 'right' },
+      { key: 'balance', label: 'Running Balance (PKR)', enabled: true, width: '12%', align: 'right' }
     ]
   },
 
@@ -666,16 +666,16 @@ export const DEFAULT_DOCUMENT_SCHEMAS = {
       { key: 'report_title', label: 'Aging Statement', enabled: true, width: 'span-2' },
       { key: 'as_of_date', label: 'As of Date', enabled: true, width: 'span-1' },
       { key: 'customer_name', label: 'Customer / Party', enabled: true, width: 'span-2' },
-      { key: 'credit_limit', label: 'Credit Limit ($)', enabled: true, width: 'span-1' }
+      { key: 'credit_limit', label: 'Credit Limit (PKR)', enabled: true, width: 'span-1' }
     ],
     gridColumns: [
       { key: 'serial_no', label: 'Sr #', enabled: true, width: '6%', align: 'center' },
       { key: 'invoice_no', label: 'Invoice #', enabled: true, width: '16%', align: 'left' },
       { key: 'invoice_date', label: 'Invoice Date', enabled: true, width: '14%', align: 'center' },
       { key: 'due_date', label: 'Due Date', enabled: true, width: '14%', align: 'center' },
-      { key: 'total_amount', label: 'Billed ($)', enabled: true, width: '16%', align: 'right' },
-      { key: 'received_amount', label: 'Received ($)', enabled: true, width: '16%', align: 'right' },
-      { key: 'balance_due', label: 'Balance Due ($)', enabled: true, width: '18%', align: 'right' }
+      { key: 'total_amount', label: 'Billed (PKR)', enabled: true, width: '16%', align: 'right' },
+      { key: 'received_amount', label: 'Received (PKR)', enabled: true, width: '16%', align: 'right' },
+      { key: 'balance_due', label: 'Balance Due (PKR)', enabled: true, width: '18%', align: 'right' }
     ]
   },
 
@@ -692,9 +692,9 @@ export const DEFAULT_DOCUMENT_SCHEMAS = {
       { key: 'bill_no', label: 'Supplier Bill #', enabled: true, width: '18%', align: 'left' },
       { key: 'bill_date', label: 'Bill Date', enabled: true, width: '14%', align: 'center' },
       { key: 'due_date', label: 'Due Date', enabled: true, width: '14%', align: 'center' },
-      { key: 'total_amount', label: 'Bill Amount ($)', enabled: true, width: '16%', align: 'right' },
-      { key: 'paid_amount', label: 'Paid ($)', enabled: true, width: '16%', align: 'right' },
-      { key: 'balance_due', label: 'Outstanding ($)', enabled: true, width: '16%', align: 'right' }
+      { key: 'total_amount', label: 'Bill Amount (PKR)', enabled: true, width: '16%', align: 'right' },
+      { key: 'paid_amount', label: 'Paid (PKR)', enabled: true, width: '16%', align: 'right' },
+      { key: 'balance_due', label: 'Outstanding (PKR)', enabled: true, width: '16%', align: 'right' }
     ]
   },
 
@@ -709,8 +709,8 @@ export const DEFAULT_DOCUMENT_SCHEMAS = {
     gridColumns: [
       { key: 'line_code', label: 'Head Code', enabled: true, width: '15%', align: 'left' },
       { key: 'line_title', label: 'Account / Section Description', enabled: true, width: '45%', align: 'left' },
-      { key: 'current_period', label: 'Current Period ($)', enabled: true, width: '20%', align: 'right' },
-      { key: 'prior_period', label: 'Prior Period ($)', enabled: true, width: '20%', align: 'right' }
+      { key: 'current_period', label: 'Current Period (PKR)', enabled: true, width: '20%', align: 'right' },
+      { key: 'prior_period', label: 'Prior Period (PKR)', enabled: true, width: '20%', align: 'right' }
     ]
   },
 
@@ -727,8 +727,8 @@ export const DEFAULT_DOCUMENT_SCHEMAS = {
       { key: 'date', label: 'Tx Date', enabled: true, width: '12%', align: 'center' },
       { key: 'reference_no', label: 'Cheque / Ref #', enabled: true, width: '18%', align: 'left' },
       { key: 'description', label: 'Reconciling Item / Payee', enabled: true, width: '34%', align: 'left' },
-      { key: 'debit', label: 'Deposits / Uncleared ($)', enabled: true, width: '15%', align: 'right' },
-      { key: 'credit', label: 'Payments / Unpresented ($)', enabled: true, width: '15%', align: 'right' }
+      { key: 'debit', label: 'Deposits / Uncleared (PKR)', enabled: true, width: '15%', align: 'right' },
+      { key: 'credit', label: 'Payments / Unpresented (PKR)', enabled: true, width: '15%', align: 'right' }
     ]
   },
 
@@ -743,9 +743,9 @@ export const DEFAULT_DOCUMENT_SCHEMAS = {
     gridColumns: [
       { key: 'center_code', label: 'CC Code', enabled: true, width: '14%', align: 'left' },
       { key: 'center_name', label: 'Cost Center Title', enabled: true, width: '32%', align: 'left' },
-      { key: 'budget_allocated', label: 'Allocated Budget ($)', enabled: true, width: '18%', align: 'right' },
-      { key: 'actual_expense', label: 'Actual Expense ($)', enabled: true, width: '18%', align: 'right' },
-      { key: 'variance', label: 'Variance ($)', enabled: true, width: '18%', align: 'right' }
+      { key: 'budget_allocated', label: 'Allocated Budget (PKR)', enabled: true, width: '18%', align: 'right' },
+      { key: 'actual_expense', label: 'Actual Expense (PKR)', enabled: true, width: '18%', align: 'right' },
+      { key: 'variance', label: 'Variance (PKR)', enabled: true, width: '18%', align: 'right' }
     ]
   },
 
@@ -805,8 +805,8 @@ export const DEFAULT_DOCUMENT_SCHEMAS = {
     gridColumns: [
       { key: 'type', label: 'Component Type', enabled: true, width: '25%', align: 'left' },
       { key: 'earnings', label: 'Earnings Description', enabled: true, width: '35%', align: 'left' },
-      { key: 'earn_amount', label: 'Earned ($)', enabled: true, width: '20%', align: 'right' },
-      { key: 'ded_amount', label: 'Deductions ($)', enabled: true, width: '20%', align: 'right' }
+      { key: 'earn_amount', label: 'Earned (PKR)', enabled: true, width: '20%', align: 'right' },
+      { key: 'ded_amount', label: 'Deductions (PKR)', enabled: true, width: '20%', align: 'right' }
     ]
   },
 

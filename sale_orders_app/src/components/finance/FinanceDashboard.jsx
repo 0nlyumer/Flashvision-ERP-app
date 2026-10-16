@@ -26,6 +26,33 @@ export default function FinanceDashboard({ onNavigateTab }) {
     recentTransactions
   } = kpis;
 
+  const hasFinanceData = Boolean(
+    netRevenue !== 0 ||
+    netProfit !== 0 ||
+    cashAndBank !== 0 ||
+    totalPayables !== 0 ||
+    totalReceivables !== 0 ||
+    (recentTransactions && recentTransactions.length > 0)
+  );
+
+  // Operating Health Status evaluator
+  const operatingHealth = useMemo(() => {
+    if (!hasFinanceData) return { label: 'No data yet', className: 'text-on-surface-variant/70 font-medium' };
+    if (netMargin >= 15) return { label: 'High Profitability', className: 'text-emerald-600 font-bold' };
+    if (netMargin > 0) return { label: 'Moderate Profitability', className: 'text-blue-600 font-bold' };
+    if (netMargin === 0) return { label: 'Breakeven', className: 'text-amber-600 font-bold' };
+    return { label: 'Operating Loss', className: 'text-rose-600 font-bold' };
+  }, [hasFinanceData, netMargin]);
+
+  // Solvency Status evaluator
+  const solvencyStatus = useMemo(() => {
+    if (!hasFinanceData) return { label: 'No data yet', className: 'text-on-surface-variant/70 font-medium' };
+    if (currentRatio >= 1.5 && quickRatio >= 1.0) return { label: 'Fully Solvent ✓', className: 'text-emerald-600 font-bold' };
+    if (currentRatio >= 1.0) return { label: 'Adequate Liquidity', className: 'text-blue-600 font-bold' };
+    if (currentRatio > 0) return { label: 'Liquidity Pressure', className: 'text-amber-600 font-bold' };
+    return { label: 'Insolvent / At Risk', className: 'text-rose-600 font-bold' };
+  }, [hasFinanceData, currentRatio, quickRatio]);
+
   const handleExport = () => {
     window.print();
   };
@@ -67,8 +94,10 @@ export default function FinanceDashboard({ onNavigateTab }) {
             <div className="p-2.5 bg-blue-500/10 text-blue-600 rounded-xl">
               <span className="material-symbols-outlined text-[22px]">trending_up</span>
             </div>
-            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/10 text-emerald-600">
-              Gross Margin: {grossMargin}%
+            <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
+              !hasFinanceData ? 'bg-surface-container-high text-on-surface-variant' : 'bg-emerald-500/10 text-emerald-600'
+            }`}>
+              Gross Margin: {hasFinanceData ? `${grossMargin}%` : '—'}
             </span>
           </div>
           <h3 className="text-xs text-on-surface-variant uppercase tracking-wider font-bold mb-1">Net Sales Revenue</h3>
@@ -84,8 +113,10 @@ export default function FinanceDashboard({ onNavigateTab }) {
             <div className="p-2.5 bg-emerald-500/10 text-emerald-600 rounded-xl">
               <span className="material-symbols-outlined text-[22px]">account_balance</span>
             </div>
-            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-blue-500/10 text-blue-600">
-              Quick: {quickRatio}x
+            <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
+              !hasFinanceData ? 'bg-surface-container-high text-on-surface-variant' : 'bg-blue-500/10 text-blue-600'
+            }`}>
+              Quick: {hasFinanceData ? `${quickRatio}x` : '—'}
             </span>
           </div>
           <h3 className="text-xs text-on-surface-variant uppercase tracking-wider font-bold mb-1">Cash & Bank Liquidity</h3>
@@ -101,8 +132,10 @@ export default function FinanceDashboard({ onNavigateTab }) {
             <div className="p-2.5 bg-amber-500/10 text-amber-600 rounded-xl">
               <span className="material-symbols-outlined text-[22px]">pending_actions</span>
             </div>
-            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-500/10 text-amber-600">
-              DSO: {dso} Days
+            <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
+              !hasFinanceData ? 'bg-surface-container-high text-on-surface-variant' : 'bg-amber-500/10 text-amber-600'
+            }`}>
+              DSO: {hasFinanceData ? `${dso} Days` : '—'}
             </span>
           </div>
           <h3 className="text-xs text-on-surface-variant uppercase tracking-wider font-bold mb-1">Accounts Receivable (AR)</h3>
@@ -118,8 +151,10 @@ export default function FinanceDashboard({ onNavigateTab }) {
             <div className="p-2.5 bg-rose-500/10 text-rose-600 rounded-xl">
               <span className="material-symbols-outlined text-[22px]">receipt_long</span>
             </div>
-            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-rose-500/10 text-rose-600">
-              Current: {currentRatio}x
+            <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
+              !hasFinanceData ? 'bg-surface-container-high text-on-surface-variant' : 'bg-rose-500/10 text-rose-600'
+            }`}>
+              Current: {hasFinanceData ? `${currentRatio}x` : '—'}
             </span>
           </div>
           <h3 className="text-xs text-on-surface-variant uppercase tracking-wider font-bold mb-1">Accounts Payable (AP)</h3>
@@ -143,15 +178,23 @@ export default function FinanceDashboard({ onNavigateTab }) {
               {formatMoney(netProfit, currencyCode)}
             </div>
             <div className="mt-3 flex items-center gap-2">
-              <span className="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-700 text-xs font-black">
-                {netMargin}% Net Margin
+              <span className={`px-2 py-0.5 rounded text-xs font-black ${
+                !hasFinanceData
+                  ? 'bg-surface-container-high text-on-surface-variant/80'
+                  : netMargin >= 15
+                    ? 'bg-emerald-500/10 text-emerald-700'
+                    : netMargin > 0
+                      ? 'bg-blue-500/10 text-blue-700'
+                      : 'bg-rose-500/10 text-rose-700'
+              }`}>
+                {hasFinanceData ? `${netMargin}% Net Margin` : 'No Data'}
               </span>
               <span className="text-xs text-on-surface-variant">Gross Profit: {formatMoney(grossProfit, '')}</span>
             </div>
           </div>
           <div className="mt-6 pt-4 border-t border-outline-variant/10 flex justify-between text-xs text-on-surface-variant">
             <span>Operating Health</span>
-            <span className="font-bold text-emerald-600">High Profitability</span>
+            <span className={operatingHealth.className}>{operatingHealth.label}</span>
           </div>
         </div>
 
@@ -165,19 +208,23 @@ export default function FinanceDashboard({ onNavigateTab }) {
             <div className="grid grid-cols-2 gap-3 mt-1">
               <div className="p-3 bg-surface-container-low rounded-xl">
                 <span className="text-[10px] uppercase font-bold text-on-surface-variant block">Quick Ratio (Acid Test)</span>
-                <span className="text-xl font-headline font-black text-blue-600 mt-1 block">{quickRatio}x</span>
+                <span className="text-xl font-headline font-black text-blue-600 mt-1 block">
+                  {hasFinanceData ? `${quickRatio}x` : '—'}
+                </span>
                 <span className="text-[10px] text-on-surface-variant">Target: &gt; 1.0x</span>
               </div>
               <div className="p-3 bg-surface-container-low rounded-xl">
                 <span className="text-[10px] uppercase font-bold text-on-surface-variant block">Current Ratio</span>
-                <span className="text-xl font-headline font-black text-emerald-600 mt-1 block">{currentRatio}x</span>
+                <span className="text-xl font-headline font-black text-emerald-600 mt-1 block">
+                  {hasFinanceData ? `${currentRatio}x` : '—'}
+                </span>
                 <span className="text-[10px] text-on-surface-variant">Target: &gt; 1.5x</span>
               </div>
             </div>
           </div>
           <div className="mt-4 pt-4 border-t border-outline-variant/10 flex justify-between text-xs text-on-surface-variant">
             <span>Solvency Status</span>
-            <span className="font-bold text-emerald-600">Fully Solvent ✓</span>
+            <span className={solvencyStatus.className}>{solvencyStatus.label}</span>
           </div>
         </div>
 
@@ -189,7 +236,7 @@ export default function FinanceDashboard({ onNavigateTab }) {
               <span className="p-2 bg-purple-500/10 text-purple-600 rounded-xl material-symbols-outlined text-[20px]">timelapse</span>
             </div>
             <div className="text-3xl font-headline font-black text-on-surface">
-              {dso} Days
+              {hasFinanceData ? `${dso} Days` : '—'}
             </div>
             <p className="text-xs text-on-surface-variant mt-2">
               Average Days Sales Outstanding (DSO) required to convert credit leather sales into cash.
@@ -197,7 +244,7 @@ export default function FinanceDashboard({ onNavigateTab }) {
           </div>
           <div className="mt-6 pt-4 border-t border-outline-variant/10 flex justify-between text-xs text-on-surface-variant">
             <span>Industry Benchmark</span>
-            <span className="font-bold text-on-surface">45-60 Days (Healthy)</span>
+            <span className="font-bold text-on-surface">{hasFinanceData ? '45-60 Days (Healthy)' : '—'}</span>
           </div>
         </div>
       </div>

@@ -226,8 +226,6 @@ export default function InvStock({ selectedDepartments = [], selectable = false,
               return depts.some(d => selectedDepartments.includes(d)) || 
                      selectedDepartments.some(dept => safeItem.stockByDepartment && safeItem.stockByDepartment[dept] > 0);
           });
-      } else {
-          return [];
       }
 
       // Apply search filter
@@ -246,10 +244,13 @@ export default function InvStock({ selectedDepartments = [], selectable = false,
           let totalStock = 0;
           if (selectedDepartments && selectedDepartments.length > 0) {
               selectedDepartments.forEach(dept => {
-                  totalStock += safeItem.stockByDepartment[dept] || 0;
+                  totalStock += safeItem.stockByDepartment?.[dept] || 0;
               });
+              if (totalStock === 0 && (!safeItem.stockByDepartment || Object.keys(safeItem.stockByDepartment).length === 0)) {
+                  totalStock = parseFloat(safeItem.stock ?? safeItem.stockLevel ?? safeItem.quantity ?? safeItem.qty ?? 0) || 0;
+              }
           } else {
-              totalStock = safeItem.stock || 0;
+              totalStock = parseFloat(safeItem.stock ?? safeItem.stockLevel ?? safeItem.quantity ?? safeItem.qty ?? 0) || 0;
           }
 
           let hasTypes = false;

@@ -142,7 +142,7 @@ export default function GeneralLedger() {
             </span>
           </div>
           <p className="text-xs text-on-surface-variant mt-1">
-            Complete double-entry accounting book conforming to ERPNext standards
+            Complete double-entry accounting book conforming to International Financial Reporting Standards (IFRS)
           </p>
         </div>
 

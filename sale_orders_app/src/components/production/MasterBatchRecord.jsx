@@ -246,7 +246,7 @@ export default function MasterBatchRecord() {
                 qa_sign: 'QA-CLEARED-VERIFIED',
                 date: formatDate(b.date),
                 status: b.status,
-                efficiency: `${b.efficiency?.toFixed(1) || 0}%`,
+                efficiency: `${b.efficiency?.toFixed(1) || 0}%${b.efficiency > 100 ? ' ⚠️ (Yield Anomaly >100%)' : ''}`,
                 total_cost: b.totalConsumedCost || 0
             },
             items: [
@@ -254,14 +254,14 @@ export default function MasterBatchRecord() {
                     step_no: idx + 1,
                     operation: `Raw Material: ${m.name}`,
                     parameters: `Target: ${m.target > 0 ? `${m.target} ${m.unit}` : 'Standard'}`,
-                    spec_limit: `Actual: ${m.actual} ${m.unit} (Cost: $${(m.cost || 0).toFixed(2)})`,
+                    spec_limit: `Actual: ${m.actual} ${m.unit} (Cost: PKR ${(m.cost || 0).toFixed(2)})`,
                     sign_off: m.variance > 10 ? 'Deviation Approved' : 'Verified'
                 })),
                 ...(b.outputDetails || []).map((o, idx) => ({
                     step_no: (b.consumptionDetails?.length || 0) + idx + 1,
                     operation: `Yield Output: ${o.typeName}`,
                     parameters: o.isWastage ? 'Process Scrap / Wastage' : 'Finished Good Product',
-                    spec_limit: `Qty: ${o.quantity} ${o.uom} ($${parseFloat(o.value || 0).toFixed(2)})`,
+                    spec_limit: `Qty: ${o.quantity} ${o.uom} (PKR ${parseFloat(o.value || 0).toFixed(2)})`,
                     sign_off: o.isWastage ? 'Recorded Loss' : 'QC Passed'
                 }))
             ]
@@ -368,13 +368,21 @@ export default function MasterBatchRecord() {
                                 </div>
                                 <div className="mb-6">
                                     <div className="flex justify-between items-end mb-2">
-                                        <span className="text-sm font-body font-medium text-on-surface">Yield Efficiency</span>
-                                        <span className={`text-sm font-display font-bold ${getStatusTextClass(batch.efficiency)}`}>
+                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                            <span className="text-sm font-body font-medium text-on-surface">Yield Efficiency</span>
+                                            {batch.efficiency > 100 && (
+                                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-300 dark:border-amber-600/40">
+                                                    <span className="material-symbols-outlined text-[13px] leading-none">warning</span>
+                                                    Yield Anomaly (&gt;100%)
+                                                </span>
+                                            )}
+                                        </div>
+                                        <span className={`text-sm font-display font-bold ${batch.efficiency > 100 ? 'text-amber-600 dark:text-amber-400' : getStatusTextClass(batch.efficiency)}`}>
                                             {batch.efficiency.toFixed(1)}%
                                         </span>
                                     </div>
                                     <div className="h-2 w-full bg-surface-container rounded-full overflow-hidden flex">
-                                        <div className={`h-full ${getStatusColor(batch.efficiency)} rounded-full`} style={{ width: `${Math.min(100, Math.max(0, batch.efficiency))}%` }}></div>
+                                        <div className={`h-full ${batch.efficiency > 100 ? 'bg-amber-500' : getStatusColor(batch.efficiency)} rounded-full`} style={{ width: `${Math.min(100, Math.max(0, batch.efficiency))}%` }}></div>
                                     </div>
                                 </div>
                                 <div className="mt-auto flex justify-between items-center pt-2 gap-2">
@@ -588,9 +596,16 @@ function BatchSpecificationDetail({ batch, onBack, formatCurrency, formatDate, o
                                 </div>
                                 <div className="flex justify-between items-center text-xs font-semibold mt-3 pt-3 border-t border-outline-variant/10">
                                     <span className="text-on-surface-variant font-bold">Volatile / Yield Loss:</span>
-                                    <span className={`font-extrabold ${batch.totalConsumedQty - batch.totalOutputQty > 0 ? 'text-tertiary' : 'text-primary'}`}>
-                                        {(batch.totalConsumedQty - batch.totalOutputQty).toLocaleString(undefined, {maximumFractionDigits:2})} units
-                                    </span>
+                                    {batch.totalConsumedQty - batch.totalOutputQty < 0 ? (
+                                        <span className="font-extrabold text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                                            <span className="material-symbols-outlined text-[13px]">warning</span>
+                                            Anomaly ({(batch.totalConsumedQty - batch.totalOutputQty).toLocaleString(undefined, {maximumFractionDigits:2})} units)
+                                        </span>
+                                    ) : (
+                                        <span className={`font-extrabold ${batch.totalConsumedQty - batch.totalOutputQty > 0 ? 'text-tertiary' : 'text-primary'}`}>
+                                            {(batch.totalConsumedQty - batch.totalOutputQty).toLocaleString(undefined, {maximumFractionDigits:2})} units
+                                        </span>
+                                    )}
                                 </div>
                             </div>
                         </div>

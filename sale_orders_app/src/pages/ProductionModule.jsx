@@ -513,7 +513,7 @@ export default function ProductionModule() {
   const pendingItems = useMemo(() => getPendingProductionItems(), [state.saleOrders, state.items]);
   const activePlan = activePlanIdx !== null ? allPlans[activePlanIdx] : null;
 
-  // Calculate current month specific stats
+  // Calculate production output stats
   const now = new Date();
   const currentMonthYear = `${now.getFullYear()}-${now.getMonth()}`;
 
@@ -522,34 +522,49 @@ export default function ProductionModule() {
       return `${planDate.getFullYear()}-${planDate.getMonth()}` === currentMonthYear;
   });
 
-  const currentMonthlyProduction = currentMonthPlans.reduce((sum, plan) => {
+  const calculateOutput = (plans) => {
       const batchTypes = state.batchOutputTypes || [
           { id: 1, name: 'Finished Good', uom: 'Meters', category: 'Finish Good' },
           { id: 2, name: 'Wastage', uom: 'Kgs', category: 'Wastage' },
           { id: 3, name: 'B-Grade', uom: 'Meters', category: 'Finish Good' }
       ];
-      return sum + (plan.items || []).reduce((s, item) => {
-          const actualOut = (item.outputs || []).reduce((outSum, o) => {
-              const typeObj = batchTypes.find(t => String(t.id) === String(o.typeId) || t.name === o.typeName);
-              const isWastage = (typeObj && typeObj.category) 
-                  ? typeObj.category === 'Wastage' 
-                  : o.typeName?.toLowerCase().includes('wastage');
-              return isWastage ? outSum : outSum + parseFloat(o.quantity || 0);
+      return plans.reduce((sum, plan) => {
+          if (plan.status === 'Cancelled') return sum;
+          return sum + (plan.items || []).reduce((s, item) => {
+              const actualOut = (item.outputs || []).reduce((outSum, o) => {
+                  const typeObj = batchTypes.find(t => String(t.id) === String(o.typeId) || t.name === o.typeName);
+                  const isWastage = (typeObj && typeObj.category) 
+                      ? typeObj.category === 'Wastage' 
+                      : o.typeName?.toLowerCase().includes('wastage');
+                  return isWastage ? outSum : outSum + parseFloat(o.quantity || 0);
+              }, 0);
+              return s + actualOut;
           }, 0);
-          return s + actualOut;
       }, 0);
-  }, 0);
+  };
 
-  const totalCompletedItems = currentMonthPlans.reduce((sum, plan) => {
+  const monthlyProductionRaw = calculateOutput(currentMonthPlans);
+  const allPlansProduction = calculateOutput(filteredPlans.length > 0 ? filteredPlans : (state.productionPlans || []));
+  // If current month has 0 output, aggregate from all active production plans so header total reconciles with batch history
+  const currentMonthlyProduction = monthlyProductionRaw > 0 ? monthlyProductionRaw : allPlansProduction;
+
+  const statsPlans = currentMonthPlans.length > 0 && monthlyProductionRaw > 0 ? currentMonthPlans : (filteredPlans.length > 0 ? filteredPlans : (state.productionPlans || []));
+
+  const totalCompletedItems = statsPlans.reduce((sum, plan) => {
       return sum + (plan.items || []).filter(it => it.status === 'Completed' || plan.status === 'Completed').length;
   }, 0);
 
   const uniqueWorkingDays = new Set();
-  currentMonthPlans.forEach(plan => {
-      const planDate = new Date(plan.date || plan.createdAt || new Date());
-      uniqueWorkingDays.add(planDate.toLocaleDateString());
+  statsPlans.forEach(plan => {
+      const d = plan.date || plan.createdAt;
+      if (d) {
+          const planDate = new Date(d);
+          if (!isNaN(planDate.getTime())) {
+              uniqueWorkingDays.add(planDate.toLocaleDateString());
+          }
+      }
   });
-  const workingDaysInMonth = uniqueWorkingDays.size;
+  const workingDaysInMonth = uniqueWorkingDays.size || 1;
 
   const finishedGoodsList = state.items.filter(i => i.type === 'Finish Good' || i.category === 'Finished Goods');
   const filteredBOMGoods = finishedGoodsList.filter(fg => 
