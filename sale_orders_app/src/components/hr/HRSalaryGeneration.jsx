@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
-import UniversalPrintStudioModal from '../ui/UniversalPrintStudioModal';
+import UniversalPrintPreviewModal from '../ui/UniversalPrintPreviewModal';
 
 // Defensive number helpers to guarantee 0 crashes
 const safeNum = (val) => {
@@ -999,7 +999,7 @@ export default function HRSalaryGeneration({ isMobile }) {
                       <button 
                         onClick={() => setStudioRecord(req)}
                         className="p-1.5 hover:bg-secondary/10 rounded-lg text-secondary transition-colors flex items-center justify-center cursor-pointer"
-                        title="Print Payslip (Studio)"
+                        title="Print Payslip"
                       >
                         <span className="material-symbols-outlined text-[18px]">print</span>
                       </button>
@@ -1193,7 +1193,7 @@ export default function HRSalaryGeneration({ isMobile }) {
                 className="bg-secondary/10 text-secondary hover:bg-secondary/20 px-4 py-2 rounded-xl text-xs font-bold transition-all active:scale-95 shadow-sm cursor-pointer flex items-center gap-1.5"
               >
                 <span className="material-symbols-outlined text-[16px]">print</span>
-                Print Payslip (Studio)
+                Print Payslip
               </button>
               <button 
                 onClick={() => setSelectedRecordForDetail(null)}
@@ -1208,7 +1208,7 @@ export default function HRSalaryGeneration({ isMobile }) {
       )}
 
       {studioRecord && payslipPrintData && (
-        <UniversalPrintStudioModal
+        <UniversalPrintPreviewModal
           isOpen={Boolean(studioRecord)}
           onClose={() => setStudioRecord(null)}
           documentType="hr_payslip"

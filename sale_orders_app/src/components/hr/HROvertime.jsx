@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
-import PrintSettings from '../settings/PrintSettings';
-import PrintLayout from '../ui/PrintLayout';
+import UniversalPrintPreviewModal from '../ui/UniversalPrintPreviewModal';
 
 export default function HROvertime({ isMobile }) {
   const { state, setCollection, startRoutingWorkflow } = useApp();
@@ -41,8 +40,6 @@ export default function HROvertime({ isMobile }) {
   const camVideoChunksRef = useRef([]);
 
   // Print Customization Modal state
-  const [showPrintSettingsModal, setShowPrintSettingsModal] = useState(false);
-  const [showPrintPreviewModal, setShowPrintPreviewModal] = useState(false);
   const [selectedRequestForPrint, setSelectedRequestForPrint] = useState(null);
 
   // Recalculate duration automatically when times change
@@ -371,17 +368,38 @@ export default function HROvertime({ isMobile }) {
   };
 
   const handleOpenPrintPreview = (req = null) => {
-    const defaultReq = req || {
+    const raw = req || {
       id: `OTR-${Date.now()}`,
-      employeeName: state.currentUser?.name || state.currentUser?.username || 'Umer Ali',
-      employeeId: state.currentUser?.id || 'EMP-4091',
+      employeeName: state.currentUser?.name || state.currentUser?.username || "Umer Ali",
+      employeeId: state.currentUser?.id || "EMP-4091",
       date: overtimeDate,
       hours: calculatedHours,
-      reason: description || 'Urgent operational necessity overtime',
-      status: 'Pending'
+      reason: description || "Urgent operational necessity overtime",
+      status: "Pending"
     };
-    setSelectedRequestForPrint(defaultReq);
-    setShowPrintPreviewModal(true);
+    const richReq = {
+      ...raw,
+      header: {
+        ot_id: raw.id || `OTR-${Date.now().toString().slice(-4)}`,
+        emp_id: raw.employeeId || "EMP-4091",
+        emp_name: raw.employeeName || "Current User",
+        month_year: new Date(raw.date || Date.now()).toLocaleString("default", { month: "long", year: "numeric" }),
+        department: "Operations",
+        work_date: raw.date || overtimeDate,
+        hours: `${raw.hours} hrs`,
+        status: raw.status || "Pending"
+      },
+      items: [
+        {
+          serial_no: "1",
+          work_date: raw.date || overtimeDate,
+          hours: String(raw.hours),
+          rate_multiplier: "1.5x (Regular)",
+          task_description: raw.reason || "Operational necessity overtime"
+        }
+      ]
+    };
+    setSelectedRequestForPrint(richReq);
   };
 
   return (
@@ -860,106 +878,14 @@ export default function HROvertime({ isMobile }) {
         </div>
       )}
 
-      {/* PRINT SETTINGS CUSTOMIZATION MODAL */}
-      {showPrintSettingsModal && (
-        <div className="fixed inset-0 z-[99999] bg-black/70 backdrop-blur-xs flex items-center justify-center p-2 sm:p-6 animate-in fade-in duration-200">
-          <div className="bg-surface-container-lowest rounded-3xl w-full max-w-6xl h-[90vh] flex flex-col overflow-hidden shadow-2xl border border-outline-variant/30">
-            <div className="p-4 bg-surface-container-low border-b border-outline-variant/30 flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <span className="material-symbols-outlined text-primary text-2xl">print</span>
-                <div>
-                  <h3 className="font-bold text-base text-on-surface">Overtime Request Print Settings</h3>
-                  <p className="text-xs text-on-surface-variant">Customize page margins, header colors, user name visibility & signatures.</p>
-                </div>
-              </div>
-              <button 
-                onClick={() => setShowPrintSettingsModal(false)}
-                className="p-2 rounded-xl hover:bg-surface-container-high text-on-surface-variant transition-colors cursor-pointer"
-              >
-                <span className="material-symbols-outlined text-xl">close</span>
-              </button>
-            </div>
-
-            <div className="flex-grow overflow-y-auto">
-              <PrintSettings />
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* PRINT PREVIEW MODAL */}
-      {showPrintPreviewModal && (
-        <div className="fixed inset-0 z-[99999] bg-black/75 backdrop-blur-xs flex items-center justify-center p-2 sm:p-6 animate-in fade-in duration-200">
-          <div className="bg-white rounded-3xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden shadow-2xl">
-            <div className="p-4 bg-slate-900 text-white flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-xl text-primary-container">print</span>
-                <span className="font-bold text-sm">Overtime Request Official Print Document</span>
-              </div>
-              <div className="flex items-center gap-3">
-                <button 
-                  onClick={() => window.print()}
-                  className="px-4 py-1.5 bg-primary text-white rounded-xl text-xs font-bold hover:bg-primary-container transition-all flex items-center gap-1.5 cursor-pointer"
-                >
-                  <span className="material-symbols-outlined text-base">print</span>
-                  Print Document
-                </button>
-                <button 
-                  onClick={() => setShowPrintPreviewModal(false)}
-                  className="p-1.5 rounded-lg hover:bg-white/10 text-white/80 transition-colors cursor-pointer"
-                >
-                  <span className="material-symbols-outlined text-xl">close</span>
-                </button>
-              </div>
-            </div>
-
-            <div className="flex-grow overflow-y-auto p-6 sm:p-10 bg-slate-100">
-              {selectedRequestForPrint && (
-                <PrintLayout 
-                  documentTitle="OVERTIME REQUEST FORM"
-                  documentId={selectedRequestForPrint.id}
-                  date={selectedRequestForPrint.date}
-                  documentType="hr_overtime_request"
-                  customerName={selectedRequestForPrint.employeeName}
-                  extraMeta={[
-                    { label: 'Requesting User Name', value: selectedRequestForPrint.employeeName },
-                    { label: 'Employee ID', value: selectedRequestForPrint.employeeId || 'EMP-4091' },
-                    { label: 'Duration Hours', value: `${selectedRequestForPrint.hours} hrs` },
-                    { label: 'Approval Status', value: selectedRequestForPrint.status }
-                  ]}
-                >
-                  <div className="my-6 border border-slate-300 rounded-lg p-4 bg-white">
-                    <h4 className="font-bold text-xs uppercase tracking-wider text-slate-700 mb-2">Overtime Purpose & Reason</h4>
-                    <p className="text-sm text-slate-900 leading-relaxed font-medium">
-                      {selectedRequestForPrint.reason}
-                    </p>
-                  </div>
-
-                  <table className="w-full border-collapse border border-slate-300 text-xs my-4">
-                    <thead>
-                      <tr className="bg-slate-800 text-white font-bold">
-                        <th className="border border-slate-300 p-2 text-center">Sr #</th>
-                        <th className="border border-slate-300 p-2 text-left">Employee Name</th>
-                        <th className="border border-slate-300 p-2 text-center">Date</th>
-                        <th className="border border-slate-300 p-2 text-right">OT Duration</th>
-                        <th className="border border-slate-300 p-2 text-center">Status</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td className="border border-slate-300 p-2.5 text-center">1</td>
-                        <td className="border border-slate-300 p-2.5 font-bold">{selectedRequestForPrint.employeeName}</td>
-                        <td className="border border-slate-300 p-2.5 text-center">{selectedRequestForPrint.date}</td>
-                        <td className="border border-slate-300 p-2.5 text-right font-bold">{selectedRequestForPrint.hours} hrs</td>
-                        <td className="border border-slate-300 p-2.5 text-center font-bold text-green-700">{selectedRequestForPrint.status}</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </PrintLayout>
-              )}
-            </div>
-          </div>
-        </div>
+      {selectedRequestForPrint && (
+        <UniversalPrintPreviewModal
+          isOpen={Boolean(selectedRequestForPrint)}
+          onClose={() => setSelectedRequestForPrint(null)}
+          documentType="hr_overtime_request"
+          documentData={selectedRequestForPrint}
+          documentTitle={`Overtime Request ${selectedRequestForPrint.header?.ot_id || ""}`}
+        />
       )}
 
     </div>

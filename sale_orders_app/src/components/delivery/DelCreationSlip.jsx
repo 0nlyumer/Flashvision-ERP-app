@@ -1,9 +1,8 @@
-import UniversalPrintStudioModal from '../ui/UniversalPrintStudioModal';
+import UniversalPrintPreviewModal from '../ui/UniversalPrintPreviewModal';
 import React, { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useDialog } from '../../context/DialogContext';
 import ResizableHeader from '../ui/ResizableHeader';
-import PrintLayout from '../ui/PrintLayout';
 
 export default function DelCreationSlip({ items = [], dcMode = 'Sale Orders', onBack, onFinalize }) {
   const { state, addDelivery } = useApp();
@@ -296,7 +295,7 @@ export default function DelCreationSlip({ items = [], dcMode = 'Sale Orders', on
           <div className="flex flex-wrap gap-3">
             <button onClick={() => setShowStudioModal(true)} className="flex items-center gap-2 px-5 py-2.5 text-primary font-semibold text-sm hover:bg-surface-container transition-colors rounded-xl outline-none focus:ring-2 focus:ring-primary/20 cursor-pointer">
               <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 0" }}>print</span>
-              Print Challan (Studio)
+              Print Challan
             </button>
             <button className="flex items-center gap-2 px-5 py-2.5 text-secondary font-semibold text-sm bg-secondary-container hover:bg-secondary-container/80 transition-colors rounded-xl outline-none focus:ring-2 focus:ring-secondary/20">
               <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 0" }}>picture_as_pdf</span>
@@ -619,109 +618,9 @@ export default function DelCreationSlip({ items = [], dcMode = 'Sale Orders', on
         </div>
       </div>
 
-      {/* PRINT ONLY UI */}
-      {(() => {
-          const dcSettings = state?.adminSetup?.printSettings?.moduleSettings?.delivery_challan || {};
-          const rowSize = dcSettings.rowSize || 'normal';
-          const cellPadding = rowSize === 'compact' ? 'py-1 px-2' : rowSize === 'spacious' ? 'py-4 px-4' : 'py-2 px-3';
-          const currencyCode = state?.adminSetup?.baseCurrency ? state.adminSetup.baseCurrency.split(' ')[0] : 'PKR';
-          
-          let colWidths = [];
-          if (dcSettings.columnWidths) {
-              colWidths = dcSettings.columnWidths.split(',').map(s => s.trim());
-          }
-
-          // Chunking
-          const maxRows = parseInt(dcSettings.maxRows || '10', 10);
-          const printChunks = [];
-          const printItems = slipItems.filter(i => !i.isDraft); // exclude draft rows
-          for (let i = 0; i < printItems.length; i += maxRows) {
-              printChunks.push(printItems.slice(i, i + maxRows));
-          }
-
-          if (printChunks.length === 0) printChunks.push([]);
-
-          return (
-              <div className="hidden print:block w-full">
-                  {printChunks.map((chunk, pageIndex) => (
-                      <div key={pageIndex} className="print:break-after-page">
-                          <PrintLayout 
-                              documentTitle="Delivery Challan (Draft)"
-                              documentId={challanId}
-                              date={new Date().toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' })}
-                              disclaimerKey="delivery"
-                              extraMeta={[
-                                  { label: 'Customer', value: customerName || 'N/A' },
-                                  { label: 'DC Mode', value: dcMode || 'Sale Orders' },
-                                  { label: 'Contact', value: consigneeDetails?.contactNumber || 'N/A' }
-                              ]}
-                              pagination={printChunks.length > 1 ? { current: pageIndex + 1, total: printChunks.length } : null}
-                          >
-                              <div className="border border-gray-300 mt-4 text-sm text-gray-800">
-                                  <table className="w-full text-left border-collapse">
-                                      <thead>
-                                          <tr className="bg-gray-100">
-                                              <th className="py-2 px-3 text-[11px] font-black uppercase border border-gray-300" style={{ width: colWidths[0] || '15%' }}>Item Code</th>
-                                              <th className="py-2 px-3 text-[11px] font-black uppercase border border-gray-300" style={{ width: colWidths[1] || 'auto' }}>Product Name</th>
-                                              <th className="py-2 px-3 text-[11px] font-black uppercase border border-gray-300 text-center" style={{ width: colWidths[2] || '12%' }}>Type</th>
-                                              <th className="py-2 px-3 text-[11px] font-black uppercase border border-gray-300 text-right" style={{ width: colWidths[3] || '15%' }}>Rolls/Qty</th>
-                                              <th className="py-2 px-3 text-[11px] font-black uppercase border border-gray-300 text-right" style={{ width: colWidths[4] || '15%' }}>Total (m)</th>
-                                          </tr>
-                                      </thead>
-                                      <tbody>
-                                          {chunk.map((it, iIdx) => (
-                                              <tr key={iIdx}>
-                                                  <td className={`${cellPadding} text-[11px] font-mono border border-gray-300`}>{it.itemCode || it.itemId}</td>
-                                                  <td className={`${cellPadding} text-[11px] border border-gray-300 font-bold`}>{it.productName || it.itemCode}</td>
-                                                  <td className={`${cellPadding} text-[11px] border border-gray-300 text-center`}>{it.stockType || it.type || 'Fresh'}</td>
-                                                  <td className={`${cellPadding} text-[11px] border border-gray-300 text-right`}>{it.dispatchedRolls || it.rolls || 0}</td>
-                                                  <td className={`${cellPadding} text-[11px] font-bold border border-gray-300 text-right`}>{it.dispatchedQty || it.editedQty || 0}</td>
-                                              </tr>
-                                          ))}
-                                          {chunk.length === 0 && (
-                                              <tr>
-                                                  <td colSpan="5" className="py-6 text-center text-gray-500">No items in this challan</td>
-                                              </tr>
-                                          )}
-                                      </tbody>
-                                  </table>
-                                  
-                                  {pageIndex === printChunks.length - 1 && (
-                                      <>
-                                        <div className="flex bg-gray-50 border-t border-gray-300">
-                                            <div className="flex-1 p-4 border-r border-gray-300">
-                                                <h4 className="text-[10px] font-black uppercase mb-1">Consignee Address</h4>
-                                                <p className="text-xs">{consigneeDetails?.deliveryAddress || 'N/A'}</p>
-                                            </div>
-                                            <div className="flex-1 p-4 border-r border-gray-300">
-                                                <h4 className="text-[10px] font-black uppercase mb-1">Logistics Info</h4>
-                                                <p className="text-xs">Driver: {logisticsDetails?.driverName || 'N/A'} ({logisticsDetails?.driverNumber || 'N/A'})</p>
-                                                <p className="text-xs">Vehicle: {logisticsDetails?.vehicleNumber || 'N/A'}</p>
-                                            </div>
-                                            <div className="w-1/3 p-4 flex flex-col justify-end text-right">
-                                                <div className="flex justify-between font-black text-sm">
-                                                    <span>Grand Total ({currencyCode})</span>
-                                                    <span>{totals.grand.toFixed(2) || '0.00'}</span>
-                                                </div>
-                                            </div>
-                                        </div>
-                                        <div className="p-4 flex justify-between items-end border-t border-gray-300 mt-12 pt-16">
-                                            <div className="border-t border-black w-48 text-center text-[10px] font-black uppercase">Prepared By</div>
-                                            <div className="border-t border-black w-48 text-center text-[10px] font-black uppercase">Driver Signature</div>
-                                            <div className="border-t border-black w-48 text-center text-[10px] font-black uppercase">Receiver Signature</div>
-                                        </div>
-                                      </>
-                                  )}
-                              </div>
-                          </PrintLayout>
-                      </div>
-                  ))}
-              </div>
-          );
-      })()}
 
       {showStudioModal && (
-        <UniversalPrintStudioModal
+        <UniversalPrintPreviewModal
           isOpen={showStudioModal}
           onClose={() => setShowStudioModal(false)}
           documentType="delivery_challan"

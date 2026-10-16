@@ -1,10 +1,9 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import ResizableHeader from '../ui/ResizableHeader';
-import PrintLayout from '../ui/PrintLayout';
 import GlobalPagination from '../ui/GlobalPagination';
 import CustomMultiSelect from '../ui/CustomMultiSelect';
-import UniversalPrintStudioModal from '../ui/UniversalPrintStudioModal';
+import UniversalPrintPreviewModal from '../ui/UniversalPrintPreviewModal';
 
 export default function InvLedger({ selectedDepartments = [], onBack }) {
   const { state, toggleGlobalPagination } = useApp();
@@ -841,62 +840,8 @@ export default function InvLedger({ selectedDepartments = [], onBack }) {
       )}
     </div>
 
-    {/* PRINT ONLY UI */}
-    <div className="hidden print:block w-full">
-        {Object.values(groupedEntries).length > 0 && Object.values(groupedEntries).map((group, groupIdx) => (
-            <div key={`print-${group.id}`} className="mb-10 page-break-after-always" style={{ pageBreakAfter: groupIdx === Object.values(groupedEntries).length - 1 ? 'auto' : 'always' }}>
-                <PrintLayout 
-                    documentTitle="Inventory Ledger"
-                    documentId={`ITEM-${group.item.sku || group.item.id}`}
-                    date={new Date().toLocaleDateString()}
-                    disclaimerKey="production"
-                    extraMeta={[
-                        { label: 'Item Name', value: `${group.item.name} ${group.outputType !== '-' ? `(${group.outputType})` : ''}` },
-                        { label: 'Total Inward', value: group.inward.toLocaleString(undefined, {maximumFractionDigits:2}) },
-                        { label: 'Total Outward', value: group.outward.toLocaleString(undefined, {maximumFractionDigits:2}) },
-                        { label: 'Final Balance', value: (group.entries[group.entries.length - 1]?.balance || 0).toLocaleString(undefined, {maximumFractionDigits:2}) }
-                    ]}
-                >
-                    <div className="border border-gray-300 mt-4">
-                        <table className="w-full text-left border-collapse">
-                            <thead>
-                                <tr className="bg-gray-100">
-                                    <th className="py-2 px-3 text-[10px] font-bold text-gray-700 uppercase border border-gray-300">Date/Time</th>
-                                    <th className="py-2 px-3 text-[10px] font-bold text-gray-700 uppercase border border-gray-300">Type</th>
-                                    <th className="py-2 px-3 text-[10px] font-bold text-gray-700 uppercase border border-gray-300">Ref #</th>
-                                    <th className="py-2 px-3 text-[10px] font-bold text-gray-700 uppercase border border-gray-300">Output Type</th>
-                                    <th className="py-2 px-3 text-[10px] font-bold text-gray-700 uppercase border border-gray-300 text-right">Qty In</th>
-                                    <th className="py-2 px-3 text-[10px] font-bold text-gray-700 uppercase border border-gray-300 text-right">Qty Out</th>
-                                    <th className="py-2 px-3 text-[10px] font-bold text-gray-700 uppercase border border-gray-300 text-right">Balance</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {group.entries.map((e, index) => {
-                                    const d = new Date(e.timestamp);
-                                    return (
-                                        <tr key={`p-${e.id}-${index}`}>
-                                            <td className="py-2 px-3 text-[11px] border border-gray-300">
-                                                {e.timestamp === 0 ? 'Opening Balance' : d.toLocaleString()}
-                                            </td>
-                                            <td className="py-2 px-3 text-[11px] border border-gray-300 font-bold">{e.type}</td>
-                                            <td className="py-2 px-3 text-[11px] border border-gray-300">{e.ref}</td>
-                                            <td className="py-2 px-3 text-[11px] border border-gray-300">{e.outputType || '—'}</td>
-                                            <td className="py-2 px-3 text-[11px] border border-gray-300 text-right">{e.qtyIn || '—'}</td>
-                                            <td className="py-2 px-3 text-[11px] border border-gray-300 text-right">{e.qtyOut || '—'}</td>
-                                            <td className="py-2 px-3 text-[11px] border border-gray-300 text-right font-bold">{e.balance.toLocaleString(undefined, {maximumFractionDigits:2})}</td>
-                                        </tr>
-                                    );
-                                })}
-                            </tbody>
-                        </table>
-                    </div>
-                </PrintLayout>
-            </div>
-        ))}
-    </div>
-
     {showStudioModal && (
-      <UniversalPrintStudioModal
+      <UniversalPrintPreviewModal
         isOpen={showStudioModal}
         onClose={() => setShowStudioModal(false)}
         documentType="inventory_ledger"

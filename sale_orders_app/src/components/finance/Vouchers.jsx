@@ -4,7 +4,7 @@ import { useDialog } from '../../context/DialogContext';
 import ResizableHeader from '../ui/ResizableHeader';
 import { DEFAULT_CHART_OF_ACCOUNTS } from '../../utils/financeEngine';
 import { useLocation } from 'react-router-dom';
-import UniversalPrintStudioModal from '../ui/UniversalPrintStudioModal';
+import UniversalPrintPreviewModal from '../ui/UniversalPrintPreviewModal';
 
 export default function Vouchers() {
   const { state, setCollection } = useApp();
@@ -1272,7 +1272,7 @@ export default function Vouchers() {
       )}
 
       {studioVoucher && voucherPrintData && (
-        <UniversalPrintStudioModal
+        <UniversalPrintPreviewModal
           isOpen={Boolean(studioVoucher)}
           onClose={() => setStudioVoucher(null)}
           documentType={studioDocType}

@@ -2,7 +2,7 @@ import FGCombinationBuilder from "../ui/FGCombinationBuilder";
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useDialog } from '../../context/DialogContext';
-import UniversalPrintStudioModal from '../ui/UniversalPrintStudioModal';
+import UniversalPrintPreviewModal from '../ui/UniversalPrintPreviewModal';
 
 export default function CreateNewBOM({ onClose, initialBom, isViewOnly = false }) {
   const { state, setCollection, setDirty, isDirty } = useApp();
@@ -405,7 +405,7 @@ export default function CreateNewBOM({ onClose, initialBom, isViewOnly = false }
       </div>
 
       {showStudioModal && (
-        <UniversalPrintStudioModal
+        <UniversalPrintPreviewModal
           isOpen={showStudioModal}
           onClose={() => setShowStudioModal(false)}
           documentType="bom_master"

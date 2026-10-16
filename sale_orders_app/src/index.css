@@ -516,7 +516,11 @@
   .print-layout-wrapper,
   .print-layout-wrapper *,
   #antigravity-print-preview-modal,
-  #antigravity-print-preview-modal * {
+  #antigravity-print-preview-modal *,
+  #universal-print-preview-modal,
+  #universal-print-preview-modal *,
+  .unified-print-container,
+  .unified-print-container * {
     visibility: visible !important;
   }
   .print-layout-wrapper {

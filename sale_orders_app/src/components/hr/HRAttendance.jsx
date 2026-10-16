@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { supabase } from '../../utils/supabaseClient';
 import { useDialog } from '../../context/DialogContext';
 import { useApp } from '../../context/AppContext';
-import UniversalPrintStudioModal from '../ui/UniversalPrintStudioModal';
+import UniversalPrintPreviewModal from '../ui/UniversalPrintPreviewModal';
 
 const INITIAL_EMPLOYEES = [
   {
@@ -1181,7 +1181,7 @@ export default function HRAttendance({ isMobile }) {
   };
 
   const modalNode = showStudioModal && attendancePrintData ? (
-    <UniversalPrintStudioModal
+    <UniversalPrintPreviewModal
       isOpen={showStudioModal}
       onClose={() => setShowStudioModal(false)}
       documentType="attendance_sheet"
@@ -2498,7 +2498,7 @@ export default function HRAttendance({ isMobile }) {
             <button 
               onClick={() => setShowStudioModal(true)}
               className="px-4 py-2.5 bg-secondary/10 border border-secondary/20 text-secondary hover:bg-secondary/20 rounded-xl text-xs font-bold flex items-center gap-2 transition-all active:scale-[0.97] cursor-pointer shadow-sm"
-              title="Print Attendance Register (Studio)"
+              title="Print Attendance Register"
             >
               <span className="material-symbols-outlined text-[18px]">print</span>
               Print Register

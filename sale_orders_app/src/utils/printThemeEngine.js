@@ -239,9 +239,9 @@ export function applyThemeToLayout(baseLayout = {}, themeId = 'classic', docType
     ? (baseLayout.bodyFontSize || '11px') 
     : (baseLayout.bodyFontSize || '11px');
 
-  const rowsPerPage = isIndustrial ? 14 : isModern ? 10 : 10;
-  const firstPageRows = isIndustrial ? 12 : isModern ? 8 : 8;
-  const continuationPageRows = isIndustrial ? 18 : isModern ? 14 : 14;
+  const rowsPerPage = 20;
+  const firstPageRows = 20;
+  const continuationPageRows = 25;
 
   const headerBgColor = isIndustrial
     ? '#FFFFFF' // Ink saver

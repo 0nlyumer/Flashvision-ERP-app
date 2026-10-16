@@ -21,7 +21,6 @@ import {
   getSafeContrastTextColor
 } from '../../utils/printThemeEngine';
 import UnifiedPrintDocument, { PAPER_DIMENSIONS } from '../print/UnifiedPrintDocument';
-import UniversalPrintStudioModal from '../ui/UniversalPrintStudioModal';
 import {
   exportDocumentToPdf,
   exportDocumentToImage,
@@ -59,7 +58,6 @@ export default function PrintSettings() {
   const [saving, setSaving] = useState(false);
   const [exporting, setExporting] = useState(null); // 'pdf' | 'img' | 'csv' | null
   const [showSaveSuccess, setShowSaveSuccess] = useState(false);
-  const [showStudioModal, setShowStudioModal] = useState(false);
 
   // Reference to center preview container for exports
   const previewContainerRef = useRef(null);
@@ -457,17 +455,6 @@ export default function PrintSettings() {
 
   return (
     <>
-      {showStudioModal && (
-        <UniversalPrintStudioModal
-          isOpen={showStudioModal}
-          onClose={() => setShowStudioModal(false)}
-          documentType={selectedDocId}
-          documentData={mockData}
-          documentTitle={currentDocMeta?.name}
-          onApplied={(updated) => updateActiveLayout(updated)}
-        />
-      )}
-
       <div className="w-full bg-slate-100 dark:bg-slate-950 text-slate-800 dark:text-slate-100 font-sans p-3 md:p-6 rounded-3xl min-h-[calc(100vh-5rem)] flex flex-col space-y-4 animate-fade-in border border-slate-200 dark:border-slate-800 shadow-sm">
         
         {/* ============================================================== */}
@@ -495,13 +482,6 @@ export default function PrintSettings() {
 
           {/* Quick Actions */}
           <div className="flex items-center gap-2.5 w-full lg:w-auto justify-end flex-wrap">
-            <button
-              onClick={() => setShowStudioModal(true)}
-              className="px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm active:scale-95"
-            >
-              <span className="material-symbols-outlined text-base text-blue-600">open_in_new</span>
-              Full Studio Modal
-            </button>
 
             <button
               onClick={handleResetToPreset}
@@ -1058,28 +1038,43 @@ export default function PrintSettings() {
                     </div>
                   </div>
 
-                  {/* Multi-Page Row Chunking */}
-                  <div className="pt-2 border-t border-slate-200 dark:border-slate-800 space-y-2">
-                    <label className="text-xs font-bold text-slate-700 dark:text-slate-200 block">
-                      Multi-Page Row Limits
-                    </label>
+                  {/* Multi-Page Row Limits */}
+                  <div className="pt-3 border-t border-slate-200 dark:border-slate-800 space-y-2.5">
+                    <div>
+                      <label className="text-xs font-bold text-slate-800 dark:text-slate-100 block mb-0.5">
+                        Table Row Limits per Page
+                      </label>
+                      <p className="text-[10.5px] text-slate-500 dark:text-slate-400">
+                        Line-item pagination rules for line items and tables across multiple pages
+                      </p>
+                    </div>
                     <div className="grid grid-cols-2 gap-2 text-xs">
-                      <div>
-                        <span className="text-[10px] text-slate-400 block mb-1">Page 1 Rows:</span>
+                      <div className="bg-slate-50 dark:bg-slate-800/80 p-2.5 rounded-xl border border-slate-200 dark:border-slate-700">
+                        <label className="text-[11px] font-bold text-slate-700 dark:text-slate-200 block mb-0.5">
+                          Rows on first page
+                        </label>
+                        <span className="text-[9.5px] text-slate-400 block mb-1.5 leading-tight">(max line-item rows rendered on page 1)</span>
                         <input
                           type="number"
-                          value={activeLayout.firstPageRows || 8}
-                          onChange={(e) => updateActiveLayout({ firstPageRows: Number(e.target.value) })}
-                          className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-2.5 py-1.5 font-mono text-xs"
+                          min="1"
+                          max="200"
+                          value={activeLayout.firstPageRows ?? 20}
+                          onChange={(e) => updateActiveLayout({ firstPageRows: Math.max(1, parseInt(e.target.value, 10) || 1) })}
+                          className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg px-2.5 py-1.5 font-mono font-bold text-xs"
                         />
                       </div>
-                      <div>
-                        <span className="text-[10px] text-slate-400 block mb-1">Continuation Rows:</span>
+                      <div className="bg-slate-50 dark:bg-slate-800/80 p-2.5 rounded-xl border border-slate-200 dark:border-slate-700">
+                        <label className="text-[11px] font-bold text-slate-700 dark:text-slate-200 block mb-0.5">
+                          Rows on following pages
+                        </label>
+                        <span className="text-[9.5px] text-slate-400 block mb-1.5 leading-tight">(max line-item rows on page 2, 3, ...)</span>
                         <input
                           type="number"
-                          value={activeLayout.continuationPageRows || 14}
-                          onChange={(e) => updateActiveLayout({ continuationPageRows: Number(e.target.value) })}
-                          className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-2.5 py-1.5 font-mono text-xs"
+                          min="1"
+                          max="200"
+                          value={activeLayout.continuationPageRows ?? 25}
+                          onChange={(e) => updateActiveLayout({ continuationPageRows: Math.max(1, parseInt(e.target.value, 10) || 1) })}
+                          className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg px-2.5 py-1.5 font-mono font-bold text-xs"
                         />
                       </div>
                     </div>

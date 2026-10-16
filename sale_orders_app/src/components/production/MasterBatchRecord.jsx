@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import GlobalPagination from '../ui/GlobalPagination';
-import UniversalPrintStudioModal from '../ui/UniversalPrintStudioModal';
+import UniversalPrintPreviewModal from '../ui/UniversalPrintPreviewModal';
 
 export default function MasterBatchRecord() {
     const { state, toggleGlobalPagination, currencySymbol, currencyCode } = useApp();
@@ -279,7 +279,7 @@ export default function MasterBatchRecord() {
                     onOpenStudio={(b) => setActiveStudioBatch(b)}
                 />
                 {activeStudioBatch && batchPrintData && (
-                    <UniversalPrintStudioModal
+                    <UniversalPrintPreviewModal
                         isOpen={Boolean(activeStudioBatch)}
                         onClose={() => setActiveStudioBatch(null)}
                         documentType="master_batch_record"
@@ -387,7 +387,7 @@ export default function MasterBatchRecord() {
                                     <button 
                                         onClick={() => setActiveStudioBatch(batch)}
                                         className="text-slate-600 hover:text-primary font-bold text-xs flex items-center gap-1 transition-colors px-2.5 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 cursor-pointer"
-                                        title="Print Batch Record in Studio"
+                                        title="Print Batch Record"
                                     >
                                         <span className="material-symbols-outlined text-sm">print</span>
                                         Print Record
@@ -414,7 +414,7 @@ export default function MasterBatchRecord() {
             />
 
             {activeStudioBatch && batchPrintData && (
-                <UniversalPrintStudioModal
+                <UniversalPrintPreviewModal
                     isOpen={Boolean(activeStudioBatch)}
                     onClose={() => setActiveStudioBatch(null)}
                     documentType="master_batch_record"

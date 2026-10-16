@@ -1111,20 +1111,24 @@ export default function UniversalPrintStudioModal({
 
                 <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-800">
                   <div>
-                    <label className="block text-[11px] font-semibold text-slate-400 mb-1">Page 1 Rows:</label>
+                    <label className="block text-[11px] font-semibold text-slate-400 mb-0.5">Rows on first page:</label>
+                    <span className="block text-[9.5px] text-slate-500 mb-1">(max rows on page 1)</span>
                     <input
                       type="number"
-                      value={layoutConfig.firstPageRows || 8}
-                      onChange={(e) => updateLayout('firstPageRows', Number(e.target.value))}
+                      min="1"
+                      value={layoutConfig.firstPageRows ?? 20}
+                      onChange={(e) => updateLayout('firstPageRows', Math.max(1, parseInt(e.target.value, 10) || 1))}
                       className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2 text-xs text-white font-mono"
                     />
                   </div>
                   <div>
-                    <label className="block text-[11px] font-semibold text-slate-400 mb-1">Continuation Rows:</label>
+                    <label className="block text-[11px] font-semibold text-slate-400 mb-0.5">Rows on following pages:</label>
+                    <span className="block text-[9.5px] text-slate-500 mb-1">(max rows on page 2, 3...)</span>
                     <input
                       type="number"
-                      value={layoutConfig.continuationPageRows || 14}
-                      onChange={(e) => updateLayout('continuationPageRows', Number(e.target.value))}
+                      min="1"
+                      value={layoutConfig.continuationPageRows ?? 25}
+                      onChange={(e) => updateLayout('continuationPageRows', Math.max(1, parseInt(e.target.value, 10) || 1))}
                       className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2 text-xs text-white font-mono"
                     />
                   </div>

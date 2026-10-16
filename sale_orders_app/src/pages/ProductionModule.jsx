@@ -22,7 +22,7 @@ import RawMaterialConfig from '../components/production/RawMaterialConfig';
 import RawMaterialProduction from '../components/production/RawMaterialProduction';
 import { useSearchParams } from 'react-router-dom';
 import OtherConsumption from '../components/production/OtherConsumption';
-import UniversalPrintStudioModal from '../components/ui/UniversalPrintStudioModal';
+import UniversalPrintPreviewModal from '../components/ui/UniversalPrintPreviewModal';
 
 export default function ProductionModule() {
   const { state, setCollection, updateSaleOrderItemStatus, isDirty, setDirty, toggleGlobalPagination, updateProductionTarget } = useApp();
@@ -1429,7 +1429,7 @@ export default function ProductionModule() {
       />
 
       {studioManifestPlan && manifestPrintData && (
-        <UniversalPrintStudioModal
+        <UniversalPrintPreviewModal
           isOpen={Boolean(studioManifestPlan)}
           onClose={() => setStudioManifestPlan(null)}
           documentType="production_manifest"
@@ -1439,7 +1439,7 @@ export default function ProductionModule() {
       )}
 
       {studioBomItem && bomPrintData && (
-        <UniversalPrintStudioModal
+        <UniversalPrintPreviewModal
           isOpen={Boolean(studioBomItem)}
           onClose={() => setStudioBomItem(null)}
           documentType="bom_master"

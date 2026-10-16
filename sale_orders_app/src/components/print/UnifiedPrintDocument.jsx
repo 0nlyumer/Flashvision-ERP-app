@@ -79,8 +79,8 @@ export default function UnifiedPrintDocument({
     const items = [...lineItems];
     if (items.length === 0) return [[]];
 
-    const firstLimit = Math.max(1, Number(layoutConfig.firstPageRows || (isIndustrial ? 12 : 8)));
-    const contLimit = Math.max(1, Number(layoutConfig.continuationPageRows || (isIndustrial ? 18 : 14)));
+    const firstLimit = Math.max(1, parseInt(layoutConfig.firstPageRows, 10) || 20);
+    const contLimit = Math.max(1, parseInt(layoutConfig.continuationPageRows, 10) || 25);
 
     const chunks = [];
     chunks.push(items.splice(0, firstLimit));

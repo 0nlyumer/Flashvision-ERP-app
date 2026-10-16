@@ -2,8 +2,7 @@ import React, { useMemo, useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useDialog } from '../../context/DialogContext';
 import ResizableHeader from '../ui/ResizableHeader';
-import PrintLayout from '../ui/PrintLayout';
-import UniversalPrintStudioModal from '../ui/UniversalPrintStudioModal';
+import UniversalPrintPreviewModal from '../ui/UniversalPrintPreviewModal';
 
 export default function DelRecord() {
   const { state, deleteDelivery } = useApp();
@@ -13,7 +12,6 @@ export default function DelRecord() {
 
   const [searchTerm, setSearchTerm] = useState('');
   const [printData, setPrintData] = useState(null);
-    const [showStudio, setShowStudio] = useState(false);
   const [dateRange, setDateRange] = useState({ from: '', to: '' });
   const [viewDc, setViewDc] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
@@ -42,7 +40,6 @@ export default function DelRecord() {
       items: dc.items || []
     };
     setPrintData(richDc);
-    setShowStudio(true);
   };
 
   const filteredDeliveries = useMemo(() => {
@@ -90,10 +87,10 @@ export default function DelRecord() {
 
   return (
       <>
-        {showStudio && printData && (
-          <UniversalPrintStudioModal
-            isOpen={showStudio}
-            onClose={() => setShowStudio(false)}
+        {printData && (
+          <UniversalPrintPreviewModal
+            isOpen={Boolean(printData)}
+            onClose={() => setPrintData(null)}
             documentType="delivery_challan"
             documentData={printData}
             documentTitle={`Delivery Challan #${printData.id}`}
@@ -253,13 +250,6 @@ export default function DelRecord() {
                                 <button onClick={() => appAlert('Edit is not permitted for finalized delivery challans. Please delete and recreate if needed.')} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-tertiary/10 text-tertiary transition-colors outline-none focus:ring-2 focus:ring-tertiary/20" title="Edit">
                                   <span className="material-symbols-outlined text-lg" style={{ fontVariationSettings: "'FILL' 0" }}>edit</span>
                                 </button>
-                                <button 
-                                   onClick={() => { setPrintData(dc); setShowStudio(true); }} 
-                                   className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-primary/10 text-primary transition-colors outline-none focus:ring-2 focus:ring-primary/20 cursor-pointer" 
-                                   title="Customize Print Layout (Gear Studio)"
-                                 >
-                                   <span className="material-symbols-outlined text-lg">settings</span>
-                                 </button>
                                  <button onClick={() => handlePrint(dc)} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-surface-container text-on-surface-variant transition-colors outline-none focus:ring-2 focus:ring-primary/20 cursor-pointer" title="Print">
                                    <span className="material-symbols-outlined text-lg" style={{ fontVariationSettings: "'FILL' 0" }}>print</span>
                                  </button>
@@ -340,105 +330,6 @@ export default function DelRecord() {
           </div>
       )}
 
-      {/* PRINT ONLY UI */}
-      {printData && (() => {
-          const dcSettings = state?.adminSetup?.printSettings?.moduleSettings?.delivery_challan || {};
-          const rowSize = dcSettings.rowSize || 'normal';
-          const cellPadding = rowSize === 'compact' ? 'py-1 px-2' : rowSize === 'spacious' ? 'py-4 px-4' : 'py-2 px-3';
-          
-          let colWidths = [];
-          if (dcSettings.columnWidths) {
-              colWidths = dcSettings.columnWidths.split(',').map(s => s.trim());
-          }
-
-          // Chunking
-          const maxRows = parseInt(dcSettings.maxRows || '10', 10);
-          const printChunks = [];
-          const items = printData.items || [];
-          for (let i = 0; i < items.length; i += maxRows) {
-              printChunks.push(items.slice(i, i + maxRows));
-          }
-
-          if (printChunks.length === 0) printChunks.push([]);
-
-          return (
-              <div className="hidden print:block w-full">
-                  {printChunks.map((chunk, pageIndex) => (
-                      <div key={pageIndex} className="print:break-after-page">
-                          <PrintLayout 
-                              documentTitle="Delivery Challan"
-                              documentId={printData.id}
-                              date={new Date(printData.date).toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' })}
-                              disclaimerKey="delivery"
-                              extraMeta={[
-                                  { label: 'Customer', value: printData.customerName || 'N/A' },
-                                  { label: 'DC Mode', value: printData.dcMode || 'Sale Orders' },
-                                  { label: 'Contact', value: printData.consignee?.contactNumber || 'N/A' }
-                              ]}
-                              pagination={printChunks.length > 1 ? { current: pageIndex + 1, total: printChunks.length } : null}
-                          >
-                              <div className="border border-gray-300 mt-4 text-sm text-gray-800">
-                                  <table className="w-full text-left border-collapse">
-                                      <thead>
-                                          <tr className="bg-gray-100">
-                                              <th className="py-2 px-3 text-[11px] font-black uppercase border border-gray-300" style={{ width: colWidths[0] || '15%' }}>Item Code</th>
-                                              <th className="py-2 px-3 text-[11px] font-black uppercase border border-gray-300" style={{ width: colWidths[1] || 'auto' }}>Product Name</th>
-                                              <th className="py-2 px-3 text-[11px] font-black uppercase border border-gray-300 text-center" style={{ width: colWidths[2] || '12%' }}>Type</th>
-                                              <th className="py-2 px-3 text-[11px] font-black uppercase border border-gray-300 text-right" style={{ width: colWidths[3] || '15%' }}>Rolls/Qty</th>
-                                              <th className="py-2 px-3 text-[11px] font-black uppercase border border-gray-300 text-right" style={{ width: colWidths[4] || '15%' }}>Total (m)</th>
-                                          </tr>
-                                      </thead>
-                                      <tbody>
-                                          {chunk.map((it, iIdx) => (
-                                              <tr key={iIdx}>
-                                                  <td className={`${cellPadding} text-[11px] font-mono border border-gray-300`}>{it.itemCode || it.itemId}</td>
-                                                  <td className={`${cellPadding} text-[11px] border border-gray-300 font-bold`}>{it.productName || it.itemCode}</td>
-                                                  <td className={`${cellPadding} text-[11px] border border-gray-300 text-center`}>{it.stockType || it.type || 'Fresh'}</td>
-                                                  <td className={`${cellPadding} text-[11px] border border-gray-300 text-right`}>{it.dispatchedRolls || it.rolls || 0}</td>
-                                                  <td className={`${cellPadding} text-[11px] font-bold border border-gray-300 text-right`}>{it.dispatchedQty || it.editedQty || 0}</td>
-                                              </tr>
-                                          ))}
-                                          {chunk.length === 0 && (
-                                              <tr>
-                                                  <td colSpan="5" className="py-6 text-center text-gray-500">No items in this challan</td>
-                                              </tr>
-                                          )}
-                                      </tbody>
-                                  </table>
-                                  
-                                  {pageIndex === printChunks.length - 1 && (
-                                      <>
-                                        <div className="flex bg-gray-50 border-t border-gray-300">
-                                            <div className="flex-1 p-4 border-r border-gray-300">
-                                                <h4 className="text-[10px] font-black uppercase mb-1">Consignee Address</h4>
-                                                <p className="text-xs">{printData.consignee?.deliveryAddress || 'N/A'}</p>
-                                            </div>
-                                            <div className="flex-1 p-4 border-r border-gray-300">
-                                                <h4 className="text-[10px] font-black uppercase mb-1">Logistics Info</h4>
-                                                <p className="text-xs">Driver: {printData.logistics?.driverName || 'N/A'} ({printData.logistics?.driverNumber || 'N/A'})</p>
-                                                <p className="text-xs">Vehicle: {printData.logistics?.vehicleNumber || 'N/A'}</p>
-                                            </div>
-                                            <div className="w-1/3 p-4 flex flex-col justify-end text-right">
-                                                <div className="flex justify-between font-black text-sm">
-                                                    <span>Grand Total ({currencyCode})</span>
-                                                    <span>{printData.totals?.grand?.toFixed(2) || '0.00'}</span>
-                                                </div>
-                                            </div>
-                                        </div>
-                                        <div className="p-4 flex justify-between items-end border-t border-gray-300 mt-12 pt-16">
-                                            <div className="border-t border-black w-48 text-center text-[10px] font-black uppercase">Prepared By</div>
-                                            <div className="border-t border-black w-48 text-center text-[10px] font-black uppercase">Driver Signature</div>
-                                            <div className="border-t border-black w-48 text-center text-[10px] font-black uppercase">Receiver Signature</div>
-                                        </div>
-                                      </>
-                                  )}
-                              </div>
-                          </PrintLayout>
-                      </div>
-                  ))}
-              </div>
-          );
-      })()}
     </div>
   </>
   );

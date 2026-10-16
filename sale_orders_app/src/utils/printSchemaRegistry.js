@@ -86,9 +86,9 @@ export const DEFAULT_LAYOUT_SETTINGS = {
   logoPosition: 'left',
   showBarcode: true,
   // Multi-Page Pagination Engine Rules (pdfme & jsreport style)
-  firstPageRows: 8,
-  continuationPageRows: 14,
-  rowsPerPage: 10,
+  firstPageRows: 20,
+  continuationPageRows: 25,
+  rowsPerPage: 20,
   repeatHeader: false,
   repeatTableHeader: true,
   totalsPosition: 'last_page',

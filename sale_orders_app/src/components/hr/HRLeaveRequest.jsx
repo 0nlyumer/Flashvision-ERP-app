@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
-import UniversalPrintStudioModal from '../ui/UniversalPrintStudioModal';
+import UniversalPrintPreviewModal from '../ui/UniversalPrintPreviewModal';
 
 export default function HRLeaveRequest({ isMobile }) {
   const { state, setCollection, startRoutingWorkflow } = useApp();
@@ -563,7 +563,7 @@ export default function HRLeaveRequest({ isMobile }) {
                           type="button"
                           onClick={() => setStudioLeaveRecord(req)}
                           className="p-1.5 hover:bg-secondary/10 rounded-lg text-secondary transition-colors flex items-center justify-center cursor-pointer"
-                          title="Print Leave Slip (Studio)"
+                          title="Print Leave Slip"
                         >
                           <span className="material-symbols-outlined text-[18px]">print</span>
                         </button>
@@ -588,7 +588,7 @@ export default function HRLeaveRequest({ isMobile }) {
       </div>
 
       {studioLeaveRecord && leavePrintData && (
-        <UniversalPrintStudioModal
+        <UniversalPrintPreviewModal
           isOpen={Boolean(studioLeaveRecord)}
           onClose={() => setStudioLeaveRecord(null)}
           documentType="hr_leave_request"
