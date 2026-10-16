@@ -460,45 +460,46 @@ export default function PrintSettings() {
         {/* ============================================================== */}
         {/* 1. TOP HEADER & WORKSPACE ACTION BAR                           */}
         {/* ============================================================== */}
-        <header className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 bg-white dark:bg-slate-900 p-4 md:p-5 rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-sm">
+        <header className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 bg-white dark:bg-slate-900 p-4 md:p-5 rounded-xl border border-slate-200/90 dark:border-slate-800 shadow-xs">
           <div className="flex items-center gap-3.5">
-            <div className="w-12 h-12 rounded-2xl bg-blue-600 text-white flex items-center justify-center font-bold shadow-md shadow-blue-500/20 shrink-0">
-              <span className="material-symbols-outlined text-2xl">print</span>
+            <div className="w-10 h-10 rounded-xl bg-slate-900 dark:bg-slate-800 text-white dark:text-slate-200 flex items-center justify-center font-bold border border-slate-700/80 shadow-xs shrink-0">
+              <span className="material-symbols-outlined text-[20px]">print</span>
             </div>
             <div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <h1 className="text-xl font-extrabold text-slate-900 dark:text-white tracking-tight">
-                  Universal Print & Report Designer Studio
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <h1 data-keep-color="true" className="text-lg font-bold text-slate-900 dark:text-white tracking-tight leading-none">
+                  Print & Report Designer Studio
                 </h1>
-                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-blue-50 dark:bg-blue-950 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800 uppercase tracking-wider">
-                  Enterprise Suite
+                <span className="px-2 py-0.5 rounded text-[11px] font-mono font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
+                  33 Documents • 3 Archetypes
                 </span>
               </div>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                3 Certified Archetype Themes (Classic Corporate, Modern Minimalist, Industrial Shop-Floor) • 33 System Documents
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                Configure enterprise document layouts, certified archetypes, typography, paper formats, and table columns.
               </p>
             </div>
           </div>
 
           {/* Quick Actions */}
           <div className="flex items-center gap-2.5 w-full lg:w-auto justify-end flex-wrap">
-
             <button
+              type="button"
               onClick={handleResetToPreset}
-              className="px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm"
+              className="h-9 px-3.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-medium transition-colors flex items-center gap-1.5 shadow-xs cursor-pointer"
               title="Reset current document layout to factory defaults"
             >
-              <span className="material-symbols-outlined text-base text-amber-500">restart_alt</span>
-              Reset Preset
+              <span className="material-symbols-outlined text-[16px] text-slate-500 dark:text-slate-400">restart_alt</span>
+              Reset to Default
             </button>
 
             <button
+              type="button"
               onClick={handleSaveConfigurations}
               disabled={saving}
-              className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-95 text-white text-xs font-extrabold shadow-md shadow-blue-600/30 transition-all flex items-center gap-2 disabled:opacity-50"
+              className="h-9 px-4 rounded-lg bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white text-xs font-semibold shadow-xs transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
             >
-              <span className="material-symbols-outlined text-base">{saving ? 'sync' : 'save'}</span>
-              {saving ? 'Saving...' : 'Save Layout & Theme'}
+              <span className="material-symbols-outlined text-[16px]">{saving ? 'sync' : 'save'}</span>
+              {saving ? 'Saving...' : 'Save Configuration'}
             </button>
           </div>
         </header>
@@ -511,34 +512,34 @@ export default function PrintSettings() {
           {/* ------------------------------------------------------------ */}
           {/* PANEL 1: LEFT DOCUMENT BROWSER & MODULE FILTERS (Col 3/12)   */}
           {/* ------------------------------------------------------------ */}
-          <aside className="col-span-12 lg:col-span-3 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-sm flex flex-col h-[780px] overflow-hidden">
+          <aside className="col-span-12 lg:col-span-3 bg-white dark:bg-slate-900 rounded-xl border border-slate-200/90 dark:border-slate-800 shadow-xs flex flex-col h-[800px] overflow-hidden">
             {/* Header & Search */}
             <div className="p-3.5 border-b border-slate-200 dark:border-slate-800 space-y-2.5">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-black uppercase tracking-wider text-slate-400">
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                   Document Catalog
                 </span>
-                <span className="text-[10px] font-mono font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 px-2 py-0.5 rounded-full">
+                <span className="text-[10px] font-mono tabular-nums font-semibold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 px-2 py-0.5 rounded-full border border-slate-200/60 dark:border-slate-700/60">
                   {filteredDocuments.length} / {SYSTEM_DOCUMENTS.length}
                 </span>
               </div>
 
               {/* Search Bar */}
               <div className="relative">
-                <span className="material-symbols-outlined absolute left-2.5 top-2.5 text-slate-400 text-sm">
+                <span className="material-symbols-outlined absolute left-2.5 top-2 text-slate-400 text-[16px]">
                   search
                 </span>
                 <input
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search 33 documents..."
-                  className="w-full pl-8 pr-7 py-1.5 text-xs bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:border-blue-500 font-medium"
+                  placeholder="Search documents or codes..."
+                  className="h-8 w-full pl-8 pr-7 text-xs bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:bg-white dark:focus:bg-slate-800 transition-colors font-normal"
                 />
                 {searchQuery && (
                   <button
                     onClick={() => setSearchQuery('')}
-                    className="absolute right-2.5 top-2 text-slate-400 hover:text-slate-600"
+                    className="absolute right-2.5 top-1.5 text-slate-400 hover:text-slate-600 cursor-pointer"
                   >
                     <span className="material-symbols-outlined text-xs">close</span>
                   </button>
@@ -549,10 +550,10 @@ export default function PrintSettings() {
               <div className="flex items-center gap-1 overflow-x-auto pb-1 scrollbar-none text-[11px]">
                 <button
                   onClick={() => setActiveModuleFilter('all')}
-                  className={`px-2.5 py-1 rounded-lg font-bold transition-all whitespace-nowrap ${
+                  className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all whitespace-nowrap cursor-pointer ${
                     activeModuleFilter === 'all'
-                      ? 'bg-blue-600 text-white shadow-sm'
-                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200'
+                      ? 'bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 shadow-xs font-semibold'
+                      : 'bg-slate-100/80 dark:bg-slate-800/60 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200/80'
                   }`}
                 >
                   All
@@ -561,10 +562,10 @@ export default function PrintSettings() {
                   <button
                     key={m.id}
                     onClick={() => setActiveModuleFilter(m.id)}
-                    className={`px-2 py-1 rounded-lg font-bold transition-all whitespace-nowrap flex items-center gap-1 ${
+                    className={`px-2 py-1 rounded-md text-xs font-medium transition-all whitespace-nowrap flex items-center gap-1 cursor-pointer ${
                       activeModuleFilter === m.id
-                        ? 'bg-blue-600 text-white shadow-sm'
-                        : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200'
+                        ? 'bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 shadow-xs font-semibold'
+                        : 'bg-slate-100/80 dark:bg-slate-800/60 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200/80'
                     }`}
                   >
                     <span className="material-symbols-outlined text-[13px]">{m.icon}</span>
@@ -588,35 +589,29 @@ export default function PrintSettings() {
                     onClick={() => handleSelectDocument(doc.id)}
                     className={`p-2.5 rounded-xl cursor-pointer transition-all border text-left flex items-start justify-between gap-2 ${
                       isSelected
-                        ? 'bg-blue-50/90 dark:bg-blue-950/60 border-blue-500 shadow-sm'
-                        : 'bg-slate-50/50 dark:bg-slate-900/50 border-transparent hover:bg-slate-100 dark:hover:bg-slate-800'
+                        ? 'bg-blue-50/70 dark:bg-blue-950/40 border-l-2 border-l-blue-600 border-slate-200 dark:border-slate-800 shadow-xs'
+                        : 'bg-transparent border-transparent hover:bg-slate-50 dark:hover:bg-slate-800/50'
                     }`}
                   >
                     <div className="flex items-start gap-2.5 min-w-0">
-                      <span className={`px-1.5 py-0.5 rounded font-mono font-black text-[10px] shrink-0 uppercase ${
+                      <span className={`px-1.5 py-0.5 rounded font-mono tabular-nums font-bold text-[10px] shrink-0 uppercase ${
                         isSelected 
                           ? 'bg-blue-600 text-white' 
-                          : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
+                          : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200/80 dark:border-slate-700/80'
                       }`}>
                         {doc.code}
                       </span>
                       <div className="min-w-0">
-                        <div className={`text-xs font-bold leading-tight truncate ${isSelected ? 'text-blue-950 dark:text-white' : 'text-slate-800 dark:text-slate-200'}`}>
+                        <div className={`text-xs font-medium leading-tight truncate ${isSelected ? 'text-blue-950 dark:text-white font-semibold' : 'text-slate-800 dark:text-slate-200'}`}>
                           {doc.name}
                         </div>
                         <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                          <span className={`text-[9px] px-1.5 py-0.2 rounded font-semibold ${
-                            currentTheme === 'industrial'
-                              ? 'bg-stone-200 dark:bg-stone-800 text-stone-800 dark:text-stone-300'
-                              : currentTheme === 'modern'
-                              ? 'bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300'
-                              : 'bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300'
-                          }`}>
-                            {currentTheme.toUpperCase()}
+                          <span className="text-[9px] font-mono uppercase px-1.5 py-0.2 rounded font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                            {currentTheme}
                           </span>
                           {currentTheme === recommendedTheme && (
-                            <span className="text-[9px] text-amber-600 dark:text-amber-400 font-bold flex items-center">
-                              ★ Optimal
+                            <span className="text-[9px] text-slate-500 dark:text-slate-400 font-medium">
+                              Recommended
                             </span>
                           )}
                         </div>
@@ -624,8 +619,8 @@ export default function PrintSettings() {
                     </div>
 
                     {isSelected && (
-                      <span className="material-symbols-outlined text-sm text-blue-600 shrink-0">
-                        check_circle
+                      <span className="material-symbols-outlined text-[16px] text-blue-600 dark:text-blue-400 shrink-0">
+                        check
                       </span>
                     )}
                   </div>
@@ -637,77 +632,77 @@ export default function PrintSettings() {
           {/* ------------------------------------------------------------ */}
           {/* PANEL 2: CENTER LIVE A4 INTERACTIVE PREVIEW (Col 5/12)       */}
           {/* ------------------------------------------------------------ */}
-          <main className="col-span-12 lg:col-span-5 bg-slate-200/80 dark:bg-slate-950/90 rounded-2xl p-4 border border-slate-300/80 dark:border-slate-800 flex flex-col h-[780px] overflow-hidden shadow-inner">
+          <main className="col-span-12 lg:col-span-5 bg-slate-100/90 dark:bg-slate-950 rounded-xl p-4 border border-slate-200/90 dark:border-slate-800 flex flex-col h-[800px] overflow-hidden shadow-xs">
             
             {/* Preview Toolbar */}
-            <div className="flex items-center justify-between pb-3 mb-2 border-b border-slate-300 dark:border-slate-800 flex-wrap gap-2 shrink-0">
+            <div className="flex items-center justify-between pb-3 mb-2 border-b border-slate-200 dark:border-slate-800 flex-wrap gap-2 shrink-0">
               <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                <span className="text-xs font-black text-slate-700 dark:text-slate-200 tracking-tight">
-                  LIVE A4 DIGITAL TWIN
-                </span>
-                <span className="text-[10px] bg-white dark:bg-slate-800 px-2 py-0.5 rounded border border-slate-300 dark:border-slate-700 font-mono font-bold text-slate-600 dark:text-slate-300">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 tracking-tight truncate max-w-[140px]">
                   {currentDocMeta.name}
+                </span>
+                <span className="text-[10px] bg-white dark:bg-slate-800 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700 font-mono text-slate-600 dark:text-slate-400">
+                  {activeLayout.paperSize || 'A4'} • {activeLayout.orientation || 'portrait'}
                 </span>
               </div>
 
               {/* Zoom & Quick Print Controls */}
               <div className="flex items-center gap-1.5">
-                <div className="flex items-center bg-white dark:bg-slate-800 rounded-lg border border-slate-300 dark:border-slate-700 p-0.5">
+                <div className="inline-flex items-center bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 p-0.5 h-7">
                   <button
                     onClick={() => setZoomScale(0.75)}
-                    className={`px-2 py-0.5 text-[10px] font-bold rounded ${zoomScale === 0.75 ? 'bg-blue-600 text-white' : 'text-slate-600 dark:text-slate-300'}`}
+                    className={`px-2 py-0.5 text-[10px] font-medium rounded transition-colors ${zoomScale === 0.75 ? 'bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 font-semibold' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'}`}
                   >
                     75%
                   </button>
                   <button
                     onClick={() => setZoomScale(1)}
-                    className={`px-2 py-0.5 text-[10px] font-bold rounded ${zoomScale === 1 ? 'bg-blue-600 text-white' : 'text-slate-600 dark:text-slate-300'}`}
+                    className={`px-2 py-0.5 text-[10px] font-medium rounded transition-colors ${zoomScale === 1 ? 'bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 font-semibold' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'}`}
                   >
                     100%
                   </button>
                   <button
                     onClick={() => setZoomScale(1.15)}
-                    className={`px-2 py-0.5 text-[10px] font-bold rounded ${zoomScale === 1.15 ? 'bg-blue-600 text-white' : 'text-slate-600 dark:text-slate-300'}`}
+                    className={`px-2 py-0.5 text-[10px] font-medium rounded transition-colors ${zoomScale === 1.15 ? 'bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 font-semibold' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'}`}
                   >
                     115%
                   </button>
                 </div>
 
-                {/* Print & Export Strip */}
+                {/* Print & Export Strip (Clean, uniform, monochromatic) */}
                 <button
                   onClick={handlePrintTest}
-                  className="p-1.5 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 rounded-lg border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200"
+                  className="h-7 w-7 flex items-center justify-center rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-colors cursor-pointer"
                   title="Print Document"
                 >
-                  <span className="material-symbols-outlined text-sm">print</span>
+                  <span className="material-symbols-outlined text-[16px]">print</span>
                 </button>
 
                 <button
                   onClick={handleExportPdf}
                   disabled={exporting === 'pdf'}
-                  className="p-1.5 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 rounded-lg border border-slate-300 dark:border-slate-700 text-red-600 dark:text-red-400"
+                  className="h-7 w-7 flex items-center justify-center rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-colors cursor-pointer disabled:opacity-50"
                   title="Download High-Res PDF"
                 >
-                  <span className="material-symbols-outlined text-sm">picture_as_pdf</span>
+                  <span className="material-symbols-outlined text-[16px]">picture_as_pdf</span>
                 </button>
 
                 <button
                   onClick={handleExportImage}
                   disabled={exporting === 'img'}
-                  className="p-1.5 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 rounded-lg border border-slate-300 dark:border-slate-700 text-emerald-600 dark:text-emerald-400"
+                  className="h-7 w-7 flex items-center justify-center rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-colors cursor-pointer disabled:opacity-50"
                   title="Download High-Res Image"
                 >
-                  <span className="material-symbols-outlined text-sm">image</span>
+                  <span className="material-symbols-outlined text-[16px]">image</span>
                 </button>
 
                 <button
                   onClick={handleExportCsv}
                   disabled={exporting === 'csv'}
-                  className="p-1.5 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 rounded-lg border border-slate-300 dark:border-slate-700 text-blue-600 dark:text-blue-400"
-                  title="Download CSV"
+                  className="h-7 w-7 flex items-center justify-center rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-colors cursor-pointer disabled:opacity-50"
+                  title="Export CSV"
                 >
-                  <span className="material-symbols-outlined text-sm">table_view</span>
+                  <span className="material-symbols-outlined text-[16px]">table_view</span>
                 </button>
               </div>
             </div>
@@ -715,7 +710,11 @@ export default function PrintSettings() {
             {/* Scrollable Paper Canvas */}
             <div 
               ref={previewContainerRef}
-              className="flex-1 overflow-y-auto overflow-x-hidden p-2 flex justify-center items-start scrollbar-thin"
+              className="flex-1 overflow-y-auto overflow-x-hidden p-4 flex justify-center items-start scrollbar-thin"
+              style={{
+                backgroundImage: 'radial-gradient(rgba(0,0,0,0.06) 1px, transparent 1px)',
+                backgroundSize: '20px 20px'
+              }}
             >
               <div style={{ transform: `scale(${zoomScale})`, transformOrigin: 'top center', transition: 'transform 0.15s ease' }}>
                 <UnifiedPrintDocument
@@ -734,36 +733,13 @@ export default function PrintSettings() {
           {/* ------------------------------------------------------------ */}
           <aside className="col-span-12 lg:col-span-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-sm flex flex-col h-[780px] overflow-hidden">
             
-            {/* Top Sub-Tab Navigation Strip */}
-            <div className="grid grid-cols-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/60 p-1 gap-1">
+            {/* Top Sub-Tab Navigation Strip - Sleek horizontal scrollable pill bar */}
+            <div className="flex items-center gap-1 overflow-x-auto no-scrollbar border-b border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/60 p-1.5 shrink-0">
               {[
                 { id: 'themes', label: 'Themes', icon: 'style' },
-                { id: 'palette', label: 'Colors & Fonts', icon: 'palette' },
+                { id: 'palette', label: 'Palette & Fonts', icon: 'palette' },
                 { id: 'paper', label: 'Paper & Margins', icon: 'aspect_ratio' },
                 { id: 'header', label: 'Headers', icon: 'view_headline' },
-                { id: 'columns', label: 'Columns', icon: 'view_column' },
-                { id: 'floor', label: 'Shop Floor', icon: 'precision_manufacturing' },
-                { id: 'totals', label: 'Totals & Sign', icon: 'calculate' },
-                { id: 'inspect', label: 'Presets', icon: 'tune' }
-              ].slice(0, 4).map((tab) => (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveRightTab(tab.id)}
-                  className={`py-2 px-1 rounded-xl text-[11px] font-bold transition-all flex flex-col items-center gap-0.5 ${
-                    activeRightTab === tab.id
-                      ? 'bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-400 shadow-sm'
-                      : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-                  }`}
-                >
-                  <span className="material-symbols-outlined text-base">{tab.icon}</span>
-                  {tab.label}
-                </button>
-              ))}
-            </div>
-
-            {/* Second row of sub-tabs */}
-            <div className="grid grid-cols-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/60 p-1 gap-1">
-              {[
                 { id: 'columns', label: 'Columns', icon: 'view_column' },
                 { id: 'floor', label: 'Shop Floor', icon: 'precision_manufacturing' },
                 { id: 'totals', label: 'Totals & Sign', icon: 'calculate' },
@@ -772,36 +748,36 @@ export default function PrintSettings() {
                 <button
                   key={tab.id}
                   onClick={() => setActiveRightTab(tab.id)}
-                  className={`py-2 px-1 rounded-xl text-[11px] font-bold transition-all flex flex-col items-center gap-0.5 ${
+                  className={`whitespace-nowrap px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 shrink-0 ${
                     activeRightTab === tab.id
-                      ? 'bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-400 shadow-sm'
-                      : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                      ? 'bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-400 font-semibold shadow-xs border border-slate-200/90 dark:border-slate-700'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-100/70 dark:hover:bg-slate-800/40'
                   }`}
                 >
-                  <span className="material-symbols-outlined text-base">{tab.icon}</span>
-                  {tab.label}
+                  <span className="material-symbols-outlined text-[15px]">{tab.icon}</span>
+                  <span>{tab.label}</span>
                 </button>
               ))}
             </div>
 
             {/* Scrollable Tab Content */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-5">
+            <div className="flex-1 overflow-y-auto p-4 space-y-4">
               
               {/* ========================================================== */}
               {/* TAB 1: THEMES (3 DEDICATED ARCHETYPES)                      */}
               {/* ========================================================== */}
               {activeRightTab === 'themes' && (
-                <div className="space-y-4 animate-fade-in">
+                <div className="space-y-3.5 animate-fade-in">
                   <div>
-                    <span className="text-xs font-black uppercase tracking-wider text-slate-400 block mb-1">
-                      Choose Document Archetype Theme
+                    <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 block mb-0.5">
+                      Document Archetype
                     </span>
-                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                      Select one of the 3 professionally engineered enterprise themes:
+                    <p className="text-xs text-slate-600 dark:text-slate-400">
+                      Select one of the 3 engineered enterprise themes for this document:
                     </p>
                   </div>
 
-                  <div className="space-y-3">
+                  <div className="space-y-2.5">
                     {Object.values(THEME_ARCHETYPES).map((theme) => {
                       const isCurrent = (activeLayout.activeTheme || 'classic') === theme.id;
                       const isRecommended = theme.id === getDefaultThemeForDoc(selectedDocId);
@@ -810,37 +786,38 @@ export default function PrintSettings() {
                         <div
                           key={theme.id}
                           onClick={() => handleThemeChange(theme.id)}
-                          className={`p-3.5 rounded-2xl border cursor-pointer transition-all ${
+                          className={`p-3.5 rounded-xl border cursor-pointer transition-all ${
                             isCurrent
-                              ? 'bg-blue-50/80 dark:bg-blue-950/40 border-blue-500 ring-2 ring-blue-500/30 shadow-md'
-                              : 'bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
+                              ? 'bg-blue-50/50 dark:bg-blue-950/20 border-blue-500 ring-1 ring-blue-500/20 shadow-xs'
+                              : 'bg-white dark:bg-slate-800/40 border-slate-200/90 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 hover:bg-slate-50/40'
                           }`}
                         >
-                          <div className="flex items-start justify-between gap-2 mb-1">
+                          <div className="flex items-center justify-between gap-2 mb-1.5">
                             <div className="flex items-center gap-2">
-                              <span className={`material-symbols-outlined text-lg ${isCurrent ? 'text-blue-600 dark:text-blue-400' : 'text-slate-500'}`}>
+                              <span className={`material-symbols-outlined text-[18px] ${isCurrent ? 'text-blue-600 dark:text-blue-400' : 'text-slate-500 dark:text-slate-400'}`}>
                                 {theme.icon}
                               </span>
-                              <h3 className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-tight">
+                              <h4 data-keep-color="true" className="text-xs font-semibold text-slate-900 dark:text-slate-100 uppercase tracking-tight">
                                 {theme.name}
-                              </h3>
+                              </h4>
                             </div>
                             {isRecommended && (
-                              <span className="px-2 py-0.5 rounded-full text-[9px] font-extrabold bg-amber-100 text-amber-800 border border-amber-300">
-                                Recommended for this doc
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200/80 dark:border-blue-800/80">
+                                <span className="w-1.5 h-1.5 rounded-full bg-blue-600 dark:bg-blue-400" />
+                                Recommended
                               </span>
                             )}
                           </div>
 
-                          <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed mb-2">
+                          <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed mb-2.5">
                             {theme.tagline}
                           </p>
 
-                          <div className="flex items-center justify-between text-[10px] text-slate-400 font-medium pt-2 border-t border-slate-200/60 dark:border-slate-700">
-                            <span>Best for: <strong className="text-slate-600 dark:text-slate-300">{theme.bestFor.split(',')[0]}</strong></span>
+                          <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 pt-2 border-t border-slate-100 dark:border-slate-800">
+                            <span>Best for: <strong className="text-slate-700 dark:text-slate-300 font-medium">{theme.bestFor.split(',')[0]}</strong></span>
                             {isCurrent && (
-                              <span className="text-blue-600 dark:text-blue-400 font-bold flex items-center gap-0.5">
-                                <span className="material-symbols-outlined text-xs">done</span> Active
+                              <span className="text-blue-600 dark:text-blue-400 font-semibold text-[11px] flex items-center gap-1">
+                                <span className="material-symbols-outlined text-[14px]">check_circle</span> Selected
                               </span>
                             )}
                           </div>
@@ -855,13 +832,13 @@ export default function PrintSettings() {
               {/* TAB 2: PALETTE & TYPOGRAPHY                                 */}
               {/* ========================================================== */}
               {activeRightTab === 'palette' && (
-                <div className="space-y-5 animate-fade-in">
+                <div className="space-y-4 animate-fade-in">
                   <div>
-                    <span className="text-xs font-black uppercase tracking-wider text-slate-400 block mb-1">
-                      Certified WCAG 2.1 AA/AAA Palettes
+                    <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 block mb-0.5">
+                      WCAG 2.1 AA/AAA Palettes
                     </span>
-                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-3">
-                      Safe, high-contrast combinations tested for crystal-clear readability:
+                    <p className="text-xs text-slate-600 dark:text-slate-400 mb-2.5">
+                      High-contrast ink profiles verified for razor-sharp physical printouts:
                     </p>
 
                     <div className="grid grid-cols-1 gap-2">
@@ -873,30 +850,30 @@ export default function PrintSettings() {
                             onClick={() => handlePaletteChange(pal)}
                             className={`p-2.5 rounded-xl border cursor-pointer transition-all flex items-center justify-between gap-3 ${
                               isCurrent
-                                ? 'bg-blue-50/80 dark:bg-blue-950/40 border-blue-500 ring-2 ring-blue-500/20'
-                                : 'bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700 hover:border-slate-300'
+                                ? 'bg-blue-50/50 dark:bg-blue-950/20 border-blue-500 ring-1 ring-blue-500/20 shadow-xs'
+                                : 'bg-white dark:bg-slate-800/40 border-slate-200/90 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
                             }`}
                           >
-                            <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-2.5 min-w-0">
                               {/* Swatch preview */}
-                              <div className="flex items-center rounded-lg overflow-hidden border border-slate-300 shadow-sm">
-                                <div className="w-6 h-6 flex items-center justify-center font-bold text-[9px]" style={{ backgroundColor: pal.headerBg, color: pal.headerText }}>
+                              <div className="flex items-center rounded-md overflow-hidden border border-slate-200 dark:border-slate-700 shadow-xs shrink-0">
+                                <div className="w-5 h-5 flex items-center justify-center font-bold text-[9px]" style={{ backgroundColor: pal.headerBg, color: pal.headerText }}>
                                   H
                                 </div>
-                                <div className="w-4 h-6" style={{ backgroundColor: pal.primary }} />
+                                <div className="w-3.5 h-5" style={{ backgroundColor: pal.primary }} />
                               </div>
-                              <div>
-                                <span className="text-xs font-bold text-slate-900 dark:text-white block leading-tight">
+                              <div className="min-w-0">
+                                <span className="text-xs font-semibold text-slate-900 dark:text-slate-100 truncate block">
                                   {pal.name}
                                 </span>
-                                <span className="text-[10px] text-slate-500 leading-tight">
+                                <span className="text-[10.5px] text-slate-500 dark:text-slate-400 truncate block">
                                   {pal.description.split('with')[0]}
                                 </span>
                               </div>
                             </div>
 
-                            <span className="text-[9px] font-mono bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded font-bold">
-                              WCAG AAA
+                            <span className="text-[9.5px] font-mono font-semibold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border border-emerald-200/80 dark:border-emerald-800/60 px-1.5 py-0.5 rounded shrink-0">
+                              AAA
                             </span>
                           </div>
                         );
@@ -905,14 +882,14 @@ export default function PrintSettings() {
                   </div>
 
                   {/* Typography Font Selector */}
-                  <div className="pt-3 border-t border-slate-200 dark:border-slate-800">
-                    <label className="text-xs font-bold text-slate-700 dark:text-slate-200 block mb-1">
-                      Document Typography Font
+                  <div className="pt-3 border-t border-slate-200/80 dark:border-slate-800">
+                    <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                      Typography Font Family
                     </label>
                     <select
                       value={activeLayout.fontFamily || 'Inter'}
                       onChange={(e) => updateActiveLayout({ fontFamily: e.target.value })}
-                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 dark:text-slate-100"
+                      className="w-full h-9 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 text-xs font-medium text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500/40 focus:border-blue-500 shadow-xs"
                     >
                       {FONT_FAMILIES.map((font) => (
                         <option key={font.id} value={font.id}>
@@ -924,13 +901,13 @@ export default function PrintSettings() {
 
                   {/* Base Text Size */}
                   <div>
-                    <label className="text-xs font-bold text-slate-700 dark:text-slate-200 block mb-1">
-                      Table & Body Font Size
+                    <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                      Body & Table Font Scale
                     </label>
                     <select
                       value={activeLayout.bodyFontSize || '11px'}
                       onChange={(e) => updateActiveLayout({ bodyFontSize: e.target.value })}
-                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 dark:text-slate-100"
+                      className="w-full h-9 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 text-xs font-medium text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500/40 focus:border-blue-500 shadow-xs"
                     >
                       <option value="9px">9px (Ultra Compact Shop-Floor)</option>
                       <option value="10px">10px (Compact Manufacturing Standard)</option>
@@ -947,13 +924,13 @@ export default function PrintSettings() {
               {activeRightTab === 'paper' && (
                 <div className="space-y-4 animate-fade-in">
                   <div>
-                    <label className="text-xs font-bold text-slate-700 dark:text-slate-200 block mb-1">
-                      Paper Format
+                    <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                      Paper Size Format
                     </label>
                     <select
                       value={activeLayout.paperSize || 'A4'}
                       onChange={(e) => updateActiveLayout({ paperSize: e.target.value })}
-                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 dark:text-slate-100"
+                      className="w-full h-9 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 text-xs font-medium text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500/40 focus:border-blue-500 shadow-xs"
                     >
                       <option value="A4">A4 (210 × 297 mm) — Standard International</option>
                       <option value="Letter">Letter (8.5 × 11 in) — North American Standard</option>
@@ -964,117 +941,115 @@ export default function PrintSettings() {
                   </div>
 
                   <div>
-                    <label className="text-xs font-bold text-slate-700 dark:text-slate-200 block mb-1">
+                    <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">
                       Orientation
                     </label>
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-2 gap-1.5 p-1 bg-slate-100 dark:bg-slate-800/80 rounded-xl border border-slate-200/80 dark:border-slate-700/80">
                       <button
                         onClick={() => updateActiveLayout({ orientation: 'portrait' })}
-                        className={`py-2 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 ${
+                        className={`h-8 rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 transition-all ${
                           (activeLayout.orientation || 'portrait') === 'portrait'
-                            ? 'bg-blue-600 text-white border-blue-600'
-                            : 'bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+                            ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 font-semibold shadow-xs border border-slate-200/60 dark:border-slate-700'
+                            : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
                         }`}
                       >
-                        <span className="material-symbols-outlined text-sm">portrait</span>
+                        <span className="material-symbols-outlined text-[16px]">portrait</span>
                         Portrait
                       </button>
                       <button
                         onClick={() => updateActiveLayout({ orientation: 'landscape' })}
-                        className={`py-2 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 ${
+                        className={`h-8 rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 transition-all ${
                           activeLayout.orientation === 'landscape'
-                            ? 'bg-blue-600 text-white border-blue-600'
-                            : 'bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+                            ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 font-semibold shadow-xs border border-slate-200/60 dark:border-slate-700'
+                            : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
                         }`}
                       >
-                        <span className="material-symbols-outlined text-sm">landscape</span>
+                        <span className="material-symbols-outlined text-[16px]">landscape</span>
                         Landscape
                       </button>
                     </div>
                   </div>
 
                   {/* Margins */}
-                  <div className="pt-2 border-t border-slate-200 dark:border-slate-800">
-                    <label className="text-xs font-bold text-slate-700 dark:text-slate-200 block mb-2">
-                      Paper Margins (Top, Bottom, Left, Right)
+                  <div className="pt-3 border-t border-slate-200/80 dark:border-slate-800">
+                    <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-2">
+                      Print Page Margins
                     </label>
                     <div className="grid grid-cols-2 gap-2 text-xs">
                       <div>
-                        <span className="text-[10px] text-slate-400 block mb-1">Top Margin:</span>
+                        <span className="text-[10.5px] text-slate-500 dark:text-slate-400 block mb-1">Top Margin:</span>
                         <input
                           type="text"
                           value={activeLayout.marginTop || '12mm'}
                           onChange={(e) => updateActiveLayout({ marginTop: e.target.value })}
-                          className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-2.5 py-1.5 font-mono text-xs"
+                          className="w-full h-8 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 font-mono tabular-nums text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500/40 focus:border-blue-500"
                         />
                       </div>
                       <div>
-                        <span className="text-[10px] text-slate-400 block mb-1">Bottom Margin:</span>
+                        <span className="text-[10.5px] text-slate-500 dark:text-slate-400 block mb-1">Bottom Margin:</span>
                         <input
                           type="text"
                           value={activeLayout.marginBottom || '12mm'}
                           onChange={(e) => updateActiveLayout({ marginBottom: e.target.value })}
-                          className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-2.5 py-1.5 font-mono text-xs"
+                          className="w-full h-8 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 font-mono tabular-nums text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500/40 focus:border-blue-500"
                         />
                       </div>
                       <div>
-                        <span className="text-[10px] text-slate-400 block mb-1">Left Margin:</span>
+                        <span className="text-[10.5px] text-slate-500 dark:text-slate-400 block mb-1">Left Margin:</span>
                         <input
                           type="text"
                           value={activeLayout.marginLeft || '12mm'}
                           onChange={(e) => updateActiveLayout({ marginLeft: e.target.value })}
-                          className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-2.5 py-1.5 font-mono text-xs"
+                          className="w-full h-8 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 font-mono tabular-nums text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500/40 focus:border-blue-500"
                         />
                       </div>
                       <div>
-                        <span className="text-[10px] text-slate-400 block mb-1">Right Margin:</span>
+                        <span className="text-[10.5px] text-slate-500 dark:text-slate-400 block mb-1">Right Margin:</span>
                         <input
                           type="text"
                           value={activeLayout.marginRight || '12mm'}
                           onChange={(e) => updateActiveLayout({ marginRight: e.target.value })}
-                          className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-2.5 py-1.5 font-mono text-xs"
+                          className="w-full h-8 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 font-mono tabular-nums text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500/40 focus:border-blue-500"
                         />
                       </div>
                     </div>
                   </div>
 
                   {/* Multi-Page Row Limits */}
-                  <div className="pt-3 border-t border-slate-200 dark:border-slate-800 space-y-2.5">
+                  <div className="pt-3 border-t border-slate-200/80 dark:border-slate-800 space-y-2">
                     <div>
-                      <label className="text-xs font-bold text-slate-800 dark:text-slate-100 block mb-0.5">
+                      <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-0.5">
                         Table Row Limits per Page
                       </label>
                       <p className="text-[10.5px] text-slate-500 dark:text-slate-400">
-                        Line-item pagination rules for line items and tables across multiple pages
+                        Line-item pagination rules for multi-page tables
                       </p>
                     </div>
                     <div className="grid grid-cols-2 gap-2 text-xs">
-                      <div className="bg-slate-50 dark:bg-slate-800/80 p-2.5 rounded-xl border border-slate-200 dark:border-slate-700">
-                        <label className="text-[11px] font-bold text-slate-700 dark:text-slate-200 block mb-0.5">
-                          Rows on first page
+                      <div className="bg-slate-50 dark:bg-slate-800/50 p-2.5 rounded-xl border border-slate-200/80 dark:border-slate-700">
+                        <label className="text-[11px] font-medium text-slate-700 dark:text-slate-300 block mb-0.5">
+                          First page max rows
                         </label>
-                        <span className="text-[9.5px] text-slate-400 block mb-1.5 leading-tight">(max line-item rows rendered on page 1)</span>
                         <input
                           type="number"
                           min="1"
                           max="200"
                           value={activeLayout.firstPageRows ?? 20}
                           onChange={(e) => updateActiveLayout({ firstPageRows: Math.max(1, parseInt(e.target.value, 10) || 1) })}
-                          className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg px-2.5 py-1.5 font-mono font-bold text-xs"
+                          className="w-full h-8 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 font-mono tabular-nums font-semibold text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500/40 focus:border-blue-500"
                         />
                       </div>
-                      <div className="bg-slate-50 dark:bg-slate-800/80 p-2.5 rounded-xl border border-slate-200 dark:border-slate-700">
-                        <label className="text-[11px] font-bold text-slate-700 dark:text-slate-200 block mb-0.5">
-                          Rows on following pages
+                      <div className="bg-slate-50 dark:bg-slate-800/50 p-2.5 rounded-xl border border-slate-200/80 dark:border-slate-700">
+                        <label className="text-[11px] font-medium text-slate-700 dark:text-slate-300 block mb-0.5">
+                          Following pages max
                         </label>
-                        <span className="text-[9.5px] text-slate-400 block mb-1.5 leading-tight">(max line-item rows on page 2, 3, ...)</span>
                         <input
                           type="number"
                           min="1"
                           max="200"
                           value={activeLayout.continuationPageRows ?? 25}
                           onChange={(e) => updateActiveLayout({ continuationPageRows: Math.max(1, parseInt(e.target.value, 10) || 1) })}
-                          className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg px-2.5 py-1.5 font-mono font-bold text-xs"
+                          className="w-full h-8 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 font-mono tabular-nums font-semibold text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500/40 focus:border-blue-500"
                         />
                       </div>
                     </div>
@@ -1088,34 +1063,34 @@ export default function PrintSettings() {
               {activeRightTab === 'header' && (
                 <div className="space-y-4 animate-fade-in">
                   {/* Company Logo Configuration Section */}
-                  <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 space-y-3">
+                  <div className="p-3.5 rounded-xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-800/40 space-y-3">
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
-                        <span className="material-symbols-outlined text-sm text-blue-500">branding_watermark</span>
-                        Company Logo & Header
+                      <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                        <span className="material-symbols-outlined text-[15px] text-blue-600 dark:text-blue-400">branding_watermark</span>
+                        Company Logo
                       </span>
                       <label className="flex items-center gap-1.5 cursor-pointer">
                         <input
                           type="checkbox"
                           checked={activeLayout.showHeaderLogo !== false}
                           onChange={(e) => updateActiveLayout({ showHeaderLogo: e.target.checked })}
-                          className="rounded text-blue-600 cursor-pointer"
+                          className="w-3.5 h-3.5 rounded text-blue-600 border-slate-300 focus:ring-blue-500 cursor-pointer"
                         />
-                        <span className="text-xs font-bold text-slate-600 dark:text-slate-300">Show Logo</span>
+                        <span className="text-xs font-medium text-slate-600 dark:text-slate-300">Show on Print</span>
                       </label>
                     </div>
 
                     {/* Logo Preview or Clean Omission notice */}
-                    <div className="flex items-center gap-4 bg-white dark:bg-slate-900 p-3 rounded-lg border border-slate-200 dark:border-slate-800">
+                    <div className="bg-slate-50 dark:bg-slate-900/60 p-2.5 rounded-lg border border-slate-200/80 dark:border-slate-800">
                       {activeLayout.logoUrl || companyLogo ? (
                         <div className="flex items-center gap-3">
                           <img
                             src={activeLayout.logoUrl || companyLogo}
                             alt="Company Logo Preview"
-                            className="h-12 max-h-12 max-w-[120px] object-contain rounded border border-slate-200 dark:border-slate-700 p-1 bg-white"
+                            className="h-10 max-h-10 max-w-[120px] object-contain rounded border border-slate-200 dark:border-slate-700 p-1 bg-white"
                           />
-                          <div className="text-[11px] space-y-1">
-                            <p className="font-bold text-slate-800 dark:text-slate-100">Logo Active</p>
+                          <div className="text-xs space-y-0.5">
+                            <p className="font-semibold text-slate-800 dark:text-slate-200">Logo Active</p>
                             <button
                               type="button"
                               onClick={() => {
@@ -1124,24 +1099,24 @@ export default function PrintSettings() {
                                   setCollection('adminSetup', { ...(state?.adminSetup || {}), logo: '', logoUrl: '' });
                                 }
                               }}
-                              className="text-[10px] font-bold text-red-600 hover:underline cursor-pointer"
+                              className="text-[11px] font-medium text-rose-600 hover:text-rose-700 cursor-pointer"
                             >
                               Remove Logo
                             </button>
                           </div>
                         </div>
                       ) : (
-                        <div className="text-xs text-slate-400 italic flex items-center gap-2">
-                          <span className="material-symbols-outlined text-base text-slate-400">hide_image</span>
-                          No logo configured (Clean omission on prints — never a placeholder box).
+                        <div className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-2">
+                          <span className="material-symbols-outlined text-[16px] text-slate-400">hide_image</span>
+                          <span>No logo configured — clean omission on prints (no placeholder box).</span>
                         </div>
                       )}
                     </div>
 
                     {/* Upload New Logo */}
-                    <div className="space-y-1.5">
-                      <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300">
-                        Upload Logo (PNG, JPG, SVG, WebP):
+                    <div className="space-y-1">
+                      <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-400">
+                        Upload Logo File (PNG, JPG, SVG, WebP):
                       </label>
                       <input
                         type="file"
@@ -1165,20 +1140,20 @@ export default function PrintSettings() {
                           };
                           reader.readAsDataURL(file);
                         }}
-                        className="w-full text-xs text-slate-500 file:mr-2 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer"
+                        className="w-full text-xs text-slate-500 file:mr-2 file:py-1 file:px-2.5 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-slate-100 hover:file:bg-slate-200 file:text-slate-700 dark:file:bg-slate-800 dark:file:text-slate-200 cursor-pointer"
                       />
                     </div>
 
                     {/* Logo Size and Position Controls */}
-                    <div className="grid grid-cols-2 gap-3 pt-1">
+                    <div className="grid grid-cols-2 gap-2.5 pt-1">
                       <div>
-                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                        <label className="block text-[10.5px] font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">
                           Logo Size
                         </label>
                         <select
                           value={activeLayout.logoSize || 'medium'}
                           onChange={(e) => updateActiveLayout({ logoSize: e.target.value })}
-                          className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-2 py-1 text-xs font-semibold"
+                          className="w-full h-8 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2 text-xs font-medium text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500/40 focus:border-blue-500"
                         >
                           <option value="small">Small (32px)</option>
                           <option value="medium">Medium (48px)</option>
@@ -1188,13 +1163,13 @@ export default function PrintSettings() {
                       </div>
 
                       <div>
-                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                          Logo Position
+                        <label className="block text-[10.5px] font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">
+                          Alignment
                         </label>
                         <select
                           value={activeLayout.logoPosition || 'left'}
                           onChange={(e) => updateActiveLayout({ logoPosition: e.target.value })}
-                          className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-2 py-1 text-xs font-semibold"
+                          className="w-full h-8 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2 text-xs font-medium text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500/40 focus:border-blue-500"
                         >
                           <option value="left">Left Aligned</option>
                           <option value="center">Center</option>
@@ -1205,11 +1180,11 @@ export default function PrintSettings() {
                   </div>
 
                   <div>
-                    <span className="text-xs font-black uppercase tracking-wider text-slate-400 block mb-1">
+                    <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 block mb-0.5">
                       Header Metadata Fields
                     </span>
-                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-3">
-                      Toggle, rename, and set grid width for document header fields:
+                    <p className="text-xs text-slate-600 dark:text-slate-400 mb-2.5">
+                      Toggle, rename, and set grid layout for header information blocks:
                     </p>
                   </div>
 
@@ -1217,10 +1192,10 @@ export default function PrintSettings() {
                     {(activeLayout.headerFields || []).map((field) => (
                       <div
                         key={field.key}
-                        className={`p-3 rounded-xl border space-y-2 transition-all ${
+                        className={`p-2.5 rounded-xl border space-y-2 transition-all ${
                           field.enabled !== false
-                            ? 'bg-slate-50 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700'
-                            : 'bg-slate-50/40 dark:bg-slate-900/40 border-slate-200/60 opacity-60'
+                            ? 'bg-white dark:bg-slate-800/40 border-slate-200/90 dark:border-slate-800'
+                            : 'bg-slate-50/50 dark:bg-slate-900/40 border-slate-200/50 dark:border-slate-800/40 opacity-60'
                         }`}
                       >
                         <div className="flex items-center justify-between gap-2">
@@ -1229,9 +1204,9 @@ export default function PrintSettings() {
                               type="checkbox"
                               checked={field.enabled !== false}
                               onChange={() => toggleHeaderField(field.key)}
-                              className="rounded text-blue-600 cursor-pointer"
+                              className="w-3.5 h-3.5 rounded text-blue-600 border-slate-300 focus:ring-blue-500 cursor-pointer"
                             />
-                            <span className="text-xs font-bold text-slate-800 dark:text-slate-100">
+                            <span className="text-xs font-semibold text-slate-800 dark:text-slate-200">
                               {field.key}
                             </span>
                           </label>
@@ -1239,7 +1214,7 @@ export default function PrintSettings() {
                           <select
                             value={field.width || 'span-1'}
                             onChange={(e) => updateHeaderFieldProp(field.key, 'width', e.target.value)}
-                            className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-2 py-0.5 text-[10px] font-semibold text-slate-700 dark:text-slate-300"
+                            className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-md px-2 py-0.5 text-[10.5px] font-medium text-slate-700 dark:text-slate-300"
                           >
                             <option value="span-1">1 Col</option>
                             <option value="span-2">2 Cols</option>
@@ -1251,7 +1226,7 @@ export default function PrintSettings() {
                           type="text"
                           value={field.label || field.key}
                           onChange={(e) => updateHeaderFieldProp(field.key, 'label', e.target.value)}
-                          className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-2.5 py-1 text-xs font-medium text-slate-800 dark:text-slate-100"
+                          className="w-full h-8 bg-slate-50/60 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500/40 focus:border-blue-500"
                           placeholder="Display Label"
                         />
                       </div>
@@ -1264,19 +1239,19 @@ export default function PrintSettings() {
               {/* TAB 5: TABLE COLUMNS                                       */}
               {/* ========================================================== */}
               {activeRightTab === 'columns' && (
-                <div className="space-y-4 animate-fade-in">
+                <div className="space-y-3.5 animate-fade-in">
                   <div className="flex items-center justify-between">
                     <div>
-                      <span className="text-xs font-black uppercase tracking-wider text-slate-400 block mb-0.5">
+                      <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 block mb-0.5">
                         Table Columns
                       </span>
-                      <p className="text-[11px] text-slate-500">Reorder, rename, align, and resize columns:</p>
+                      <p className="text-xs text-slate-600 dark:text-slate-400">Reorder, rename, align, and size columns:</p>
                     </div>
                     <button
                       onClick={handleAddCustomColumn}
-                      className="px-2.5 py-1 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 flex items-center gap-1 shadow-sm"
+                      className="h-7 px-2.5 bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:hover:bg-white text-white dark:text-slate-900 rounded-lg text-xs font-semibold flex items-center gap-1 shadow-xs transition-colors"
                     >
-                      <span className="material-symbols-outlined text-xs">add</span> Add
+                      <span className="material-symbols-outlined text-[14px]">add</span> Add
                     </button>
                   </div>
 
@@ -1284,10 +1259,10 @@ export default function PrintSettings() {
                     {(activeLayout.gridColumns || []).map((col, idx) => (
                       <div
                         key={col.key || idx}
-                        className={`p-3 rounded-xl border space-y-2 transition-all ${
+                        className={`p-2.5 rounded-xl border space-y-2 transition-all ${
                           col.enabled !== false
-                            ? 'bg-slate-50 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700'
-                            : 'bg-slate-50/40 dark:bg-slate-900/40 border-slate-200/60 opacity-60'
+                            ? 'bg-white dark:bg-slate-800/40 border-slate-200/90 dark:border-slate-800'
+                            : 'bg-slate-50/50 dark:bg-slate-900/40 border-slate-200/50 dark:border-slate-800/40 opacity-60'
                         }`}
                       >
                         <div className="flex items-center justify-between gap-2">
@@ -1296,29 +1271,29 @@ export default function PrintSettings() {
                               type="checkbox"
                               checked={col.enabled !== false}
                               onChange={() => toggleColumnVisibility(idx)}
-                              className="rounded text-blue-600 cursor-pointer"
+                              className="w-3.5 h-3.5 rounded text-blue-600 border-slate-300 focus:ring-blue-500 cursor-pointer"
                             />
-                            <span className="text-xs font-bold text-slate-800 dark:text-slate-100 truncate">
+                            <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate">
                               {col.key}
                             </span>
                           </label>
 
-                          <div className="flex items-center gap-1">
+                          <div className="flex items-center gap-0.5">
                             <button
                               onClick={() => moveColumn(idx, -1)}
                               disabled={idx === 0}
-                              className="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-30"
+                              className="p-1 rounded text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30 disabled:hover:bg-transparent"
                               title="Move Up"
                             >
-                              <span className="material-symbols-outlined text-xs">arrow_upward</span>
+                              <span className="material-symbols-outlined text-[15px]">arrow_upward</span>
                             </button>
                             <button
                               onClick={() => moveColumn(idx, 1)}
                               disabled={idx === (activeLayout.gridColumns?.length || 1) - 1}
-                              className="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-30"
+                              className="p-1 rounded text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30 disabled:hover:bg-transparent"
                               title="Move Down"
                             >
-                              <span className="material-symbols-outlined text-xs">arrow_downward</span>
+                              <span className="material-symbols-outlined text-[15px]">arrow_downward</span>
                             </button>
                           </div>
                         </div>
@@ -1328,29 +1303,30 @@ export default function PrintSettings() {
                             type="text"
                             value={col.label || col.key}
                             onChange={(e) => updateColumnProperty(idx, 'label', e.target.value)}
-                            className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-2 py-1 text-xs font-medium"
+                            className="h-8 bg-slate-50/60 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500/40 focus:border-blue-500"
                             placeholder="Header Title"
                           />
-                          <div className="flex items-center gap-1">
+                          <div className="flex items-center gap-1.5">
                             <input
                               type="text"
                               value={col.width || '15%'}
                               onChange={(e) => updateColumnProperty(idx, 'width', e.target.value)}
-                              className="w-14 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-1.5 py-1 text-xs font-mono text-center"
+                              className="w-14 h-8 bg-slate-50/60 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-1.5 text-xs font-mono tabular-nums text-center text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500/40 focus:border-blue-500"
                               placeholder="Width"
                             />
-                            <div className="flex items-center border border-slate-300 dark:border-slate-700 rounded-lg overflow-hidden bg-white dark:bg-slate-900">
+                            <div className="flex items-center border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden bg-slate-100 dark:bg-slate-800/80 p-0.5">
                               {['left', 'center', 'right'].map((align) => (
                                 <button
                                   key={align}
                                   onClick={() => updateColumnProperty(idx, 'align', align)}
-                                  className={`px-1.5 py-1 text-[10px] font-bold ${
+                                  className={`px-1.5 py-0.5 text-[10px] font-semibold rounded ${
                                     (col.align || 'left') === align
-                                      ? 'bg-blue-600 text-white'
-                                      : 'text-slate-400 hover:text-slate-700'
+                                      ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs'
+                                      : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
                                   }`}
+                                  title={`Align ${align}`}
                                 >
-                                  {align[0].toUpperCase()}
+                                  {align === 'left' ? 'L' : align === 'center' ? 'C' : 'R'}
                                 </button>
                               ))}
                             </div>
@@ -1366,23 +1342,23 @@ export default function PrintSettings() {
               {/* TAB 6: SHOP FLOOR & MANUFACTURING CONTROLS                 */}
               {/* ========================================================== */}
               {activeRightTab === 'floor' && (
-                <div className="space-y-4 animate-fade-in">
+                <div className="space-y-3.5 animate-fade-in">
                   <div>
-                    <span className="text-xs font-black uppercase tracking-wider text-slate-400 block mb-1">
-                      Shop-Floor & Manufacturing Blocks
+                    <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 block mb-0.5">
+                      Shop-Floor Controls
                     </span>
-                    <p className="text-[11px] text-slate-500 mb-3">
-                      High-utility physical features for production lines, batch cards, and BOMs:
+                    <p className="text-xs text-slate-600 dark:text-slate-400 mb-2.5">
+                      Functional modules for factory floor execution, work orders, and batch tracking:
                     </p>
                   </div>
 
-                  <div className="space-y-3">
-                    <label className="p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 flex items-center justify-between cursor-pointer">
-                      <div>
-                        <span className="text-xs font-bold text-slate-900 dark:text-white block">
+                  <div className="space-y-2.5">
+                    <label className="p-3 rounded-xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-800/40 hover:bg-slate-50/50 dark:hover:bg-slate-800/60 flex items-center justify-between cursor-pointer transition-colors">
+                      <div className="pr-3">
+                        <span className="text-xs font-semibold text-slate-900 dark:text-white block">
                           Physical Checkbox Column [✓]
                         </span>
-                        <span className="text-[10px] text-slate-500">
+                        <span className="text-[11px] text-slate-500 dark:text-slate-400">
                           Adds printed square check-boxes for floor operator tick-offs
                         </span>
                       </div>
@@ -1390,16 +1366,16 @@ export default function PrintSettings() {
                         type="checkbox"
                         checked={activeLayout.enableFloorCheckboxes !== false}
                         onChange={(e) => updateActiveLayout({ enableFloorCheckboxes: e.target.checked })}
-                        className="w-4 h-4 rounded text-blue-600"
+                        className="w-4 h-4 rounded text-blue-600 border-slate-300 focus:ring-blue-500 cursor-pointer"
                       />
                     </label>
 
-                    <label className="p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 flex items-center justify-between cursor-pointer">
-                      <div>
-                        <span className="text-xs font-bold text-slate-900 dark:text-white block">
+                    <label className="p-3 rounded-xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-800/40 hover:bg-slate-50/50 dark:hover:bg-slate-800/60 flex items-center justify-between cursor-pointer transition-colors">
+                      <div className="pr-3">
+                        <span className="text-xs font-semibold text-slate-900 dark:text-white block">
                           Machine & Shift Allocation Matrix
                         </span>
-                        <span className="text-[10px] text-slate-500">
+                        <span className="text-[11px] text-slate-500 dark:text-slate-400">
                           Shows Line, Shift, Operator in-charge, and Target Yield
                         </span>
                       </div>
@@ -1407,16 +1383,16 @@ export default function PrintSettings() {
                         type="checkbox"
                         checked={activeLayout.showMachineAllocation !== false}
                         onChange={(e) => updateActiveLayout({ showMachineAllocation: e.target.checked })}
-                        className="w-4 h-4 rounded text-blue-600"
+                        className="w-4 h-4 rounded text-blue-600 border-slate-300 focus:ring-blue-500 cursor-pointer"
                       />
                     </label>
 
-                    <label className="p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 flex items-center justify-between cursor-pointer">
-                      <div>
-                        <span className="text-xs font-bold text-slate-900 dark:text-white block">
+                    <label className="p-3 rounded-xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-800/40 hover:bg-slate-50/50 dark:hover:bg-slate-800/60 flex items-center justify-between cursor-pointer transition-colors">
+                      <div className="pr-3">
+                        <span className="text-xs font-semibold text-slate-900 dark:text-white block">
                           Monochrome Ink-Saver Mode
                         </span>
-                        <span className="text-[10px] text-slate-500">
+                        <span className="text-[11px] text-slate-500 dark:text-slate-400">
                           Removes heavy header ink tints; safe for fast black-and-white laser printers
                         </span>
                       </div>
@@ -1428,7 +1404,7 @@ export default function PrintSettings() {
                           tableHeaderBgColor: e.target.checked ? '#FFFFFF' : '#004277',
                           tableHeaderTextColor: e.target.checked ? '#000000' : '#FFFFFF'
                         })}
-                        className="w-4 h-4 rounded text-blue-600"
+                        className="w-4 h-4 rounded text-blue-600 border-slate-300 focus:ring-blue-500 cursor-pointer"
                       />
                     </label>
                   </div>
@@ -1441,22 +1417,22 @@ export default function PrintSettings() {
               {activeRightTab === 'totals' && (
                 <div className="space-y-4 animate-fade-in">
                   <div>
-                    <span className="text-xs font-black uppercase tracking-wider text-slate-400 block mb-1">
-                      Totals & Summary Breakdown
+                    <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 block mb-0.5">
+                      Totals Breakdown
                     </span>
-                    <p className="text-[11px] text-slate-500 mb-3">
-                      Choose placement and breakdown items for the summary box:
+                    <p className="text-xs text-slate-600 dark:text-slate-400 mb-2.5">
+                      Configure summary position and signatory authorization blocks:
                     </p>
                   </div>
 
                   <div>
-                    <label className="text-xs font-bold text-slate-700 dark:text-slate-200 block mb-1">
+                    <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">
                       Totals Placement
                     </label>
                     <select
                       value={activeLayout.totalsPosition || 'last_page'}
                       onChange={(e) => updateActiveLayout({ totalsPosition: e.target.value })}
-                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 dark:text-slate-100"
+                      className="w-full h-9 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 text-xs font-medium text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500/40 focus:border-blue-500 shadow-xs"
                     >
                       <option value="last_page">Last Page Only (Standard Corporate)</option>
                       <option value="every_page">Every Page Bottom (Running Cumulative)</option>
@@ -1464,42 +1440,43 @@ export default function PrintSettings() {
                   </div>
 
                   {/* Signatures Manager */}
-                  <div className="pt-3 border-t border-slate-200 dark:border-slate-800">
+                  <div className="pt-3 border-t border-slate-200/80 dark:border-slate-800">
                     <div className="flex items-center justify-between mb-2">
-                      <span className="text-xs font-black uppercase tracking-wider text-slate-400">
-                        Signatures & Verification Blocks
+                      <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                        Signatures & Approvals
                       </span>
                       <button
                         onClick={handleAddSignature}
-                        className="text-xs font-bold text-blue-600 hover:text-blue-700 flex items-center gap-1"
+                        className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1"
                       >
-                        <span className="material-symbols-outlined text-xs">add</span> Add Signatory
+                        <span className="material-symbols-outlined text-[14px]">add</span> Add Signatory
                       </button>
                     </div>
 
                     <div className="space-y-2">
                       {(activeLayout.signatures || []).map((sig, sIdx) => (
-                        <div key={sig.key || sIdx} className="flex items-center gap-2 bg-slate-50 dark:bg-slate-800/80 p-2 rounded-xl border border-slate-200 dark:border-slate-700">
+                        <div key={sig.key || sIdx} className="flex items-center gap-2 bg-white dark:bg-slate-800/40 p-2 rounded-xl border border-slate-200/90 dark:border-slate-800">
                           <input
                             type="text"
                             value={sig.label || ''}
                             onChange={(e) => handleUpdateSignature(sIdx, 'label', e.target.value)}
-                            className="flex-1 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-2.5 py-1 text-xs font-semibold"
-                            placeholder="Signatory Label"
+                            className="flex-1 h-8 bg-slate-50/60 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500/40 focus:border-blue-500"
+                            placeholder="Signatory Label (e.g. Authorized Signatory)"
                           />
                           <select
                             value={sig.type || 'text'}
                             onChange={(e) => handleUpdateSignature(sIdx, 'type', e.target.value)}
-                            className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-2 py-1 text-[10px]"
+                            className="h-8 bg-slate-50/60 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2 text-[11px] font-medium text-slate-700 dark:text-slate-300"
                           >
                             <option value="text">Line</option>
                             <option value="stamp">Stamp</option>
                           </select>
                           <button
                             onClick={() => handleRemoveSignature(sIdx)}
-                            className="p-1 text-red-500 hover:bg-red-50 rounded"
+                            className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors"
+                            title="Remove Signatory"
                           >
-                            <span className="material-symbols-outlined text-sm">delete</span>
+                            <span className="material-symbols-outlined text-[16px]">delete</span>
                           </button>
                         </div>
                       ))}
@@ -1514,27 +1491,27 @@ export default function PrintSettings() {
               {activeRightTab === 'advanced' && (
                 <div className="space-y-4 animate-fade-in">
                   <div>
-                    <label className="text-xs font-bold text-slate-700 dark:text-slate-200 block mb-1">
+                    <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">
                       Terms & Standard Operating Conditions
                     </label>
                     <textarea
                       rows={4}
                       value={activeLayout.termsConditions || ''}
                       onChange={(e) => updateActiveLayout({ termsConditions: e.target.value })}
-                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-3 text-xs font-medium text-slate-800 dark:text-slate-100"
+                      className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg p-2.5 text-xs font-normal text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500/40 focus:border-blue-500 leading-relaxed shadow-xs"
                       placeholder="e.g. Goods once sold will not be taken back without QA clearance..."
                     />
                   </div>
 
                   <div>
-                    <label className="text-xs font-bold text-slate-700 dark:text-slate-200 block mb-1">
+                    <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">
                       Computer-Generated Document Footer Line
                     </label>
                     <input
                       type="text"
                       value={activeLayout.customFooterText || ''}
                       onChange={(e) => updateActiveLayout({ customFooterText: e.target.value })}
-                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-mono text-slate-800 dark:text-slate-100"
+                      className="w-full h-8 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 font-mono text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500/40 focus:border-blue-500 shadow-xs"
                       placeholder="Computer Generated Document. Powered by Flashvision ERP."
                     />
                   </div>
@@ -1543,18 +1520,18 @@ export default function PrintSettings() {
             </div>
 
             {/* Bottom Sticky Action Bar */}
-            <div className="p-3.5 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/90 flex items-center justify-between gap-3 shrink-0">
-              <span className="text-[10px] text-slate-400 font-mono truncate">
-                Doc: [{currentDocMeta.code}]
+            <div className="p-3 border-t border-slate-200 dark:border-slate-800 bg-slate-50/90 dark:bg-slate-900/90 backdrop-blur-sm flex items-center justify-between gap-3 shrink-0">
+              <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400 bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700 px-2 py-0.5 rounded truncate">
+                Doc: {currentDocMeta.code}
               </span>
 
               <button
                 onClick={handleSaveConfigurations}
                 disabled={saving}
-                className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-95 text-white text-xs font-extrabold shadow-md shadow-blue-600/30 transition-all flex items-center gap-1.5 disabled:opacity-50"
+                className="h-8 px-4 rounded-lg bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-xs font-semibold shadow-xs transition-all flex items-center gap-1.5 disabled:opacity-50"
               >
-                <span className="material-symbols-outlined text-sm">{saving ? 'sync' : 'save'}</span>
-                {saving ? 'Saving...' : 'Save Layout'}
+                <span className="material-symbols-outlined text-[15px]">{saving ? 'sync' : 'save'}</span>
+                <span>{saving ? 'Saving...' : 'Save Configuration'}</span>
               </button>
             </div>
           </aside>
@@ -1564,20 +1541,22 @@ export default function PrintSettings() {
         {/* 3. SAVE SUCCESS POPUP MODAL                                    */}
         {/* ============================================================== */}
         {showSaveSuccess && (
-          <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-            <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 max-w-sm w-full text-center shadow-2xl space-y-4 border border-slate-100 dark:border-slate-800 animate-scale-in">
-              <div className="w-14 h-14 bg-emerald-50 dark:bg-emerald-950/60 rounded-full flex items-center justify-center text-emerald-500 mx-auto">
-                <span className="material-symbols-outlined text-3xl font-bold">check_circle</span>
+          <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
+            <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 max-w-sm w-full text-center shadow-xl space-y-4 border border-slate-200 dark:border-slate-800 animate-scale-in">
+              <div className="w-12 h-12 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 rounded-full flex items-center justify-center mx-auto border border-emerald-100 dark:border-emerald-900/80">
+                <span className="material-symbols-outlined text-[26px]">check</span>
               </div>
-              <div>
-                <h3 className="text-lg font-black text-slate-900 dark:text-white">Print Settings Saved</h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                  Layout & theme for <strong>[{currentDocMeta.name}]</strong> has been updated and persisted to the ERP database.
+              <div className="space-y-1">
+                <h3 data-keep-color="true" className="text-base font-semibold text-slate-900 dark:text-white">
+                  Print Settings Saved
+                </h3>
+                <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+                  Layout and theme for <strong className="font-semibold text-slate-800 dark:text-slate-200">{currentDocMeta.name}</strong> have been updated and persisted to the ERP database.
                 </p>
               </div>
               <button
                 onClick={() => setShowSaveSuccess(false)}
-                className="w-full py-2.5 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-xl text-xs font-bold hover:bg-slate-800 transition-all shadow"
+                className="w-full h-9 bg-slate-900 hover:bg-slate-800 dark:bg-white dark:hover:bg-slate-100 text-white dark:text-slate-900 rounded-lg text-xs font-semibold transition-all shadow-xs"
               >
                 Continue
               </button>

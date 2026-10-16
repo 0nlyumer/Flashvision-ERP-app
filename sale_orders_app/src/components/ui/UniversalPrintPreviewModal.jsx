@@ -324,65 +324,64 @@ export default function UniversalPrintPreviewModal({
       `}</style>
 
       {/* TOP HEADER BAR */}
-      <header className="no-print bg-slate-900 border-b border-slate-800 px-4 sm:px-6 py-3 flex items-center justify-between shrink-0 shadow-md">
+      <header className="no-print bg-slate-900/90 border-b border-slate-800/80 px-5 py-3 flex items-center justify-between shrink-0 shadow-xs">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-blue-600/20 border border-blue-500/40 text-blue-400 flex items-center justify-center">
-            <span className="material-symbols-outlined text-[22px]">print</span>
+          <div className="w-8 h-8 rounded-lg bg-slate-800 border border-slate-700/80 text-slate-300 flex items-center justify-center shrink-0">
+            <span className="material-symbols-outlined text-[18px]">print</span>
           </div>
           <div>
-            <div className="flex items-center gap-2">
-              <h2 id="universal-preview-title" className="text-sm sm:text-base font-extrabold text-white tracking-tight">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h2 id="universal-preview-title" data-keep-color="true" className="text-sm font-semibold text-white tracking-tight leading-none">
                 {documentTitle || docMeta.name}
               </h2>
-              <span className="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-slate-800 text-slate-300 border border-slate-700">
+              <span className="px-2 py-0.5 rounded text-[10px] font-mono tabular-nums font-semibold bg-slate-800 text-slate-300 border border-slate-700/80">
                 {docMeta.code || 'DOC'}
               </span>
-              <span className="hidden sm:inline-block px-2 py-0.5 rounded-md text-[10px] font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
-                Saved Layout Active
+              <span className="hidden sm:inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-800/80 text-slate-300 border border-slate-700/70">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                Active Layout
               </span>
             </div>
-            <p className="text-[11px] text-slate-400 mt-0.5 flex items-center gap-2">
-              <span>Theme: <strong className="text-slate-200 capitalize">{effectiveLayout.activeTheme || 'Classic'}</strong></span>
-              <span>•</span>
-              <span>Paper: <strong className="text-slate-200">{paperFormat}</strong></span>
-              <span>•</span>
-              <span>Rows/Page: <strong className="text-slate-200">{effectiveLayout.firstPageRows} (P1) / {effectiveLayout.continuationPageRows} (Cont.)</strong></span>
-              <span>•</span>
-              <span>Total Items: <strong className="text-slate-200">{lineItems.length}</strong></span>
-            </p>
+            <div className="text-[11px] text-slate-400 mt-1 flex items-center gap-2 flex-wrap">
+              <span>Theme: <span className="font-medium text-slate-200 capitalize">{effectiveLayout.activeTheme || 'Classic'}</span></span>
+              <span className="text-slate-600">•</span>
+              <span>Paper: <span className="font-medium text-slate-200">{paperFormat}</span></span>
+              <span className="text-slate-600">•</span>
+              <span>Pagination: <span className="font-mono tabular-nums text-slate-200">{effectiveLayout.firstPageRows} / {effectiveLayout.continuationPageRows} rows</span></span>
+              <span className="text-slate-600">•</span>
+              <span>Items: <span className="font-mono tabular-nums font-semibold text-slate-200">{lineItems.length}</span></span>
+            </div>
           </div>
         </div>
 
-        {/* Close Button */}
+        {/* Close Button with Esc Hint */}
         <button
           onClick={onClose}
-          className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+          className="h-8 px-2.5 rounded-lg border border-slate-800 hover:border-slate-700 bg-slate-800/40 hover:bg-slate-800 text-slate-400 hover:text-white transition-colors flex items-center gap-1.5 cursor-pointer text-xs font-medium"
           title="Close Preview (Esc)"
           aria-label="Close Preview"
         >
-          <span className="material-symbols-outlined text-xl">close</span>
+          <span className="material-symbols-outlined text-[18px]">close</span>
+          <kbd className="hidden sm:inline-block px-1.5 py-0.5 text-[10px] font-mono text-slate-500 bg-slate-900 border border-slate-700/80 rounded">Esc</kbd>
         </button>
       </header>
 
       {/* TOOLBAR CONTROLS BAR */}
-      <div className="preview-controls-bar no-print bg-slate-900/95 border-b border-slate-800/80 px-4 sm:px-6 py-2.5 flex items-center justify-between gap-3 flex-wrap shrink-0">
+      <div className="preview-controls-bar no-print bg-slate-900/95 border-b border-slate-800/80 px-5 py-2 flex items-center justify-between gap-3 flex-wrap shrink-0 backdrop-blur-sm">
         
-        {/* Left: Orientation Switcher & Page Navigation */}
-        <div className="flex items-center gap-4 flex-wrap">
+        {/* Left: Orientation Switcher, Page Navigation & Zoom */}
+        <div className="flex items-center gap-3 flex-wrap">
           {/* Orientation Switcher (Per-print Override) */}
-          <div className="flex items-center gap-1 bg-slate-800/90 p-1 rounded-xl border border-slate-700/80">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 px-2 select-none">
-              Orientation:
-            </span>
+          <div className="inline-flex items-center p-0.5 rounded-lg bg-slate-950/70 border border-slate-800">
             <button
               type="button"
               onClick={() => handleToggleOrientation('portrait')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+              className={`h-7 px-2.5 rounded-md text-xs font-medium transition-all flex items-center gap-1.5 cursor-pointer ${
                 effectiveLayout.orientation === 'portrait'
-                  ? 'bg-blue-600 text-white shadow-sm'
-                  : 'text-slate-300 hover:text-white hover:bg-slate-700/60'
+                  ? 'bg-slate-800 text-white shadow-xs border border-slate-700/80 font-semibold'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40'
               }`}
-              title="Portrait Orientation (Print override)"
+              title="Portrait Orientation"
             >
               <span className="material-symbols-outlined text-[16px]">crop_portrait</span>
               <span>Portrait</span>
@@ -390,72 +389,79 @@ export default function UniversalPrintPreviewModal({
             <button
               type="button"
               onClick={() => handleToggleOrientation('landscape')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+              className={`h-7 px-2.5 rounded-md text-xs font-medium transition-all flex items-center gap-1.5 cursor-pointer ${
                 effectiveLayout.orientation === 'landscape'
-                  ? 'bg-blue-600 text-white shadow-sm'
-                  : 'text-slate-300 hover:text-white hover:bg-slate-700/60'
+                  ? 'bg-slate-800 text-white shadow-xs border border-slate-700/80 font-semibold'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40'
               }`}
-              title="Landscape Orientation (Print override)"
+              title="Landscape Orientation"
             >
               <span className="material-symbols-outlined text-[16px]">crop_landscape</span>
               <span>Landscape</span>
             </button>
           </div>
 
-          {/* Multi-Page Navigation (if multi-page) */}
+          {/* Multi-Page Stepper */}
           {computedPageCount > 1 && (
-            <div className="flex items-center gap-1.5 bg-slate-800/90 px-3 py-1 rounded-xl border border-slate-700/80 text-xs font-bold text-slate-300">
-              <span className="text-slate-400 font-normal">Page:</span>
-              <span className="font-mono text-white">{currentPageIndex + 1}</span>
-              <span className="text-slate-500">of</span>
-              <span className="font-mono text-white">{computedPageCount}</span>
-              <div className="flex items-center gap-0.5 ml-1">
+            <div className="inline-flex items-center h-8 bg-slate-950/70 border border-slate-800 rounded-lg px-2 text-xs font-medium text-slate-300 gap-1.5">
+              <span className="text-slate-400 text-[11px]">Page</span>
+              <span className="font-mono tabular-nums text-white font-semibold">{currentPageIndex + 1}</span>
+              <span className="text-slate-500">/</span>
+              <span className="font-mono tabular-nums text-slate-300">{computedPageCount}</span>
+              <div className="flex items-center gap-0.5 ml-1 border-l border-slate-800 pl-1">
                 <button
+                  type="button"
                   disabled={currentPageIndex <= 0}
                   onClick={() => setCurrentPageIndex(p => Math.max(0, p - 1))}
-                  className="p-1 rounded hover:bg-slate-700 disabled:opacity-30 disabled:hover:bg-transparent cursor-pointer"
+                  className="p-1 rounded text-slate-400 hover:text-white hover:bg-slate-800 disabled:opacity-25 disabled:hover:bg-transparent cursor-pointer disabled:cursor-not-allowed"
                   title="Previous Page"
                 >
-                  <span className="material-symbols-outlined text-sm">chevron_left</span>
+                  <span className="material-symbols-outlined text-[16px]">chevron_left</span>
                 </button>
                 <button
+                  type="button"
                   disabled={currentPageIndex >= computedPageCount - 1}
                   onClick={() => setCurrentPageIndex(p => Math.min(computedPageCount - 1, p + 1))}
-                  className="p-1 rounded hover:bg-slate-700 disabled:opacity-30 disabled:hover:bg-transparent cursor-pointer"
+                  className="p-1 rounded text-slate-400 hover:text-white hover:bg-slate-800 disabled:opacity-25 disabled:hover:bg-transparent cursor-pointer disabled:cursor-not-allowed"
                   title="Next Page"
                 >
-                  <span className="material-symbols-outlined text-sm">chevron_right</span>
+                  <span className="material-symbols-outlined text-[16px]">chevron_right</span>
                 </button>
               </div>
             </div>
           )}
 
           {/* Zoom controls */}
-          <div className="hidden md:flex items-center gap-1 bg-slate-800/90 p-1 rounded-xl border border-slate-700/80 text-xs">
+          <div className="hidden md:inline-flex items-center h-8 bg-slate-950/70 border border-slate-800 rounded-lg p-0.5 text-xs">
             <button
+              type="button"
               onClick={() => setZoomScale(z => Math.max(0.5, parseFloat((z - 0.1).toFixed(1))))}
-              className="p-1.5 rounded hover:bg-slate-700 text-slate-300 hover:text-white cursor-pointer"
+              className="h-7 w-7 flex items-center justify-center rounded text-slate-400 hover:text-white hover:bg-slate-800 cursor-pointer transition-colors"
               title="Zoom Out"
             >
-              <span className="material-symbols-outlined text-sm">remove</span>
+              <span className="material-symbols-outlined text-[16px]">remove</span>
             </button>
-            <span className="font-mono px-2 text-[11px] font-bold text-slate-200 min-w-[42px] text-center">
+            <span className="font-mono tabular-nums text-[11px] font-medium text-slate-200 w-12 text-center select-none">
               {Math.round(zoomScale * 100)}%
             </span>
             <button
+              type="button"
               onClick={() => setZoomScale(z => Math.min(1.5, parseFloat((z + 0.1).toFixed(1))))}
-              className="p-1.5 rounded hover:bg-slate-700 text-slate-300 hover:text-white cursor-pointer"
+              className="h-7 w-7 flex items-center justify-center rounded text-slate-400 hover:text-white hover:bg-slate-800 cursor-pointer transition-colors"
               title="Zoom In"
             >
-              <span className="material-symbols-outlined text-sm">add</span>
+              <span className="material-symbols-outlined text-[16px]">add</span>
             </button>
-            <button
-              onClick={() => setZoomScale(1)}
-              className="px-2 py-1 rounded hover:bg-slate-700 text-[10px] text-slate-400 hover:text-white font-bold cursor-pointer ml-0.5"
-              title="Reset Zoom"
-            >
-              100%
-            </button>
+            {zoomScale !== 1 && (
+              <button
+                type="button"
+                onClick={() => setZoomScale(1)}
+                className="h-6 px-1.5 rounded text-[10px] text-slate-400 hover:text-white hover:bg-slate-800 font-medium cursor-pointer ml-0.5 border-l border-slate-800"
+                title="Reset to 100%"
+              >
+                Reset
+              </button>
+            )}
           </div>
         </div>
 
@@ -466,10 +472,10 @@ export default function UniversalPrintPreviewModal({
             type="button"
             onClick={handleExportCsv}
             disabled={exporting !== null}
-            className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
-            title="Export CSV data"
+            className="h-8 px-3 rounded-lg bg-slate-800/90 hover:bg-slate-700 active:bg-slate-800 text-slate-300 hover:text-white border border-slate-700/80 text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+            title="Export line item data to CSV spreadsheet"
           >
-            <span className="material-symbols-outlined text-base text-emerald-400">table_chart</span>
+            <span className="material-symbols-outlined text-[16px] text-slate-400">table_chart</span>
             <span className="hidden sm:inline">CSV</span>
           </button>
 
@@ -478,13 +484,13 @@ export default function UniversalPrintPreviewModal({
             type="button"
             onClick={handleExportImage}
             disabled={exporting !== null}
-            className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
-            title="Download PNG image"
+            className="h-8 px-3 rounded-lg bg-slate-800/90 hover:bg-slate-700 active:bg-slate-800 text-slate-300 hover:text-white border border-slate-700/80 text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+            title="Download high-resolution PNG image"
           >
-            <span className="material-symbols-outlined text-base text-amber-400">
+            <span className="material-symbols-outlined text-[16px] text-slate-400">
               {exporting === 'img' ? 'sync' : 'image'}
             </span>
-            <span className="hidden sm:inline">{exporting === 'img' ? 'Rendering...' : 'PNG'}</span>
+            <span className="hidden sm:inline">{exporting === 'img' ? 'Exporting...' : 'PNG'}</span>
           </button>
 
           {/* PDF Export */}
@@ -492,42 +498,39 @@ export default function UniversalPrintPreviewModal({
             type="button"
             onClick={handleExportPdf}
             disabled={exporting !== null}
-            className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
-            title="Download PDF"
+            className="h-8 px-3.5 rounded-lg bg-slate-800/90 hover:bg-slate-700 active:bg-slate-800 text-slate-300 hover:text-white border border-slate-700/80 text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+            title="Download document as PDF"
           >
-            <span className="material-symbols-outlined text-base text-red-400">
+            <span className="material-symbols-outlined text-[16px] text-slate-400">
               {exporting === 'pdf' ? 'sync' : 'picture_as_pdf'}
             </span>
-            <span>{exporting === 'pdf' ? 'Generating PDF...' : 'Download PDF'}</span>
+            <span>{exporting === 'pdf' ? 'Generating...' : 'Download PDF'}</span>
           </button>
 
-          {/* Native Print Dialog Button */}
+          {/* Native Print Dialog Button (Prominent Primary Action) */}
           <button
             type="button"
             onClick={handlePrint}
-            className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 active:scale-95 text-white text-xs font-extrabold shadow-lg shadow-blue-600/30 flex items-center gap-2 transition-all cursor-pointer"
+            className="h-8 px-4 rounded-lg bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white text-xs font-semibold shadow-xs flex items-center gap-1.5 transition-all cursor-pointer"
             title="Open native browser print dialog"
           >
-            <span className="material-symbols-outlined text-base">print</span>
+            <span className="material-symbols-outlined text-[16px]">print</span>
             <span>Print</span>
-          </button>
-
-          {/* Close Button */}
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2 rounded-xl bg-slate-800/80 hover:bg-slate-700/80 text-slate-300 text-xs font-bold transition-all cursor-pointer"
-          >
-            Close
           </button>
         </div>
       </div>
 
-      {/* CENTER PREVIEW CANVAS */}
-      <main className="flex-1 overflow-auto bg-slate-950 p-4 sm:p-8 flex justify-center items-start">
+      {/* CENTER PREVIEW CANVAS (Tactile Document Inspection Desk) */}
+      <main 
+        className="flex-1 overflow-auto bg-[#0a0d14] p-6 sm:p-10 flex justify-center items-start scrollbar-thin"
+        style={{
+          backgroundImage: 'radial-gradient(rgba(255,255,255,0.06) 1px, transparent 1px)',
+          backgroundSize: '24px 24px'
+        }}
+      >
         <div
           ref={previewContainerRef}
-          className="preview-wrapper transition-transform duration-150 origin-top flex flex-col items-center"
+          className="preview-wrapper transition-transform duration-150 origin-top flex flex-col items-center py-2"
           style={{
             transform: zoomScale !== 1 ? `scale(${zoomScale})` : undefined,
             width: paperWidth,

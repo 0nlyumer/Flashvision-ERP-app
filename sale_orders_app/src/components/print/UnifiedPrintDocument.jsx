@@ -380,7 +380,9 @@ export default function UnifiedPrintDocument({
           <div
             key={pageIdx}
             className={`print-preview-page bg-white text-slate-900 relative transition-all duration-200 overflow-hidden flex flex-col ${
-              isPrintOnly ? 'p-0 shadow-none' : 'shadow-2xl border border-slate-200/80 mb-6'
+              isPrintOnly
+                ? 'p-0 shadow-none'
+                : 'shadow-[0_1px_3px_rgba(0,0,0,0.06),0_10px_25px_-5px_rgba(0,0,0,0.12),0_20px_35px_-10px_rgba(0,0,0,0.08)] border border-slate-200/90 mb-8 rounded-[1px]'
             }`}
             style={{
               width: paperWidth,
@@ -391,14 +393,6 @@ export default function UnifiedPrintDocument({
               padding: isPrintOnly ? '0' : `${layoutConfig.marginTop || '12mm'} ${layoutConfig.marginRight || '12mm'} ${layoutConfig.marginBottom || '12mm'} ${layoutConfig.marginLeft || '12mm'}`
             }}
           >
-            {/* Screen Page Badge */}
-            {!isPrintOnly && (
-              <div className="no-print absolute top-3 right-3 bg-slate-900/80 text-white text-[10px] font-mono px-2.5 py-1 rounded-md shadow-md pointer-events-none z-10 flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
-                Page {pageIdx + 1} of {computedPages.length} • {activeTheme.toUpperCase()}
-              </div>
-            )}
-
             {/* ============================================================== */}
             {/* 1. DOCUMENT HEADER BLOCK (Theme Differentiated)                 */}
             {/* ============================================================== */}
@@ -434,7 +428,7 @@ export default function UnifiedPrintDocument({
                         </h2>
                         <div className="mt-1 inline-flex items-center gap-2">
                           <span className="text-[10px] uppercase font-bold text-slate-500">Document #:</span>
-                          <span className="font-mono font-bold text-xs bg-slate-100 px-2 py-0.5 rounded border border-slate-300 text-slate-900">
+                          <span className="font-mono tabular-nums font-bold text-xs bg-slate-100 px-2 py-0.5 rounded border border-slate-300 text-slate-900">
                             {docCode}
                           </span>
                         </div>
@@ -668,7 +662,7 @@ export default function UnifiedPrintDocument({
                               <td
                                 key={col.key}
                                 className={`${isIndustrial ? 'py-1 px-1.5 border-r border-black text-black font-medium' : 'py-1.5 px-2 border-r border-slate-200 text-slate-800'} ${
-                                  col.align === 'right' ? 'text-right font-mono' : col.align === 'center' ? 'text-center' : 'text-left'
+                                  col.align === 'right' ? 'text-right font-mono tabular-nums' : col.align === 'center' ? 'text-center' : 'text-left'
                                 }`}
                               >
                                 {cellVal}
@@ -703,25 +697,25 @@ export default function UnifiedPrintDocument({
                     {record.totals.subtotal !== undefined && (
                       <div className="flex justify-between text-[11px] text-slate-600">
                         <span>Subtotal:</span>
-                        <span className="font-mono font-bold">{Number(record.totals.subtotal).toLocaleString()}</span>
+                        <span className="font-mono tabular-nums font-bold">{Number(record.totals.subtotal).toLocaleString()}</span>
                       </div>
                     )}
                     {record.totals.tax !== undefined && (
                       <div className="flex justify-between text-[11px] text-slate-600">
                         <span>Tax / GST:</span>
-                        <span className="font-mono font-bold">{Number(record.totals.tax).toLocaleString()}</span>
+                        <span className="font-mono tabular-nums font-bold">{Number(record.totals.tax).toLocaleString()}</span>
                       </div>
                     )}
                     {record.totals.discount !== undefined && (
                       <div className="flex justify-between text-[11px] text-slate-600">
                         <span>Discount:</span>
-                        <span className="font-mono font-bold">{Number(record.totals.discount).toLocaleString()}</span>
+                        <span className="font-mono tabular-nums font-bold">{Number(record.totals.discount).toLocaleString()}</span>
                       </div>
                     )}
                     {record.totals.grandTotal !== undefined && (
                       <div className="flex justify-between font-bold text-sm pt-2 border-t-2 border-slate-900 text-slate-900">
                         <span>Grand Total:</span>
-                        <span className="font-mono" style={{ color: primaryColor }}>
+                        <span className="font-mono tabular-nums" style={{ color: primaryColor }}>
                           ${Number(record.totals.grandTotal).toLocaleString()}
                         </span>
                       </div>
@@ -742,7 +736,7 @@ export default function UnifiedPrintDocument({
                           }`}
                         >
                           <span className="uppercase text-[9px] tracking-wider">{tKey.replace(/([A-Z])/g, ' $1')}:</span>
-                          <span className={`font-mono ${isGrand ? 'text-xs text-white px-2 py-0.5 rounded-lg' : 'font-semibold text-slate-800'}`} style={isGrand ? { backgroundColor: primaryColor } : undefined}>
+                          <span className={`font-mono tabular-nums ${isGrand ? 'text-xs text-white px-2 py-0.5 rounded-lg' : 'font-semibold text-slate-800'}`} style={isGrand ? { backgroundColor: primaryColor } : undefined}>
                             {typeof tVal === 'number' ? tVal.toLocaleString() : tVal}
                           </span>
                         </div>
@@ -828,7 +822,7 @@ export default function UnifiedPrintDocument({
               {/* Legal & Page Number Bar */}
               <div className="flex justify-between items-center text-[8.5px] text-slate-400 pt-2 border-t border-slate-100 mt-2">
                 <span>{layoutConfig.customFooterText || 'Computer Generated Document • FlashVision ERP Architecture'}</span>
-                <span className="font-mono">
+                <span className="font-mono tabular-nums">
                   Page {pageIdx + 1} of {computedPages.length}
                 </span>
               </div>
