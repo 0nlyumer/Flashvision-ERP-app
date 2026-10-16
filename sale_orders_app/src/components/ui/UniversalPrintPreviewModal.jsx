@@ -154,14 +154,51 @@ export default function UniversalPrintPreviewModal({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose]);
 
-  // Resolved record to print
+  // Synchronize body class for print isolation
+  useEffect(() => {
+    if (isOpen) {
+      document.body.classList.add('has-print-modal');
+    } else {
+      document.body.classList.remove('has-print-modal');
+    }
+    return () => {
+      document.body.classList.remove('has-print-modal');
+    };
+  }, [isOpen]);
+
+  // Resolved record to print - guarantee complete items & totals fallback
   const resolvedRecord = useMemo(() => {
+    const fallback = getMockPreviewData(documentType) || { header: {}, items: [], totals: {} };
     if (documentData && typeof documentData === 'object' && Object.keys(documentData).length > 0) {
-      return documentData;
+      return {
+        ...fallback,
+        ...documentData,
+        header: { ...(fallback.header || {}), ...(documentData.header || documentData) },
+        items: (Array.isArray(documentData.items) && documentData.items.length > 0)
+          ? documentData.items
+          : (Array.isArray(documentData.lineItems) && documentData.lineItems.length > 0)
+          ? documentData.lineItems
+          : (Array.isArray(documentData.rows) && documentData.rows.length > 0)
+          ? documentData.rows
+          : fallback.items,
+        totals: (documentData.totals && typeof documentData.totals === 'object' && Object.keys(documentData.totals).length > 0)
+          ? documentData.totals
+          : fallback.totals
+      };
     }
     const fromState = getSampleRecordFromState ? getSampleRecordFromState(documentType, state) : null;
-    if (fromState) return fromState;
-    return getMockPreviewData(documentType);
+    if (fromState) {
+      return {
+        ...fallback,
+        ...fromState,
+        header: { ...(fallback.header || {}), ...(fromState.header || fromState) },
+        items: (Array.isArray(fromState.items) && fromState.items.length > 0) ? fromState.items : fallback.items,
+        totals: (fromState.totals && typeof fromState.totals === 'object' && Object.keys(fromState.totals).length > 0)
+          ? fromState.totals
+          : fallback.totals
+      };
+    }
+    return fallback;
   }, [documentData, documentType, state]);
 
   // Active Layout with per-print orientation override applied
@@ -274,278 +311,346 @@ export default function UniversalPrintPreviewModal({
   return createPortal(
     <div
       id="universal-print-preview-modal"
-      className="fixed inset-0 z-[99999] bg-slate-950/85 backdrop-blur-md flex flex-col overflow-hidden text-slate-100 font-sans animate-fade-in"
+      className="fixed inset-0 z-[99999] bg-slate-900/55 dark:bg-black/75 backdrop-blur-sm flex items-center justify-center p-3 sm:p-5 md:p-6 transition-all duration-200 animate-fade-in font-sans"
       role="dialog"
       aria-modal="true"
       aria-labelledby="universal-preview-title"
+      onClick={onClose}
     >
-      {/* Dynamic print-specific styles ensuring only document is printed */}
+      {/* Dedicated @media print CSS strictly isolating the document */}
       <style>{`
         @media print {
+          @page {
+            size: ${effectiveLayout.orientation === 'landscape' ? 'landscape' : 'portrait'};
+            margin: 10mm !important;
+          }
           body, html, #root {
             background: #ffffff !important;
             color: #000000 !important;
             height: auto !important;
             overflow: visible !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+            margin: 0 !important;
+            padding: 0 !important;
+          }
+          #root, nav, aside {
+            display: none !important;
           }
           #universal-print-preview-modal {
-            position: absolute !important;
-            top: 0 !important;
-            left: 0 !important;
+            position: static !important;
+            display: block !important;
             width: 100% !important;
             height: auto !important;
-            background: #ffffff !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            background: transparent !important;
             overflow: visible !important;
-            z-index: 999999 !important;
+            box-shadow: none !important;
+            z-index: auto !important;
+          }
+          #universal-print-preview-modal .modal-card {
+            position: static !important;
+            display: block !important;
+            width: 100% !important;
+            max-width: 100% !important;
+            height: auto !important;
+            max-height: none !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            background: transparent !important;
+            border: none !important;
+            border-radius: 0 !important;
+            box-shadow: none !important;
+            overflow: visible !important;
           }
           #universal-print-preview-modal .no-print,
-          #universal-print-preview-modal header,
+          #universal-print-preview-modal .modal-header,
           #universal-print-preview-modal .preview-controls-bar {
             display: none !important;
+          }
+          #universal-print-preview-modal .modal-canvas {
+            background: transparent !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            overflow: visible !important;
+            display: block !important;
+            width: 100% !important;
+          }
+          #universal-print-preview-modal .preview-wrapper {
+            transform: none !important;
+            width: 100% !important;
+            max-width: 100% !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            display: block !important;
           }
           #universal-print-preview-modal .unified-print-container {
             transform: none !important;
             width: 100% !important;
+            max-width: 100% !important;
             margin: 0 !important;
             padding: 0 !important;
-            visibility: visible !important;
-          }
-          #universal-print-preview-modal .unified-print-container * {
-            visibility: visible !important;
+            display: block !important;
           }
           .print-preview-page {
             box-shadow: none !important;
             border: none !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            width: 100% !important;
+            max-width: 100% !important;
+            min-height: auto !important;
+            overflow: visible !important;
             page-break-after: always !important;
             break-after: page !important;
-            margin: 0 !important;
+          }
+          .print-preview-page:last-child {
+            page-break-after: auto !important;
+            break-after: auto !important;
+          }
+          .document-header-block,
+          .document-table-body,
+          .document-footer-block {
+            display: block !important;
+            visibility: visible !important;
+          }
+          tr, thead, .avoid-break {
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
           }
         }
       `}</style>
 
-      {/* TOP HEADER BAR */}
-      <header className="no-print bg-slate-900/90 border-b border-slate-800/80 px-5 py-3 flex items-center justify-between shrink-0 shadow-xs">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-slate-800 border border-slate-700/80 text-slate-300 flex items-center justify-center shrink-0">
-            <span className="material-symbols-outlined text-[18px]">print</span>
-          </div>
-          <div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <h2 id="universal-preview-title" data-keep-color="true" className="text-sm font-semibold text-white tracking-tight leading-none">
-                {documentTitle || docMeta.name}
-              </h2>
-              <span className="px-2 py-0.5 rounded text-[10px] font-mono tabular-nums font-semibold bg-slate-800 text-slate-300 border border-slate-700/80">
-                {docMeta.code || 'DOC'}
-              </span>
-              <span className="hidden sm:inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-800/80 text-slate-300 border border-slate-700/70">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-                Active Layout
-              </span>
+      {/* CENTERED POPUP MODAL CARD */}
+      <div 
+        className="modal-card relative w-full max-w-6xl max-h-[94vh] flex flex-col rounded-2xl shadow-2xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 overflow-hidden text-slate-900 dark:text-slate-100 transition-all"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* TOP HEADER BAR */}
+        <div className="modal-header no-print bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-5 py-3 flex items-center justify-between shrink-0 shadow-xs">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-blue-50 dark:bg-slate-800 border border-blue-200 dark:border-slate-700 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+              <span className="material-symbols-outlined text-[18px]">print</span>
             </div>
-            <div className="text-[11px] text-slate-400 mt-1 flex items-center gap-2 flex-wrap">
-              <span>Theme: <span className="font-medium text-slate-200 capitalize">{effectiveLayout.activeTheme || 'Classic'}</span></span>
-              <span className="text-slate-600">•</span>
-              <span>Paper: <span className="font-medium text-slate-200">{paperFormat}</span></span>
-              <span className="text-slate-600">•</span>
-              <span>Pagination: <span className="font-mono tabular-nums text-slate-200">{effectiveLayout.firstPageRows} / {effectiveLayout.continuationPageRows} rows</span></span>
-              <span className="text-slate-600">•</span>
-              <span>Items: <span className="font-mono tabular-nums font-semibold text-slate-200">{lineItems.length}</span></span>
-            </div>
-          </div>
-        </div>
-
-        {/* Close Button with Esc Hint */}
-        <button
-          onClick={onClose}
-          className="h-8 px-2.5 rounded-lg border border-slate-800 hover:border-slate-700 bg-slate-800/40 hover:bg-slate-800 text-slate-400 hover:text-white transition-colors flex items-center gap-1.5 cursor-pointer text-xs font-medium"
-          title="Close Preview (Esc)"
-          aria-label="Close Preview"
-        >
-          <span className="material-symbols-outlined text-[18px]">close</span>
-          <kbd className="hidden sm:inline-block px-1.5 py-0.5 text-[10px] font-mono text-slate-500 bg-slate-900 border border-slate-700/80 rounded">Esc</kbd>
-        </button>
-      </header>
-
-      {/* TOOLBAR CONTROLS BAR */}
-      <div className="preview-controls-bar no-print bg-slate-900/95 border-b border-slate-800/80 px-5 py-2 flex items-center justify-between gap-3 flex-wrap shrink-0 backdrop-blur-sm">
-        
-        {/* Left: Orientation Switcher, Page Navigation & Zoom */}
-        <div className="flex items-center gap-3 flex-wrap">
-          {/* Orientation Switcher (Per-print Override) */}
-          <div className="inline-flex items-center p-0.5 rounded-lg bg-slate-950/70 border border-slate-800">
-            <button
-              type="button"
-              onClick={() => handleToggleOrientation('portrait')}
-              className={`h-7 px-2.5 rounded-md text-xs font-medium transition-all flex items-center gap-1.5 cursor-pointer ${
-                effectiveLayout.orientation === 'portrait'
-                  ? 'bg-slate-800 text-white shadow-xs border border-slate-700/80 font-semibold'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40'
-              }`}
-              title="Portrait Orientation"
-            >
-              <span className="material-symbols-outlined text-[16px]">crop_portrait</span>
-              <span>Portrait</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => handleToggleOrientation('landscape')}
-              className={`h-7 px-2.5 rounded-md text-xs font-medium transition-all flex items-center gap-1.5 cursor-pointer ${
-                effectiveLayout.orientation === 'landscape'
-                  ? 'bg-slate-800 text-white shadow-xs border border-slate-700/80 font-semibold'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40'
-              }`}
-              title="Landscape Orientation"
-            >
-              <span className="material-symbols-outlined text-[16px]">crop_landscape</span>
-              <span>Landscape</span>
-            </button>
-          </div>
-
-          {/* Multi-Page Stepper */}
-          {computedPageCount > 1 && (
-            <div className="inline-flex items-center h-8 bg-slate-950/70 border border-slate-800 rounded-lg px-2 text-xs font-medium text-slate-300 gap-1.5">
-              <span className="text-slate-400 text-[11px]">Page</span>
-              <span className="font-mono tabular-nums text-white font-semibold">{currentPageIndex + 1}</span>
-              <span className="text-slate-500">/</span>
-              <span className="font-mono tabular-nums text-slate-300">{computedPageCount}</span>
-              <div className="flex items-center gap-0.5 ml-1 border-l border-slate-800 pl-1">
-                <button
-                  type="button"
-                  disabled={currentPageIndex <= 0}
-                  onClick={() => setCurrentPageIndex(p => Math.max(0, p - 1))}
-                  className="p-1 rounded text-slate-400 hover:text-white hover:bg-slate-800 disabled:opacity-25 disabled:hover:bg-transparent cursor-pointer disabled:cursor-not-allowed"
-                  title="Previous Page"
-                >
-                  <span className="material-symbols-outlined text-[16px]">chevron_left</span>
-                </button>
-                <button
-                  type="button"
-                  disabled={currentPageIndex >= computedPageCount - 1}
-                  onClick={() => setCurrentPageIndex(p => Math.min(computedPageCount - 1, p + 1))}
-                  className="p-1 rounded text-slate-400 hover:text-white hover:bg-slate-800 disabled:opacity-25 disabled:hover:bg-transparent cursor-pointer disabled:cursor-not-allowed"
-                  title="Next Page"
-                >
-                  <span className="material-symbols-outlined text-[16px]">chevron_right</span>
-                </button>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2 id="universal-preview-title" data-keep-color="true" className="text-sm font-bold text-slate-900 dark:text-white tracking-tight leading-none">
+                  {documentTitle || docMeta.name}
+                </h2>
+                <span className="px-2 py-0.5 rounded text-[10px] font-mono tabular-nums font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                  {docCode}
+                </span>
+                <span className="hidden sm:inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200/80 dark:border-emerald-800/80">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                  Ready to Print
+                </span>
+              </div>
+              <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 flex items-center gap-2 flex-wrap">
+                <span>Theme: <span className="font-semibold text-slate-800 dark:text-slate-200 capitalize">{effectiveLayout.activeTheme || 'Classic'}</span></span>
+                <span className="text-slate-400 dark:text-slate-600">•</span>
+                <span>Paper: <span className="font-semibold text-slate-800 dark:text-slate-200">{paperFormat}</span></span>
+                <span className="text-slate-400 dark:text-slate-600">•</span>
+                <span>Pagination: <span className="font-mono tabular-nums text-slate-800 dark:text-slate-200">{effectiveLayout.firstPageRows} / {effectiveLayout.continuationPageRows} rows</span></span>
+                <span className="text-slate-400 dark:text-slate-600">•</span>
+                <span>Items: <span className="font-mono tabular-nums font-semibold text-slate-800 dark:text-slate-200">{lineItems.length}</span></span>
               </div>
             </div>
-          )}
+          </div>
 
-          {/* Zoom controls */}
-          <div className="hidden md:inline-flex items-center h-8 bg-slate-950/70 border border-slate-800 rounded-lg p-0.5 text-xs">
-            <button
-              type="button"
-              onClick={() => setZoomScale(z => Math.max(0.5, parseFloat((z - 0.1).toFixed(1))))}
-              className="h-7 w-7 flex items-center justify-center rounded text-slate-400 hover:text-white hover:bg-slate-800 cursor-pointer transition-colors"
-              title="Zoom Out"
-            >
-              <span className="material-symbols-outlined text-[16px]">remove</span>
-            </button>
-            <span className="font-mono tabular-nums text-[11px] font-medium text-slate-200 w-12 text-center select-none">
-              {Math.round(zoomScale * 100)}%
-            </span>
-            <button
-              type="button"
-              onClick={() => setZoomScale(z => Math.min(1.5, parseFloat((z + 0.1).toFixed(1))))}
-              className="h-7 w-7 flex items-center justify-center rounded text-slate-400 hover:text-white hover:bg-slate-800 cursor-pointer transition-colors"
-              title="Zoom In"
-            >
-              <span className="material-symbols-outlined text-[16px]">add</span>
-            </button>
-            {zoomScale !== 1 && (
+          {/* Close Button with Esc Hint */}
+          <button
+            onClick={onClose}
+            className="h-8 px-2.5 rounded-lg border border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 bg-slate-100/80 dark:bg-slate-800/60 hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors flex items-center gap-1.5 cursor-pointer text-xs font-medium"
+            title="Close Preview (Esc)"
+            aria-label="Close Preview"
+          >
+            <span className="material-symbols-outlined text-[18px]">close</span>
+            <kbd className="hidden sm:inline-block px-1.5 py-0.5 text-[10px] font-mono text-slate-500 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded">Esc</kbd>
+          </button>
+        </div>
+
+        {/* TOOLBAR CONTROLS BAR */}
+        <div className="preview-controls-bar no-print bg-slate-100/90 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-800 px-5 py-2.5 flex items-center justify-between gap-3 flex-wrap shrink-0 backdrop-blur-sm">
+          
+          {/* Left: Orientation Switcher, Page Navigation & Zoom */}
+          <div className="flex items-center gap-3 flex-wrap">
+            {/* Orientation Switcher (Per-print Override) */}
+            <div className="inline-flex items-center p-0.5 rounded-lg bg-white dark:bg-slate-950/70 border border-slate-200 dark:border-slate-700 shadow-2xs">
               <button
                 type="button"
-                onClick={() => setZoomScale(1)}
-                className="h-6 px-1.5 rounded text-[10px] text-slate-400 hover:text-white hover:bg-slate-800 font-medium cursor-pointer ml-0.5 border-l border-slate-800"
-                title="Reset to 100%"
+                onClick={() => handleToggleOrientation('portrait')}
+                className={`h-7 px-2.5 rounded-md text-xs font-medium transition-all flex items-center gap-1.5 cursor-pointer ${
+                  effectiveLayout.orientation === 'portrait'
+                    ? 'bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 shadow-xs font-semibold'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                }`}
+                title="Portrait Orientation"
               >
-                Reset
+                <span className="material-symbols-outlined text-[16px]">crop_portrait</span>
+                <span>Portrait</span>
               </button>
+              <button
+                type="button"
+                onClick={() => handleToggleOrientation('landscape')}
+                className={`h-7 px-2.5 rounded-md text-xs font-medium transition-all flex items-center gap-1.5 cursor-pointer ${
+                  effectiveLayout.orientation === 'landscape'
+                    ? 'bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 shadow-xs font-semibold'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                }`}
+                title="Landscape Orientation"
+              >
+                <span className="material-symbols-outlined text-[16px]">crop_landscape</span>
+                <span>Landscape</span>
+              </button>
+            </div>
+
+            {/* Multi-Page Stepper */}
+            {computedPageCount > 1 && (
+              <div className="inline-flex items-center h-8 bg-white dark:bg-slate-950/70 border border-slate-200 dark:border-slate-700 rounded-lg px-2 text-xs font-medium text-slate-700 dark:text-slate-300 gap-1.5 shadow-2xs">
+                <span className="text-slate-400 text-[11px]">Page</span>
+                <span className="font-mono tabular-nums text-slate-900 dark:text-white font-semibold">{currentPageIndex + 1}</span>
+                <span className="text-slate-400">/</span>
+                <span className="font-mono tabular-nums text-slate-600 dark:text-slate-300">{computedPageCount}</span>
+                <div className="flex items-center gap-0.5 ml-1 border-l border-slate-200 dark:border-slate-800 pl-1">
+                  <button
+                    type="button"
+                    disabled={currentPageIndex <= 0}
+                    onClick={() => setCurrentPageIndex(p => Math.max(0, p - 1))}
+                    className="p-1 rounded text-slate-500 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-25 disabled:hover:bg-transparent cursor-pointer disabled:cursor-not-allowed"
+                    title="Previous Page"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">chevron_left</span>
+                  </button>
+                  <button
+                    type="button"
+                    disabled={currentPageIndex >= computedPageCount - 1}
+                    onClick={() => setCurrentPageIndex(p => Math.min(computedPageCount - 1, p + 1))}
+                    className="p-1 rounded text-slate-500 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-25 disabled:hover:bg-transparent cursor-pointer disabled:cursor-not-allowed"
+                    title="Next Page"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">chevron_right</span>
+                  </button>
+                </div>
+              </div>
             )}
+
+            {/* Zoom controls */}
+            <div className="hidden md:inline-flex items-center h-8 bg-white dark:bg-slate-950/70 border border-slate-200 dark:border-slate-700 rounded-lg p-0.5 text-xs shadow-2xs">
+              <button
+                type="button"
+                onClick={() => setZoomScale(z => Math.max(0.5, parseFloat((z - 0.1).toFixed(1))))}
+                className="h-7 w-7 flex items-center justify-center rounded text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer transition-colors"
+                title="Zoom Out"
+              >
+                <span className="material-symbols-outlined text-[16px]">remove</span>
+              </button>
+              <span className="font-mono tabular-nums text-[11px] font-medium text-slate-700 dark:text-slate-200 w-12 text-center select-none">
+                {Math.round(zoomScale * 100)}%
+              </span>
+              <button
+                type="button"
+                onClick={() => setZoomScale(z => Math.min(1.5, parseFloat((z + 0.1).toFixed(1))))}
+                className="h-7 w-7 flex items-center justify-center rounded text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer transition-colors"
+                title="Zoom In"
+              >
+                <span className="material-symbols-outlined text-[16px]">add</span>
+              </button>
+              {zoomScale !== 1 && (
+                <button
+                  type="button"
+                  onClick={() => setZoomScale(1)}
+                  className="h-6 px-1.5 rounded text-[10px] text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 font-medium cursor-pointer ml-0.5 border-l border-slate-200 dark:border-slate-800"
+                  title="Reset to 100%"
+                >
+                  Reset
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Right: Export & Action Buttons */}
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* CSV Export */}
+            <button
+              type="button"
+              onClick={handleExportCsv}
+              disabled={exporting !== null}
+              className="h-8 px-3 rounded-lg bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 active:bg-slate-100 dark:active:bg-slate-800 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white border border-slate-200 dark:border-slate-700 text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50 shadow-2xs"
+              title="Export line item data to CSV spreadsheet"
+            >
+              <span className="material-symbols-outlined text-[16px] text-slate-500 dark:text-slate-400">table_chart</span>
+              <span className="hidden sm:inline">CSV</span>
+            </button>
+
+            {/* PNG/Image Export */}
+            <button
+              type="button"
+              onClick={handleExportImage}
+              disabled={exporting !== null}
+              className="h-8 px-3 rounded-lg bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 active:bg-slate-100 dark:active:bg-slate-800 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white border border-slate-200 dark:border-slate-700 text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50 shadow-2xs"
+              title="Download high-resolution PNG image"
+            >
+              <span className="material-symbols-outlined text-[16px] text-slate-500 dark:text-slate-400">
+                {exporting === 'img' ? 'sync' : 'image'}
+              </span>
+              <span className="hidden sm:inline">{exporting === 'img' ? 'Exporting...' : 'PNG'}</span>
+            </button>
+
+            {/* PDF Export */}
+            <button
+              type="button"
+              onClick={handleExportPdf}
+              disabled={exporting !== null}
+              className="h-8 px-3.5 rounded-lg bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 active:bg-slate-100 dark:active:bg-slate-800 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white border border-slate-200 dark:border-slate-700 text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50 shadow-2xs"
+              title="Download document as PDF"
+            >
+              <span className="material-symbols-outlined text-[16px] text-slate-500 dark:text-slate-400">
+                {exporting === 'pdf' ? 'sync' : 'picture_as_pdf'}
+              </span>
+              <span>{exporting === 'pdf' ? 'Generating...' : 'Download PDF'}</span>
+            </button>
+
+            {/* Native Print Dialog Button (Prominent Primary Action) */}
+            <button
+              type="button"
+              onClick={handlePrint}
+              className="h-8 px-4 rounded-lg bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-xs font-semibold shadow-xs flex items-center gap-1.5 transition-all cursor-pointer"
+              title="Open native browser print dialog"
+            >
+              <span className="material-symbols-outlined text-[16px]">print</span>
+              <span>Print</span>
+            </button>
           </div>
         </div>
 
-        {/* Right: Export & Action Buttons */}
-        <div className="flex items-center gap-2 flex-wrap">
-          {/* CSV Export */}
-          <button
-            type="button"
-            onClick={handleExportCsv}
-            disabled={exporting !== null}
-            className="h-8 px-3 rounded-lg bg-slate-800/90 hover:bg-slate-700 active:bg-slate-800 text-slate-300 hover:text-white border border-slate-700/80 text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
-            title="Export line item data to CSV spreadsheet"
-          >
-            <span className="material-symbols-outlined text-[16px] text-slate-400">table_chart</span>
-            <span className="hidden sm:inline">CSV</span>
-          </button>
-
-          {/* PNG/Image Export */}
-          <button
-            type="button"
-            onClick={handleExportImage}
-            disabled={exporting !== null}
-            className="h-8 px-3 rounded-lg bg-slate-800/90 hover:bg-slate-700 active:bg-slate-800 text-slate-300 hover:text-white border border-slate-700/80 text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
-            title="Download high-resolution PNG image"
-          >
-            <span className="material-symbols-outlined text-[16px] text-slate-400">
-              {exporting === 'img' ? 'sync' : 'image'}
-            </span>
-            <span className="hidden sm:inline">{exporting === 'img' ? 'Exporting...' : 'PNG'}</span>
-          </button>
-
-          {/* PDF Export */}
-          <button
-            type="button"
-            onClick={handleExportPdf}
-            disabled={exporting !== null}
-            className="h-8 px-3.5 rounded-lg bg-slate-800/90 hover:bg-slate-700 active:bg-slate-800 text-slate-300 hover:text-white border border-slate-700/80 text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
-            title="Download document as PDF"
-          >
-            <span className="material-symbols-outlined text-[16px] text-slate-400">
-              {exporting === 'pdf' ? 'sync' : 'picture_as_pdf'}
-            </span>
-            <span>{exporting === 'pdf' ? 'Generating...' : 'Download PDF'}</span>
-          </button>
-
-          {/* Native Print Dialog Button (Prominent Primary Action) */}
-          <button
-            type="button"
-            onClick={handlePrint}
-            className="h-8 px-4 rounded-lg bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white text-xs font-semibold shadow-xs flex items-center gap-1.5 transition-all cursor-pointer"
-            title="Open native browser print dialog"
-          >
-            <span className="material-symbols-outlined text-[16px]">print</span>
-            <span>Print</span>
-          </button>
-        </div>
-      </div>
-
-      {/* CENTER PREVIEW CANVAS (Tactile Document Inspection Desk) */}
-      <main 
-        className="flex-1 overflow-auto bg-[#0a0d14] p-6 sm:p-10 flex justify-center items-start scrollbar-thin"
-        style={{
-          backgroundImage: 'radial-gradient(rgba(255,255,255,0.06) 1px, transparent 1px)',
-          backgroundSize: '24px 24px'
-        }}
-      >
-        <div
-          ref={previewContainerRef}
-          className="preview-wrapper transition-transform duration-150 origin-top flex flex-col items-center py-2"
+        {/* CENTER PREVIEW CANVAS (Tactile Document Inspection Desk) */}
+        <main 
+          className="modal-canvas flex-1 overflow-auto bg-slate-200/60 dark:bg-slate-950 p-6 sm:p-8 flex justify-center items-start scrollbar-thin"
           style={{
-            transform: zoomScale !== 1 ? `scale(${zoomScale})` : undefined,
-            width: paperWidth,
-            maxWidth: '100%'
+            backgroundImage: 'radial-gradient(rgba(0,0,0,0.06) 1px, transparent 1px)',
+            backgroundSize: '24px 24px'
           }}
         >
-          <UnifiedPrintDocument
-            documentType={documentType}
-            documentData={resolvedRecord}
-            layoutConfig={effectiveLayout}
-            companyInfo={companyInfo}
-            isPrintOnly={false}
-          />
-        </div>
-      </main>
+          <div
+            ref={previewContainerRef}
+            className="preview-wrapper transition-transform duration-150 origin-top flex flex-col items-center py-2"
+            style={{
+              transform: zoomScale !== 1 ? `scale(${zoomScale})` : undefined,
+              width: paperWidth,
+              maxWidth: '100%'
+            }}
+          >
+            <UnifiedPrintDocument
+              documentType={documentType}
+              documentData={resolvedRecord}
+              layoutConfig={effectiveLayout}
+              companyInfo={companyInfo}
+              isPrintOnly={false}
+            />
+          </div>
+        </main>
+      </div>
     </div>,
     document.body
   );

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useDialog } from '../../context/DialogContext';
 import ResizableHeader from '../ui/ResizableHeader';
+import UniversalPrintPreviewModal from '../ui/UniversalPrintPreviewModal';
 
 // Purchase Invoice History module matching professional Stitch templates
 export default function PurchaseInvoiceHistory({ onViewCreate }) {
@@ -11,6 +12,7 @@ export default function PurchaseInvoiceHistory({ onViewCreate }) {
   const currencySymbol = state.adminSetup?.baseCurrency ? (state.adminSetup.baseCurrency.match(/\(([^)]+)\)/)?.[1] || '$') : '$';
 
   const [selectedInvoice, setSelectedInvoice] = useState(null); // Detail viewer modal
+  const [printInvoiceData, setPrintInvoiceData] = useState(null); // Universal print preview modal state
   const [editInvoice, setEditInvoice] = useState(null); // Edit modal toggle
   const [editRemarks, setEditRemarks] = useState('');
   const [editDate, setEditDate] = useState('');
@@ -35,13 +37,45 @@ export default function PurchaseInvoiceHistory({ onViewCreate }) {
     );
   };
 
-  // Print engine handler using customized print dialog popup window
+  // Print engine handler opening UniversalPrintPreviewModal (Issue 4)
   const handlePrint = (invoice) => {
-    const printWindow = window.open('', '_blank', 'width=850,height=900');
-    if (!printWindow) {
-      appAlert("Pop-up blocker is active. Please allow popups to print invoices.");
-      return;
-    }
+    if (!invoice) return;
+    const items = (invoice.items || []).map((it, idx) => ({
+      sr: idx + 1,
+      item_code: it.itemCode || it.code || `ITM-${idx + 1}`,
+      description: it.productName || it.description || it.name || 'Purchase Item',
+      qty: it.quantity || it.qty || 1,
+      unit: it.unit || 'PCS',
+      unit_price: it.price || it.unitPrice || 0,
+      amount: (it.quantity || it.qty || 1) * (it.price || it.unitPrice || 0)
+    }));
+
+    const subtotal = invoice.subtotal || invoice.totalAmount || items.reduce((sum, i) => sum + i.amount, 0);
+    const tax = invoice.taxAmount || invoice.tax || 0;
+    const discount = invoice.discount || 0;
+    const grandTotal = invoice.totalAmount || (subtotal + tax - discount);
+
+    setPrintInvoiceData({
+      ...invoice,
+      id: invoice.id,
+      header: {
+        invoice_no: invoice.id,
+        date: invoice.date ? invoice.date.split('T')[0] : new Date().toISOString().split('T')[0],
+        vendor_name: invoice.vendorName || invoice.vendor || 'Supplier',
+        source_type: invoice.sourceType || 'Direct PO',
+        source_id: invoice.sourceId || invoice.grn_id || '—',
+        payment_terms: invoice.paymentTerms || '30 Days Net',
+        status: invoice.status || 'Posted'
+      },
+      items,
+      totals: {
+        subtotal,
+        tax,
+        discount,
+        grandTotal
+      }
+    });
+    return;
 
     const html = `
       <html>
@@ -680,6 +714,15 @@ export default function PurchaseInvoiceHistory({ onViewCreate }) {
             </div>
           </div>
         </div>
+      )}
+      {/* Universal Print Preview Modal (Issue 4) */}
+      {printInvoiceData && (
+        <UniversalPrintPreviewModal
+          isOpen={Boolean(printInvoiceData)}
+          onClose={() => setPrintInvoiceData(null)}
+          documentType="purchase_invoice"
+          documentData={printInvoiceData}
+        />
       )}
     </div>
   );

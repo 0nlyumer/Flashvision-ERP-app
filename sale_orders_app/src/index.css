@@ -492,8 +492,8 @@
   select, 
   textarea, 
   nav, 
-  header:not(.chat-header),
-  footer:not(.print-layout-wrapper footer),
+  header:not(.chat-header):not(.document-header-block),
+  footer:not(.print-layout-wrapper footer):not(.document-footer-block),
   .print\:hidden,
   .btn,
   .button,
@@ -520,7 +520,13 @@
   #universal-print-preview-modal,
   #universal-print-preview-modal *,
   .unified-print-container,
-  .unified-print-container * {
+  .unified-print-container *,
+  .document-header-block,
+  .document-header-block *,
+  .document-table-body,
+  .document-table-body *,
+  .document-footer-block,
+  .document-footer-block * {
     visibility: visible !important;
   }
   .print-layout-wrapper {
@@ -555,19 +561,22 @@
   }
   
   /* Make the print preview modal behave as the main scrollable print container */
-  body.has-print-modal #antigravity-print-preview-modal {
+  body.has-print-modal #antigravity-print-preview-modal,
+  body.has-print-modal #universal-print-preview-modal {
     display: block !important;
     position: static !important;
     width: 100% !important;
     height: auto !important;
     overflow: visible !important;
-    background: white !important;
+    background: transparent !important;
     margin: 0 !important;
     padding: 0 !important;
     box-shadow: none !important;
   }
 
-  body.has-print-modal .print-preview-control-header {
+  body.has-print-modal .print-preview-control-header,
+  body.has-print-modal .modal-header,
+  body.has-print-modal .preview-controls-bar {
     display: none !important;
   }
 

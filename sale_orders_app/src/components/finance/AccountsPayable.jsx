@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { generateAPAging, formatMoney, round2 } from '../../utils/financeEngine';
 import ResizableHeader from '../ui/ResizableHeader';
+import UniversalPrintPreviewModal from '../ui/UniversalPrintPreviewModal';
 
 export default function AccountsPayable() {
   const { state } = useApp();
@@ -11,6 +12,7 @@ export default function AccountsPayable() {
   const [searchTerm, setSearchTerm] = useState('');
   const [agingFilter, setAgingFilter] = useState('all');
   const [selectedVendor, setSelectedVendor] = useState(null);
+  const [printData, setPrintData] = useState(null);
 
   // Compute AP Data
   const apData = useMemo(() => {
@@ -35,7 +37,30 @@ export default function AccountsPayable() {
   }, [vendors, searchTerm, agingFilter]);
 
   const handlePrint = () => {
-    window.print();
+    setPrintData({
+      header: {
+        report_title: 'ACCOUNTS PAYABLE & VENDOR AGING STATEMENT',
+        date: new Date().toISOString().split('T')[0],
+        total_vendors: filteredVendors.length,
+        aging_filter: agingFilter.toUpperCase()
+      },
+      items: filteredVendors.map((v, idx) => ({
+        sr: idx + 1,
+        vendor_name: v.vendorName,
+        total_invoiced: v.totalInvoiced,
+        total_paid: v.totalPaid,
+        current_due: v.bucket_0_30,
+        days_30: v.bucket_31_60,
+        days_60: v.bucket_61_90,
+        days_90_plus: v.bucket_90_plus,
+        net_outstanding: v.outstanding
+      })),
+      totals: {
+        total_invoiced: totalInvoiced,
+        total_paid: totalPaid,
+        grandTotal: grandTotalPayables
+      }
+    });
   };
 
   return (
@@ -362,6 +387,15 @@ export default function AccountsPayable() {
             </div>
           </div>
         </div>
+      )}
+      {/* Universal Print Preview Modal (Issue 4) */}
+      {printData && (
+        <UniversalPrintPreviewModal
+          isOpen={Boolean(printData)}
+          onClose={() => setPrintData(null)}
+          documentType="vendor_aging"
+          documentData={printData}
+        />
       )}
     </div>
   );

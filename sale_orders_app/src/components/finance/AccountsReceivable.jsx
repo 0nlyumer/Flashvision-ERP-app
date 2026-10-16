@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { generateARAging, formatMoney, round2 } from '../../utils/financeEngine';
 import ResizableHeader from '../ui/ResizableHeader';
+import UniversalPrintPreviewModal from '../ui/UniversalPrintPreviewModal';
 
 export default function AccountsReceivable() {
   const { state } = useApp();
@@ -11,6 +12,7 @@ export default function AccountsReceivable() {
   const [searchTerm, setSearchTerm] = useState('');
   const [agingFilter, setAgingFilter] = useState('all'); // 'all', 'current', 'overdue_30', 'overdue_60', 'overdue_90'
   const [selectedCustomer, setSelectedCustomer] = useState(null);
+  const [printData, setPrintData] = useState(null);
 
   // Compute AR Data
   const arData = useMemo(() => {
@@ -36,7 +38,30 @@ export default function AccountsReceivable() {
   }, [customers, searchTerm, agingFilter]);
 
   const handlePrintStatement = () => {
-    window.print();
+    setPrintData({
+      header: {
+        report_title: 'CUSTOMER RECEIVABLES & AGING STATEMENT',
+        date: new Date().toISOString().split('T')[0],
+        total_debtors: filteredCustomers.length,
+        aging_filter: agingFilter.toUpperCase()
+      },
+      items: filteredCustomers.map((c, idx) => ({
+        sr: idx + 1,
+        customer_name: c.customerName,
+        total_billed: c.totalBilled,
+        total_paid: c.totalCollected,
+        current_due: c.bucket_0_30,
+        days_30: c.bucket_31_60,
+        days_60: c.bucket_61_90,
+        days_90_plus: c.bucket_90_plus,
+        net_outstanding: c.outstanding
+      })),
+      totals: {
+        total_billed: totalBilled,
+        total_paid: totalCollected,
+        grandTotal: grandTotalReceivables
+      }
+    });
   };
 
   return (
@@ -363,6 +388,15 @@ export default function AccountsReceivable() {
             </div>
           </div>
         </div>
+      )}
+      {/* Universal Print Preview Modal (Issue 4) */}
+      {printData && (
+        <UniversalPrintPreviewModal
+          isOpen={Boolean(printData)}
+          onClose={() => setPrintData(null)}
+          documentType="customer_aging"
+          documentData={printData}
+        />
       )}
     </div>
   );

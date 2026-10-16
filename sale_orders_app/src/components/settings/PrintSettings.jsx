@@ -51,6 +51,9 @@ export default function PrintSettings() {
   const [activeRightTab, setActiveRightTab] = useState('themes'); 
   // 'themes' | 'palette' | 'paper' | 'header' | 'columns' | 'floor' | 'totals'
 
+  // Interactive Click-to-Edit Selected Element (Issue 5)
+  const [selectedElement, setSelectedElement] = useState(null);
+
   // Canvas View Scale
   const [zoomScale, setZoomScale] = useState(1);
 
@@ -219,6 +222,7 @@ export default function PrintSettings() {
 
   const handleSelectDocument = (docId) => {
     setSelectedDocId(docId);
+    setSelectedElement(null);
     const docMeta = SYSTEM_DOCUMENTS.find((d) => d.id === docId);
     if (docMeta) {
       if (activeModuleFilter !== 'all' && activeModuleFilter !== docMeta.module) {
@@ -231,6 +235,24 @@ export default function PrintSettings() {
         next.set('doc', docId);
         return next;
       });
+    }
+  };
+
+  // Interactive Click-to-Edit Dispatcher (Issue 5)
+  const handleSelectElement = (el) => {
+    if (!el) {
+      setSelectedElement(null);
+      return;
+    }
+    setSelectedElement(el);
+    if (el.type === 'column') {
+      setActiveRightTab('columns');
+    } else if (el.type === 'header_field' || el.type === 'company' || el.type === 'title') {
+      setActiveRightTab('header');
+    } else if (el.type === 'totals' || el.type === 'signatures') {
+      setActiveRightTab('totals');
+    } else if (el.type === 'footer') {
+      setActiveRightTab('advanced');
     }
   };
 
@@ -408,12 +430,20 @@ export default function PrintSettings() {
     }
   };
 
-  // Live Sample Document Record
+  // Live Sample Document Record (Issue 1: Guarantee Full Totals Block)
   const mockData = useMemo(() => {
     try {
       const fromState = getSampleRecordFromState ? getSampleRecordFromState(selectedDocId, state) : null;
-      if (fromState) return fromState;
-      return getMockPreviewData(selectedDocId) || { header: {}, items: [], totals: {} };
+      const fallback = getMockPreviewData(selectedDocId) || { header: {}, items: [], totals: {} };
+      if (fromState) {
+        return {
+          ...fromState,
+          header: { ...(fallback.header || {}), ...(fromState.header || {}) },
+          items: (fromState.items && fromState.items.length > 0) ? fromState.items : (fallback.items || []),
+          totals: { ...(fallback.totals || {}), ...(fromState.totals || {}) }
+        };
+      }
+      return fallback;
     } catch (e) {
       console.error('Error computing mock data:', e);
       return getMockPreviewData(selectedDocId) || { header: {}, items: [], totals: {} };
@@ -452,6 +482,22 @@ export default function PrintSettings() {
   const handlePrintTest = () => {
     window.print();
   };
+
+  // Derive selected element details for Click-to-Edit Inspector (Issue 5)
+  const selectedColKey = selectedElement?.type === 'column' 
+    ? (selectedElement.data?.key || selectedElement.id?.replace(/^col_/, '')) 
+    : null;
+  const selectedColIndex = selectedColKey 
+    ? (activeLayout.gridColumns || []).findIndex(c => c.key === selectedColKey) 
+    : -1;
+  const activeSelectedCol = selectedColIndex > -1 ? activeLayout.gridColumns[selectedColIndex] : (selectedElement?.data || null);
+
+  const selectedFieldKey = selectedElement?.type === 'header_field' 
+    ? (selectedElement.data?.key || selectedElement.id?.replace(/^header_/, '')) 
+    : null;
+  const selectedField = selectedFieldKey 
+    ? (activeLayout.headerFields || []).find(f => f.key === selectedFieldKey) 
+    : null;
 
   return (
     <>
@@ -723,6 +769,9 @@ export default function PrintSettings() {
                   layoutConfig={activeLayout}
                   companyInfo={companyInfo}
                   isPrintOnly={false}
+                  interactive={true}
+                  selectedElementId={selectedElement?.id}
+                  onSelectElement={handleSelectElement}
                 />
               </div>
             </div>
@@ -762,6 +811,322 @@ export default function PrintSettings() {
 
             {/* Scrollable Tab Content */}
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              
+              {/* ========================================================== */}
+              {/* ACTIVE ELEMENT INSPECTOR (Issue 5: Click-to-Edit Studio)   */}
+              {/* ========================================================== */}
+              {selectedElement && (
+                <div className="bg-gradient-to-br from-blue-50/90 to-indigo-50/60 dark:from-blue-950/40 dark:to-slate-900 border-2 border-blue-500/60 dark:border-blue-700 rounded-xl p-3.5 shadow-sm space-y-3 animate-fade-in shrink-0">
+                  <div className="flex items-center justify-between pb-2 border-b border-blue-200/80 dark:border-blue-800/60">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="w-2.5 h-2.5 rounded-full bg-blue-600 animate-pulse shrink-0" />
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-blue-700 dark:text-blue-300">
+                        Editing {selectedElement.type.replace('_', ' ')}:
+                      </span>
+                      <span className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                        {selectedElement.type === 'column'
+                          ? (activeSelectedCol?.label || selectedColKey)
+                          : selectedElement.type === 'header_field'
+                          ? (selectedField?.label || selectedFieldKey)
+                          : selectedElement.type === 'company'
+                          ? 'Company Header'
+                          : selectedElement.type === 'title'
+                          ? 'Document Title'
+                          : selectedElement.type === 'totals'
+                          ? 'Totals Block'
+                          : selectedElement.type === 'signatures'
+                          ? 'Signatures Block'
+                          : 'Footer / Terms'}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedElement(null)}
+                      className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 p-1 rounded-md hover:bg-white/60 dark:hover:bg-slate-800 cursor-pointer"
+                      title="Close Inspector"
+                    >
+                      <span className="material-symbols-outlined text-[16px]">close</span>
+                    </button>
+                  </div>
+
+                  {/* COLUMN CONTROLS */}
+                  {selectedElement.type === 'column' && activeSelectedCol && selectedColIndex > -1 && (
+                    <div className="space-y-2.5 text-xs">
+                      <div>
+                        <label className="text-[10.5px] font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                          Header Title
+                        </label>
+                        <input
+                          type="text"
+                          value={activeSelectedCol.label || activeSelectedCol.key}
+                          onChange={(e) => updateColumnProperty(selectedColIndex, 'label', e.target.value)}
+                          className="w-full h-8 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500 font-medium"
+                          placeholder="Header Title"
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-[10.5px] font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                            Alignment
+                          </label>
+                          <div className="flex items-center border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden bg-white dark:bg-slate-900 p-0.5 h-8">
+                            {['left', 'center', 'right'].map((align) => (
+                              <button
+                                key={align}
+                                type="button"
+                                onClick={() => updateColumnProperty(selectedColIndex, 'align', align)}
+                                className={`flex-1 h-full text-[10px] font-semibold rounded capitalize transition-all cursor-pointer ${
+                                  (activeSelectedCol.align || 'left') === align
+                                    ? 'bg-blue-600 text-white shadow-xs font-bold'
+                                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                                }`}
+                              >
+                                {align}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="text-[10.5px] font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                            Column Width
+                          </label>
+                          <input
+                            type="text"
+                            value={activeSelectedCol.width || '15%'}
+                            onChange={(e) => updateColumnProperty(selectedColIndex, 'width', e.target.value)}
+                            className="w-full h-8 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2 text-center font-mono text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500 font-medium"
+                            placeholder="e.g. 15% or 80px"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-2">
+                        <div>
+                          <label className="text-[10.5px] font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                            Font Size
+                          </label>
+                          <select
+                            value={activeSelectedCol.fontSize || ''}
+                            onChange={(e) => updateColumnProperty(selectedColIndex, 'fontSize', e.target.value)}
+                            className="w-full h-8 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-1.5 text-[11px] font-medium text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          >
+                            <option value="">Default</option>
+                            <option value="9px">9px (Micro)</option>
+                            <option value="10px">10px (Compact)</option>
+                            <option value="11px">11px (Regular)</option>
+                            <option value="12px">12px (Medium)</option>
+                            <option value="13px">13px (Large)</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="text-[10.5px] font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                            Font Weight
+                          </label>
+                          <select
+                            value={activeSelectedCol.fontWeight || ''}
+                            onChange={(e) => updateColumnProperty(selectedColIndex, 'fontWeight', e.target.value)}
+                            className="w-full h-8 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-1.5 text-[11px] font-medium text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          >
+                            <option value="">Default</option>
+                            <option value="normal">Normal</option>
+                            <option value="medium">Medium</option>
+                            <option value="semibold">SemiBold</option>
+                            <option value="bold">Bold</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="text-[10.5px] font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                            Text Wrap
+                          </label>
+                          <select
+                            value={activeSelectedCol.wrap || 'wrap'}
+                            onChange={(e) => updateColumnProperty(selectedColIndex, 'wrap', e.target.value)}
+                            className="w-full h-8 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-1.5 text-[11px] font-medium text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          >
+                            <option value="wrap">Wrap</option>
+                            <option value="nowrap">NoWrap (Clip)</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between pt-1">
+                        <label className="flex items-center gap-1.5 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={activeSelectedCol.enabled !== false}
+                            onChange={() => toggleColumnVisibility(selectedColIndex)}
+                            className="w-3.5 h-3.5 rounded text-blue-600 border-slate-300 focus:ring-blue-500 cursor-pointer"
+                          />
+                          <span className="text-[11px] font-medium text-slate-700 dark:text-slate-300">Show on Print</span>
+                        </label>
+
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => moveColumn(selectedColIndex, -1)}
+                            disabled={selectedColIndex === 0}
+                            className="px-2 py-1 rounded bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[10.5px] font-medium text-slate-700 dark:text-slate-300 disabled:opacity-40 flex items-center gap-0.5 cursor-pointer"
+                          >
+                            <span className="material-symbols-outlined text-[13px]">arrow_upward</span> Left
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => moveColumn(selectedColIndex, 1)}
+                            disabled={selectedColIndex === (activeLayout.gridColumns?.length || 1) - 1}
+                            className="px-2 py-1 rounded bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[10.5px] font-medium text-slate-700 dark:text-slate-300 disabled:opacity-40 flex items-center gap-0.5 cursor-pointer"
+                          >
+                            <span className="material-symbols-outlined text-[13px]">arrow_downward</span> Right
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* HEADER FIELD CONTROLS */}
+                  {selectedElement.type === 'header_field' && selectedField && (
+                    <div className="space-y-2.5 text-xs">
+                      <div>
+                        <label className="text-[10.5px] font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                          Field Label ({selectedFieldKey})
+                        </label>
+                        <input
+                          type="text"
+                          value={selectedField.label || selectedField.key}
+                          onChange={(e) => updateHeaderFieldProp(selectedField.key, 'label', e.target.value)}
+                          className="w-full h-8 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500 font-medium"
+                        />
+                      </div>
+
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex-1">
+                          <label className="text-[10.5px] font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                            Width in Header Grid
+                          </label>
+                          <select
+                            value={selectedField.width || 'span-1'}
+                            onChange={(e) => updateHeaderFieldProp(selectedField.key, 'width', e.target.value)}
+                            className="w-full h-8 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2 text-xs font-medium text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          >
+                            <option value="span-1">1 Column (Default)</option>
+                            <option value="span-2">2 Columns</option>
+                            <option value="span-3">Full Width (3 Columns)</option>
+                          </select>
+                        </div>
+
+                        <label className="flex items-center gap-1.5 cursor-pointer pt-4">
+                          <input
+                            type="checkbox"
+                            checked={selectedField.enabled !== false}
+                            onChange={() => toggleHeaderField(selectedField.key)}
+                            className="w-3.5 h-3.5 rounded text-blue-600 border-slate-300 focus:ring-blue-500 cursor-pointer"
+                          />
+                          <span className="text-[11px] font-medium text-slate-700 dark:text-slate-300">Show on Print</span>
+                        </label>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* COMPANY HEADER CONTROLS */}
+                  {selectedElement.type === 'company' && (
+                    <div className="space-y-2 text-xs">
+                      <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed">
+                        Company identity is retrieved from global settings. Configure logo appearance:
+                      </p>
+                      <div className="grid grid-cols-2 gap-2">
+                        <label className="flex items-center gap-1.5 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={activeLayout.showHeaderLogo !== false}
+                            onChange={(e) => updateActiveLayout({ showHeaderLogo: e.target.checked })}
+                            className="w-3.5 h-3.5 rounded text-blue-600 border-slate-300 focus:ring-blue-500 cursor-pointer"
+                          />
+                          <span className="text-[11px] font-medium text-slate-700 dark:text-slate-300">Show Logo</span>
+                        </label>
+                        <select
+                          value={activeLayout.logoPosition || 'left'}
+                          onChange={(e) => updateActiveLayout({ logoPosition: e.target.value })}
+                          className="h-7 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-md px-2 text-[11px]"
+                        >
+                          <option value="left">Align Left</option>
+                          <option value="center">Align Center</option>
+                          <option value="right">Align Right</option>
+                        </select>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* TITLE CONTROLS */}
+                  {selectedElement.type === 'title' && (
+                    <div className="space-y-2 text-xs">
+                      <label className="text-[10.5px] font-semibold text-slate-700 dark:text-slate-300 block">
+                        Custom Document Title
+                      </label>
+                      <input
+                        type="text"
+                        value={activeLayout.documentTitle || ''}
+                        onChange={(e) => updateActiveLayout({ documentTitle: e.target.value })}
+                        placeholder={currentDocMeta.name.toUpperCase()}
+                        className="w-full h-8 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500 font-medium"
+                      />
+                    </div>
+                  )}
+
+                  {/* TOTALS CONTROLS */}
+                  {selectedElement.type === 'totals' && (
+                    <div className="space-y-2 text-xs">
+                      <label className="text-[10.5px] font-semibold text-slate-700 dark:text-slate-300 block">
+                        Totals Placement
+                      </label>
+                      <select
+                        value={activeLayout.totalsPosition || 'last_page'}
+                        onChange={(e) => updateActiveLayout({ totalsPosition: e.target.value })}
+                        className="w-full h-8 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500 font-medium"
+                      >
+                        <option value="last_page">Last Page Only (Standard Corporate)</option>
+                        <option value="every_page">Every Page Bottom (Running Cumulative)</option>
+                      </select>
+                    </div>
+                  )}
+
+                  {/* SIGNATURES CONTROLS */}
+                  {selectedElement.type === 'signatures' && (
+                    <div className="space-y-2 text-xs">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-semibold text-slate-700 dark:text-slate-300">
+                          Signatory Authorization Blocks ({(activeLayout.signatures || []).length})
+                        </span>
+                        <button
+                          type="button"
+                          onClick={handleAddSignature}
+                          className="text-[11px] font-bold text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-0.5 cursor-pointer"
+                        >
+                          <span className="material-symbols-outlined text-[13px]">add</span> Add Signatory
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* FOOTER CONTROLS */}
+                  {selectedElement.type === 'footer' && (
+                    <div className="space-y-2 text-xs">
+                      <label className="text-[10.5px] font-semibold text-slate-700 dark:text-slate-300 block">
+                        Document Footer Line
+                      </label>
+                      <input
+                        type="text"
+                        value={activeLayout.customFooterText || ''}
+                        onChange={(e) => updateActiveLayout({ customFooterText: e.target.value })}
+                        placeholder="Computer Generated Document. Powered by Flashvision ERP."
+                        className="w-full h-8 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500 font-medium"
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
               
               {/* ========================================================== */}
               {/* TAB 1: THEMES (3 DEDICATED ARCHETYPES)                      */}
@@ -1189,15 +1554,19 @@ export default function PrintSettings() {
                   </div>
 
                   <div className="space-y-2">
-                    {(activeLayout.headerFields || []).map((field) => (
-                      <div
-                        key={field.key}
-                        className={`p-2.5 rounded-xl border space-y-2 transition-all ${
-                          field.enabled !== false
-                            ? 'bg-white dark:bg-slate-800/40 border-slate-200/90 dark:border-slate-800'
-                            : 'bg-slate-50/50 dark:bg-slate-900/40 border-slate-200/50 dark:border-slate-800/40 opacity-60'
-                        }`}
-                      >
+                    {(activeLayout.headerFields || []).map((field) => {
+                      const isFieldSelected = selectedFieldKey === field.key;
+                      return (
+                        <div
+                          key={field.key}
+                          className={`p-2.5 rounded-xl border space-y-2 transition-all ${
+                            isFieldSelected
+                              ? 'ring-2 ring-blue-500 bg-blue-50/70 dark:bg-blue-950/40 border-blue-400 shadow-xs'
+                              : field.enabled !== false
+                              ? 'bg-white dark:bg-slate-800/40 border-slate-200/90 dark:border-slate-800'
+                              : 'bg-slate-50/50 dark:bg-slate-900/40 border-slate-200/50 dark:border-slate-800/40 opacity-60'
+                          }`}
+                        >
                         <div className="flex items-center justify-between gap-2">
                           <label className="flex items-center gap-2 cursor-pointer">
                             <input
@@ -1230,7 +1599,8 @@ export default function PrintSettings() {
                           placeholder="Display Label"
                         />
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -1256,84 +1626,123 @@ export default function PrintSettings() {
                   </div>
 
                   <div className="space-y-2">
-                    {(activeLayout.gridColumns || []).map((col, idx) => (
-                      <div
-                        key={col.key || idx}
-                        className={`p-2.5 rounded-xl border space-y-2 transition-all ${
-                          col.enabled !== false
-                            ? 'bg-white dark:bg-slate-800/40 border-slate-200/90 dark:border-slate-800'
-                            : 'bg-slate-50/50 dark:bg-slate-900/40 border-slate-200/50 dark:border-slate-800/40 opacity-60'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <label className="flex items-center gap-2 cursor-pointer flex-1 min-w-0">
-                            <input
-                              type="checkbox"
-                              checked={col.enabled !== false}
-                              onChange={() => toggleColumnVisibility(idx)}
-                              className="w-3.5 h-3.5 rounded text-blue-600 border-slate-300 focus:ring-blue-500 cursor-pointer"
-                            />
-                            <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate">
-                              {col.key}
-                            </span>
-                          </label>
+                    {(activeLayout.gridColumns || []).map((col, idx) => {
+                      const isColSelected = selectedColKey === col.key;
+                      return (
+                        <div
+                          key={col.key || idx}
+                          className={`p-2.5 rounded-xl border space-y-2 transition-all ${
+                            isColSelected
+                              ? 'ring-2 ring-blue-500 bg-blue-50/70 dark:bg-blue-950/40 border-blue-400 shadow-xs'
+                              : col.enabled !== false
+                              ? 'bg-white dark:bg-slate-800/40 border-slate-200/90 dark:border-slate-800'
+                              : 'bg-slate-50/50 dark:bg-slate-900/40 border-slate-200/50 dark:border-slate-800/40 opacity-60'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <label className="flex items-center gap-2 cursor-pointer flex-1 min-w-0">
+                              <input
+                                type="checkbox"
+                                checked={col.enabled !== false}
+                                onChange={() => toggleColumnVisibility(idx)}
+                                className="w-3.5 h-3.5 rounded text-blue-600 border-slate-300 focus:ring-blue-500 cursor-pointer"
+                              />
+                              <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate">
+                                {col.key}
+                              </span>
+                            </label>
 
-                          <div className="flex items-center gap-0.5">
-                            <button
-                              onClick={() => moveColumn(idx, -1)}
-                              disabled={idx === 0}
-                              className="p-1 rounded text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30 disabled:hover:bg-transparent"
-                              title="Move Up"
-                            >
-                              <span className="material-symbols-outlined text-[15px]">arrow_upward</span>
-                            </button>
-                            <button
-                              onClick={() => moveColumn(idx, 1)}
-                              disabled={idx === (activeLayout.gridColumns?.length || 1) - 1}
-                              className="p-1 rounded text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30 disabled:hover:bg-transparent"
-                              title="Move Down"
-                            >
-                              <span className="material-symbols-outlined text-[15px]">arrow_downward</span>
-                            </button>
-                          </div>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-2">
-                          <input
-                            type="text"
-                            value={col.label || col.key}
-                            onChange={(e) => updateColumnProperty(idx, 'label', e.target.value)}
-                            className="h-8 bg-slate-50/60 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500/40 focus:border-blue-500"
-                            placeholder="Header Title"
-                          />
-                          <div className="flex items-center gap-1.5">
-                            <input
-                              type="text"
-                              value={col.width || '15%'}
-                              onChange={(e) => updateColumnProperty(idx, 'width', e.target.value)}
-                              className="w-14 h-8 bg-slate-50/60 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-1.5 text-xs font-mono tabular-nums text-center text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500/40 focus:border-blue-500"
-                              placeholder="Width"
-                            />
-                            <div className="flex items-center border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden bg-slate-100 dark:bg-slate-800/80 p-0.5">
-                              {['left', 'center', 'right'].map((align) => (
-                                <button
-                                  key={align}
-                                  onClick={() => updateColumnProperty(idx, 'align', align)}
-                                  className={`px-1.5 py-0.5 text-[10px] font-semibold rounded ${
-                                    (col.align || 'left') === align
-                                      ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs'
-                                      : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-                                  }`}
-                                  title={`Align ${align}`}
-                                >
-                                  {align === 'left' ? 'L' : align === 'center' ? 'C' : 'R'}
-                                </button>
-                              ))}
+                            <div className="flex items-center gap-0.5">
+                              <button
+                                onClick={() => moveColumn(idx, -1)}
+                                disabled={idx === 0}
+                                className="p-1 rounded text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30 disabled:hover:bg-transparent cursor-pointer"
+                                title="Move Up"
+                              >
+                                <span className="material-symbols-outlined text-[15px]">arrow_upward</span>
+                              </button>
+                              <button
+                                onClick={() => moveColumn(idx, 1)}
+                                disabled={idx === (activeLayout.gridColumns?.length || 1) - 1}
+                                className="p-1 rounded text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30 disabled:hover:bg-transparent cursor-pointer"
+                                title="Move Down"
+                              >
+                                <span className="material-symbols-outlined text-[15px]">arrow_downward</span>
+                              </button>
                             </div>
                           </div>
+
+                          <div className="grid grid-cols-2 gap-2">
+                            <input
+                              type="text"
+                              value={col.label || col.key}
+                              onChange={(e) => updateColumnProperty(idx, 'label', e.target.value)}
+                              className="h-8 bg-slate-50/60 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500/40 focus:border-blue-500 font-medium"
+                              placeholder="Header Title"
+                            />
+                            <div className="flex items-center gap-1.5">
+                              <input
+                                type="text"
+                                value={col.width || '15%'}
+                                onChange={(e) => updateColumnProperty(idx, 'width', e.target.value)}
+                                className="w-14 h-8 bg-slate-50/60 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-1.5 text-xs font-mono tabular-nums text-center text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500/40 focus:border-blue-500 font-medium"
+                                placeholder="Width"
+                              />
+                              <div className="flex items-center border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden bg-slate-100 dark:bg-slate-800/80 p-0.5">
+                                {['left', 'center', 'right'].map((align) => (
+                                  <button
+                                    key={align}
+                                    onClick={() => updateColumnProperty(idx, 'align', align)}
+                                    className={`px-1.5 py-0.5 text-[10px] font-semibold rounded cursor-pointer ${
+                                      (col.align || 'left') === align
+                                        ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs font-bold'
+                                        : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                                    }`}
+                                    title={`Align ${align}`}
+                                  >
+                                    {align === 'left' ? 'L' : align === 'center' ? 'C' : 'R'}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-3 gap-1.5 pt-0.5 text-[10px]">
+                            <select
+                              value={col.fontSize || ''}
+                              onChange={(e) => updateColumnProperty(idx, 'fontSize', e.target.value)}
+                              className="h-7 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded px-1 text-slate-700 dark:text-slate-300 font-medium"
+                            >
+                              <option value="">Font: Auto</option>
+                              <option value="9px">9px (Micro)</option>
+                              <option value="10px">10px (Small)</option>
+                              <option value="11px">11px (Normal)</option>
+                              <option value="12px">12px (Medium)</option>
+                              <option value="13px">13px (Large)</option>
+                            </select>
+                            <select
+                              value={col.fontWeight || ''}
+                              onChange={(e) => updateColumnProperty(idx, 'fontWeight', e.target.value)}
+                              className="h-7 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded px-1 text-slate-700 dark:text-slate-300 font-medium"
+                            >
+                              <option value="">Weight: Auto</option>
+                              <option value="normal">Normal</option>
+                              <option value="medium">Medium</option>
+                              <option value="semibold">SemiBold</option>
+                              <option value="bold">Bold</option>
+                            </select>
+                            <select
+                              value={col.wrap || 'wrap'}
+                              onChange={(e) => updateColumnProperty(idx, 'wrap', e.target.value)}
+                              className="h-7 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded px-1 text-slate-700 dark:text-slate-300 font-medium"
+                            >
+                              <option value="wrap">Wrap</option>
+                              <option value="nowrap">NoWrap</option>
+                            </select>
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}

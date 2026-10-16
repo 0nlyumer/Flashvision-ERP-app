@@ -23,7 +23,10 @@ export default function UnifiedPrintDocument({
   pages = null,
   companyInfo = {},
   isPrintOnly = false,
-  scale = 1
+  scale = 1,
+  interactive = false,
+  selectedElementId = null,
+  onSelectElement = null
 }) {
   const activeTheme = layoutConfig.activeTheme || 'classic';
   const isIndustrial = activeTheme === 'industrial';
@@ -206,7 +209,7 @@ export default function UnifiedPrintDocument({
       return headerData.late_count || headerData.late || '—';
     }
 
-    // Generic Fallbacks (SAFE: do not match vehicle_no or contact_number as doc id!)
+    // Generic Fallbacks
     if (normKey === 'id' || normKey === 'no' || normKey === 'number' || normKey === 'docno' || normKey === 'refno') {
       return headerData.id || headerData.so_number || headerData.invoice_no || headerData.challan_no || headerData.batch_no || 'DOC-2026-001';
     }
@@ -328,18 +331,42 @@ export default function UnifiedPrintDocument({
 
   const docCode = headerData.id || headerData.so_number || headerData.invoice_no || headerData.challan_no || headerData.batch_no || headerData.bom_code || headerData.ledger_id || 'DOC-2026-OFFICIAL';
 
+  // Interactive selection helper for Print Studio click-to-edit
+  const getInteractiveProps = (type, id, data = {}) => {
+    if (!interactive) return { className: '' };
+    const isSelected = selectedElementId === id;
+    return {
+      'data-interactive-element': id,
+      onClick: (e) => {
+        e.stopPropagation();
+        if (onSelectElement) {
+          onSelectElement({ type, id, data });
+        }
+      },
+      className: `cursor-pointer transition-all duration-150 ${
+        isSelected
+          ? 'ring-2 ring-blue-600 ring-offset-2 bg-blue-50/50 relative z-20 shadow-xs'
+          : 'hover:outline hover:outline-2 hover:outline-dashed hover:outline-blue-400 hover:bg-blue-50/20'
+      }`
+    };
+  };
+
   // Generate dynamic print CSS
   const dynamicPrintStyles = `
     @media print {
       @page {
         size: ${paperFormat.toLowerCase()} ${orientation} !important;
-        margin: ${layoutConfig.marginTop || '12mm'} ${layoutConfig.marginRight || '12mm'} ${layoutConfig.marginBottom || '12mm'} ${layoutConfig.marginLeft || '12mm'} !important;
+        margin: 10mm !important;
       }
-      body {
+      html, body {
         -webkit-print-color-adjust: exact !important;
         print-color-adjust: exact !important;
         background: #ffffff !important;
         color: #000000 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        overflow: visible !important;
+        height: auto !important;
       }
       .no-print { display: none !important; }
       .print-preview-page {
@@ -347,16 +374,24 @@ export default function UnifiedPrintDocument({
         margin: 0 !important;
         padding: 0 !important;
         width: 100% !important;
+        max-width: 100% !important;
+        min-height: auto !important;
+        border: none !important;
         page-break-after: always !important;
+        break-after: page !important;
+        overflow: visible !important;
       }
       .print-preview-page:last-child {
         page-break-after: auto !important;
+        break-after: auto !important;
       }
-      tr {
-        page-break-inside: avoid !important;
-        break-inside: avoid !important;
+      .document-header-block,
+      .document-table-body,
+      .document-footer-block {
+        display: block !important;
+        visibility: visible !important;
       }
-      .avoid-break {
+      tr, thead, .avoid-break {
         page-break-inside: avoid !important;
         break-inside: avoid !important;
       }
@@ -397,13 +432,17 @@ export default function UnifiedPrintDocument({
             {/* 1. DOCUMENT HEADER BLOCK (Theme Differentiated)                 */}
             {/* ============================================================== */}
             {shouldShowHeader && (
-              <header className="mb-4">
+              <div className="document-header-block mb-4">
                 {/* ---------------- THEME A: CLASSIC CORPORATE ---------------- */}
                 {isClassic && (
                   <div className="border-b-[3px] border-slate-900 pb-3">
                     <div className="flex justify-between items-start gap-4">
                       {/* Left: Company Logo & Details */}
-                      <div className="flex items-center gap-3.5 max-w-[60%]">
+                      <div 
+                        {...getInteractiveProps('company', 'company_block', { companyName, address, phone, email, taxId })}
+                        className={`flex items-center gap-3.5 max-w-[60%] p-1 rounded ${getInteractiveProps('company', 'company_block').className || ''}`}
+                        title={interactive ? "Click to customize company logo & header details" : undefined}
+                      >
                         {showLogo && (
                           <img src={resolvedLogoUrl} alt="Company Logo" className={`${logoHeightClass} object-contain max-w-[160px]`} />
                         )}
@@ -422,7 +461,11 @@ export default function UnifiedPrintDocument({
                       </div>
 
                       {/* Right: Formal Title & Code */}
-                      <div className="text-right">
+                      <div 
+                        {...getInteractiveProps('title', 'title_block', { documentTitle, docCode, date: headerData.date })}
+                        className={`text-right p-1 rounded ${getInteractiveProps('title', 'title_block').className || ''}`}
+                        title={interactive ? "Click to customize document title & header" : undefined}
+                      >
                         <h2 className="text-xl font-extrabold tracking-tight uppercase text-slate-900">
                           {documentTitle}
                         </h2>
@@ -447,7 +490,12 @@ export default function UnifiedPrintDocument({
                           const val = getHeaderValue(field.key);
                           const spanClass = field.width === 'span-3' ? 'col-span-3' : field.width === 'span-2' ? 'col-span-2' : 'col-span-1';
                           return (
-                            <div key={field.key} className={`${spanClass} flex flex-col bg-slate-50/80 p-1.5 rounded border border-slate-200/60`}>
+                            <div 
+                              key={field.key} 
+                              {...getInteractiveProps('header_field', `header_${field.key}`, field)}
+                              className={`${spanClass} flex flex-col bg-slate-50/80 p-1.5 rounded border border-slate-200/60 ${getInteractiveProps('header_field', `header_${field.key}`, field).className || ''}`}
+                              title={interactive ? `Click to customize ${field.label || field.key}` : undefined}
+                            >
                               <span className="text-[8.5px] uppercase font-bold tracking-wider text-slate-500">
                                 {field.label}:
                               </span>
@@ -467,7 +515,11 @@ export default function UnifiedPrintDocument({
                     <div className="h-1.5 w-full rounded-full mb-3" style={{ backgroundColor: primaryColor }} />
 
                     <div className="flex justify-between items-center gap-4">
-                      <div className="flex items-center gap-3">
+                      <div 
+                        {...getInteractiveProps('company', 'company_block', { companyName })}
+                        className={`flex items-center gap-3 p-1 rounded ${getInteractiveProps('company', 'company_block').className || ''}`}
+                        title={interactive ? "Click to customize company branding" : undefined}
+                      >
                         {showLogo && (
                           <img src={resolvedLogoUrl} alt="Logo" className={`${logoHeightClass} object-contain max-w-[160px]`} />
                         )}
@@ -481,7 +533,11 @@ export default function UnifiedPrintDocument({
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-2">
+                      <div 
+                        {...getInteractiveProps('title', 'title_block', { documentTitle, docCode })}
+                        className={`flex items-center gap-2 p-1 rounded ${getInteractiveProps('title', 'title_block').className || ''}`}
+                        title={interactive ? "Click to customize status & document title" : undefined}
+                      >
                         <div className="bg-slate-100 px-3 py-1.5 rounded-xl border border-slate-200 flex flex-col items-end">
                           <span className="text-[8.5px] uppercase font-bold text-slate-400">Ref Code</span>
                           <span className="font-mono text-xs font-black text-slate-900">{docCode}</span>
@@ -499,7 +555,12 @@ export default function UnifiedPrintDocument({
                           const val = getHeaderValue(field.key);
                           const spanClass = field.width === 'span-3' ? 'col-span-3' : field.width === 'span-2' ? 'col-span-2' : 'col-span-1';
                           return (
-                            <div key={field.key} className={`${spanClass} p-2 rounded-xl bg-slate-50 border border-slate-200/80`}>
+                            <div 
+                              key={field.key} 
+                              {...getInteractiveProps('header_field', `header_${field.key}`, field)}
+                              className={`${spanClass} p-2 rounded-xl bg-slate-50 border border-slate-200/80 ${getInteractiveProps('header_field', `header_${field.key}`, field).className || ''}`}
+                              title={interactive ? `Click to customize ${field.label || field.key}` : undefined}
+                            >
                               <span className="text-[8.5px] uppercase font-bold text-slate-400 block">{field.label}</span>
                               <span className="font-bold text-slate-800 text-[11px] truncate block mt-0.5">{val}</span>
                             </div>
@@ -515,7 +576,11 @@ export default function UnifiedPrintDocument({
                   <div className="border-2 border-black p-2.5 mb-2 bg-white">
                     {/* High-Visibility Job/Batch Floor Banner */}
                     <div className="flex justify-between items-start border-b-2 border-black pb-2 mb-2">
-                      <div className="max-w-[50%]">
+                      <div 
+                        {...getInteractiveProps('company', 'company_block', { companyName })}
+                        className={`max-w-[50%] p-1 rounded ${getInteractiveProps('company', 'company_block').className || ''}`}
+                        title={interactive ? "Click to customize plant details" : undefined}
+                      >
                         {showLogo && (
                           <img src={resolvedLogoUrl} alt="Logo" className={`${logoHeightClass} object-contain max-w-[120px] mb-1.5`} />
                         )}
@@ -531,14 +596,22 @@ export default function UnifiedPrintDocument({
                       </div>
 
                       {/* Giant Readable Batch Identifier */}
-                      <div className="border-2 border-black px-4 py-1.5 bg-black text-white text-center rounded">
+                      <div 
+                        {...getInteractiveProps('title', 'title_block', { documentTitle, docCode })}
+                        className={`border-2 border-black px-4 py-1.5 bg-black text-white text-center rounded ${getInteractiveProps('title', 'title_block').className || ''}`}
+                        title={interactive ? "Click to customize batch identifier" : undefined}
+                      >
                         <span className="text-[8px] uppercase tracking-widest font-mono text-slate-300 block">BATCH / ORDER #</span>
                         <span className="text-lg font-black font-mono tracking-wider">{docCode}</span>
                       </div>
                     </div>
 
                     {/* Shop-Floor Allocation Matrix */}
-                    <div className="grid grid-cols-4 gap-1.5 text-[9px] font-mono border border-black p-1.5 bg-slate-50">
+                    <div 
+                      {...getInteractiveProps('header_field', 'machine_matrix', {})}
+                      className={`grid grid-cols-4 gap-1.5 text-[9px] font-mono border border-black p-1.5 bg-slate-50 ${getInteractiveProps('header_field', 'machine_matrix').className || ''}`}
+                      title={interactive ? "Click to customize floor allocation matrix" : undefined}
+                    >
                       <div className="border-r border-black pr-2">
                         <span className="font-bold text-slate-600 block">MACHINE / LINE:</span>
                         <span className="font-black text-black text-[10px] uppercase">
@@ -572,7 +645,12 @@ export default function UnifiedPrintDocument({
                           const val = getHeaderValue(field.key);
                           const spanClass = field.width === 'span-3' ? 'col-span-3' : field.width === 'span-2' ? 'col-span-2' : 'col-span-1';
                           return (
-                            <div key={field.key} className={`${spanClass} flex gap-1 items-baseline`}>
+                            <div 
+                              key={field.key} 
+                              {...getInteractiveProps('header_field', `header_${field.key}`, field)}
+                              className={`${spanClass} flex gap-1 items-baseline p-1 rounded ${getInteractiveProps('header_field', `header_${field.key}`, field).className || ''}`}
+                              title={interactive ? `Click to customize ${field.label || field.key}` : undefined}
+                            >
                               <strong className="uppercase font-mono text-black">{field.label}:</strong>
                               <span className="font-bold text-black truncate">{val}</span>
                             </div>
@@ -582,13 +660,13 @@ export default function UnifiedPrintDocument({
                     )}
                   </div>
                 )}
-              </header>
+              </div>
             )}
 
             {/* ============================================================== */}
             {/* 2. LINE ITEMS DATA TABLE (Theme Specific Table Style)           */}
             {/* ============================================================== */}
-            <main className="flex-1 w-full overflow-hidden">
+            <div className="document-table-body flex-1 w-full overflow-visible">
               <table 
                 className={`w-full border-collapse text-left ${
                   isIndustrial ? 'border-2 border-black' : isModern ? 'border border-slate-200' : 'border border-slate-300'
@@ -614,15 +692,20 @@ export default function UnifiedPrintDocument({
                       {activeColumns.map(col => (
                         <th
                           key={col.key}
+                          {...getInteractiveProps('column', `col_${col.key}`, col)}
                           className={`py-1.5 px-2 font-bold uppercase text-[9px] tracking-wider ${
                             isIndustrial ? 'border-r border-black text-black' : 'border-r border-slate-200/50'
                           } ${
                             col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left'
-                          }`}
+                          } ${getInteractiveProps('column', `col_${col.key}`, col).className || ''}`}
                           style={{ 
                             width: col.width || 'auto',
-                            color: isIndustrial ? '#000000' : tableHeaderColor 
+                            color: isIndustrial ? '#000000' : tableHeaderColor,
+                            fontSize: col.fontSize ? `${col.fontSize}px` : undefined,
+                            fontWeight: col.fontWeight || undefined,
+                            whiteSpace: col.wrap === false ? 'nowrap' : undefined
                           }}
+                          title={interactive ? `Click to customize column "${col.label || col.key}"` : undefined}
                         >
                           {col.label || col.key}
                         </th>
@@ -661,9 +744,18 @@ export default function UnifiedPrintDocument({
                             return (
                               <td
                                 key={col.key}
+                                {...getInteractiveProps('column', `col_${col.key}`, col)}
                                 className={`${isIndustrial ? 'py-1 px-1.5 border-r border-black text-black font-medium' : 'py-1.5 px-2 border-r border-slate-200 text-slate-800'} ${
                                   col.align === 'right' ? 'text-right font-mono tabular-nums' : col.align === 'center' ? 'text-center' : 'text-left'
-                                }`}
+                                } ${getInteractiveProps('column', `col_${col.key}`, col).className || ''}`}
+                                style={{
+                                  width: col.width || 'auto',
+                                  fontSize: col.fontSize ? `${col.fontSize}px` : undefined,
+                                  fontWeight: col.fontWeight || undefined,
+                                  whiteSpace: col.wrap === false ? 'nowrap' : 'normal',
+                                  wordBreak: col.wrap !== false ? 'break-word' : undefined
+                                }}
+                                title={interactive ? `Click to customize column "${col.label || col.key}"` : undefined}
                               >
                                 {cellVal}
                               </td>
@@ -684,42 +776,74 @@ export default function UnifiedPrintDocument({
                   )}
                 </tbody>
               </table>
-            </main>
+            </div>
 
             {/* ============================================================== */}
             {/* 3. TOTALS & SUMMARY SECTION                                     */}
             {/* ============================================================== */}
-            {shouldShowTotals && record.totals && (
-              <div className="avoid-break mt-3 flex justify-end">
+            {shouldShowTotals && record.totals && Object.keys(record.totals).length > 0 && (
+              <div 
+                {...getInteractiveProps('totals', 'totals_block', record.totals)}
+                className={`document-totals-block avoid-break mt-3 flex justify-end p-1 rounded ${getInteractiveProps('totals', 'totals_block').className || ''}`}
+                title={interactive ? "Click to customize totals & summary block" : undefined}
+              >
                 {/* Classic Executive Totals Box */}
                 {isClassic && (
                   <div className="p-3 rounded-lg border border-slate-300 bg-slate-50 text-xs w-[40%] space-y-1.5 shadow-sm">
                     {record.totals.subtotal !== undefined && (
                       <div className="flex justify-between text-[11px] text-slate-600">
                         <span>Subtotal:</span>
-                        <span className="font-mono tabular-nums font-bold">{Number(record.totals.subtotal).toLocaleString()}</span>
+                        <span className="font-mono tabular-nums font-bold">
+                          {typeof record.totals.subtotal === 'number' ? record.totals.subtotal.toLocaleString() : record.totals.subtotal}
+                        </span>
                       </div>
                     )}
                     {record.totals.tax !== undefined && (
                       <div className="flex justify-between text-[11px] text-slate-600">
                         <span>Tax / GST:</span>
-                        <span className="font-mono tabular-nums font-bold">{Number(record.totals.tax).toLocaleString()}</span>
+                        <span className="font-mono tabular-nums font-bold">
+                          {typeof record.totals.tax === 'number' ? record.totals.tax.toLocaleString() : record.totals.tax}
+                        </span>
                       </div>
                     )}
                     {record.totals.discount !== undefined && (
                       <div className="flex justify-between text-[11px] text-slate-600">
                         <span>Discount:</span>
-                        <span className="font-mono tabular-nums font-bold">{Number(record.totals.discount).toLocaleString()}</span>
+                        <span className="font-mono tabular-nums font-bold">
+                          {typeof record.totals.discount === 'number' ? record.totals.discount.toLocaleString() : record.totals.discount}
+                        </span>
                       </div>
                     )}
                     {record.totals.grandTotal !== undefined && (
                       <div className="flex justify-between font-bold text-sm pt-2 border-t-2 border-slate-900 text-slate-900">
                         <span>Grand Total:</span>
                         <span className="font-mono tabular-nums" style={{ color: primaryColor }}>
-                          ${Number(record.totals.grandTotal).toLocaleString()}
+                          {typeof record.totals.grandTotal === 'number' ? `$${record.totals.grandTotal.toLocaleString()}` : record.totals.grandTotal}
                         </span>
                       </div>
                     )}
+
+                    {/* Any other keys not among the standard 4 */}
+                    {Object.entries(record.totals)
+                      .filter(([k]) => !['subtotal', 'tax', 'discount', 'grandTotal'].includes(k))
+                      .map(([tKey, tVal], i, arr) => {
+                        const isLastOrGrand = tKey.toLowerCase().includes('grand') || tKey.toLowerCase().includes('total') || (record.totals.grandTotal === undefined && i === arr.length - 1);
+                        return (
+                          <div
+                            key={tKey}
+                            className={`flex justify-between ${
+                              isLastOrGrand
+                                ? 'font-bold text-sm pt-2 border-t-2 border-slate-900 text-slate-900'
+                                : 'text-[11px] text-slate-600'
+                            }`}
+                          >
+                            <span className="capitalize">{tKey.replace(/([A-Z])/g, ' $1').replace(/_/g, ' ')}:</span>
+                            <span className="font-mono tabular-nums font-bold" style={isLastOrGrand ? { color: primaryColor } : undefined}>
+                              {typeof tVal === 'number' ? tVal.toLocaleString() : String(tVal)}
+                            </span>
+                          </div>
+                        );
+                      })}
                   </div>
                 )}
 
@@ -735,9 +859,9 @@ export default function UnifiedPrintDocument({
                             isGrand ? 'pt-2 border-t border-slate-300 font-bold text-slate-900' : 'text-[11px] text-slate-500'
                           }`}
                         >
-                          <span className="uppercase text-[9px] tracking-wider">{tKey.replace(/([A-Z])/g, ' $1')}:</span>
+                          <span className="uppercase text-[9px] tracking-wider">{tKey.replace(/([A-Z])/g, ' $1').replace(/_/g, ' ')}:</span>
                           <span className={`font-mono tabular-nums ${isGrand ? 'text-xs text-white px-2 py-0.5 rounded-lg' : 'font-semibold text-slate-800'}`} style={isGrand ? { backgroundColor: primaryColor } : undefined}>
-                            {typeof tVal === 'number' ? tVal.toLocaleString() : tVal}
+                            {typeof tVal === 'number' ? tVal.toLocaleString() : String(tVal)}
                           </span>
                         </div>
                       );
@@ -753,9 +877,9 @@ export default function UnifiedPrintDocument({
                     </div>
                     {Object.entries(record.totals).map(([tKey, tVal]) => (
                       <div key={tKey} className="flex justify-between text-[10px] text-black">
-                        <span className="uppercase">{tKey.replace(/([A-Z])/g, ' $1')}:</span>
+                        <span className="uppercase">{tKey.replace(/([A-Z])/g, ' $1').replace(/_/g, ' ')}:</span>
                         <span className="font-black">
-                          {typeof tVal === 'number' ? tVal.toLocaleString() : tVal}
+                          {typeof tVal === 'number' ? tVal.toLocaleString() : String(tVal)}
                         </span>
                       </div>
                     ))}
@@ -767,7 +891,7 @@ export default function UnifiedPrintDocument({
             {/* ============================================================== */}
             {/* 4. FOOTER: TERMS & CONDITIONS + SIGNATURE MATRIX               */}
             {/* ============================================================== */}
-            <footer className="avoid-break mt-auto pt-4 border-t border-slate-200">
+            <div className="document-footer-block avoid-break mt-auto pt-4 border-t border-slate-200">
               {/* Terms & Instructions */}
               {layoutConfig.termsConditions && (
                 <div className="text-[9px] text-slate-500 mb-3 whitespace-pre-line leading-tight">
@@ -777,56 +901,66 @@ export default function UnifiedPrintDocument({
               )}
 
               {/* ---------------- THEME SIGNATURE BLOCKS ---------------- */}
-              {isIndustrial ? (
-                /* Industrial Floor 4-Party Sign-Off Matrix */
-                <div className="grid grid-cols-4 border-2 border-black divide-x-2 divide-black text-center my-2 font-mono text-[9px]">
-                  <div className="p-1.5 flex flex-col justify-between h-14">
-                    <span className="font-bold text-black text-[8px] uppercase">1. Machine Operator</span>
-                    <span className="text-[8px] text-slate-400">Sign / Stamp</span>
+              <div 
+                {...getInteractiveProps('signatures', 'signatures_block', layoutConfig.signatures)}
+                className={`my-2 ${getInteractiveProps('signatures', 'signatures_block').className || ''}`}
+                title={interactive ? "Click to customize signatures & authorizations" : undefined}
+              >
+                {isIndustrial ? (
+                  /* Industrial Floor 4-Party Sign-Off Matrix */
+                  <div className="grid grid-cols-4 border-2 border-black divide-x-2 divide-black text-center my-2 font-mono text-[9px]">
+                    <div className="p-1.5 flex flex-col justify-between h-14">
+                      <span className="font-bold text-black text-[8px] uppercase">1. Machine Operator</span>
+                      <span className="text-[8px] text-slate-400">Sign / Stamp</span>
+                    </div>
+                    <div className="p-1.5 flex flex-col justify-between h-14">
+                      <span className="font-bold text-black text-[8px] uppercase">2. QA Clearance Pass</span>
+                      <span className="text-[8px] text-slate-400">QC Official Stamp</span>
+                    </div>
+                    <div className="p-1.5 flex flex-col justify-between h-14">
+                      <span className="font-bold text-black text-[8px] uppercase">3. Store Custodian</span>
+                      <span className="text-[8px] text-slate-400">Receiving Signature</span>
+                    </div>
+                    <div className="p-1.5 flex flex-col justify-between h-14">
+                      <span className="font-bold text-black text-[8px] uppercase">4. Plant In-Charge</span>
+                      <span className="text-[8px] text-slate-400">Final Verification</span>
+                    </div>
                   </div>
-                  <div className="p-1.5 flex flex-col justify-between h-14">
-                    <span className="font-bold text-black text-[8px] uppercase">2. QA Clearance Pass</span>
-                    <span className="text-[8px] text-slate-400">QC Official Stamp</span>
-                  </div>
-                  <div className="p-1.5 flex flex-col justify-between h-14">
-                    <span className="font-bold text-black text-[8px] uppercase">3. Store Custodian</span>
-                    <span className="text-[8px] text-slate-400">Receiving Signature</span>
-                  </div>
-                  <div className="p-1.5 flex flex-col justify-between h-14">
-                    <span className="font-bold text-black text-[8px] uppercase">4. Plant In-Charge</span>
-                    <span className="text-[8px] text-slate-400">Final Verification</span>
-                  </div>
-                </div>
-              ) : (
-                /* Classic / Modern Signatures */
-                (layoutConfig.signatures || []).length > 0 && (
-                  <div className="flex justify-between items-end gap-6 my-2 pt-4">
-                    {layoutConfig.signatures.map((sig, sIdx) => (
-                      <div key={sig.key || sIdx} className="flex-1 flex flex-col items-center">
-                        {sig.type === 'stamp' ? (
-                          <div className="w-24 h-12 border-2 border-dashed border-slate-300 rounded mb-1 flex items-center justify-center text-[8px] text-slate-400 font-bold uppercase tracking-widest">
-                            OFFICIAL STAMP
-                          </div>
-                        ) : (
-                          <div className="w-full border-t border-slate-800 mb-1" />
-                        )}
-                        <span className="text-[9px] font-bold uppercase tracking-wider text-slate-700 text-center">
-                          {sig.label || 'Authorized Signature'}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )
-              )}
+                ) : (
+                  /* Classic / Modern Signatures */
+                  (layoutConfig.signatures || []).length > 0 && (
+                    <div className="flex justify-between items-end gap-6 my-2 pt-4">
+                      {layoutConfig.signatures.map((sig, sIdx) => (
+                        <div key={sig.key || sIdx} className="flex-1 flex flex-col items-center">
+                          {sig.type === 'stamp' ? (
+                            <div className="w-24 h-12 border-2 border-dashed border-slate-300 rounded mb-1 flex items-center justify-center text-[8px] text-slate-400 font-bold uppercase tracking-widest">
+                              OFFICIAL STAMP
+                            </div>
+                          ) : (
+                            <div className="w-full border-t border-slate-800 mb-1" />
+                          )}
+                          <span className="text-[9px] font-bold uppercase tracking-wider text-slate-700 text-center">
+                            {sig.label || 'Authorized Signature'}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )
+                )}
+              </div>
 
               {/* Legal & Page Number Bar */}
-              <div className="flex justify-between items-center text-[8.5px] text-slate-400 pt-2 border-t border-slate-100 mt-2">
+              <div 
+                {...getInteractiveProps('footer', 'footer_block', { customFooterText: layoutConfig.customFooterText, terms: layoutConfig.termsConditions })}
+                className={`flex justify-between items-center text-[8.5px] text-slate-400 pt-2 border-t border-slate-100 mt-2 p-1 rounded ${getInteractiveProps('footer', 'footer_block').className || ''}`}
+                title={interactive ? "Click to customize legal footer & terms" : undefined}
+              >
                 <span>{layoutConfig.customFooterText || 'Computer Generated Document • FlashVision ERP Architecture'}</span>
                 <span className="font-mono tabular-nums">
                   Page {pageIdx + 1} of {computedPages.length}
                 </span>
               </div>
-            </footer>
+            </div>
           </div>
         );
       })}

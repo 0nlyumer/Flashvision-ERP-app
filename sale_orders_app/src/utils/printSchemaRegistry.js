@@ -880,6 +880,49 @@ export const DEFAULT_DOCUMENT_SCHEMAS = {
   }
 };
 
+// Register schema aliases for developer convenience & cross-module compatibility
+DEFAULT_DOCUMENT_SCHEMAS.sales_invoice = DEFAULT_DOCUMENT_SCHEMAS.sale_invoice;
+DEFAULT_DOCUMENT_SCHEMAS.customer_aging = DEFAULT_DOCUMENT_SCHEMAS.accounts_receivable;
+DEFAULT_DOCUMENT_SCHEMAS.vendor_aging = DEFAULT_DOCUMENT_SCHEMAS.accounts_payable;
+DEFAULT_DOCUMENT_SCHEMAS.payment_voucher = DEFAULT_DOCUMENT_SCHEMAS.voucher_payment;
+DEFAULT_DOCUMENT_SCHEMAS.receipt_voucher = DEFAULT_DOCUMENT_SCHEMAS.voucher_receipt;
+DEFAULT_DOCUMENT_SCHEMAS.journal_voucher = DEFAULT_DOCUMENT_SCHEMAS.voucher_journal;
+DEFAULT_DOCUMENT_SCHEMAS.contra_voucher = DEFAULT_DOCUMENT_SCHEMAS.voucher_contra;
+DEFAULT_DOCUMENT_SCHEMAS.grn = DEFAULT_DOCUMENT_SCHEMAS.grn_note;
+DEFAULT_DOCUMENT_SCHEMAS.production_batch = DEFAULT_DOCUMENT_SCHEMAS.master_batch_record;
+DEFAULT_DOCUMENT_SCHEMAS.hr_attendance = DEFAULT_DOCUMENT_SCHEMAS.attendance_sheet;
+DEFAULT_DOCUMENT_SCHEMAS.hr_leave = DEFAULT_DOCUMENT_SCHEMAS.hr_leave_request;
+DEFAULT_DOCUMENT_SCHEMAS.production_bom = DEFAULT_DOCUMENT_SCHEMAS.bom_master;
+DEFAULT_DOCUMENT_SCHEMAS.salary_slip = DEFAULT_DOCUMENT_SCHEMAS.hr_payslip;
+DEFAULT_DOCUMENT_SCHEMAS.stock_ledger = DEFAULT_DOCUMENT_SCHEMAS.inventory_ledger;
+
+/**
+ * Normalizes document type strings to their canonical registry ID
+ */
+export function normalizeDocType(docType) {
+  if (!docType) return '';
+  const clean = String(docType).trim().toLowerCase();
+  const aliasMap = {
+    sales_invoice: 'sale_invoice',
+    customer_aging: 'accounts_receivable',
+    vendor_aging: 'accounts_payable',
+    payment_voucher: 'voucher_payment',
+    receipt_voucher: 'voucher_receipt',
+    journal_voucher: 'voucher_journal',
+    contra_voucher: 'voucher_contra',
+    grn: 'grn_note',
+    production_batch: 'master_batch_record',
+    batch_record: 'master_batch_record',
+    hr_attendance: 'attendance_sheet',
+    hr_leave: 'hr_leave_request',
+    production_bom: 'bom_master',
+    salary_slip: 'hr_payslip',
+    payslip: 'hr_payslip',
+    stock_ledger: 'inventory_ledger'
+  };
+  return aliasMap[clean] || clean;
+}
+
 /**
  * Dynamic Schema Discovery Engine
  * Scans runtime data structures and returns a complete layout schema.
@@ -891,30 +934,77 @@ export const DEFAULT_DOCUMENT_SCHEMAS = {
  */
 export function getSampleRecordFromState(docType, state) {
   if (!state) return null;
+
+  const canonicalType = normalizeDocType(docType);
+  const mockFallback = getMockPreviewData(canonicalType) || { header: {}, items: [], totals: {} };
+
   const map = {
-    sale_order: state.saleOrders?.[0] ? {
-      ...state.saleOrders[0],
-      customer: state.customers?.find(c => c.id === state.saleOrders[0].customerId)?.name || state.saleOrders[0].customerName || 'Customer',
-      contact: state.customers?.find(c => c.id === state.saleOrders[0].customerId)?.contactPerson || 'N/A',
-      shipping_address: state.saleOrders[0].shippingAddress || 'Factory Gate, Industrial Estate'
+    sale_order: state.saleOrders?.[0] ? (() => {
+      const so = state.saleOrders[0];
+      const cust = state.customers?.find(c => c.id === so.customerId || c.name === so.customerName);
+      const rawItems = so.items || [];
+      const formattedItems = rawItems.map((it, idx) => {
+        const prod = state.items?.find(p => p.id === it.itemId || p.sku === it.itemCode);
+        const qty = Number(it.quantity || it.qty || 0);
+        const rate = Number(it.price || it.rate || it.unitPrice || 0);
+        const discount = Number(it.discount || 0);
+        const sub_total = Number(it.subtotal || it.total || (qty * rate - discount));
+        return {
+          serial_no: idx + 1,
+          item_code: it.itemCode || prod?.sku || `ITEM-${idx + 1}`,
+          item_name: it.productName || prod?.name || it.itemCode || 'Product Item',
+          rolls: it.rolls || it.rollQty || 0,
+          qty,
+          uom: prod?.unit || it.uom || 'Meters',
+          rate,
+          discount,
+          sub_total,
+          remarks: it.notes || it.remarks || ''
+        };
+      });
+
+      const calcSubtotal = formattedItems.reduce((s, it) => s + (it.qty * it.rate), 0);
+      const calcDiscount = formattedItems.reduce((s, it) => s + (Number(it.discount) || 0), 0);
+      const calcTax = Number(so.tax || 0);
+      const calcGrandTotal = so.grandTotal !== undefined && so.grandTotal !== null
+        ? Number(so.grandTotal)
+        : (calcSubtotal - calcDiscount + calcTax);
+
+      return {
+        ...so,
+        customer: so.customerName || cust?.name || 'Customer Party',
+        customer_name: so.customerName || cust?.name || 'Customer Party',
+        contact: cust?.contactPerson || 'N/A',
+        contact_number: cust?.phone || cust?.contactNumber || 'N/A',
+        shipping_address: so.shippingAddress || cust?.address || 'Factory Gate, Industrial Estate',
+        items: formattedItems.length > 0 ? formattedItems : mockFallback.items,
+        totals: {
+          subtotal: calcSubtotal > 0 ? calcSubtotal : mockFallback.totals?.subtotal || 25610.0,
+          tax: calcTax > 0 ? calcTax : mockFallback.totals?.tax || 4609.8,
+          discount: calcDiscount || mockFallback.totals?.discount || 1250.0,
+          grandTotal: calcGrandTotal > 0 ? calcGrandTotal : mockFallback.totals?.grandTotal || 28969.8
+        }
+      };
+    })() : null,
+
+    planning_history: state.productionPlans?.[0] ? {
+      ...state.productionPlans[0],
+      totals: mockFallback.totals
     } : null,
-    planning_history: state.productionPlans?.[0],
-    bom_master: state.boms?.[0],
-    batch_closing_history: state.productionOutputs?.[0],
-    delivery_challan: state.deliveries?.[0] ? {
-      ...state.deliveries[0],
-      challan_no: state.deliveries[0].id || 'DC-2026-001',
-      dispatch_date: state.deliveries[0].date || new Date().toISOString().split('T')[0],
-      customer_name: state.deliveries[0].customerName || 'Consignee Party',
-      so_ref: state.deliveries[0].items?.[0]?.orderId || state.deliveries[0].saleOrderId || 'SO-2026-001',
-      contact_person: state.deliveries[0].consignee?.contactPerson || 'N/A',
-      contact_number: state.deliveries[0].consignee?.contactNumber || 'N/A',
-      shipping_address: state.deliveries[0].consignee?.deliveryAddress || state.deliveries[0].consignee?.address || 'Site Delivery',
-      vehicle_no: state.deliveries[0].logistics?.vehicleNumber || 'N/A',
-      driver_name: state.deliveries[0].logistics?.driverName || 'N/A',
-      driver_contact: state.deliveries[0].logistics?.driverNumber || 'N/A',
-      dc_mode: state.deliveries[0].dcMode || 'Direct Delivery',
-      items: (state.deliveries[0].items || []).map((it, idx) => ({
+
+    bom_master: state.boms?.[0] ? {
+      ...state.boms[0],
+      totals: { batchComponentsCount: state.boms[0].components?.length || mockFallback.totals?.batchComponentsCount || 3 }
+    } : null,
+
+    batch_closing_history: state.productionOutputs?.[0] ? {
+      ...state.productionOutputs[0],
+      totals: mockFallback.totals
+    } : null,
+
+    delivery_challan: state.deliveries?.[0] ? (() => {
+      const del = state.deliveries[0];
+      const items = (del.items || []).map((it, idx) => ({
         serial_no: idx + 1,
         item_code: it.itemCode || it.itemId || `ITEM-${idx + 1}`,
         item_name: it.productName || it.itemCode || 'Line Item',
@@ -922,16 +1012,32 @@ export function getSampleRecordFromState(docType, state) {
         dispatch_qty: it.dispatchedQty ?? it.editedQty ?? 0,
         packing_type: it.stockType || it.type || (it.rollSize ? `${it.rollSize}m` : 'Standard'),
         weight: it.dispatchedRolls ? `${it.dispatchedRolls} Rolls` : (it.rolls ? `${it.rolls} Rolls` : '—')
-      }))
-    } : null,
-    production_manifest: state.productionPlans?.[0] ? {
-      manifest_no: 'PMF-2026-001',
-      plan_id: state.productionPlans[0].id || 'PLN-2026-001',
-      date: new Date().toISOString().split('T')[0],
-      production_line: state.productionPlans[0].productionLine || 'Line #1',
-      supervisor: state.productionPlans[0].supervisor || 'Lead Supervisor',
-      shift: 'Morning Shift',
-      items: (state.productionPlans[0].items || []).map((it, idx) => ({
+      }));
+      const totalPackages = items.reduce((s, it) => s + (parseInt(it.packing_type, 10) || 1), 0);
+      return {
+        ...del,
+        challan_no: del.id || 'DC-2026-001',
+        dispatch_date: del.date || new Date().toISOString().split('T')[0],
+        customer_name: del.customerName || 'Consignee Party',
+        so_ref: del.items?.[0]?.orderId || del.saleOrderId || 'SO-2026-001',
+        contact_person: del.consignee?.contactPerson || 'N/A',
+        contact_number: del.consignee?.contactNumber || 'N/A',
+        shipping_address: del.consignee?.deliveryAddress || del.consignee?.address || 'Site Delivery',
+        vehicle_no: del.logistics?.vehicleNumber || 'N/A',
+        driver_name: del.logistics?.driverName || 'N/A',
+        driver_contact: del.logistics?.driverNumber || 'N/A',
+        dc_mode: del.dcMode || 'Direct Delivery',
+        items: items.length > 0 ? items : mockFallback.items,
+        totals: {
+          totalPackages: totalPackages > 0 ? totalPackages : mockFallback.totals?.totalPackages || 50,
+          totalWeight: mockFallback.totals?.totalWeight || '1,450.0 kg'
+        }
+      };
+    })() : null,
+
+    production_manifest: state.productionPlans?.[0] ? (() => {
+      const plan = state.productionPlans[0];
+      const items = (plan.items || []).map((it, idx) => ({
         serial_no: idx + 1,
         item_code: it.itemCode || it.sku || `FG-${idx + 1}`,
         item_name: it.name || it.productName || 'Planned Output',
@@ -939,8 +1045,23 @@ export function getSampleRecordFromState(docType, state) {
         uom: it.uom || 'Meters',
         batch_no: it.batchCode || `B-${idx + 1}`,
         status: it.status || 'Scheduled'
-      }))
-    } : null,
+      }));
+      const totalTarget = items.reduce((s, it) => s + Number(it.target_qty || 0), 0);
+      return {
+        manifest_no: 'PMF-2026-001',
+        plan_id: plan.id || 'PLN-2026-001',
+        date: new Date().toISOString().split('T')[0],
+        production_line: plan.productionLine || 'Line #1',
+        supervisor: plan.supervisor || 'Lead Supervisor',
+        shift: 'Morning Shift',
+        items: items.length > 0 ? items : mockFallback.items,
+        totals: {
+          totalTargetQty: totalTarget > 0 ? `${totalTarget.toLocaleString()} Meters` : mockFallback.totals?.totalTargetQty || '3,500 Meters',
+          lineEfficiency: '99.2%'
+        }
+      };
+    })() : null,
+
     general_ledger: state.paymentVouchers?.[0] ? {
       ledger_title: 'Meezan Bank Operations Account (1000-01)',
       account_code: '1000-01',
@@ -950,14 +1071,13 @@ export function getSampleRecordFromState(docType, state) {
         { date: '2026-07-01', voucher_no: 'OPN-BAL', narration: 'Opening Balance', debit: 4500000, credit: 0, balance: 4500000 },
         { date: '2026-07-15', voucher_no: 'RV-2026-001', narration: 'Customer Payment Received', debit: 500000, credit: 0, balance: 5000000 },
         { date: '2026-07-20', voucher_no: 'PV-2026-001', narration: 'Supplier Settlement', debit: 0, credit: 350000, balance: 4650000 }
-      ]
+      ],
+      totals: { totalDebit: 5000000.0, totalCredit: 350000.0, closingBalance: 4650000.0 }
     } : null,
-    accounts_receivable: state.salesInvoices?.[0] ? {
-      report_title: 'ACCOUNTS RECEIVABLE AGING STATEMENT',
-      as_of_date: new Date().toISOString().split('T')[0],
-      customer_name: state.salesInvoices[0].customerName || 'Premier Textile Corp',
-      credit_limit: '10,000,000',
-      items: (state.salesInvoices || []).slice(0, 10).map((inv, idx) => ({
+
+    accounts_receivable: state.salesInvoices?.[0] ? (() => {
+      const invoices = (state.salesInvoices || []).slice(0, 10);
+      const items = invoices.map((inv, idx) => ({
         serial_no: idx + 1,
         invoice_no: inv.id || `INV-${idx + 1}`,
         invoice_date: inv.date || '2026-07-01',
@@ -965,14 +1085,26 @@ export function getSampleRecordFromState(docType, state) {
         total_amount: inv.total || inv.grandTotal || 150000,
         received_amount: inv.paidAmount || 0,
         balance_due: (inv.total || inv.grandTotal || 150000) - (inv.paidAmount || 0)
-      }))
-    } : null,
-    accounts_payable: state.purchaseInvoices?.[0] ? {
-      report_title: 'ACCOUNTS PAYABLE AGING STATEMENT',
-      as_of_date: new Date().toISOString().split('T')[0],
-      supplier_name: state.purchaseInvoices[0].supplierName || 'Apex Chemicals Ltd',
-      payment_terms: 'Net 30 Days',
-      items: (state.purchaseInvoices || []).slice(0, 10).map((inv, idx) => ({
+      }));
+      const totalRec = items.reduce((s, it) => s + Number(it.total_amount || 0), 0);
+      const totalCol = items.reduce((s, it) => s + Number(it.received_amount || 0), 0);
+      return {
+        report_title: 'ACCOUNTS RECEIVABLE AGING STATEMENT',
+        as_of_date: new Date().toISOString().split('T')[0],
+        customer_name: state.salesInvoices[0].customerName || 'Premier Textile Corp',
+        credit_limit: '10,000,000',
+        items: items.length > 0 ? items : mockFallback.items,
+        totals: {
+          totalReceivable: totalRec > 0 ? totalRec : mockFallback.totals?.totalReceivable || 31860.0,
+          totalCollected: totalCol > 0 ? totalCol : mockFallback.totals?.totalCollected || 19750.0,
+          totalOutstanding: (totalRec - totalCol) > 0 ? (totalRec - totalCol) : mockFallback.totals?.totalOutstanding || 12110.0
+        }
+      };
+    })() : null,
+
+    accounts_payable: state.purchaseInvoices?.[0] ? (() => {
+      const invoices = (state.purchaseInvoices || []).slice(0, 10);
+      const items = invoices.map((inv, idx) => ({
         serial_no: idx + 1,
         bill_no: inv.billNumber || inv.id || `PINV-${idx + 1}`,
         bill_date: inv.date || '2026-07-01',
@@ -980,8 +1112,23 @@ export function getSampleRecordFromState(docType, state) {
         total_amount: inv.total || inv.grandTotal || 120000,
         paid_amount: inv.paidAmount || 0,
         balance_due: (inv.total || inv.grandTotal || 120000) - (inv.paidAmount || 0)
-      }))
-    } : null,
+      }));
+      const totalPay = items.reduce((s, it) => s + Number(it.total_amount || 0), 0);
+      const totalPd = items.reduce((s, it) => s + Number(it.paid_amount || 0), 0);
+      return {
+        report_title: 'ACCOUNTS PAYABLE AGING STATEMENT',
+        as_of_date: new Date().toISOString().split('T')[0],
+        supplier_name: state.purchaseInvoices[0].supplierName || 'Apex Chemicals Ltd',
+        payment_terms: 'Net 30 Days',
+        items: items.length > 0 ? items : mockFallback.items,
+        totals: {
+          totalPayable: totalPay > 0 ? totalPay : mockFallback.totals?.totalPayable || 11682.0,
+          totalPaid: totalPd > 0 ? totalPd : mockFallback.totals?.totalPaid || 0.0,
+          totalOutstanding: (totalPay - totalPd) > 0 ? (totalPay - totalPd) : mockFallback.totals?.totalOutstanding || 11682.0
+        }
+      };
+    })() : null,
+
     financial_statements: {
       statement_title: 'CONSOLIDATED STATEMENT OF PROFIT OR LOSS',
       financial_period: 'Year Ended June 30, 2026',
@@ -992,8 +1139,10 @@ export function getSampleRecordFromState(docType, state) {
         { line_code: '5000', line_title: 'Cost of Goods Sold (COGS)', current_period: -31500000, prior_period: -27000000 },
         { line_code: '6000', line_title: 'Operating Expenses', current_period: -6200000, prior_period: -5400000 },
         { line_code: '7000', line_title: 'Net Profit Before Taxation', current_period: 7300000, prior_period: 5600000 }
-      ]
+      ],
+      totals: { netProfitMargin: '16.2%', priorMargin: '14.7%' }
     },
+
     bank_reconciliation: {
       statement_date: new Date().toISOString().split('T')[0],
       bank_name: 'Meezan Bank Ltd (Main Branch)',
@@ -1002,8 +1151,10 @@ export function getSampleRecordFromState(docType, state) {
       items: [
         { serial_no: 1, date: '2026-07-25', reference_no: 'CHQ-892104', description: 'Unpresented Cheque - Apex Chemicals', debit: 0, credit: 350000 },
         { serial_no: 2, date: '2026-07-26', reference_no: 'DEP-449102', description: 'Uncleared Deposit - Al-Haq Enterprises', debit: 500000, credit: 0 }
-      ]
+      ],
+      totals: { reconciledBookBalance: 4670000.0, bankVariance: 0.0 }
     },
+
     cost_centers: {
       report_title: 'DEPARTMENTAL COST CENTER EXPENSE AUDIT',
       cost_period: 'July 2026',
@@ -1012,10 +1163,24 @@ export function getSampleRecordFromState(docType, state) {
       items: [
         { center_code: 'CC-WEAV-01', center_name: 'Loom Plant Direct Labor', budget_allocated: 1200000, actual_expense: 1145000, variance: -55000 },
         { center_code: 'CC-DYE-02', center_name: 'Chemical & Dye Consumables', budget_allocated: 800000, actual_expense: 825000, variance: 25000 }
-      ]
+      ],
+      totals: { totalBudget: 2000000.0, totalActual: 1970000.0, netVariance: -30000.0 }
     },
-    hr_payslip: state.hr_generated_salaries?.[0],
-    hr_overtime_request: state.hr_overtime_requests?.[0],
+
+    hr_payslip: state.hr_generated_salaries?.[0] ? {
+      ...state.hr_generated_salaries[0],
+      totals: {
+        totalEarnings: Number(state.hr_generated_salaries[0].grossSalary || state.hr_generated_salaries[0].totalEarnings || 213500.0),
+        totalDeductions: Number(state.hr_generated_salaries[0].totalDeductions || 21700.0),
+        grandTotal: Number(state.hr_generated_salaries[0].netSalary || state.hr_generated_salaries[0].grandTotal || 191800.0)
+      }
+    } : null,
+
+    hr_overtime_request: state.hr_overtime_requests?.[0] ? {
+      ...state.hr_overtime_requests[0],
+      totals: { totalHours: `${state.hr_overtime_requests[0].hours || 2.0} hrs` }
+    } : null,
+
     hr_leave_request: state.hr_leave_requests?.[0] ? {
       ...state.hr_leave_requests[0],
       leave_id: state.hr_leave_requests[0].id || 'LR-2026-001',
@@ -1029,12 +1194,43 @@ export function getSampleRecordFromState(docType, state) {
       total_days: state.hr_leave_requests[0].days || 5,
       status: state.hr_leave_requests[0].status || 'Approved',
       applied_date: state.hr_leave_requests[0].createdAt ? new Date(state.hr_leave_requests[0].createdAt).toLocaleDateString() : new Date().toLocaleDateString(),
-      reason: state.hr_leave_requests[0].reason || 'Personal / Family travel'
+      reason: state.hr_leave_requests[0].reason || 'Personal / Family travel',
+      totals: { totalDays: `${state.hr_leave_requests[0].days || 5} Working Days`, approvalSign: 'Approved by HR Lead' }
     } : null,
-    hr_loan_request: state.hr_loan_requests?.[0],
-    attendance_sheet: state.attendanceRecords?.[0] || state.hr_attendance?.[0] || null
+
+    hr_loan_request: state.hr_loan_requests?.[0] ? {
+      ...state.hr_loan_requests[0],
+      totals: {
+        totalLoanAmount: state.hr_loan_requests[0].loanAmount || '50,000.00',
+        totalInstallments: state.hr_loan_requests[0].installments || 12,
+        monthlyDeduction: state.hr_loan_requests[0].monthlyInstallment || '4,166.67'
+      }
+    } : null,
+
+    hr_advance_request: state.hr_advance_requests?.[0] ? {
+      ...state.hr_advance_requests[0],
+      totals: { grandTotal: Number(state.hr_advance_requests[0].advanceAmount || 122500) }
+    } : null,
+
+    attendance_sheet: state.attendanceRecords?.[0] || state.hr_attendance?.[0] ? {
+      ...(state.attendanceRecords?.[0] || state.hr_attendance?.[0]),
+      totals: mockFallback.totals
+    } : null
   };
-  return map[docType] || null;
+
+  const resolved = map[docType] || null;
+  if (!resolved) return null;
+
+  // Safe merge with mock fallback so no critical visual section (items or totals) is ever missing
+  return {
+    ...mockFallback,
+    ...resolved,
+    header: { ...(mockFallback.header || {}), ...(resolved.header || resolved) },
+    items: (Array.isArray(resolved.items) && resolved.items.length > 0) ? resolved.items : mockFallback.items,
+    totals: (resolved.totals && typeof resolved.totals === 'object' && Object.keys(resolved.totals).length > 0)
+      ? resolved.totals
+      : mockFallback.totals
+  };
 }
 
 /**
@@ -1158,6 +1354,7 @@ export function discoverDocumentSchema(docType, sampleRecord = null, existingLay
 
 // Generate Realistic Enterprise Mock Data for Live Paper Preview across ALL 33 document types
 export function getMockPreviewData(docType) {
+  const canonicalType = normalizeDocType(docType);
   const commonHeader = {
     company: 'FLASHVISION LOGISTICS & ENTERPRISE ERP',
     address: 'Plot 42-B, Industrial Zone Phase III, Karachi, Pakistan',
@@ -1165,7 +1362,7 @@ export function getMockPreviewData(docType) {
     email: 'info@flashvision.com'
   };
 
-  switch (docType) {
+  switch (canonicalType) {
     case 'sale_order':
       return {
         header: {

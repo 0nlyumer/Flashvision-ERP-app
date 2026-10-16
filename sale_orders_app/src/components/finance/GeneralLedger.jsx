@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { generateGeneralLedger, formatMoney, round2 } from '../../utils/financeEngine';
 import ResizableHeader from '../ui/ResizableHeader';
+import UniversalPrintPreviewModal from '../ui/UniversalPrintPreviewModal';
 
 export default function GeneralLedger() {
   const { state } = useApp();
@@ -13,6 +14,7 @@ export default function GeneralLedger() {
   const [partySearch, setPartySearch] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [fromDate, setFromDate] = useState('');
+  const [printLedgerData, setPrintLedgerData] = useState(null);
   const [toDate, setToDate] = useState('');
 
   // Pagination
@@ -100,7 +102,32 @@ export default function GeneralLedger() {
   };
 
   const handlePrint = () => {
-    window.print();
+    setPrintLedgerData({
+      header: {
+        ledger_id: `GL-${new Date().toISOString().slice(0, 10)}`,
+        date: new Date().toISOString().split('T')[0],
+        date_range: fromDate && toDate ? `${fromDate} to ${toDate}` : 'Full Fiscal Year',
+        account: selectedAccountId !== 'all' ? selectedAccountId : 'All General Ledger Accounts',
+        total_entries: entries.length,
+        status: isBalanced ? 'Balanced' : 'Unbalanced'
+      },
+      items: entries.map((e, idx) => ({
+        sr: idx + 1,
+        date: e.date ? e.date.split('T')[0] : '—',
+        voucher_no: e.voucherNo || e.id || '—',
+        account_head: `${e.accountId || ''} ${e.accountName || ''}`.trim() || 'General',
+        narration: e.narration || e.party || '—',
+        debit: Number(e.debit || 0),
+        credit: Number(e.credit || 0),
+        balance: Number(e.runningBalance || 0)
+      })),
+      totals: {
+        total_debit: totalDebit,
+        total_credit: totalCredit,
+        net_difference: difference,
+        grandTotal: totalDebit
+      }
+    });
   };
 
   return (
@@ -577,6 +604,15 @@ export default function GeneralLedger() {
             </div>
           </div>
         </div>
+      )}
+      {/* Universal Print Preview Modal (Issue 4) */}
+      {printLedgerData && (
+        <UniversalPrintPreviewModal
+          isOpen={Boolean(printLedgerData)}
+          onClose={() => setPrintLedgerData(null)}
+          documentType="general_ledger"
+          documentData={printLedgerData}
+        />
       )}
     </div>
   );
