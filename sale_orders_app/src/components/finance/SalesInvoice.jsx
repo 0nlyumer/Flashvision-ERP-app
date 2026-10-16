@@ -9,7 +9,7 @@ export default function SalesInvoice() {
   const { state, addSalesInvoice } = useApp();
   const { appConfirm } = useDialog();
   const currencyCode = state.adminSetup?.baseCurrency ? state.adminSetup.baseCurrency.split(' ')[0] : 'PKR';
-  const currencySymbol = state.adminSetup?.baseCurrency ? (state.adminSetup.baseCurrency.match(/\(([^)]+)\)/)?.[1] || '$') : '$';
+  const currencySymbol = state.adminSetup?.baseCurrency ? (state.adminSetup.baseCurrency.match(/\(([^)]+)\)/)?.[1] || 'Rs.') : 'Rs.';
   const [selectedDcId, setSelectedDcId] = useState('');
   const [remarks, setRemarks] = useState('');
   const [discounts, setDiscounts] = useState({}); // Stores discount percentage per item index

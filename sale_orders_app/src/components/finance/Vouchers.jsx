@@ -10,7 +10,7 @@ export default function Vouchers() {
   const { state, setCollection } = useApp();
   const { appConfirm, appAlert } = useDialog();
   const currencyCode = state.adminSetup?.baseCurrency ? state.adminSetup.baseCurrency.split(' ')[0] : 'PKR';
-  const currencySymbol = state.adminSetup?.baseCurrency ? (state.adminSetup.baseCurrency.match(/\(([^)]+)\)/)?.[1] || '$') : '$';
+  const currencySymbol = state.adminSetup?.baseCurrency ? (state.adminSetup.baseCurrency.match(/\(([^)]+)\)/)?.[1] || 'Rs.') : 'Rs.';
 
   // Active view: 'create' or 'history'
   const [viewMode, setViewMode] = useState('create');

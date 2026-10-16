@@ -1215,7 +1215,129 @@ export function getSampleRecordFromState(docType, state) {
     attendance_sheet: state.attendanceRecords?.[0] || state.hr_attendance?.[0] ? {
       ...(state.attendanceRecords?.[0] || state.hr_attendance?.[0]),
       totals: mockFallback.totals
-    } : null
+    } : null,
+
+    grn_note: state.grns?.[0] ? (() => {
+      const grn = state.grns[0];
+      const items = (grn.items || []).map((it, idx) => ({
+        serial_no: idx + 1,
+        item_code: it.itemCode || it.itemId || `RM-${idx + 1}`,
+        item_name: it.itemName || it.name || it.productName || it.description || 'Raw Material Item',
+        ordered_qty: Number(it.orderQty ?? it.reqQty ?? it.qty ?? 0),
+        received_qty: Number(it.qty ?? it.receivedQty ?? 0),
+        accepted_qty: Math.max(0, Number(it.qty ?? it.receivedQty ?? 0) - Number(it.rejectedQty ?? 0)),
+        rejected_qty: Number(it.rejectedQty ?? 0)
+      }));
+      const totalRec = items.reduce((s, it) => s + it.received_qty, 0);
+      const totalAcc = items.reduce((s, it) => s + it.accepted_qty, 0);
+      const totalRej = items.reduce((s, it) => s + it.rejected_qty, 0);
+      return {
+        ...grn,
+        header: {
+          grn_number: grn.id,
+          grn_date: grn.date || new Date().toISOString().split('T')[0],
+          po_ref: grn.poId || '—',
+          supplier_name: grn.supplierName || 'Supplier',
+          inspector: grn.checkedBy || 'QC Lead'
+        },
+        items: items.length > 0 ? items : mockFallback.items,
+        totals: {
+          totalReceived: totalRec,
+          totalAccepted: totalAcc,
+          totalRejected: totalRej
+        }
+      };
+    })() : null,
+
+    inward_gate_pass: state.inwardGatePasses?.[0] ? (() => {
+      const igp = state.inwardGatePasses[0];
+      const items = (igp.items || []).map((it, idx) => ({
+        serial_no: idx + 1,
+        item_description: it.itemName || it.item_name || it.itemCode || 'Material Goods',
+        chalan_qty: Number(it.receivedQty ?? it.orderQty ?? it.qty ?? 0),
+        no_of_packages: it.packages || `${it.receivedQty || 0} ${it.uom || 'Pkgs'}`,
+        weight: it.weight ? `${it.weight} kg` : '—'
+      }));
+      const totalQty = items.reduce((s, it) => s + (Number(it.chalan_qty) || 0), 0);
+      return {
+        ...igp,
+        header: {
+          gate_pass_no: igp.id,
+          entry_time: igp.date ? `${igp.date} ${igp.time || ''}`.trim() : new Date().toLocaleString(),
+          driver_name: igp.driverName || 'Driver',
+          vehicle_no: igp.vehicleNo || 'Vehicle',
+          supplier: igp.supplierName || 'Supplier Origin'
+        },
+        items: items.length > 0 ? items : mockFallback.items,
+        totals: {
+          totalPackages: totalQty,
+          grossWeight: `${totalQty} Units`
+        }
+      };
+    })() : null,
+
+    purchase_demand: state.purchaseDemands?.[0] ? (() => {
+      const pd = state.purchaseDemands[0];
+      const items = (pd.items || []).map((it, idx) => ({
+        serial_no: idx + 1,
+        item_code: it.itemCode || it.itemId || `RM-${idx + 1}`,
+        item_name: it.itemName || it.name || it.itemCode || 'Material',
+        required_qty: Number(it.reqQty ?? it.quantity ?? it.qty ?? 0),
+        needed_by: pd.neededBy || pd.date || new Date().toISOString().split('T')[0]
+      }));
+      const totalQty = items.reduce((s, it) => s + (Number(it.required_qty) || 0), 0);
+      return {
+        ...pd,
+        header: {
+          pr_no: pd.id,
+          date: pd.date || new Date().toISOString().split('T')[0],
+          requestor: pd.requestedBy || 'Store Manager',
+          priority: pd.priority || 'Normal Priority'
+        },
+        items: items.length > 0 ? items : mockFallback.items,
+        totals: {
+          totalRequestedItems: items.length,
+          totalQuantity: totalQty
+        }
+      };
+    })() : null,
+
+    purchase_order: state.purchaseOrders?.[0] ? (() => {
+      const po = state.purchaseOrders[0];
+      const items = (po.items || []).map((it, idx) => {
+        const qty = Number(it.orderQty ?? it.quantity ?? it.qty ?? 0);
+        const unitPrice = Number(it.unitPrice ?? it.price ?? 0);
+        const taxRate = Number(it.tax ?? 0);
+        const amount = qty * unitPrice * (1 + taxRate / 100);
+        return {
+          serial_no: idx + 1,
+          item_code: it.itemCode || it.itemId || `RM-${idx + 1}`,
+          item_name: it.itemName || it.name || it.itemCode || 'Material',
+          qty,
+          unit_price: unitPrice,
+          tax: `${taxRate}%`,
+          amount
+        };
+      });
+      const subtotal = items.reduce((s, it) => s + (it.qty * it.unit_price), 0);
+      const grandTotal = items.reduce((s, it) => s + it.amount, 0);
+      return {
+        ...po,
+        header: {
+          po_number: po.id,
+          po_date: po.date || new Date().toISOString().split('T')[0],
+          supplier_name: po.supplierName || 'Vendor / Supplier',
+          payment_terms: po.paymentTerms || 'Net 30 Days',
+          delivery_location: po.deliveryLocation || 'Central Warehouse Gate 2'
+        },
+        items: items.length > 0 ? items : mockFallback.items,
+        totals: {
+          subtotal,
+          taxAmount: grandTotal - subtotal,
+          grandTotal
+        }
+      };
+    })() : null
   };
 
   const resolved = map[docType] || null;

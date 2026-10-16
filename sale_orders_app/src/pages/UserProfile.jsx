@@ -633,11 +633,11 @@ export default function UserProfile() {
                   <div className="mt-3 space-y-2 bg-slate-50 p-4 rounded-2xl border border-slate-100 text-xs text-slate-600 animate-fade-in">
                     <div className="flex justify-between font-semibold">
                       <span>Basic Salary:</span>
-                      <span className="font-extrabold text-slate-800">{currencySymbol}1,500 /mo</span>
+                      <span className="font-extrabold text-slate-800">{currencySymbol} 1,500 /mo</span>
                     </div>
                     <div className="flex justify-between font-semibold">
                       <span>Allowances:</span>
-                      <span className="font-extrabold text-slate-800">{currencySymbol}200 /mo</span>
+                      <span className="font-extrabold text-slate-800">{currencySymbol} 200 /mo</span>
                     </div>
                     <div className="flex justify-between font-semibold border-t border-slate-200/55 pt-2">
                       <span>Pension Contribution:</span>

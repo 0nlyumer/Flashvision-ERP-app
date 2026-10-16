@@ -55,11 +55,11 @@ export default function DocumentWarehouse({ insideDashboard = false }) {
       details: [
         { label: 'Invoice Reference', value: so.id || `SO-${so.orderId}` },
         { label: 'Customer Entity', value: so.customerName || 'N/A' },
-        { label: 'Grand Total Value', value: `$${so.total || 0}` },
+        { label: 'Grand Total Value', value: `Rs. ${Number(so.total || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` },
         { label: 'Dispatched Status', value: so.status || 'Pending' }
       ]
     })) : [
-      { id: 'SO-FN-201', title: 'Al-Haq Textile Corp', date: '2026-05-20', details: [{ label: 'Invoice Reference', value: 'SO-FN-201' }, { label: 'Customer Entity', value: 'Al-Haq Textile Corp' }, { label: 'Grand Total Value', value: '$8,240.00' }, { label: 'Dispatched Status', value: 'Dispatched' }] }
+      { id: 'SO-FN-201', title: 'Al-Haq Textile Corp', date: '2026-05-20', details: [{ label: 'Invoice Reference', value: 'SO-FN-201' }, { label: 'Customer Entity', value: 'Al-Haq Textile Corp' }, { label: 'Grand Total Value', value: 'Rs. 8,240.00' }, { label: 'Dispatched Status', value: 'Dispatched' }] }
     ];
 
     // 2. HR Profiles

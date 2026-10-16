@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useDialog } from '../../context/DialogContext';
 import GlobalPagination from '../ui/GlobalPagination';
+import UniversalPrintPreviewModal from '../ui/UniversalPrintPreviewModal';
 
 export default function PurchaseOrder() {
   const { state, setCollection } = useApp();
@@ -171,8 +172,44 @@ export default function PurchaseOrder() {
     }
   };
 
+  const [printPOData, setPrintPOData] = useState(null);
+
   const handlePrintPO = (po) => {
-    appAlert('Print functionality will generate a PDF for: ' + po.id);
+    const rawItems = po.items || [];
+    const items = rawItems.map((it, idx) => {
+      const qty = Number(it.orderQty ?? it.quantity ?? it.qty ?? 0);
+      const unitPrice = Number(it.unitPrice ?? it.price ?? 0);
+      const taxRate = Number(it.tax ?? 0);
+      const amount = qty * unitPrice * (1 + taxRate / 100);
+      return {
+        serial_no: idx + 1,
+        item_code: it.itemCode || it.itemId || `RM-${idx + 1}`,
+        item_name: it.itemName || it.name || it.itemCode || 'Material',
+        qty,
+        unit_price: unitPrice,
+        tax: `${taxRate}%`,
+        amount
+      };
+    });
+    const subtotal = items.reduce((s, it) => s + (it.qty * it.unit_price), 0);
+    const grandTotal = items.reduce((s, it) => s + it.amount, 0);
+    setPrintPOData({
+      ...po,
+      id: po.id,
+      header: {
+        po_number: po.id,
+        po_date: po.date || new Date().toISOString().split('T')[0],
+        supplier_name: po.supplierName || 'Vendor / Supplier',
+        payment_terms: po.paymentTerms || 'Net 30 Days',
+        delivery_location: po.deliveryLocation || 'Central Warehouse Gate 2'
+      },
+      items,
+      totals: {
+        subtotal,
+        taxAmount: grandTotal - subtotal,
+        grandTotal
+      }
+    });
   };
 
   const pos = (state.purchaseOrders || []).filter(po => 
@@ -422,6 +459,16 @@ export default function PurchaseOrder() {
                 setCurrentPage={setCurrentPage}
             />
         </div>
+      )}
+
+      {printPOData && (
+        <UniversalPrintPreviewModal
+          isOpen={Boolean(printPOData)}
+          onClose={() => setPrintPOData(null)}
+          documentType="purchase_order"
+          documentData={printPOData}
+          documentTitle={`Purchase Order ${printPOData.id}`}
+        />
       )}
     </div>
   );

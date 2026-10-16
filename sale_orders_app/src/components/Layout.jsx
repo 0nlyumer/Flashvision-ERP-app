@@ -809,6 +809,8 @@ export default function Layout({ children, hideSidebar = false, subNavigation = 
     addNotification('Layout Updated', `Sidebar shifted clockwise to ${nextPosition.toUpperCase()}.`, 'success');
   };
 
+  const handleSubMenuClick = handleSidebarClick;
+
   const handleLayoutDrop = (targetPosition) => {
     if (!draggingLayout) return;
     

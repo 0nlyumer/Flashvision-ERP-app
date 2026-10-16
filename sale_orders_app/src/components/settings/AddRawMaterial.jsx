@@ -5,6 +5,7 @@ import { useApp } from '../../context/AppContext';
 import { useDialog } from '../../context/DialogContext';
 import CustomSelect from '../ui/CustomSelect';
 import GlobalPagination from '../ui/GlobalPagination';
+import { formatCurrencyPKR } from '../../utils/currencyUtils';
 
 export default function AddRawMaterial() {
   const { state, setCollection } = useApp();
@@ -196,7 +197,8 @@ export default function AddRawMaterial() {
       const packingType = row['Packing Type'] || row['Packing type'] || 'Box';
       const packingSize = row['Packing Size'] || row['Packing size'] || '1';
       const estCost = row['Estimated Cost'] || row['Estimated cost'] || '0.00';
-      const formattedPrice = estCost.startsWith('$') ? estCost : '$' + parseFloat(estCost).toFixed(2);
+      const cleanEstCost = parseFloat(String(estCost).replace(/[^0-9.-]/g, '')) || 0;
+      const formattedPrice = `Rs. ${cleanEstCost.toFixed(2)}`;
       const model3d = row['3D Model'] || row['3d model'] || '';
 
       rmCount++;
@@ -326,10 +328,10 @@ export default function AddRawMaterial() {
               </div>
 
               <div className="relative group">
-                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                  <span className="text-slate-400 text-sm">$</span>
+                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+                  <span className="text-slate-400 text-xs font-bold">Rs.</span>
                 </div>
-                <input name="price" value={formData.price} onChange={handleInputChange} type="text" placeholder="0.00" className={`w-full bg-surface border rounded-xl pl-8 pr-4 py-3 text-sm text-on-surface focus:outline-none focus:ring-2 focus:ring-primary-container focus:border-transparent transition-all ${formErrors.price ? 'border-error/80 ring-1 ring-error/30' : 'border-outline-variant/30'}`} />
+                <input name="price" value={formData.price} onChange={handleInputChange} type="text" placeholder="0.00" className={`w-full bg-surface border rounded-xl pl-11 pr-4 py-3 text-sm text-on-surface focus:outline-none focus:ring-2 focus:ring-primary-container focus:border-transparent transition-all ${formErrors.price ? 'border-error/80 ring-1 ring-error/30' : 'border-outline-variant/30'}`} />
                 <label className={`absolute -top-2 left-3 bg-surface px-1 text-[10px] font-bold uppercase tracking-wider ${formErrors.price ? 'text-error' : 'text-primary'}`}>Estimated Cost / Unit</label>
               </div>
 
@@ -383,7 +385,7 @@ export default function AddRawMaterial() {
                           {mat.uom || mat.unit}
                         </span>
                       </td>
-                      <td className="py-4 px-6">{mat.price || mat.cost}</td>
+                      <td className="py-4 px-6">{formatCurrencyPKR(mat.price || mat.cost)}</td>
                       <td className="py-4 px-6 font-mono text-tertiary">{mat.alert || 0}</td>
                       <td className="py-4 px-6 flex justify-end gap-2">
                         <button onClick={() => setViewProfileData(mat)} className="w-8 h-8 rounded-lg flex items-center justify-center bg-surface hover:bg-blue-50 text-on-surface-variant hover:text-blue-500 transition-colors border border-outline-variant/30" title="View Profile">

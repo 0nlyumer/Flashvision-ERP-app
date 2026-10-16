@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useDialog } from '../../context/DialogContext';
 import GlobalPagination from '../ui/GlobalPagination';
+import UniversalPrintPreviewModal from '../ui/UniversalPrintPreviewModal';
 
 export default function PurchaseDemand({ selectedDepartments = [] }) {
   const { state, setCollection } = useApp();
@@ -127,8 +128,33 @@ export default function PurchaseDemand({ selectedDepartments = [] }) {
     }
   };
 
+  const [printPDData, setPrintPDData] = useState(null);
+
   const handlePrintPD = (pd) => {
-    appAlert('Print functionality will generate a PDF for: ' + pd.id);
+    const rawItems = pd.items || [];
+    const items = rawItems.map((it, idx) => ({
+      serial_no: idx + 1,
+      item_code: it.itemCode || it.itemId || `RM-${idx + 1}`,
+      item_name: it.itemName || it.name || it.itemCode || 'Material',
+      required_qty: Number(it.reqQty ?? it.quantity ?? it.qty ?? 0),
+      needed_by: pd.neededBy || pd.date || new Date().toISOString().split('T')[0]
+    }));
+    const totalQty = items.reduce((s, it) => s + (Number(it.required_qty) || 0), 0);
+    setPrintPDData({
+      ...pd,
+      id: pd.id,
+      header: {
+        pr_no: pd.id,
+        date: pd.date || new Date().toISOString().split('T')[0],
+        requestor: pd.requestedBy || 'Store Manager',
+        priority: pd.priority || 'Normal Priority'
+      },
+      items,
+      totals: {
+        totalRequestedItems: items.length,
+        totalQuantity: totalQty
+      }
+    });
   };
 
   const pds = (state.purchaseDemands || []).filter(pd => 
@@ -342,6 +368,16 @@ export default function PurchaseDemand({ selectedDepartments = [] }) {
                 setCurrentPage={setCurrentPage}
             />
         </div>
+      )}
+
+      {printPDData && (
+        <UniversalPrintPreviewModal
+          isOpen={Boolean(printPDData)}
+          onClose={() => setPrintPDData(null)}
+          documentType="purchase_demand"
+          documentData={printPDData}
+          documentTitle={`Purchase Demand ${printPDData.id}`}
+        />
       )}
     </div>
   );

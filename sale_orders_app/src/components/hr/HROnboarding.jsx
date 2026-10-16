@@ -1075,8 +1075,8 @@ export default function HROnboarding({ isMobile }) {
 
             <div class="section-title">Compensation &amp; Salary Structure</div>
             <div class="grid">
-              <div class="field"><span class="label">Gross Salary (Annual):</span> <span class="value">${currencySymbol}${Number(item.formData.grossSalary || 0).toLocaleString()}</span></div>
-              <div class="field"><span class="label">Basic Salary (Monthly):</span> <span class="value">${currencySymbol}${Number(item.formData.basicSalary || 0).toLocaleString()}</span></div>
+              <div class="field"><span class="label">Gross Salary (Annual):</span> <span class="value">${currencySymbol} ${Number(item.formData.grossSalary || 0).toLocaleString()}</span></div>
+              <div class="field"><span class="label">Basic Salary (Monthly):</span> <span class="value">${currencySymbol} ${Number(item.formData.basicSalary || 0).toLocaleString()}</span></div>
               <div class="field"><span class="label">Overtime Allowed:</span> <span class="value">${item.formData.overtimeAllowed ? 'Yes' : 'No'}</span></div>
               <div class="field"><span class="label">Bonuses Eligible:</span> <span class="value">${item.formData.bonusesEligible ? 'Yes' : 'No'}</span></div>
             </div>
@@ -1428,8 +1428,8 @@ export default function HROnboarding({ isMobile }) {
                 <div>
                   <h3 className="text-[11px] font-bold text-teal-800 border-b border-slate-200 pb-1 mb-2 uppercase tracking-wide">5. Offers &amp; Salary Structure</h3>
                   <div className="grid grid-cols-2 gap-y-2 gap-x-6">
-                    <div><span className="font-bold text-slate-500">Gross Salary (Annual):</span> <span className="text-slate-900 font-semibold">{currencySymbol}{Number(viewingEntry.formData.grossSalary || 0).toLocaleString()}</span></div>
-                    <div><span className="font-bold text-slate-500">Basic Salary (Monthly):</span> <span className="text-slate-900 font-semibold">{currencySymbol}{Number(viewingEntry.formData.basicSalary || 0).toLocaleString()}</span></div>
+                    <div><span className="font-bold text-slate-500">Gross Salary (Annual):</span> <span className="text-slate-900 font-semibold">{currencySymbol} {Number(viewingEntry.formData.grossSalary || 0).toLocaleString()}</span></div>
+                    <div><span className="font-bold text-slate-500">Basic Salary (Monthly):</span> <span className="text-slate-900 font-semibold">{currencySymbol} {Number(viewingEntry.formData.basicSalary || 0).toLocaleString()}</span></div>
                     <div><span className="font-bold text-slate-500">Overtime Allowed:</span> <span className="text-slate-900">{viewingEntry.formData.overtimeAllowed ? 'Yes' : 'No'}</span></div>
                     <div><span className="font-bold text-slate-500">Bonuses Eligible:</span> <span className="text-slate-900">{viewingEntry.formData.bonusesEligible ? 'Yes' : 'No'}</span></div>
                   </div>

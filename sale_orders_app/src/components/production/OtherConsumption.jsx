@@ -345,9 +345,9 @@ export default function OtherConsumption() {
                                 <td>${oc.department}</td>
                                 <td>${oc.itemCode}</td>
                                 <td>${oc.itemName}</td>
-                                <td>$${parseFloat(oc.price || 0).toFixed(2)}</td>
+                                <td>Rs. ${parseFloat(oc.price || 0).toFixed(2)}</td>
                                 <td>${oc.quantity} ${oc.unit}</td>
-                                <td><strong>$${parseFloat(oc.cost || 0).toFixed(2)}</strong></td>
+                                <td><strong>Rs. ${parseFloat(oc.cost || 0).toFixed(2)}</strong></td>
                             </tr>
                         </tbody>
                     </table>
@@ -561,9 +561,9 @@ export default function OtherConsumption() {
                                     {pendingEntries.map((e, index) => (
                                         <tr key={e.itemId} className="border-b border-outline-variant/5 hover:bg-surface-container-low/20 transition-colors">
                                             <td className="py-3 px-4 font-semibold">{e.itemName}</td>
-                                            <td className="py-3 px-4 text-right font-medium">${e.price.toFixed(2)}</td>
+                                            <td className="py-3 px-4 text-right font-medium">Rs. {e.price.toFixed(2)}</td>
                                             <td className="py-3 px-4 text-right font-bold">{e.quantity} {e.unit}</td>
-                                            <td className="py-3 px-4 text-right font-bold text-primary">${e.cost.toFixed(2)}</td>
+                                            <td className="py-3 px-4 text-right font-bold text-primary">Rs. {e.cost.toFixed(2)}</td>
                                             <td className="py-3 px-4 text-center">
                                                 <button onClick={() => handleRemoveEntry(index)} className="p-1 hover:bg-error/10 hover:text-error text-on-surface-variant rounded transition-colors">
                                                     <span className="material-symbols-outlined text-base">delete</span>
@@ -641,7 +641,7 @@ export default function OtherConsumption() {
                                                 <td className="py-3 px-4 font-semibold text-on-surface">{oc.itemName}</td>
                                                 <td className="py-3 px-4 font-semibold text-on-surface">{oc.department}</td>
                                                 <td className="py-3 px-4 text-right font-bold">{oc.quantity} {oc.unit}</td>
-                                                <td className="py-3 px-4 text-right font-black text-primary">${(oc.cost || 0).toFixed(2)}</td>
+                                                <td className="py-3 px-4 text-right font-black text-primary">Rs. {(oc.cost || 0).toFixed(2)}</td>
                                                 <td className="py-3 px-4 text-on-surface-variant font-semibold">
                                                     {new Date(oc.date).toLocaleDateString()}
                                                 </td>

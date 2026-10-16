@@ -231,7 +231,7 @@ export default function MasterBatchRecord() {
         return filteredBatches.slice(start, start + itemsPerPage);
     }, [filteredBatches, isPaginated, currentPage, itemsPerPage]);
 
-    const formatCurrency = (val) => `${currencySymbol}${parseFloat(val || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    const formatCurrency = (val) => `${currencySymbol} ${parseFloat(val || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     const formatDate = (d) => new Date(d).toLocaleString('en-GB', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 
     const batchPrintData = useMemo(() => {

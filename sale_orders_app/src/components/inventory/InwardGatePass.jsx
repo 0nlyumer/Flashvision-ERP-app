@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useDialog } from '../../context/DialogContext';
 import GlobalPagination from '../ui/GlobalPagination';
+import UniversalPrintPreviewModal from '../ui/UniversalPrintPreviewModal';
 
 export default function InwardGatePass() {
   const { state, setCollection } = useApp();
@@ -131,8 +132,34 @@ export default function InwardGatePass() {
     }
   };
 
+  const [printIGPData, setPrintIGPData] = useState(null);
+
   const handlePrintIGP = (igp) => {
-    appAlert('Print functionality will generate a PDF for: ' + igp.id);
+    const rawItems = igp.items || [];
+    const items = rawItems.map((it, idx) => ({
+      serial_no: idx + 1,
+      item_description: it.itemName || it.item_name || it.itemCode || 'Material Goods',
+      chalan_qty: Number(it.receivedQty ?? it.orderQty ?? it.qty ?? 0),
+      no_of_packages: it.packages || `${it.receivedQty || 0} ${it.uom || 'Pkgs'}`,
+      weight: it.weight ? `${it.weight} kg` : '—'
+    }));
+    const totalQty = items.reduce((s, it) => s + (Number(it.chalan_qty) || 0), 0);
+    setPrintIGPData({
+      ...igp,
+      id: igp.id,
+      header: {
+        gate_pass_no: igp.id,
+        entry_time: igp.date ? `${igp.date} ${igp.time || ''}`.trim() : new Date().toLocaleString(),
+        driver_name: igp.driverName || 'Driver',
+        vehicle_no: igp.vehicleNo || 'Vehicle',
+        supplier: igp.supplierName || 'Supplier Origin'
+      },
+      items,
+      totals: {
+        totalPackages: totalQty,
+        grossWeight: `${totalQty} Units`
+      }
+    });
   };
 
   const igps = (state.inwardGatePasses || []).filter(igp => 
@@ -318,6 +345,16 @@ export default function InwardGatePass() {
                 setCurrentPage={setCurrentPage}
             />
         </div>
+      )}
+
+      {printIGPData && (
+        <UniversalPrintPreviewModal
+          isOpen={Boolean(printIGPData)}
+          onClose={() => setPrintIGPData(null)}
+          documentType="inward_gate_pass"
+          documentData={printIGPData}
+          documentTitle={`Inward Gate Pass ${printIGPData.id}`}
+        />
       )}
     </div>
   );

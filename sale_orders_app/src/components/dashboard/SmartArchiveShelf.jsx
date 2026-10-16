@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
+import { formatCurrencyPKR } from '../../utils/currencyUtils';
 
 export default function SmartArchiveShelf({ isOpen, onClose }) {
   const { state } = useApp();
@@ -39,7 +40,7 @@ export default function SmartArchiveShelf({ isOpen, onClose }) {
         details: [
           { label: 'Document Number', value: so.id || `SO-${so.orderId}` },
           { label: 'Customer Account', value: so.customerName || 'N/A' },
-          { label: 'Total Invoice Value', value: `$${so.total || 0}` },
+          { label: 'Total Invoice Value', value: formatCurrencyPKR(so.total) },
           { label: 'Associated Items', value: `${so.items?.length || 0} items` },
           { label: 'Warehouse Status', value: so.status || 'Pending' }
         ]
@@ -51,7 +52,7 @@ export default function SmartArchiveShelf({ isOpen, onClose }) {
           details: [
             { label: 'Document Number', value: 'SO-MOCK-001' },
             { label: 'Customer Account', value: 'Ahmad & Sons Logistics' },
-            { label: 'Total Invoice Value', value: '$12,450.00' },
+            { label: 'Total Invoice Value', value: 'Rs. 12,450.00' },
             { label: 'Associated Items', value: '12 raw items' },
             { label: 'Warehouse Status', value: 'Approved' }
           ]
@@ -156,7 +157,7 @@ export default function SmartArchiveShelf({ isOpen, onClose }) {
           { label: 'Inventory Name', value: item.name },
           { label: 'Material Classification', value: item.category || 'Goods' },
           { label: 'Stock Capacity', value: `${item.stock || 0} ${item.unit || 'Units'}` },
-          { label: 'List Price Value', value: item.price || '$0.00' }
+          { label: 'List Price Value', value: formatCurrencyPKR(item.price) }
         ]
       })) : [
         {
@@ -168,7 +169,7 @@ export default function SmartArchiveShelf({ isOpen, onClose }) {
             { label: 'Inventory Name', value: 'Synthetic Silk Roll' },
             { label: 'Material Classification', value: 'Raw Materials' },
             { label: 'Stock Capacity', value: '2,500 Meters' },
-            { label: 'List Price Value', value: '$8.50' }
+            { label: 'List Price Value', value: 'Rs. 8.50' }
           ]
         }
       ]

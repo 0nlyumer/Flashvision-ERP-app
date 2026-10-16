@@ -34,10 +34,12 @@ export default function UniversalPrintPreviewModal({
   isOpen,
   onClose,
   documentType = 'sale_order',
-  documentData = null,
+  documentData: propDocumentData = null,
+  data: propData = null,
   documentTitle = null,
   companyInfo: customCompanyInfo = null
 }) {
+  const documentData = propDocumentData || propData;
   const { state } = useApp() || {};
   const previewContainerRef = useRef(null);
 
@@ -439,7 +441,7 @@ export default function UniversalPrintPreviewModal({
                   {documentTitle || docMeta.name}
                 </h2>
                 <span className="px-2 py-0.5 rounded text-[10px] font-mono tabular-nums font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
-                  {docCode}
+                  {docMeta.code}
                 </span>
                 <span className="hidden sm:inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200/80 dark:border-emerald-800/80">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>

@@ -665,6 +665,7 @@ export default function PlanConsumption({ plan, onClose }) {
   const handleFileUpload = (e) => {
       const file = e.target.files[0];
       if (!file) return;
+      const reader = new FileReader();
       reader.onload = (event) => {
           const text = event.target.result;
           const rows = text.split('\n').map(r => r.split(','));

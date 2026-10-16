@@ -15,7 +15,9 @@ const ENCODED_POOL = [
 
 export const GEMINI_API_KEYS = ENCODED_POOL.map(enc => {
   try {
-    return typeof atob !== 'undefined' ? atob(enc) : Buffer.from(enc, 'base64').toString('utf8');
+    if (typeof atob !== 'undefined') return atob(enc);
+    if (typeof Buffer !== 'undefined') return Buffer.from(enc, 'base64').toString('utf8');
+    return enc;
   } catch (e) {
     return enc;
   }

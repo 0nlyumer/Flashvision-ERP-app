@@ -52,10 +52,10 @@ const initialMockState = {
     { id: 'packing', title: 'Packing Specs', label: 'Packing Specs', tank: 'Packaging Materials', unit: 'pcs', width: 420, enabled: true, type: 'Packing Material' }
   ],
   approvals: [
-    { id: 'APP-101', type: 'Sales Order', requestedTo: 'admin', requestedBy: 'sales_rep', details: 'SO-1002 requiring special volume discount approval', value: '$12,450.00', status: 'Pending', createdAt: new Date(Date.now() - 3600000 * 2).toISOString() },
+    { id: 'APP-101', type: 'Sales Order', requestedTo: 'admin', requestedBy: 'sales_rep', details: 'SO-1002 requiring special volume discount approval', value: 'Rs. 12,450.00', status: 'Pending', createdAt: new Date(Date.now() - 3600000 * 2).toISOString() },
     { id: 'APP-102', type: 'GRN Log', requestedTo: 'admin', requestedBy: 'warehouse_mgr', details: 'GRN-940 discrepancy in cloth roll batch counts', value: '45 Rolls', status: 'Pending', createdAt: new Date(Date.now() - 3600000 * 5).toISOString() },
     { id: 'APP-103', type: 'Inventory Audit', requestedTo: 'admin', requestedBy: 'inventory_lead', details: 'Stock discrepancy adjustment for Polyester yarn', value: '-200 kg', status: 'Pending', createdAt: new Date().toISOString() },
-    { id: 'APP-104', type: 'Sales Order', requestedTo: 'sales_rep', requestedBy: 'admin', details: 'SO-1005 price variance check', value: '$8,200.00', status: 'Pending', createdAt: new Date(Date.now() - 3600000 * 24).toISOString() },
+    { id: 'APP-104', type: 'Sales Order', requestedTo: 'sales_rep', requestedBy: 'admin', details: 'SO-1005 price variance check', value: 'Rs. 8,200.00', status: 'Pending', createdAt: new Date(Date.now() - 3600000 * 24).toISOString() },
     { id: 'APP-105', type: 'GRN Log', requestedTo: 'admin', requestedBy: 'warehouse_mgr', details: 'GRN-932 general approval', value: '12 Rolls', status: 'Approved', createdAt: new Date(Date.now() - 3600000 * 48).toISOString(), completedAt: new Date(Date.now() - 3600000 * 47).toISOString() }
   ],
   gatePassActivities: [],
@@ -5046,9 +5046,10 @@ export const AppProvider = ({ children }) => {
   }, [state.approvals]);
 
   const rawCurrencySetting = state.adminSetup?.baseCurrency;
-  const baseCurrencySetting = (rawCurrencySetting && !rawCurrencySetting.includes('USD')) ? rawCurrencySetting : 'PKR (Rs)';
+  const baseCurrencySetting = (rawCurrencySetting && !rawCurrencySetting.includes('USD')) ? rawCurrencySetting : 'PKR (Rs.)';
   const currencyCode = baseCurrencySetting.split(' ')[0] || 'PKR';
-  const currencySymbol = baseCurrencySetting.match(/\(([^)]+)\)/)?.[1] || 'Rs';
+  let currencySymbol = baseCurrencySetting.match(/\(([^)]+)\)/)?.[1] || 'Rs.';
+  if (currencySymbol === 'Rs') currencySymbol = 'Rs.';
 
   const getPermittedDepartments = (targetUser = state.currentUser) => {
     const allDepts = state.departments || [];

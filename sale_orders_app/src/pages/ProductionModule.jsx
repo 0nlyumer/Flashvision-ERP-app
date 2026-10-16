@@ -435,7 +435,6 @@ export default function ProductionModule() {
          setCollection('productionPlans', newPlans);
          
          updateSaleOrderItemStatus(pendingItem.orderId, pendingItem.itemCode, 'In Process');
-         setShowAddModal(false); // Close Modal when added
      }
   };
 

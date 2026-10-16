@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useDialog } from '../../context/DialogContext';
 import GlobalPagination from '../ui/GlobalPagination';
+import UniversalPrintPreviewModal from '../ui/UniversalPrintPreviewModal';
 
 export default function GoodsReceivingNote() {
   const { state, setCollection, addGRN, deleteGRN } = useApp();
@@ -135,8 +136,41 @@ export default function GoodsReceivingNote() {
     }
   };
 
+  const [printGRNData, setPrintGRNData] = useState(null);
+
   const handlePrintGRN = (grn) => {
-    appAlert('Print functionality will generate a PDF for: ' + grn.id);
+    const rawItems = grn.items || [];
+    const items = rawItems.map((it, idx) => ({
+      serial_no: idx + 1,
+      item_code: it.itemCode || it.itemId || `RM-${idx + 1}`,
+      item_name: it.itemName || it.name || it.productName || it.description || 'Raw Material Item',
+      ordered_qty: Number(it.orderQty ?? it.reqQty ?? it.qty ?? 0),
+      received_qty: Number(it.qty ?? it.receivedQty ?? 0),
+      accepted_qty: Math.max(0, Number(it.qty ?? it.receivedQty ?? 0) - Number(it.rejectedQty ?? 0)),
+      rejected_qty: Number(it.rejectedQty ?? 0)
+    }));
+
+    const totalRec = items.reduce((s, it) => s + it.received_qty, 0);
+    const totalAcc = items.reduce((s, it) => s + it.accepted_qty, 0);
+    const totalRej = items.reduce((s, it) => s + it.rejected_qty, 0);
+
+    setPrintGRNData({
+      ...grn,
+      id: grn.id,
+      header: {
+        grn_number: grn.id,
+        grn_date: grn.date || new Date().toISOString().split('T')[0],
+        po_ref: grn.poId || '—',
+        supplier_name: grn.supplierName || 'Supplier',
+        inspector: grn.checkedBy || 'QC Lead'
+      },
+      items,
+      totals: {
+        totalReceived: totalRec,
+        totalAccepted: totalAcc,
+        totalRejected: totalRej
+      }
+    });
   };
 
   const grns = (state.grns || []).filter(grn => 
@@ -336,6 +370,16 @@ export default function GoodsReceivingNote() {
               setCurrentPage={setCurrentPage}
             />
         </div>
+      )}
+
+      {printGRNData && (
+        <UniversalPrintPreviewModal
+          isOpen={Boolean(printGRNData)}
+          onClose={() => setPrintGRNData(null)}
+          documentType="grn_note"
+          documentData={printGRNData}
+          documentTitle={`Goods Receiving Note ${printGRNData.id}`}
+        />
       )}
     </div>
   );

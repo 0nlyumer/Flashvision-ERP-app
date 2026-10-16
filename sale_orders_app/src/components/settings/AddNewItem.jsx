@@ -5,6 +5,7 @@ import { useApp } from '../../context/AppContext';
 import { useDialog } from '../../context/DialogContext';
 import CustomSelect from '../ui/CustomSelect';
 import GlobalPagination from '../ui/GlobalPagination';
+import { formatCurrencyPKR } from '../../utils/currencyUtils';
 
 export default function AddNewItem() {
   const { state, setCollection } = useApp();
@@ -389,7 +390,8 @@ export default function AddNewItem() {
         const uomBaseQty = Number(row['UOM Base Quantity'] || row['UOM base quantity']) || 0;
         const packSize = Number(row['Packing Size'] || row['Packing size']) || 0;
         const unitPrice = row['Unit Price'] || row['Unit price'] || '0.00';
-        const formattedPrice = unitPrice.startsWith('$') ? unitPrice : '$' + parseFloat(unitPrice).toFixed(2);
+        const cleanUnitPrice = parseFloat(String(unitPrice).replace(/[^0-9.-]/g, '')) || 0;
+        const formattedPrice = `Rs. ${cleanUnitPrice.toFixed(2)}`;
 
         // find matching cloth
         const clothItem = updatedItems.find(i => i.name.toLowerCase() === clothName.toLowerCase());
@@ -439,7 +441,8 @@ export default function AddNewItem() {
         const packingType = row['Packing Type'] || row['Packing type'] || 'Box';
         const packingSize = row['Packing Size'] || row['Packing size'] || '1';
         const estCost = row['Estimated Cost'] || row['Estimated cost'] || '0.00';
-        const formattedPrice = estCost.startsWith('$') ? estCost : '$' + parseFloat(estCost).toFixed(2);
+        const cleanEstCost = parseFloat(String(estCost).replace(/[^0-9.-]/g, '')) || 0;
+        const formattedPrice = `Rs. ${cleanEstCost.toFixed(2)}`;
         const model3d = row['3D Model'] || row['3d model'] || '';
 
         rmCount++;
@@ -903,7 +906,7 @@ export default function AddNewItem() {
                           {item.category || item.type}
                         </span>
                       </td>
-                      <td className="py-4 px-6">{item.price}</td>
+                      <td className="py-4 px-6">{formatCurrencyPKR(item.price)}</td>
                       <td className="py-4 px-6">
                         <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
                           item.status === 'Active' ? 'bg-emerald-100 text-emerald-800' : 'bg-yellow-100 text-yellow-800'

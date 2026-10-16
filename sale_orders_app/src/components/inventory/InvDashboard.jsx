@@ -87,6 +87,8 @@ export default function InvDashboard({ selectedDepartments = [] }) {
                       const progress = qty > 0 ? (prod / qty) * 100 : 0;
                       const dispProgress = qty > 0 ? (disp / qty) * 100 : 0;
                       
+                      const sysItem = state?.items?.find(it => it.sku === i.itemCode || it.id === i.itemCode || it.itemCode === i.itemCode);
+                      
                       if (selectedDepartments && selectedDepartments.length > 0 && sysItem) {
                           const depts = (sysItem.department || '').split(',').map(d => d.trim()).filter(Boolean);
                           if (!depts.some(d => selectedDepartments.includes(d))) return;

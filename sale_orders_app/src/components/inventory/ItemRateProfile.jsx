@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useDialog } from '../../context/DialogContext';
+import { formatCurrencyPKR } from '../../utils/currencyUtils';
 
 export default function ItemRateProfile() {
   const { state, setState } = useApp();
@@ -93,9 +94,9 @@ export default function ItemRateProfile() {
   const currentRateValue = useMemo(() => {
     if (!activeItem) return 'Rs. 0.00';
     if (selectedType === 'Base Item') {
-      return activeItem.price || 'Rs. 0.00';
+      return formatCurrencyPKR(activeItem.price);
     }
-    return activeItem.pricesByType?.[selectedType] || activeItem.price || 'Rs. 0.00';
+    return formatCurrencyPKR(activeItem.pricesByType?.[selectedType] || activeItem.price);
   }, [activeItem, selectedType]);
 
   // Compile unified Rate History from Manual Updates, POs, and Invoices for the selected type
@@ -160,8 +161,8 @@ export default function ItemRateProfile() {
     // If history is empty, fall back to current price
     if (combined.length === 0) {
       const fallbackPriceStr = selectedType === 'Base Item' 
-        ? (activeItem.price || 'Rs. 0.00')
-        : (activeItem.pricesByType?.[selectedType] || activeItem.price || 'Rs. 0.00');
+        ? formatCurrencyPKR(activeItem.price)
+        : formatCurrencyPKR(activeItem.pricesByType?.[selectedType] || activeItem.price);
       const cleanPrice = parseFloat(String(fallbackPriceStr).replace(/[^0-9.]/g, '')) || 0;
       combined.push({
         id: `init-${itemId}-${selectedType}`,
@@ -351,7 +352,7 @@ export default function ItemRateProfile() {
                     
                     <div className="text-right shrink-0">
                       <div className="font-extrabold text-sm text-on-surface">
-                        {item.price || 'Rs. 0.00'}
+                        {formatCurrencyPKR(item.price)}
                       </div>
                       <div className="text-[9px] text-on-surface-variant font-medium">
                         {item.uom || 'Units'}
@@ -439,8 +440,8 @@ export default function ItemRateProfile() {
                     {availableTypes.map(t => {
                       const isSel = selectedType === t;
                       const typeRate = t === 'Base Item' 
-                        ? (activeItem.price || 'Rs. 0.00') 
-                        : (activeItem.pricesByType?.[t] || activeItem.price || 'Rs. 0.00');
+                        ? formatCurrencyPKR(activeItem.price) 
+                        : formatCurrencyPKR(activeItem.pricesByType?.[t] || activeItem.price);
                       return (
                         <button
                           key={t}

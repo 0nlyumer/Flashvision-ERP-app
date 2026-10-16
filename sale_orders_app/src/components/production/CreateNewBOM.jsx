@@ -6,7 +6,7 @@ import UniversalPrintPreviewModal from '../ui/UniversalPrintPreviewModal';
 
 export default function CreateNewBOM({ onClose, initialBom, isViewOnly = false }) {
   const { state, setCollection, setDirty, isDirty } = useApp();
-  const { appAlert } = useDialog();
+  const { appAlert, appConfirm } = useDialog();
 
   // SearchablePhaseItemSelect removed as it's no longer needed for prepopulated matrices.
 

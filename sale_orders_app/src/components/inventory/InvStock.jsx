@@ -7,6 +7,7 @@ import GlobalPagination from '../ui/GlobalPagination';
 import useDynamicColumns from '../../hooks/useDynamicColumns';
 import DraggableResizableHeader from '../ui/DraggableResizableHeader';
 import CustomMultiSelect from '../ui/CustomMultiSelect';
+import { formatCurrencyPKR } from '../../utils/currencyUtils';
 
 class ErrorBoundary extends React.Component {
   constructor(props) {
@@ -389,7 +390,7 @@ export default function InvStock({ selectedDepartments = [], selectable = false,
         case 'uom':
             return <span className="text-xs text-on-surface-variant font-bold text-tertiary">{item.displayUom}</span>;
         case 'price':
-            return <span className="text-sm">Rs. {item.price || '0.00'}</span>;
+            return <span className="text-sm">{formatCurrencyPKR(item.price)}</span>;
         case 'status':
             return (
                 <span className={`px-2 py-1 rounded-full text-[10px] font-bold ${item.status === 'Active' ? 'bg-emerald-100 text-emerald-800' : 'bg-yellow-100 text-yellow-800'}`}>
@@ -665,7 +666,7 @@ export default function InvStock({ selectedDepartments = [], selectable = false,
                      <div className="pt-4 border-t border-outline-variant/10">
                          <div className="flex justify-between items-center">
                              <span className="text-sm text-on-surface-variant">Estimated Cost:</span>
-                             <span className="font-bold text-on-surface text-lg">Rs. {activeItem.price || '0.00'}</span>
+                             <span className="font-bold text-on-surface text-lg">{formatCurrencyPKR(activeItem.price)}</span>
                          </div>
                      </div>
                  </div>

@@ -1275,7 +1275,8 @@ export default function OmsFilter({ pendingItems = [], customers = [] }) {
                     isOpen={!!printData}
                     onClose={() => setPrintData(null)}
                     documentType="production_manifest"
-                    data={printData}
+                    documentData={printData}
+                    documentTitle={`Production Order Manifest ${printData.id}`}
                 />
             )}
         </div>

@@ -79,7 +79,7 @@ export default function SaleOrderModule() {
   const { state, setState, setCollection, addSaleOrder, updateSaleOrderItemStatus, toggleGlobalPagination } = useApp();
   const { appConfirm, appAlert } = useDialog();
   const currencyCode = state.adminSetup?.baseCurrency ? state.adminSetup.baseCurrency.split(' ')[0] : 'PKR';
-  const currencySymbol = state.adminSetup?.baseCurrency ? (state.adminSetup.baseCurrency.match(/\(([^)]+)\)/)?.[1] || '$') : '$';
+  const currencySymbol = state.adminSetup?.baseCurrency ? (state.adminSetup.baseCurrency.match(/\(([^)]+)\)/)?.[1] || 'Rs.') : 'Rs.';
   const [activeTab, setActiveTab] = useState('dashboard');
   
   // Pagination

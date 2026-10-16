@@ -22,6 +22,7 @@ export default function AddNewUser({ initialUser, onCancel }) {
     'Admin'
   ]);
   const [employeesList, setEmployeesList] = useState([]);
+  const [selectedEmployee, setSelectedEmployee] = useState('');
 
   const [formData, setFormData] = useState({
     name: '',
