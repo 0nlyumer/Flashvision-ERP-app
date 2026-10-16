@@ -1,4 +1,6 @@
-// Comprehensive Print Schema Registry for 26 ERP System Documents
+import { getDefaultThemeForDoc, CURATED_PALETTES } from './printThemeEngine';
+
+// Comprehensive Print Schema Registry for FlashVision ERP System Documents
 
 export const DOCUMENT_MODULES = [
   { id: 'oms', name: 'OMS Module', icon: 'shopping_cart' },
@@ -52,12 +54,15 @@ export const SYSTEM_DOCUMENTS = [
   { id: 'hr_overtime_request', name: 'Overtime Request Form', module: 'hr', icon: 'more_time', code: 'OTR' },
   { id: 'hr_loan_request', name: 'Loan Request Form', module: 'hr', icon: 'account_balance_wallet', code: 'LNR' },
   { id: 'hr_advance_request', name: 'Advance Request Form', module: 'hr', icon: 'account_balance', code: 'ADV' },
-  { id: 'hr_payslip', name: 'Salary Generation / Payslip', module: 'hr', icon: 'payments', code: 'PAY' }
+  { id: 'hr_payslip', name: 'Salary Generation / Payslip', module: 'hr', icon: 'payments', code: 'PAY' },
+  { id: 'attendance_sheet', name: 'Biometric Attendance Audit', module: 'hr', icon: 'fingerprint', code: 'ATT' }
 ];
 
 export const DEFAULT_LAYOUT_SETTINGS = {
   paperSize: 'A4', // A4, Letter, Thermal, A5, Legal
   orientation: 'portrait',
+  activeTheme: 'classic', // 'classic' | 'modern' | 'industrial'
+  paletteId: 'navy_enterprise',
   headerTheme: 'classic_split',
   primaryColor: '#004277',
   fontFamily: 'Inter',
@@ -65,6 +70,14 @@ export const DEFAULT_LAYOUT_SETTINGS = {
   bodyFontSize: '11px',
   tableHeaderBgColor: '#004277',
   tableHeaderTextColor: '#ffffff',
+  // Manufacturing Floor Extras
+  enableFloorCheckboxes: false,
+  showMachineAllocation: false,
+  showBatchYieldBlock: false,
+  inkSaverMode: false,
+  logoSize: 'medium',
+  logoPosition: 'left',
+  showBarcode: true,
   // Multi-Page Pagination Engine Rules (pdfme & jsreport style)
   firstPageRows: 8,
   continuationPageRows: 14,
@@ -680,6 +693,30 @@ export const DEFAULT_DOCUMENT_SCHEMAS = {
       { key: 'recovery_month', label: 'Recovery Payroll Month', enabled: true, width: '45%', align: 'left' },
       { key: 'deduction_amount', label: 'Deduction Amount (Rs.)', enabled: true, width: '40%', align: 'right' }
     ]
+  },
+
+  attendance_sheet: {
+    ...DEFAULT_LAYOUT_SETTINGS,
+    activeTheme: 'industrial',
+    paletteId: 'industrial_steel',
+    enableFloorCheckboxes: true,
+    headerFields: [
+      { key: 'report_title', label: 'Report Title', enabled: true, width: 'span-2' },
+      { key: 'department', label: 'Target Department', enabled: true, width: 'span-1' },
+      { key: 'date_range', label: 'Audit Period', enabled: true, width: 'span-1' },
+      { key: 'generated_on', label: 'Generated At', enabled: true, width: 'span-1' },
+      { key: 'operator', label: 'Shift Supervisor', enabled: true, width: 'span-1' }
+    ],
+    gridColumns: [
+      { key: 'serial_no', label: 'Sr #', enabled: true, width: '6%', align: 'center' },
+      { key: 'emp_code', label: 'Badge Code', enabled: true, width: '12%', align: 'left' },
+      { key: 'emp_name', label: 'Employee Name', enabled: true, width: '22%', align: 'left' },
+      { key: 'department', label: 'Department', enabled: true, width: '14%', align: 'left' },
+      { key: 'date', label: 'Punch Date', enabled: true, width: '12%', align: 'center' },
+      { key: 'clock_in', label: 'Clock IN', enabled: true, width: '11%', align: 'center' },
+      { key: 'clock_out', label: 'Clock OUT', enabled: true, width: '11%', align: 'center' },
+      { key: 'duration', label: 'Duration', enabled: true, width: '12%', align: 'right' }
+    ]
   }
 };
 
@@ -740,7 +777,8 @@ export function getSampleRecordFromState(docType, state) {
     hr_payslip: state.hr_generated_salaries?.[0],
     hr_overtime_request: state.hr_overtime_requests?.[0],
     hr_leave_request: state.hr_leave_requests?.[0],
-    hr_loan_request: state.hr_loan_requests?.[0]
+    hr_loan_request: state.hr_loan_requests?.[0],
+    attendance_sheet: state.attendanceRecords?.[0] || state.hr_attendance?.[0] || null
   };
   return map[docType] || null;
 }
@@ -809,7 +847,7 @@ export function discoverDocumentSchema(docType, sampleRecord = null, existingLay
   };
 }
 
-// Generate Realistic Mock Data for Live Paper Preview across all 26 document types
+// Generate Realistic Enterprise Mock Data for Live Paper Preview across ALL 33 document types
 export function getMockPreviewData(docType) {
   const commonHeader = {
     company: 'FLASHVISION LOGISTICS & ENTERPRISE ERP',
@@ -834,9 +872,9 @@ export function getMockPreviewData(docType) {
           delivery_date: '2026-08-10'
         },
         items: [
-          { serial_no: '1', item_code: 'FG-WC-001', item_name: 'Synthetic Winter Coat Fabric', qty: 1500, uom: 'Meters', rate: 10.0, discount: '5%', sub_total: 14250.0 },
-          { serial_no: '2', item_code: 'RM-PS-120', item_name: 'Polyester Silk 120g Yarn', qty: 1000, uom: 'kg', rate: 4.5, discount: '0%', sub_total: 4500.0 },
-          { serial_no: '3', item_code: 'RM-CB-080', item_name: 'Cotton Blend 80g Fabric', qty: 2000, uom: 'Meters', rate: 3.5, discount: '2%', sub_total: 6860.0 }
+          { serial_no: '1', item_code: 'FG-WC-001', item_name: 'Synthetic Winter Coat Fabric', rolls: '30', qty: 1500, uom: 'Meters', rate: 10.0, discount: '5%', sub_total: 14250.0 },
+          { serial_no: '2', item_code: 'RM-PS-120', item_name: 'Polyester Silk 120g Yarn', rolls: '20', qty: 1000, uom: 'kg', rate: 4.5, discount: '0%', sub_total: 4500.0 },
+          { serial_no: '3', item_code: 'RM-CB-080', item_name: 'Cotton Blend 80g Fabric', rolls: '40', qty: 2000, uom: 'Meters', rate: 3.5, discount: '2%', sub_total: 6860.0 }
         ],
         totals: { subtotal: 25610.0, tax: 4609.8, discount: 1250.0, grandTotal: 28969.8 }
       };
@@ -848,7 +886,7 @@ export function getMockPreviewData(docType) {
           plan_id: 'PLN-2026-042',
           plan_date: '2026-07-25',
           planner_name: 'Muhammad Tariq',
-          production_line: 'Line #3 (Weaving)',
+          production_line: 'Line #3 (Weaving Loom)',
           status: 'Active'
         },
         items: [
@@ -890,6 +928,63 @@ export function getMockPreviewData(docType) {
           { serial_no: '2', step_name: 'Fabric Dyeing & Chemical Wash', planned_qty: 990, actual_output: 984, waste_qty: 6, variance: '-0.6%' }
         ],
         totals: { totalInput: 1000, totalOutput: 984, totalWaste: 16 }
+      };
+
+    case 'master_batch_record':
+      return {
+        header: {
+          ...commonHeader,
+          mbr_no: 'MBR-FG-001-B902',
+          product_name: 'High-Tenacity Industrial Synthetic Fabric',
+          batch_size: '2,500 Meters',
+          qa_sign: 'QA-PASSED-CERT-992'
+        },
+        items: [
+          { step_no: '1', operation: 'Raw Material Dispensing & Verification', parameters: 'High-Tenacity Yarn 1,625 kg, Dye 200L', spec_limit: '±0.5% Tolerance', sign_off: 'OP: Tariq (08:30)' },
+          { step_no: '2', operation: 'Loom Beam Loading & Tension Calibration', parameters: 'Tension 45 N/cm, Speed 650 RPM', spec_limit: '42 - 48 N/cm', sign_off: 'OP: Tariq (10:15)' },
+          { step_no: '3', operation: 'Polymer Waterproof Coating Application', parameters: 'Coating Temp 145°C, Viscosity 2800 cP', spec_limit: '140°C - 150°C', sign_off: 'CHEM: Raza (13:00)' },
+          { step_no: '4', operation: 'Curing & High-Speed Heat Setting', parameters: 'Chamber Dwell Time 45s, Temp 180°C', spec_limit: '175°C - 185°C', sign_off: 'ENG: Kamran (15:20)' },
+          { step_no: '5', operation: 'Finished Fabric Inspection & QC Rolling', parameters: 'Defect Density < 2 points/100m', spec_limit: 'Grade A Export', sign_off: 'QC: Zaid (17:00)' }
+        ],
+        totals: { totalSteps: 5, massBalanceEfficiency: '98.8%', standardRunHours: '8.5 hrs' }
+      };
+
+    case 'inventory_ledger':
+      return {
+        header: {
+          ...commonHeader,
+          ledger_id: 'IVL-TEX-2026',
+          period: '01-Jul-2026 to 31-Jul-2026',
+          warehouse: 'Central Raw Material Store (Store #2)',
+          item_name: 'Polyester Silk 120g Yarn (RM-PS-120)'
+        },
+        items: [
+          { date: '2026-07-01', ref_no: 'OPN-BAL', item_name: 'Opening Balance Carried Forward', qty_in: '-', qty_out: '-', balance: 12500 },
+          { date: '2026-07-05', ref_no: 'GRN-2026-0512', item_name: 'Import Consignment - Apex Ltd', qty_in: 5000, qty_out: '-', balance: 17500 },
+          { date: '2026-07-12', ref_no: 'ISS-BATCH-901', item_name: 'Production Issue - Weaving Line #3', qty_in: '-', qty_out: 4200, balance: 13300 },
+          { date: '2026-07-18', ref_no: 'ADJ-2026-019', item_name: 'Physical Audit Weight Recalibration', qty_in: '-', qty_out: 50, balance: 13250 },
+          { date: '2026-07-26', ref_no: 'DC-2026-0310', item_name: 'Direct Dispatch Consignee', qty_in: '-', qty_out: 1000, balance: 12250 }
+        ],
+        totals: { totalInward: 5000, totalOutward: 5250, closingBalance: 12250 }
+      };
+
+    case 'attendance_sheet':
+      return {
+        header: {
+          ...commonHeader,
+          report_title: 'FACTORY WORKFORCE BIOMETRIC ATTENDANCE AUDIT',
+          department: 'Weaving & Dyeing Operations',
+          date_range: '10-Oct-2026 to 16-Oct-2026',
+          generated_on: '2026-10-16 11:30 AM',
+          operator: 'Rashid Mehmood (Shift Lead)'
+        },
+        items: [
+          { serial_no: '1', emp_code: 'EMP-1042', emp_name: 'Bilal Hassan', department: 'Weaving', date: '2026-10-16', clock_in: '07:55 AM', clock_out: '04:15 PM', duration: '8.33 hrs', status: 'Present' },
+          { serial_no: '2', emp_code: 'EMP-2089', emp_name: 'Elena Rodriguez', department: 'Assembly', date: '2026-10-16', clock_in: '08:02 AM', clock_out: '05:00 PM', duration: '8.96 hrs', status: 'Present (OT)' },
+          { serial_no: '3', emp_code: 'EMP-3041', emp_name: 'Kashif Ali', department: 'Spinning', date: '2026-10-16', clock_in: '07:48 AM', clock_out: '04:05 PM', duration: '8.28 hrs', status: 'Present' },
+          { serial_no: '4', emp_code: 'EMP-4105', emp_name: 'Zubair Ahmed', department: 'Maintenance', date: '2026-10-16', clock_in: '08:15 AM', clock_out: '04:30 PM', duration: '8.25 hrs', status: 'Grace Period' }
+        ],
+        totals: { totalEmp: 48, totalPunches: 96, presentCount: 46, completedCount: 44, totalHours: '394.5 hrs' }
       };
 
     case 'grn_note':
@@ -944,6 +1039,312 @@ export function getMockPreviewData(docType) {
           { serial_no: '2', item_code: 'RM-PS-120', item_name: 'Polyester Silk Yarn 120g', qty: 500, unit_price: 5.0, tax_rate: '18%', amount: 2950.0 }
         ],
         totals: { subtotal: 14500.0, tax: 2610.0, discount: 0.0, grandTotal: 17110.0 }
+      };
+
+    case 'purchase_order':
+      return {
+        header: {
+          ...commonHeader,
+          po_number: 'PO-2026-0941',
+          po_date: '2026-07-25',
+          supplier_name: 'Orient Chemical Industries Ltd',
+          payment_terms: 'Net 45 Days',
+          delivery_location: 'Central Plant Dock 4, Karachi'
+        },
+        items: [
+          { serial_no: '1', item_code: 'RM-CHEM-10', item_name: 'Industrial Solvent Chemical Grade A', qty: 500, unit_price: 18.5, tax: '18%', amount: 10915.0 },
+          { serial_no: '2', item_code: 'RM-YRN-01', item_name: 'High-Tenacity Nylon Yarn 240D', qty: 1200, unit_price: 6.2, tax: '18%', amount: 8779.2 }
+        ],
+        totals: { subtotal: 16690.0, taxAmount: 3004.2, grandTotal: 19694.2 }
+      };
+
+    case 'purchase_demand':
+      return {
+        header: {
+          ...commonHeader,
+          pr_no: 'PRD-2026-118',
+          date: '2026-07-24',
+          requestor: 'Eng. Kamran Raza (Plant Manager)',
+          priority: 'Urgent Priority'
+        },
+        items: [
+          { serial_no: '1', item_code: 'SP-BEAR-04', item_name: 'High-Precision Loom Bearings SKF-6205', required_qty: 12, needed_by: '2026-07-30' },
+          { serial_no: '2', item_code: 'RM-DYE-04', item_name: 'Waterproof Polymer Coating Dye Resin', required_qty: 250, needed_by: '2026-08-02' }
+        ],
+        totals: { totalRequestedItems: 2 }
+      };
+
+    case 'inward_gate_pass':
+      return {
+        header: {
+          ...commonHeader,
+          gate_pass_no: 'IGP-2026-4402',
+          entry_time: '2026-07-27 09:45 AM',
+          driver_name: 'Shaukat Khan (CNIC: 42101-9876543-1)',
+          vehicle_no: 'TK-8921 (10-Wheeler Truck)',
+          supplier: 'Orient Chemical Industries Ltd'
+        },
+        items: [
+          { serial_no: '1', item_description: 'Industrial Solvent Drums (200L each)', chalan_qty: 15, no_of_packages: '15 Drums', weight: 3450.0 },
+          { serial_no: '2', item_description: 'Nylon Yarn Spools Palletized', chalan_qty: 40, no_of_packages: '4 Pallets', weight: 2200.0 }
+        ],
+        totals: { totalPackages: 19, grossWeight: '5,650 kg' }
+      };
+
+    case 'stock_transfer':
+      return {
+        header: {
+          ...commonHeader,
+          transfer_no: 'STF-2026-088',
+          date: '2026-07-26',
+          from_warehouse: 'Raw Material Store (Main Plant)',
+          to_warehouse: 'Weaving Sub-Store (Line #3)'
+        },
+        items: [
+          { serial_no: '1', item_code: 'RM-YRN-01', item_name: 'High-Tenacity Nylon Yarn 240D', transfer_qty: 650, uom: 'kg' },
+          { serial_no: '2', item_code: 'RM-DYE-04', item_name: 'Waterproof Polymer Coating Dye', transfer_qty: 80, uom: 'Liters' }
+        ],
+        totals: { totalTransferQty: 730 }
+      };
+
+    case 'inventory_return':
+      return {
+        header: {
+          ...commonHeader,
+          return_no: 'IRT-2026-031',
+          date: '2026-07-27',
+          party_name: 'National Textiles Ltd',
+          reason: 'Defective Selvedge / Shade Variance'
+        },
+        items: [
+          { serial_no: '1', item_code: 'FG-WC-001', item_name: 'Synthetic Winter Coat Fabric', inv_qty: 500, returned_qty: 50, unit_price: 10.0 }
+        ],
+        totals: { totalReturnedQty: 50, totalReturnValue: 500.0 }
+      };
+
+    case 'inventory_adjustment':
+      return {
+        header: {
+          ...commonHeader,
+          adj_id: 'ADJ-2026-049',
+          date: '2026-07-26',
+          approved_by: 'Zaid Mahmood (Chief Stock Auditor)',
+          reason: 'Quarterly Physical Count Variance'
+        },
+        items: [
+          { serial_no: '1', item_code: 'RM-YRN-01', item_name: 'High-Tenacity Nylon Yarn', system_qty: 1200, physical_qty: 1185, adj_qty: -15 },
+          { serial_no: '2', item_code: 'RM-PAK-02', item_name: 'Heavy Duty Plastic Wrap Film', system_qty: 45, physical_qty: 50, adj_qty: 5 }
+        ],
+        totals: { totalVariance: '-10 Units Net' }
+      };
+
+    case 'stock_demand':
+      return {
+        header: {
+          ...commonHeader,
+          demand_no: 'SKD-2026-204',
+          date: '2026-07-27',
+          from_dept: 'Weaving Section (Line #3)',
+          to_store: 'Central Chemical & Yarn Store'
+        },
+        items: [
+          { serial_no: '1', item_code: 'RM-YRN-01', item_name: 'High-Tenacity Nylon Yarn', demanded_qty: 500, uom: 'kg' },
+          { serial_no: '2', item_code: 'RM-TH-02', item_name: 'Polyester Thread Spools', demanded_qty: 50, uom: 'Spools' }
+        ],
+        totals: { totalDemandedItems: 550 }
+      };
+
+    case 'other_consumptions':
+      return {
+        header: {
+          ...commonHeader,
+          ref_no: 'OTC-2026-092',
+          date: '2026-07-26',
+          cost_center: 'CC-DYEING-01',
+          category: 'General Chemical & Lubricant'
+        },
+        items: [
+          { serial_no: '1', item_name: 'Machine Synthetic Lubricant ISO-68', qty: 25, uom: 'Liters', remarks: 'Routine 250hr maintenance Line 3' },
+          { serial_no: '2', item_name: 'Equipment Degreaser Solvent', qty: 10, uom: 'Cans', remarks: 'Roll cleaner wash' }
+        ],
+        totals: { totalConsumedQty: 35 }
+      };
+
+    case 'purchase_invoice':
+      return {
+        header: {
+          ...commonHeader,
+          bill_no: 'PINV-2026-892',
+          bill_date: '2026-07-25',
+          po_ref: 'PO-2026-019',
+          supplier_name: 'Apex Chemicals Ltd',
+          payment_status: 'Pending Verification'
+        },
+        items: [
+          { serial_no: '1', item_code: 'RM-CHEM-10', item_name: 'Industrial Solvent Chemical', qty: 500, unit_rate: 18.0, total_amount: 9000.0 },
+          { serial_no: '2', item_code: 'RM-TH-02', item_name: 'Polyester Thread Spools', qty: 200, unit_rate: 4.5, total_amount: 900.0 }
+        ],
+        totals: { subtotal: 9900.0, tax: 1782.0, netPayable: 11682.0 }
+      };
+
+    case 'chart_of_accounts':
+      return {
+        header: {
+          ...commonHeader,
+          report_title: 'GENERAL LEDGER CHART OF ACCOUNTS AUDIT',
+          print_date: '2026-07-27',
+          filtered_by: 'All Active Balance Sheet Accounts'
+        },
+        items: [
+          { account_code: '1000-01', account_name: 'Meezan Bank Operations Account', type: 'Current Asset', current_balance: 4520000.0 },
+          { account_code: '1100-02', account_name: 'Accounts Receivable (Trade Debtors)', type: 'Current Asset', current_balance: 8940500.0 },
+          { account_code: '1200-01', account_name: 'Raw Material Inventory Valuation', type: 'Current Asset', current_balance: 14250000.0 },
+          { account_code: '2000-01', account_name: 'Accounts Payable (Trade Creditors)', type: 'Current Liability', current_balance: 6120000.0 }
+        ],
+        totals: { totalDebitBalance: 27710500.0, totalCreditBalance: 6120000.0 }
+      };
+
+    case 'tax_ledger_reports':
+      return {
+        header: {
+          ...commonHeader,
+          tax_period: 'July 2026 Tax Return',
+          ntn_number: 'NTN: 8923410-7 (FBR)',
+          generated_on: '2026-07-27'
+        },
+        items: [
+          { date: '2026-07-10', voucher_no: 'INV-2026-1042', party_name: 'Premier Textile Corp', taxable_val: 125000.0, tax_amount: 22500.0 },
+          { date: '2026-07-18', voucher_no: 'INV-2026-1045', party_name: 'Al-Haq Enterprises', taxable_val: 84000.0, tax_amount: 15120.0 }
+        ],
+        totals: { totalTaxableValue: 209000.0, totalTaxCollected: 37620.0 }
+      };
+
+    case 'voucher_receipt':
+      return {
+        header: {
+          ...commonHeader,
+          voucher_no: 'RV-2026-0412',
+          date: '2026-07-26',
+          received_from: 'Al-Haq Enterprises (Customer #CU-081)',
+          payment_mode: 'Crossed Cheque / Bank Transfer'
+        },
+        items: [
+          { serial_no: '1', account_head: '1100-02 Trade Debtors Receivable', narration: 'Advance clearance against Sale Order SO-2026-081', amount: 500000.0 }
+        ],
+        totals: { totalReceivedAmount: 500000.0 }
+      };
+
+    case 'voucher_payment':
+      return {
+        header: {
+          ...commonHeader,
+          voucher_no: 'PV-2026-0391',
+          date: '2026-07-25',
+          paid_to: 'Apex Chemicals Ltd (Vendor #SU-104)',
+          cheque_no: 'CHQ-892104 (Meezan Bank)'
+        },
+        items: [
+          { serial_no: '1', account_head: '2000-01 Accounts Payable Creditors', narration: 'Full settlement of Raw Material Invoice PINV-2026-892', amount: 350000.0 }
+        ],
+        totals: { totalPaidAmount: 350000.0 }
+      };
+
+    case 'voucher_journal':
+      return {
+        header: {
+          ...commonHeader,
+          voucher_no: 'JV-2026-0182',
+          date: '2026-07-27',
+          prepared_by: 'M. Faisal (Senior Accountant)',
+          notes: 'Monthly depreciation amortization entry for plant equipment'
+        },
+        items: [
+          { serial_no: '1', account_head: '5010-04 Plant Machinery Depreciation Exp', narration: 'Monthly straight-line depreciation allocation', debit: 85000.0, credit: 0.0 },
+          { serial_no: '2', account_head: '1500-02 Accumulated Depreciation Loom Plant', narration: 'Contra asset adjustment', debit: 0.0, credit: 85000.0 }
+        ],
+        totals: { totalDebit: 85000.0, totalCredit: 85000.0 }
+      };
+
+    case 'voucher_contra':
+      return {
+        header: {
+          ...commonHeader,
+          voucher_no: 'CV-2026-0045',
+          date: '2026-07-26',
+          bank_account: 'Meezan Bank Main Operating A/C'
+        },
+        items: [
+          { serial_no: '1', account_head: '1000-01 Meezan Bank Current Account', debit: 200000.0, credit: 0.0 },
+          { serial_no: '2', account_head: '1000-05 Petty Cash Safe Drawer #1', debit: 0.0, credit: 200000.0 }
+        ],
+        totals: { totalDebit: 200000.0, totalCredit: 200000.0 }
+      };
+
+    case 'hr_onboarding':
+      return {
+        header: {
+          ...commonHeader,
+          emp_id: 'EMP-5021',
+          emp_name: 'Zaryab Khan',
+          designation: 'Assistant Mechanical Engineer',
+          department: 'Plant Maintenance',
+          joining_date: '2026-08-01'
+        },
+        items: [
+          { step_no: '1', clearance_item: 'CNIC, Degrees & Background Verification', status: 'Verified & Cleared', sign: 'HR: Sara' },
+          { step_no: '2', clearance_item: 'Safety Gear (Boots, Helmet, Ear-pro) Handover', status: 'Issued', sign: 'STORE: Tariq' },
+          { step_no: '3', clearance_item: 'Biometric Access Enrollment (Flash AM Terminal)', status: 'Fingerprint Enrolled', sign: 'IT: Usman' },
+          { step_no: '4', clearance_item: 'Plant Machinery Standard Safety Briefing', status: 'Completed', sign: 'HOD: Kamran' }
+        ],
+        totals: { stepsCompleted: '4 of 4 Steps Cleared' }
+      };
+
+    case 'hr_leave_request':
+      return {
+        header: {
+          ...commonHeader,
+          leave_id: 'LR-2026-091',
+          emp_name: 'Hamza Farooq',
+          department: 'Quality Assurance',
+          leave_type: 'Annual Paid Leave',
+          duration: '01-Aug-2026 to 05-Aug-2026'
+        },
+        items: [
+          { serial_no: '1', date: '2026-08-01 to 2026-08-05', type: 'Annual Paid Leave (5 Days)', reason: 'Family commitment and travel' }
+        ],
+        totals: { totalDays: '5 Working Days' }
+      };
+
+    case 'stock_receiving_history':
+      return {
+        header: {
+          ...commonHeader,
+          receiving_no: 'SRH-2026-302',
+          date: '2026-07-27',
+          supplier: 'Apex Chemicals Ltd',
+          grn_ref: 'GRN-2026-0512'
+        },
+        items: [
+          { serial_no: '1', item_code: 'RM-CHEM-10', item_name: 'Industrial Solvent Chemical', received_qty: 500, accepted_qty: 490, rejected_qty: 10 },
+          { serial_no: '2', item_code: 'RM-TH-02', item_name: 'Polyester Thread Spools', received_qty: 200, accepted_qty: 200, rejected_qty: 0 }
+        ],
+        totals: { totalReceived: 700, totalAccepted: 690, totalRejected: 10 }
+      };
+
+    case 'consumption_history':
+      return {
+        header: {
+          ...commonHeader,
+          log_id: 'CSH-2026-891',
+          date: '2026-07-26',
+          batch_no: 'BATCH-2026-901',
+          department: 'Weaving Section #3'
+        },
+        items: [
+          { serial_no: '1', material_code: 'RM-YRN-01', material_name: 'High-Tenacity Nylon Yarn', consumed_qty: 650, uom: 'kg' },
+          { serial_no: '2', material_code: 'RM-DYE-04', material_name: 'Waterproof Polymer Coating Dye', consumed_qty: 80, uom: 'Liters' }
+        ],
+        totals: { totalConsumed: 730 }
       };
 
     case 'hr_payslip':
@@ -1028,7 +1429,6 @@ export function getMockPreviewData(docType) {
       };
 
     default:
-      // Generic mock fallback for all other documents
       return {
         header: {
           ...commonHeader,

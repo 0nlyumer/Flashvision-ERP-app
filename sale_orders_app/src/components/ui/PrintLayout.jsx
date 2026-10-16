@@ -1,6 +1,7 @@
 import React from 'react';
 import { useApp } from '../../context/AppContext';
 import { DEFAULT_DOCUMENT_SCHEMAS, DEFAULT_LAYOUT_SETTINGS } from '../../utils/printSchemaRegistry';
+import { getSafeContrastTextColor, CURATED_PALETTES } from '../../utils/printThemeEngine';
 
 export default function PrintLayout({
   documentTitle,
@@ -47,9 +48,11 @@ export default function PrintLayout({
   const marginRight = layoutConfig.marginRight || '15mm';
 
   const fontFamily = layoutConfig.fontFamily || 'Inter';
-  const primaryColor = layoutConfig.primaryColor || '#004277';
-  const tableHeaderBgColor = layoutConfig.tableHeaderBgColor || primaryColor;
-  const tableHeaderTextColor = layoutConfig.tableHeaderTextColor || '#ffffff';
+  const isIndustrial = layoutConfig.activeTheme === 'industrial';
+  const activePalette = CURATED_PALETTES.find(p => p.id === layoutConfig.paletteId) || CURATED_PALETTES[0];
+  const primaryColor = isIndustrial ? '#000000' : (layoutConfig.primaryColor || activePalette.primary);
+  const tableHeaderBgColor = isIndustrial ? '#FFFFFF' : (layoutConfig.tableHeaderBgColor || activePalette.headerBg);
+  const tableHeaderTextColor = isIndustrial ? '#000000' : (layoutConfig.tableHeaderTextColor || getSafeContrastTextColor(tableHeaderBgColor));
 
   const logoUrl = printSettings.logoUrl || state?.adminSetup?.logo || state?.adminSetup?.logoUrl || '';
   const address = printSettings.address || state?.adminSetup?.address || 'Plot 42-B, Industrial Zone Phase III, Karachi, Pakistan';
