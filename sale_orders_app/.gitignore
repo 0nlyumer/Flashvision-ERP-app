@@ -22,3 +22,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Sensitive state backups & local scripts
+rtdb_backup.json
+extracted_main_state.json
+*.bak

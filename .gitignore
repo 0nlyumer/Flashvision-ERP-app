@@ -1,4 +1,4 @@
-﻿# SDKs & JDKs
+# SDKs & JDKs
 android-sdk/
 jdk17/
 jdk21/
@@ -17,3 +17,11 @@ replay_pid*.log
 **/dist/
 **/dist-desktop/
 **/.firebase/
+
+# Sensitive state backups & local scripts
+rtdb_backup.json
+extracted_main_state.json
+*.bak
+
+# Agent skills library
+/.agents/
