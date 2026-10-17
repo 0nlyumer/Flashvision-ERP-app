@@ -89,7 +89,276 @@ export default function HRSalaryGeneration({ isMobile }) {
     return DEFAULT_COLUMNS;
   });
 
+  
   // Save Column Configurations on change
+  useEffect(() => {
+    try {
+      localStorage.setItem('hr_salary_table_columns_v2', JSON.stringify(columns));
+    } catch (e) {}
+  }, [columns]);
+
+  // Click outside listener for popovers
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (deptDropdownRef.current && !deptDropdownRef.current.contains(e.target)) {
+        setIsDeptDropdownOpen(false);
+      }
+      if (columnPickerRef.current && !columnPickerRef.current.contains(e.target)) {
+        setIsColumnPickerOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Column Resizing mouse listeners
+  useEffect(() => {
+    const handleMouseMove = (e) => {
+      if (!resizingColId) return;
+      const diff = e.clientX - startX;
+      setColumns(prevCols => 
+        prevCols.map(col => {
+          if (col.id === resizingColId) {
+            const newWidth = Math.max(startWidth + diff, 60);
+            return { ...col, width: newWidth };
+          }
+          return col;
+        })
+      );
+    };
+
+    const handleMouseUp = () => {
+      if (resizingColId) {
+        setResizingColId(null);
+      }
+    };
+
+    if (resizingColId) {
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+    }
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [resizingColId, startX, startWidth]);
+
+  // Dynamic month periods list helper
+  const monthsList = React.useMemo(() => {
+    const list = [];
+    const date = new Date();
+    const curYear = date.getFullYear();
+    for (let y = curYear; y >= curYear - 1; y--) {
+      for (let m = 12; m >= 1; m--) {
+        const key = `${y}-${String(m).padStart(2, '0')}`;
+        const d = new Date(y, m - 1, 1);
+        const label = d.toLocaleString('en-US', { month: 'long', year: 'numeric' });
+        list.push({ key, label });
+      }
+    }
+    return list;
+  }, []);
+
+  const getPeriodLabel = (periodKey) => {
+    const found = monthsList.find(m => m.key === periodKey);
+    return found ? found.label : periodKey;
+  };
+
+  // Unique Departments List
+  const availableDepartments = React.useMemo(() => {
+    const set = new Set();
+    (state.departments || []).forEach(d => {
+      const name = typeof d === 'string' ? d : (d.name || d.label || d.value);
+      if (name) set.add(name);
+    });
+    (state.hr_employees_list || []).forEach(emp => {
+      if (emp.department) set.add(emp.department);
+    });
+    if (set.size === 0) {
+      ['Global Logistics', 'Supply Chain Finance', 'Quality Assurance', 'Strategic Operations', 'ADMIN', 'FINANCE', 'PRODUCTION', 'SALES', 'WAREHOUSE'].forEach(d => set.add(d));
+    }
+    return Array.from(set);
+  }, [state.departments, state.hr_employees_list]);
+
+  // Dynamic Divisions/Sections for Filter Dropdown
+  const availableDivisions = React.useMemo(() => {
+    const set = new Set();
+    (state.hr_employees_list || []).forEach(emp => {
+      const div = emp.division || emp.section;
+      const deptMatches = selectedDepartments.includes('ALL') || selectedDepartments.includes(emp.department);
+      if (div && deptMatches) {
+        set.add(div);
+      }
+    });
+    return ['ALL', ...Array.from(set).sort()];
+  }, [state.hr_employees_list, selectedDepartments]);
+
+  // Comprehensive Realtime Payroll Calculation from Attendance Management
+  const computePayrollForPeriod = (period) => {
+    const allEmployees = state.hr_employees_list || [];
+    const attendanceLogs = state.hr_uploaded_attendance || [];
+    const overtimeRequests = state.hr_overtime_requests || [];
+    const loanRequests = state.hr_loan_requests || [];
+    const loanLedger = state.hr_loan_ledger || [];
+
+    let salaryConfig = null;
+    try {
+      const savedConfig = localStorage.getItem('hr_salary_allowance_config');
+      if (savedConfig) salaryConfig = JSON.parse(savedConfig);
+    } catch (e) {}
+
+    const [yearStr, monthStr] = (period || '2026-10').split('-');
+    const daysInMonth = new Date(parseInt(yearStr), parseInt(monthStr), 0).getDate();
+    const totalWorkingDays = 26; // Standard payroll working days
+
+    return allEmployees.map(emp => {
+      const baseSalary = safeNum(emp.basicSalary || emp.salary || emp.baseSalary || 35000);
+      const doj = emp.doj || emp.dateOfJoining || '2024-01-15';
+      const designation = emp.designation || emp.jobTitle || emp.role || 'Associate';
+      const department = emp.department || 'Global Logistics';
+      const section = emp.section || emp.subSection || emp.division || 'Operations';
+      const division = emp.division || emp.section || 'Operations';
+
+      let workedDays = 0;
+      let absentsCount = 0;
+      let leavesCount = 0;
+      let lateComingHours = 0;
+      let totalFines = 0;
+      let otHours = 0;
+      let hasExplicitLogs = false;
+
+      const empIdStr = String(emp.id || '').trim();
+      const empNameLower = String(emp.name || '').trim().toLowerCase();
+
+      // Attendance logs from uploaded / biometric punches
+      const matchedLogs = attendanceLogs.filter(a => {
+        const aEmpId = a.employeeId ? String(a.employeeId).trim() : (a.id && String(a.id).startsWith('EMP-') ? String(a.id).trim() : '');
+        const aName = a.employeeName ? String(a.employeeName).trim().toLowerCase() : '';
+        const idMatches = aEmpId && empIdStr && aEmpId === empIdStr;
+        const nameMatches = (!aEmpId) && aName && empNameLower && aName === empNameLower;
+        const dateMatches = a.date && a.date.startsWith(period);
+        return (idMatches || nameMatches) && dateMatches;
+      });
+
+      // Daily attendance mapping from employee's embedded attendance
+      const dailyMap = {};
+      if (emp.attendance) {
+        Object.entries(emp.attendance).forEach(([dayKey, rec]) => {
+          if (dayKey.startsWith(period)) {
+            hasExplicitLogs = true;
+            dailyMap[dayKey] = { ...rec };
+          }
+        });
+      }
+
+      matchedLogs.forEach(log => {
+        hasExplicitLogs = true;
+        if (!dailyMap[log.date] || !dailyMap[log.date].userEdited) {
+          dailyMap[log.date] = {
+            status: log.status || 'present',
+            ot: parseFloat(log.ot || log.overtimeHours || 0) || 0,
+            fines: parseFloat(log.fines || log.fine || 0) || 0,
+            deductions: parseFloat(log.deductions || log.lateHours || 0) || 0
+          };
+        }
+      });
+
+      // Aggregate mapped attendance
+      Object.values(dailyMap).forEach(rec => {
+        const st = String(rec.status || '').toLowerCase();
+        if (st === 'present') workedDays++;
+        else if (st === 'absent') absentsCount++;
+        else if (st === 'leave') leavesCount++;
+        otHours += safeNum(rec.ot);
+        lateComingHours += safeNum(rec.deductions);
+        totalFines += safeNum(rec.fines);
+      });
+
+      // Approved Overtime Requests
+      const empOtReqs = overtimeRequests.filter(req => {
+        const reqEmpId = req.employeeId ? String(req.employeeId).trim() : '';
+        const reqName = req.employeeName ? String(req.employeeName).trim().toLowerCase() : '';
+        const idMatches = reqEmpId && empIdStr && reqEmpId === empIdStr;
+        const nameMatches = (!reqEmpId) && reqName && empNameLower && reqName === empNameLower;
+        return (idMatches || nameMatches) && req.status === 'Approved' && req.date && req.date.startsWith(period);
+      });
+      empOtReqs.forEach(r => {
+        otHours += safeNum(r.hours);
+      });
+
+      // If no explicit logs at all, default to full month present
+      if (!hasExplicitLogs) {
+        workedDays = totalWorkingDays;
+        absentsCount = 0;
+      }
+
+      // Financials
+      const otMultiplier = safeNum(salaryConfig?.overtimeMultipliers?.weekday || 1.5);
+      const hourlyRate = baseSalary / (totalWorkingDays * 8);
+      const otPay = otHours * (hourlyRate * otMultiplier);
+      const absentDeduction = absentsCount * (baseSalary / 30);
+      const lateDeduction = lateComingHours * hourlyRate;
+
+      // Loans & Advances
+      let loanAmount = safeNum(emp.loan || emp.loanAmount);
+      const activeLedgerItem = loanLedger.find(l => 
+        (String(l.employeeId) === empIdStr || String(l.employeeName || '').toLowerCase() === empNameLower) && 
+        l.status === 'Active' && 
+        safeNum(l.remainingBalance) > 0
+      );
+      if (activeLedgerItem && activeLedgerItem.monthlyInstallment) {
+        loanAmount = Math.min(safeNum(activeLedgerItem.monthlyInstallment), safeNum(activeLedgerItem.remainingBalance));
+      } else {
+        const activeLoanReq = loanRequests.find(r => 
+          (String(r.employeeId) === empIdStr || String(r.employeeName || '').toLowerCase() === empNameLower) && r.status === 'Approved'
+        );
+        if (activeLoanReq && activeLoanReq.monthlyInstallment) {
+          loanAmount = safeNum(activeLoanReq.monthlyInstallment);
+        }
+      }
+
+      // Attendance allowance: Bonus if 0 absents
+      let allowanceAmount = 0;
+      if (absentsCount === 0 && workedDays > 0) {
+        allowanceAmount = salaryConfig?.attendanceAllowance?.bonusAmount !== undefined 
+          ? safeNum(salaryConfig.attendanceAllowance.bonusAmount) 
+          : 150;
+      }
+
+      const totalAdditions = otPay + allowanceAmount;
+      const totalDeductions = absentDeduction + lateDeduction + totalFines + loanAmount + safeNum(emp.advance);
+      const netSalary = Math.max(0, baseSalary + totalAdditions - totalDeductions);
+
+      return {
+        employeeId: empIdStr || `EMP-${Date.now()}`,
+        doj: doj,
+        designation: designation,
+        department: department,
+        section: section,
+        division: division,
+        employeeName: emp.name || 'Employee',
+        basicSalary: parseFloat(baseSalary.toFixed(2)),
+        overtime: parseFloat(otPay.toFixed(2)),
+        otHours: parseFloat(otHours.toFixed(1)),
+        lateComingHours: parseFloat(lateComingHours.toFixed(1)),
+        lateDeduction: parseFloat(lateDeduction.toFixed(2)),
+        absents: parseFloat(absentDeduction.toFixed(2)),
+        absentsCount: absentsCount,
+        workedDays: workedDays,
+        leavesCount: leavesCount,
+        totalWorkingDays: totalWorkingDays,
+        daysInMonth: daysInMonth,
+        fine: parseFloat(totalFines.toFixed(2)),
+        allowance: parseFloat(allowanceAmount.toFixed(2)),
+        advanceAmount: safeNum(emp.advance),
+        loan: parseFloat(loanAmount.toFixed(2)),
+        netSalary: parseFloat(netSalary.toFixed(2)),
+        status: 'Calculated'
+      };
+    });
+  };
+
+  // Sync state or calculate live from attendance
   useEffect(() => {
     const generatedList = state.hr_generated_salaries || [];
     const existingPeriodRecord = generatedList.find(record => record.month === payrollPeriod);
