@@ -44,6 +44,8 @@ export default function HROnboarding({ isMobile }) {
   const [canvasRef, setCanvasRef] = useState(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [historyDeptFilter, setHistoryDeptFilter] = useState('ALL');
+  const [historyDivFilter, setHistoryDivFilter] = useState('ALL');
 
   // Designations State loaded dynamically from HR Settings key
   const [designations, setDesignations] = useState([]);
@@ -991,17 +993,48 @@ export default function HROnboarding({ isMobile }) {
 
   // Dynamic Onboarding History Screen Renderer
   function renderHistoryScreen() {
+    
+  const historyDeptsList = React.useMemo(() => {
+    const set = new Set();
+    onboardingHistory.forEach(item => {
+      const d = item.formData?.department || item.department;
+      if (d) set.add(d);
+    });
+    return ['ALL', ...Array.from(set).sort()];
+  }, [onboardingHistory]);
+
+  const historyDivsList = React.useMemo(() => {
+    const set = new Set();
+    onboardingHistory.forEach(item => {
+      const div = item.formData?.section || item.formData?.division || item.section || item.division;
+      const d = item.formData?.department || item.department;
+      if (div && (historyDeptFilter === 'ALL' || !historyDeptFilter || d === historyDeptFilter)) {
+        set.add(div);
+      }
+    });
+    return ['ALL', ...Array.from(set).sort()];
+  }, [onboardingHistory, historyDeptFilter]);
+
     // Dynamic KPI statistics
     const submittedCount = onboardingHistory.filter(item => item.status === 'Submitted').length;
     const draftCount = onboardingHistory.filter(item => item.status === 'Draft').length;
     const internshipCount = interns.length;
 
     // Filtered logs list
-    const filteredLogs = onboardingHistory.filter(log => 
-      log.fullName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      log.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      log.status.toLowerCase().includes(searchQuery.toLowerCase())
-    );
+    const filteredLogs = onboardingHistory.filter(log => {
+      const q = searchQuery.toLowerCase();
+      const matchesSearch = !q ||
+        (log.fullName && log.fullName.toLowerCase().includes(q)) ||
+        (log.id && log.id.toLowerCase().includes(q)) ||
+        (log.status && log.status.toLowerCase().includes(q));
+
+      const logDept = log.formData?.department || log.department || '';
+      const logDiv = log.formData?.section || log.formData?.division || log.section || log.division || '';
+      const matchesDept = historyDeptFilter === 'ALL' || !historyDeptFilter || logDept === historyDeptFilter;
+      const matchesDiv = historyDivFilter === 'ALL' || !historyDivFilter || logDiv === historyDivFilter;
+
+      return matchesSearch && matchesDept && matchesDiv;
+    });
 
     const handleEdit = (item) => {
       setFormData(item.formData);

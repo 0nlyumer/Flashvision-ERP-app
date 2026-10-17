@@ -9,6 +9,8 @@ export default function HRLoanLedger({ isMobile }) {
 
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
+  const [departmentFilter, setDepartmentFilter] = useState('ALL');
+  const [divisionFilter, setDivisionFilter] = useState('ALL');
   const [selectedLedgerItem, setSelectedLedgerItem] = useState(null);
   const [toastMessage, setToastMessage] = useState('');
 
@@ -81,8 +83,37 @@ export default function HRLoanLedger({ isMobile }) {
     }
   }, []);
 
+  
+  // Distinct Departments & Divisions for Loan Ledger Filtering
+  const departmentsList = React.useMemo(() => {
+    const set = new Set();
+    (state.hr_employees_list || []).forEach(emp => {
+      if (emp.department) set.add(emp.department);
+    });
+    return ['ALL', ...Array.from(set).sort()];
+  }, [state.hr_employees_list]);
+
+  const divisionsList = React.useMemo(() => {
+    const set = new Set();
+    (state.hr_employees_list || []).forEach(emp => {
+      const div = emp.division || emp.section;
+      if (div && (departmentFilter === 'ALL' || !departmentFilter || emp.department === departmentFilter)) {
+        set.add(div);
+      }
+    });
+    return ['ALL', ...Array.from(set).sort()];
+  }, [state.hr_employees_list, departmentFilter]);
+
   // Filtered Ledger List
   const filteredLedger = rawLedgerList.filter(item => {
+    const emp = (state.hr_employees_list || []).find(e => String(e.id) === String(item.employeeId) || e.name === item.employeeName);
+    const itemDept = item.department || emp?.department || '';
+    const itemDiv = item.division || item.section || emp?.division || emp?.section || '';
+
+    const matchDept = departmentFilter === 'ALL' || !departmentFilter || itemDept === departmentFilter;
+    const matchDiv = divisionFilter === 'ALL' || !divisionFilter || itemDiv === divisionFilter;
+    if (!matchDept || !matchDiv) return false;
+
     const matchesSearch = 
       (item.employeeName && item.employeeName.toLowerCase().includes(searchTerm.toLowerCase())) ||
       (item.employeeId && item.employeeId.toLowerCase().includes(searchTerm.toLowerCase())) ||

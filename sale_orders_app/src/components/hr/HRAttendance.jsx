@@ -92,6 +92,23 @@ const normalizeDate = (dateStr) => {
   return dateStr.trim();
 };
 
+
+const sanitizeEmployees = (list) => {
+  const seenIds = new Set();
+  return (list || []).map((emp, index) => {
+    let id = emp.id && String(emp.id).trim() !== '' && emp.id !== '.' ? String(emp.id).trim() : '';
+    if (!id || seenIds.has(id)) {
+      id = 'EMP-' + String(index + 1).padStart(5, '0');
+    }
+    seenIds.add(id);
+    return {
+      ...emp,
+      id,
+      attendance: emp.attendance ? { ...emp.attendance } : {}
+    };
+  });
+};
+
 export default function HRAttendance({ isMobile }) {
   const { appAlert } = useDialog();
   const { state: appState, setCollection, setDirty, hasPermission } = useApp() || {};
@@ -203,9 +220,16 @@ export default function HRAttendance({ isMobile }) {
   const uploadedAttendance = appState?.hr_uploaded_attendance || [];
 
   const [localEmployees, setLocalEmployees] = useState(() => {
-    return employees;
+    return sanitizeEmployees(employees);
   });
   const [isDirty, setIsDirty] = useState(false);
+  // Ensure localEmployees sync with global employees when !isDirty
+  useEffect(() => {
+    if (!isDirty && employees && employees.length > 0) {
+      setLocalEmployees(sanitizeEmployees(employees));
+    }
+  }, [employees, isDirty]);
+
   const [viewMode, setViewMode] = useState(() => savedUserFilters?.viewMode || 'grid'); // 'grid' | 'reconcile'
 
   // Live Realtime Notification Banner
@@ -373,6 +397,7 @@ export default function HRAttendance({ isMobile }) {
   const [startWidth, setStartWidth] = useState(200);
 
   const [departmentFilter, setDepartmentFilter] = useState(() => savedUserFilters?.departmentFilter || 'ALL');
+  const [divisionFilter, setDivisionFilter] = useState(() => savedUserFilters?.divisionFilter || 'ALL');
   const [statusFilter, setStatusFilter] = useState(() => savedUserFilters?.statusFilter || 'ALL');
 
   // Interactive Dates Picker states - loaded persistently per user
@@ -527,13 +552,14 @@ export default function HRAttendance({ isMobile }) {
       activeConditions,
       searchQuery,
       departmentFilter,
+      divisionFilter,
       statusFilter,
       viewMode
     };
     try {
       localStorage.setItem(userFilterKey, JSON.stringify(currentFilters));
     } catch(e) {}
-  }, [startDate, endDate, selectedMonth, selectedYear, selectedDay, activeConditions, searchQuery, departmentFilter, statusFilter, viewMode, userFilterKey]);
+  }, [startDate, endDate, selectedMonth, selectedYear, selectedDay, activeConditions, searchQuery, departmentFilter, divisionFilter, statusFilter, viewMode, userFilterKey]);
 
   const [openColumnMenu, setOpenColumnMenu] = useState(null);
 
@@ -695,11 +721,12 @@ export default function HRAttendance({ isMobile }) {
 
   // Change employee attendance status inside draft (via select dropdown)
   const handleStatusChange = (empId, day, nextStatus) => {
+    if (!empId) return;
     setIsDirty(true);
     setLocalEmployees(prev => prev.map(emp => {
-      if (emp.id !== empId) return emp;
-      const att = emp.attendance || {};
-      const record = att[day] || { status: 'absent', ot: 0, fines: 0, deductions: 0 };
+      if (String(emp.id) !== String(empId)) return emp;
+      const att = { ...(emp.attendance || {}) };
+      const record = { ...(att[day] || { status: 'absent', ot: 0, fines: 0, deductions: 0 }) };
       return {
         ...emp,
         attendance: {
@@ -708,7 +735,8 @@ export default function HRAttendance({ isMobile }) {
             ...record,
             status: nextStatus,
             ot: nextStatus === 'absent' ? 0.0 : record.ot,
-            explicitStatus: true
+            explicitStatus: true,
+            userEdited: true
           }
         }
       };
@@ -760,11 +788,12 @@ export default function HRAttendance({ isMobile }) {
 
   // Stepper adjustment for OT in mobile
   const handleAdjustOT = (empId, day, direction) => {
+    if (!empId) return;
     setIsDirty(true);
     setLocalEmployees(prev => prev.map(emp => {
-      if (emp.id !== empId) return emp;
-      const att = emp.attendance || {};
-      const record = att[day] || { status: 'present', ot: 0, fines: 0, deductions: 0 };
+      if (String(emp.id) !== String(empId)) return emp;
+      const att = { ...(emp.attendance || {}) };
+      const record = { ...(att[day] || { status: 'present', ot: 0, fines: 0, deductions: 0 }) };
       const currentVal = parseFloat(record.ot) || 0;
       let nextVal = direction === 'add' ? currentVal + 0.5 : currentVal - 0.5;
       if (nextVal < 0) nextVal = 0;
@@ -774,7 +803,9 @@ export default function HRAttendance({ isMobile }) {
           ...att,
           [day]: {
             ...record,
-            ot: parseFloat(nextVal.toFixed(1))
+            ot: parseFloat(nextVal.toFixed(1)),
+            userEdited: true,
+            explicitStatus: true
           }
         }
       };
@@ -783,18 +814,21 @@ export default function HRAttendance({ isMobile }) {
 
   // Input change handler for OT/Fines/Deductions inside draft
   const handleValueChange = (empId, day, field, value) => {
+    if (!empId) return;
     setIsDirty(true);
     setLocalEmployees(prev => prev.map(emp => {
-      if (emp.id !== empId) return emp;
-      const att = emp.attendance || {};
-      const record = att[day] || { status: 'present', ot: 0, fines: 0, deductions: 0 };
+      if (String(emp.id) !== String(empId)) return emp;
+      const att = { ...(emp.attendance || {}) };
+      const record = { ...(att[day] || { status: 'present', ot: 0, fines: 0, deductions: 0 }) };
       return {
         ...emp,
         attendance: {
           ...att,
           [day]: {
             ...record,
-            [field]: value
+            [field]: value,
+            userEdited: true,
+            explicitStatus: true
           }
         }
       };
@@ -966,6 +1000,18 @@ export default function HRAttendance({ isMobile }) {
     return ['ALL', ...Array.from(set).sort()];
   }, [localEmployees]);
 
+  // Distinct Divisions/Sections for Filter Dropdown
+  const divisionsList = React.useMemo(() => {
+    const set = new Set();
+    localEmployees.forEach(emp => {
+      const div = emp.division || emp.section;
+      if (div && (departmentFilter === 'ALL' || !departmentFilter || emp.department === departmentFilter)) {
+        set.add(div);
+      }
+    });
+    return ['ALL', ...Array.from(set).sort()];
+  }, [localEmployees, departmentFilter]);
+
   const filteredEmployees = localEmployees.filter(emp => {
     const q = searchQuery.toLowerCase().trim();
     const matchSearch = !q || 
@@ -975,8 +1021,9 @@ export default function HRAttendance({ isMobile }) {
       (emp.department && emp.department.toLowerCase().includes(q));
 
     const matchDept = departmentFilter === 'ALL' || !departmentFilter || emp.department === departmentFilter;
+    const matchDiv = divisionFilter === 'ALL' || !divisionFilter || (emp.division === divisionFilter || emp.section === divisionFilter);
 
-    if (!matchSearch || !matchDept) return false;
+    if (!matchSearch || !matchDept || !matchDiv) return false;
 
     if (statusFilter !== 'ALL' && statusFilter) {
       const att = emp.attendance || {};
@@ -1961,13 +2008,29 @@ export default function HRAttendance({ isMobile }) {
             <div className="flex items-center gap-2 w-full sm:w-auto">
               <select
                 value={departmentFilter}
-                onChange={(e) => { setDepartmentFilter(e.target.value); setCurrentPage(1); }}
+                onChange={(e) => { setDepartmentFilter(e.target.value); setDivisionFilter('ALL'); setCurrentPage(1); }}
                 className="w-full sm:w-auto bg-white border border-outline-variant/20 rounded-xl px-3 py-2 text-xs font-bold text-on-surface cursor-pointer shadow-2xs outline-none focus:ring-1 focus:ring-primary"
                 title="Filter by Department (Saved for your user profile)"
               >
                 {departmentsList.map(dept => (
                   <option key={dept} value={dept}>
                     {dept === 'ALL' ? '🏢 All Departments' : dept}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Division Filter Dropdown (Saved per user) */}
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <select
+                value={divisionFilter}
+                onChange={(e) => { setDivisionFilter(e.target.value); setCurrentPage(1); }}
+                className="w-full sm:w-auto bg-white border border-outline-variant/20 rounded-xl px-3 py-2 text-xs font-bold text-on-surface cursor-pointer shadow-2xs outline-none focus:ring-1 focus:ring-primary"
+                title="Filter by Division (Saved for your user profile)"
+              >
+                {divisionsList.map(div => (
+                  <option key={div} value={div}>
+                    {div === 'ALL' ? '🏬 All Divisions' : div}
                   </option>
                 ))}
               </select>
@@ -2811,7 +2874,7 @@ export default function HRAttendance({ isMobile }) {
                           (u.date === day.date || normalizeDate(u.date) === normalizeDate(day.date))
                         );
 
-                        if (livePunchRec) {
+                        if (livePunchRec && !rec.userEdited) {
                           rec = {
                             ...rec,
                             status: 'present',
@@ -2821,7 +2884,7 @@ export default function HRAttendance({ isMobile }) {
                             ot: parseFloat(livePunchRec.ot || 0) > 0 ? parseFloat(livePunchRec.ot) : rec.ot,
                             explicitStatus: true
                           };
-                        } else if (approvedOtReq && parseFloat(approvedOtReq.hours || 0) > 0) {
+                        } else if (approvedOtReq && parseFloat(approvedOtReq.hours || 0) > 0 && !rec.userEdited) {
                           const otHrs = parseFloat(approvedOtReq.hours);
                           if (parseFloat(rec.ot || 0) < otHrs) {
                             rec = {

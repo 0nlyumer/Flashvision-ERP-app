@@ -39,6 +39,8 @@ export default function HRLoanRequest({ isMobile }) {
   const [toastMessage, setToastMessage] = useState('');
   const [selectedRequestForDetail, setSelectedRequestForDetail] = useState(null);
   const [statusTabFilter, setStatusTabFilter] = useState('All');
+  const [departmentFilter, setDepartmentFilter] = useState('ALL');
+  const [divisionFilter, setDivisionFilter] = useState('ALL');
 
   // Selected Employee Details
   const selectedEmp = employees.find(e => String(e.id) === String(selectedEmpId)) || {
@@ -171,8 +173,37 @@ export default function HRLoanRequest({ isMobile }) {
     setAttachedFile(null);
   };
 
+  
+  // Distinct Departments & Divisions for Loan Request Filtering
+  const departmentsList = React.useMemo(() => {
+    const set = new Set();
+    employees.forEach(emp => {
+      if (emp.department) set.add(emp.department);
+    });
+    return ['ALL', ...Array.from(set).sort()];
+  }, [employees]);
+
+  const divisionsList = React.useMemo(() => {
+    const set = new Set();
+    employees.forEach(emp => {
+      const div = emp.division || emp.section;
+      if (div && (departmentFilter === 'ALL' || !departmentFilter || emp.department === departmentFilter)) {
+        set.add(div);
+      }
+    });
+    return ['ALL', ...Array.from(set).sort()];
+  }, [employees, departmentFilter]);
+
   // Filtered loan requests
   const filteredRequests = loanRequests.filter(item => {
+    const emp = employees.find(e => String(e.id) === String(item.employeeId) || e.name === item.employeeName);
+    const itemDept = item.department || emp?.department || '';
+    const itemDiv = item.division || item.section || emp?.division || emp?.section || '';
+
+    const matchDept = departmentFilter === 'ALL' || !departmentFilter || itemDept === departmentFilter;
+    const matchDiv = divisionFilter === 'ALL' || !divisionFilter || itemDiv === divisionFilter;
+    if (!matchDept || !matchDiv) return false;
+
     if (statusTabFilter === 'All') return true;
     return item.status.toLowerCase() === statusTabFilter.toLowerCase();
   });

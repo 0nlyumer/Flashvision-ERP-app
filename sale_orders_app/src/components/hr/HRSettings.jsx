@@ -117,7 +117,39 @@ export default function HRSettings({ isMobile }) {
 
   // Search filter
   const [searchQuery, setSearchQuery] = useState('');
+  const [settingsDeptFilter, setSettingsDeptFilter] = useState('ALL');
+  const [settingsDivFilter, setSettingsDivFilter] = useState('ALL');
 
+
+  
+  const settingsDeptsList = React.useMemo(() => {
+    const set = new Set();
+    departments.forEach(d => {
+      if (d.name) set.add(d.name);
+    });
+    employees.forEach(e => {
+      if (e.department) set.add(e.department);
+    });
+    return ['ALL', ...Array.from(set).sort()];
+  }, [departments, employees]);
+
+  const settingsDivsList = React.useMemo(() => {
+    const set = new Set();
+    departments.forEach(d => {
+      (d.sections || []).forEach(s => {
+        if (s.name && (settingsDeptFilter === 'ALL' || d.name === settingsDeptFilter)) {
+          set.add(s.name);
+        }
+      });
+    });
+    employees.forEach(e => {
+      const div = e.division || e.section;
+      if (div && (settingsDeptFilter === 'ALL' || e.department === settingsDeptFilter)) {
+        set.add(div);
+      }
+    });
+    return ['ALL', ...Array.from(set).sort()];
+  }, [departments, employees, settingsDeptFilter]);
 
   // Get active employee profiles in real-time
   const getActiveEmployees = () => {

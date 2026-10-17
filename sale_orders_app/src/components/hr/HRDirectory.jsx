@@ -27,6 +27,8 @@ export default function HRDirectory({ isMobile }) {
 
   // Search & Filtering State
   const [searchQuery, setSearchQuery] = useState('');
+  const [departmentFilter, setDepartmentFilter] = useState('ALL');
+  const [divisionFilter, setDivisionFilter] = useState('ALL');
   
   useEffect(() => {
     setCurrentPage(1);
@@ -115,10 +117,32 @@ export default function HRDirectory({ isMobile }) {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  
+  // Distinct Departments for Filter Dropdown
+  const departmentsList = React.useMemo(() => {
+    const set = new Set();
+    employees.forEach(emp => {
+      if (emp.department) set.add(emp.department);
+    });
+    return ['ALL', ...Array.from(set).sort()];
+  }, [employees]);
+
+  // Distinct Divisions for Filter Dropdown
+  const divisionsList = React.useMemo(() => {
+    const set = new Set();
+    employees.forEach(emp => {
+      const div = emp.division || emp.section;
+      if (div && (departmentFilter === 'ALL' || !departmentFilter || emp.department === departmentFilter)) {
+        set.add(div);
+      }
+    });
+    return ['ALL', ...Array.from(set).sort()];
+  }, [employees, departmentFilter]);
+
   // Filtered employees
   const filteredEmployees = employees.filter(emp => {
     const query = searchQuery.toLowerCase();
-    return (
+    const matchesSearch = !query || (
       (emp.name || '').toLowerCase().includes(query) ||
       (emp.id || '').toLowerCase().includes(query) ||
       (emp.designation || '').toLowerCase().includes(query) ||
@@ -126,6 +150,9 @@ export default function HRDirectory({ isMobile }) {
       (emp.email || '').toLowerCase().includes(query) ||
       (emp.phone || '').toLowerCase().includes(query)
     );
+    const matchesDept = departmentFilter === 'ALL' || !departmentFilter || emp.department === departmentFilter;
+    const matchesDiv = divisionFilter === 'ALL' || !divisionFilter || (emp.division === divisionFilter || emp.section === divisionFilter);
+    return matchesSearch && matchesDept && matchesDiv;
   });
 
   // Padded consecutive sequential ID Generator

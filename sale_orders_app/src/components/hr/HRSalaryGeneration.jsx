@@ -18,10 +18,15 @@ export default function HRSalaryGeneration({ isMobile }) {
   const currSym = currencySymbol || 'Rs.';
 
   // Selected payroll month
-  const [payrollPeriod, setPayrollPeriod] = useState('2026-07'); // Default YYYY-MM
+  const getCurrentPeriodKey = () => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  };
+  const [payrollPeriod, setPayrollPeriod] = useState(getCurrentPeriodKey);
   
   // Selected departments multi-select state
   const [selectedDepartments, setSelectedDepartments] = useState(['ALL']);
+  const [selectedDivision, setSelectedDivision] = useState('ALL');
   const [isDeptDropdownOpen, setIsDeptDropdownOpen] = useState(false);
   const deptDropdownRef = useRef(null);
 
@@ -86,147 +91,19 @@ export default function HRSalaryGeneration({ isMobile }) {
 
   // Save Column Configurations on change
   useEffect(() => {
-    try {
-      localStorage.setItem('hr_salary_table_columns_v2', JSON.stringify(columns));
-    } catch (e) {}
-  }, [columns]);
-
-  // Click outside listener for popovers
-  useEffect(() => {
-    const handleClickOutside = (e) => {
-      if (deptDropdownRef.current && !deptDropdownRef.current.contains(e.target)) {
-        setIsDeptDropdownOpen(false);
-      }
-      if (columnPickerRef.current && !columnPickerRef.current.contains(e.target)) {
-        setIsColumnPickerOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  // Column Resizing mouse listeners
-  useEffect(() => {
-    const handleMouseMove = (e) => {
-      if (!resizingColId) return;
-      const diff = e.clientX - startX;
-      setColumns(prevCols => 
-        prevCols.map(col => {
-          if (col.id === resizingColId) {
-            const newWidth = Math.max(startWidth + diff, 60);
-            return { ...col, width: newWidth };
-          }
-          return col;
-        })
-      );
-    };
-
-    const handleMouseUp = () => {
-      if (resizingColId) {
-        setResizingColId(null);
-      }
-    };
-
-    if (resizingColId) {
-      window.addEventListener('mousemove', handleMouseMove);
-      window.addEventListener('mouseup', handleMouseUp);
-    }
-    return () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
-    };
-  }, [resizingColId, startX, startWidth]);
-
-  // Month periods list helper
-  const monthsList = [
-    { key: '2026-07', label: 'July 2026' },
-    { key: '2026-06', label: 'June 2026' },
-    { key: '2026-05', label: 'May 2026' },
-    { key: '2026-04', label: 'April 2026' },
-    { key: '2023-10', label: 'October 2023' }
-  ];
-
-  const getPeriodLabel = (periodKey) => {
-    const found = monthsList.find(m => m.key === periodKey);
-    return found ? found.label : periodKey;
-  };
-
-  // Unique Departments List
-  const availableDepartments = React.useMemo(() => {
-    const set = new Set();
-    (state.departments || []).forEach(d => {
-      const name = typeof d === 'string' ? d : (d.name || d.label || d.value);
-      if (name) set.add(name);
-    });
-    (state.hr_employees_list || []).forEach(emp => {
-      if (emp.department) set.add(emp.department);
-    });
-    if (set.size === 0) {
-      ['Global Logistics', 'Supply Chain Finance', 'Quality Assurance', 'Strategic Operations', 'ADMIN', 'FINANCE', 'PRODUCTION', 'SALES', 'WAREHOUSE'].forEach(d => set.add(d));
-    }
-    return Array.from(set);
-  }, [state.departments, state.hr_employees_list]);
-
-  // Sync state if already exists in database with 100% defensive normalization
-  useEffect(() => {
     const generatedList = state.hr_generated_salaries || [];
     const existingPeriodRecord = generatedList.find(record => record.month === payrollPeriod);
-    
-    if (existingPeriodRecord && Array.isArray(existingPeriodRecord.records)) {
-      let salaryConfig = null;
-      try {
-        const savedConfig = localStorage.getItem('hr_salary_allowance_config');
-        if (savedConfig) salaryConfig = JSON.parse(savedConfig);
-      } catch (e) {}
 
-      const normalized = existingPeriodRecord.records.map(rec => {
-        const absentsCount = safeNum(rec.absentsCount || 0);
-        const absentsDeduction = safeNum(rec.absents || rec.deductions || 0);
-
-        const configuredAllowance = (absentsCount === 0 && absentsDeduction === 0) 
-          ? safeNum(salaryConfig?.attendanceAllowance?.bonusAmount ?? 150)
-          : 0;
-
-        const basicSalary = safeNum(rec.basicSalary || rec.baseSalary || 35000);
-        const overtime = safeNum(rec.overtime || rec.otValue || 0);
-        const lateDeduction = safeNum(rec.lateDeduction || 0);
-        const fine = safeNum(rec.fine || rec.fines || 0);
-        const advanceAmount = safeNum(rec.advanceAmount || rec.advance || 0);
-        const loan = safeNum(rec.loan || 0);
-
-        const totalAdditions = overtime + configuredAllowance;
-        const totalDeductions = absentsDeduction + lateDeduction + fine + advanceAmount + loan;
-        const exactNetSalary = Math.max(0, basicSalary + totalAdditions - totalDeductions);
-
-        return {
-          employeeId: rec.employeeId || rec.id || `EMP-${Date.now()}`,
-          doj: rec.doj || rec.dateOfJoining || '2024-01-15',
-          designation: rec.designation || rec.jobTitle || rec.role || 'Associate',
-          department: rec.department || 'Global Logistics',
-          section: rec.section || rec.subSection || 'Operations',
-          employeeName: rec.employeeName || rec.name || 'Employee',
-          basicSalary: parseFloat(basicSalary.toFixed(2)),
-          overtime: parseFloat(overtime.toFixed(2)),
-          otHours: safeNum(rec.otHours || 0),
-          lateComingHours: safeNum(rec.lateComingHours || 0),
-          lateDeduction: parseFloat(lateDeduction.toFixed(2)),
-          absents: parseFloat(absentsDeduction.toFixed(2)),
-          absentsCount: absentsCount,
-          fine: parseFloat(fine.toFixed(2)),
-          allowance: parseFloat(configuredAllowance.toFixed(2)),
-          advanceAmount: parseFloat(advanceAmount.toFixed(2)),
-          loan: parseFloat(loan.toFixed(2)),
-          netSalary: parseFloat(exactNetSalary.toFixed(2)),
-          status: rec.status || 'Calculated'
-        };
-      });
-      setLocalPayrollList(normalized);
-      setPayrollStatus(existingPeriodRecord.status ? existingPeriodRecord.status.toLowerCase() : 'none');
+    if (existingPeriodRecord && Array.isArray(existingPeriodRecord.records) && existingPeriodRecord.status === 'Finalized') {
+      setLocalPayrollList(existingPeriodRecord.records);
+      setPayrollStatus('finalized');
     } else {
-      setLocalPayrollList([]);
-      setPayrollStatus('none');
+      // Real-time automatic calculation directly from Attendance Management
+      const computed = computePayrollForPeriod(payrollPeriod);
+      setLocalPayrollList(computed);
+      setPayrollStatus('calculated');
     }
-  }, [payrollPeriod, state.hr_generated_salaries]);
+  }, [payrollPeriod, state.hr_generated_salaries, state.hr_employees_list, state.hr_uploaded_attendance, state.hr_overtime_requests, state.hr_loan_requests, state.hr_loan_ledger]);
 
   // Handle Multi-Department Checkbox Selection
   const toggleDepartment = (deptName) => {
@@ -690,6 +567,25 @@ export default function HRSalaryGeneration({ isMobile }) {
             </div>
           </div>
 
+          {/* Division Dropdown */}
+          <div className="space-y-2 min-w-[200px]">
+            <label className="text-xs font-bold text-on-surface-variant uppercase tracking-wider block">Division Filter</label>
+            <div className="relative w-full">
+              <select 
+                value={selectedDivision}
+                onChange={(e) => setSelectedDivision(e.target.value)}
+                className="w-full h-11 pl-4 pr-10 text-sm border border-outline-variant rounded-xl bg-surface-container-lowest hover:border-primary transition-colors focus:border-primary focus:ring-4 focus:ring-primary/10 appearance-none cursor-pointer font-medium text-on-surface"
+              >
+                {availableDivisions.map(div => (
+                  <option key={div} value={div}>
+                    {div === 'ALL' ? '🏬 All Divisions' : div}
+                  </option>
+                ))}
+              </select>
+              <span className="material-symbols-outlined absolute right-3 top-3 pointer-events-none text-outline">apartment</span>
+            </div>
+          </div>
+
           {/* Multi-Department Checkbox Dropdown */}
           <div className="space-y-2 relative min-w-[240px]" ref={deptDropdownRef}>
             <label className="text-xs font-bold text-on-surface-variant uppercase tracking-wider block">Department Filter</label>
@@ -1052,12 +948,43 @@ export default function HRSalaryGeneration({ isMobile }) {
               {/* Employee Info Header */}
               <div className="bg-surface-container-low p-4 rounded-xl flex justify-between items-center">
                 <div>
-                  <p className="font-bold text-on-surface">{selectedRecordForDetail.employeeName}</p>
-                  <p className="text-[11px] font-semibold text-on-surface-variant">{selectedRecordForDetail.designation} • {selectedRecordForDetail.department}</p>
+                  <p className="font-bold text-base text-on-surface">{selectedRecordForDetail.employeeName}</p>
+                  <p className="text-xs font-semibold text-on-surface-variant">{selectedRecordForDetail.designation} • {selectedRecordForDetail.department} {selectedRecordForDetail.division ? '(' + selectedRecordForDetail.division + ')' : ''}</p>
                 </div>
-                <span className="px-2.5 py-0.5 rounded-full text-[9px] font-extrabold uppercase tracking-wider bg-primary/10 text-primary border border-primary/20">
+                <span className="px-3 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-primary/10 text-primary border border-primary/20">
                   {selectedRecordForDetail.status}
                 </span>
+              </div>
+
+              {/* Attendance Management Live Summary */}
+              <div className="bg-surface-container-lowest p-3.5 rounded-xl border border-outline-variant/30 space-y-2">
+                <div className="flex items-center justify-between border-b border-outline-variant/10 pb-1.5">
+                  <span className="text-[11px] font-bold text-on-surface uppercase tracking-wider flex items-center gap-1.5">
+                    <span className="material-symbols-outlined text-[15px] text-primary">event_available</span>
+                    Attendance Log ({getPeriodLabel(payrollPeriod)})
+                  </span>
+                  <span className="text-[10px] font-mono text-emerald-700 bg-emerald-500/10 px-2 py-0.5 rounded font-bold">
+                    Live Synced
+                  </span>
+                </div>
+                <div className="grid grid-cols-4 gap-2 text-center pt-1">
+                  <div className="bg-emerald-500/10 border border-emerald-500/20 p-2 rounded-lg">
+                    <p className="text-[9px] font-bold text-emerald-700 uppercase">Present</p>
+                    <p className="text-sm font-black text-emerald-800">{safeNum(selectedRecordForDetail.workedDays || (26 - safeNum(selectedRecordForDetail.absentsCount)))} d</p>
+                  </div>
+                  <div className="bg-red-500/10 border border-red-500/20 p-2 rounded-lg">
+                    <p className="text-[9px] font-bold text-red-700 uppercase">Absents</p>
+                    <p className="text-sm font-black text-red-800">{safeNum(selectedRecordForDetail.absentsCount)} d</p>
+                  </div>
+                  <div className="bg-amber-500/10 border border-amber-500/20 p-2 rounded-lg">
+                    <p className="text-[9px] font-bold text-amber-700 uppercase">Overtime</p>
+                    <p className="text-sm font-black text-amber-800">{safeNum(selectedRecordForDetail.otHours)} h</p>
+                  </div>
+                  <div className="bg-purple-500/10 border border-purple-500/20 p-2 rounded-lg">
+                    <p className="text-[9px] font-bold text-purple-700 uppercase">Late Deduct</p>
+                    <p className="text-sm font-black text-purple-800">{safeNum(selectedRecordForDetail.lateComingHours)} h</p>
+                  </div>
+                </div>
               </div>
 
               {/* Earnings Breakdown */}
@@ -1134,6 +1061,15 @@ export default function HRSalaryGeneration({ isMobile }) {
 
             {/* Modal Actions */}
             <div className="p-4 bg-surface-container-low/50 border-t border-outline-variant/10 flex justify-end gap-2">
+              <button 
+                onClick={() => {
+                  window.print();
+                }}
+                className="flex items-center gap-1.5 border border-outline-variant text-on-surface px-4 py-2 rounded-xl text-xs font-bold hover:bg-surface-container-high transition-all active:scale-95 cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-[16px]">print</span>
+                Print Slip
+              </button>
               <button 
                 onClick={() => setSelectedRecordForDetail(null)}
                 className="bg-primary text-on-primary px-5 py-2 rounded-xl text-xs font-bold hover:bg-primary-container transition-all active:scale-95 shadow-sm cursor-pointer"

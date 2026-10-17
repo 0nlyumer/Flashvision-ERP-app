@@ -36,6 +36,8 @@ export default function HRDashboard({ isMobile, onNavigateTab }) {
   };
 
   const [selectedDate, setSelectedDate] = useState(getTodayDateString);
+  const [departmentFilter, setDepartmentFilter] = useState('ALL');
+  const [divisionFilter, setDivisionFilter] = useState('ALL');
 
   const { state, setCollection } = useApp();
   const configuredDepartments = state.departments || [];
@@ -105,8 +107,32 @@ export default function HRDashboard({ isMobile, onNavigateTab }) {
   // METRICS & DATABASE ENGINE
   // ==========================================
 
+  
+  // Distinct Departments & Divisions for Dashboard Filtering
+  const departmentsList = React.useMemo(() => {
+    const set = new Set();
+    employees.forEach(emp => {
+      if (emp.department) set.add(emp.department);
+    });
+    return ['ALL', ...Array.from(set).sort()];
+  }, [employees]);
+
+  const divisionsList = React.useMemo(() => {
+    const set = new Set();
+    employees.forEach(emp => {
+      const div = emp.division || emp.section;
+      if (div && (departmentFilter === 'ALL' || !departmentFilter || emp.department === departmentFilter)) {
+        set.add(div);
+      }
+    });
+    return ['ALL', ...Array.from(set).sort()];
+  }, [employees, departmentFilter]);
+
   // 1. Get active workforce on selectedDate
   const activeEmployees = employees.filter(emp => {
+    const matchesDept = departmentFilter === 'ALL' || !departmentFilter || emp.department === departmentFilter;
+    const matchesDiv = divisionFilter === 'ALL' || !divisionFilter || (emp.division === divisionFilter || emp.section === divisionFilter);
+    if (!matchesDept || !matchesDiv) return false;
     if (!emp.joiningDate) return true;
     return emp.joiningDate <= selectedDate;
   });
