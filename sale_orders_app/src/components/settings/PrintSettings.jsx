@@ -53,7 +53,8 @@ const FONT_FAMILIES = [
 export default function PrintSettings() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { state, setCollection } = useApp();
+  const { state, setCollection, currencySymbol } = useApp();
+  const currSym = currencySymbol || state?.adminSetup?.baseCurrency?.match(/\(([^)]+)\)/)?.[1] || 'Rs';
   const { appAlert } = useDialog();
 
   const initialDoc = searchParams.get('doc') || 'sale_order';
@@ -1040,20 +1041,20 @@ export default function PrintSettings() {
                     {mockData.totals.subtotal !== undefined && (
                       <div className="flex justify-between text-slate-600">
                         <span>Subtotal:</span>
-                        <span className="font-mono font-bold">${Number(mockData.totals.subtotal || 0).toLocaleString()}</span>
+                        <span className="font-mono font-bold">{currSym} {Number(mockData.totals.subtotal || 0).toLocaleString()}</span>
                       </div>
                     )}
                     {mockData.totals.tax !== undefined && (
                       <div className="flex justify-between text-slate-600">
                         <span>Tax:</span>
-                        <span className="font-mono font-bold">${Number(mockData.totals.tax || 0).toLocaleString()}</span>
+                        <span className="font-mono font-bold">{currSym} {Number(mockData.totals.tax || 0).toLocaleString()}</span>
                       </div>
                     )}
                     {mockData.totals.grandTotal !== undefined && (
                       <div className="flex justify-between text-slate-900 font-black text-sm pt-1 border-t border-slate-300">
                         <span>Grand Total:</span>
                         <span className="font-mono" style={{ color: activeLayout.primaryColor || '#004277' }}>
-                          ${Number(mockData.totals.grandTotal || 0).toLocaleString()}
+                          {currSym} {Number(mockData.totals.grandTotal || 0).toLocaleString()}
                         </span>
                       </div>
                     )}

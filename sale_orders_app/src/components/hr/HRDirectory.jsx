@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 const ALL_COLUMNS = [
   { id: 'id', label: 'Emp Code' },
   { id: 'name', label: 'Name' },
+  { id: 'division', label: 'Division' },
   { id: 'designation', label: 'Designation' },
   { id: 'department', label: 'Department' },
   { id: 'status', label: 'Status' },
@@ -18,7 +19,8 @@ const ALL_COLUMNS = [
 import { useApp } from '../../context/AppContext';
 
 export default function HRDirectory({ isMobile }) {
-  const { state, setCollection } = useApp();
+  const { state, setCollection, currencySymbol } = useApp();
+  const currSym = currencySymbol || state.adminSetup?.baseCurrency?.match(/\(([^)]+)\)/)?.[1] || 'Rs';
   const employees = state.hr_employees_list || [];
   const setEmployees = (updater) => {
     const nextList = typeof updater === 'function' ? updater(employees) : updater;
@@ -37,20 +39,43 @@ export default function HRDirectory({ isMobile }) {
   // Column Management States
   const [visibleColumns, setVisibleColumns] = useState(() => {
     const saved = localStorage.getItem('hr_directory_visible_columns');
-    return saved ? JSON.parse(saved) : ['id', 'name', 'designation', 'department', 'status', 'phone', 'basicSalary'];
+    if (!saved) return ['id', 'name', 'division', 'designation', 'department', 'status', 'phone', 'basicSalary'];
+    try {
+      const parsed = JSON.parse(saved);
+      if (!parsed.includes('division')) {
+        const nameIdx = parsed.indexOf('name');
+        if (nameIdx !== -1) parsed.splice(nameIdx + 1, 0, 'division');
+        else parsed.push('division');
+      }
+      return parsed;
+    } catch {
+      return ['id', 'name', 'division', 'designation', 'department', 'status', 'phone', 'basicSalary'];
+    }
   });
 
   const [columnOrder, setColumnOrder] = useState(() => {
     const saved = localStorage.getItem('hr_directory_column_order');
-    return saved ? JSON.parse(saved) : ['id', 'name', 'designation', 'department', 'status', 'basicSalary', 'joiningDate', 'email', 'cnic', 'phone', 'emergencyContact', 'gender'];
+    if (!saved) return ['id', 'name', 'division', 'designation', 'department', 'status', 'basicSalary', 'joiningDate', 'email', 'cnic', 'phone', 'emergencyContact', 'gender'];
+    try {
+      const parsed = JSON.parse(saved);
+      if (!parsed.includes('division')) {
+        const nameIdx = parsed.indexOf('name');
+        if (nameIdx !== -1) parsed.splice(nameIdx + 1, 0, 'division');
+        else parsed.push('division');
+      }
+      return parsed;
+    } catch {
+      return ['id', 'name', 'division', 'designation', 'department', 'status', 'basicSalary', 'joiningDate', 'email', 'cnic', 'phone', 'emergencyContact', 'gender'];
+    }
   });
 
   const [columnWidths, setColumnWidths] = useState(() => {
     const saved = localStorage.getItem('hr_directory_column_widths');
     return saved ? JSON.parse(saved) : {
       id: 110,
-      name: 240,
-      designation: 190,
+      name: 220,
+      division: 130,
+      designation: 180,
       department: 150,
       status: 120,
       basicSalary: 130,
@@ -94,6 +119,7 @@ export default function HRDirectory({ isMobile }) {
   const [formData, setFormData] = useState({
     id: '',
     name: '',
+    division: 'AJ Synthetic',
     designation: '',
     department: '',
     basicSalary: '',
@@ -503,6 +529,7 @@ export default function HRDirectory({ isMobile }) {
     setFormData({
       id: nextId,
       name: '',
+      division: 'AJ Synthetic',
       designation: '',
       department: '',
       basicSalary: '',
@@ -521,6 +548,7 @@ export default function HRDirectory({ isMobile }) {
     setFormData({
       id: emp.id || '',
       name: emp.name || '',
+      division: emp.division || emp.section || 'AJ Synthetic',
       designation: emp.designation || 'Associate',
       department: emp.department || 'Not Assigned',
       basicSalary: emp.basicSalary || '',
@@ -542,6 +570,8 @@ export default function HRDirectory({ isMobile }) {
 
     const newEmp = {
       ...formData,
+      division: formData.division || 'AJ Synthetic',
+      section: formData.division || 'AJ Synthetic',
       basicSalary: Number(formData.basicSalary) || 0,
       avatar: formData.gender === 'Female' 
         ? 'https://lh3.googleusercontent.com/aida-public/AB6AXuCn3SSz92LFI9hxwIIua341y0Vk9RCfSUb73oEn-VVNj7TmuPAbUpxc5diuDgctbJLGZEYnB2NkxJOGQkAutKroqUzbiiPg5tZ35TZ4mB4deMWmghyInmaR-CKo6JQlhVlzoMcAOpwq474aLc5AN5HgChCuKEeEIRkWuADeVQjNG5dIiWhX8KCrnrGJpB9VnNVqxr4875Cv7-0C-Su2NM0tEUvAefPHo6hN550yGwLI2EfANf0_2TSNathkvq5nm8Z1gOtfXl2HlWA7'
@@ -561,6 +591,8 @@ export default function HRDirectory({ isMobile }) {
         return {
           ...emp,
           ...formData,
+          division: formData.division || emp.division || 'AJ Synthetic',
+          section: formData.division || emp.section || 'AJ Synthetic',
           basicSalary: Number(formData.basicSalary) || 0
         };
       }
@@ -847,8 +879,14 @@ export default function HRDirectory({ isMobile }) {
                                 {emp.status}
                               </button>
                             );
+                          } else if (colId === 'division') {
+                            content = (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-primary/10 text-primary border border-primary/20 tracking-wide">
+                                {emp.division || emp.section || 'AJ Synthetic'}
+                              </span>
+                            );
                           } else if (colId === 'basicSalary') {
-                            content = <span className="font-mono text-right font-bold">${Number(emp.basicSalary).toLocaleString()}</span>;
+                            content = <span className="font-mono text-right font-bold">{currSym} {Number(emp.basicSalary || 0).toLocaleString()}</span>;
                           } else if (colId === 'joiningDate') {
                             content = <span>{emp.joiningDate || 'N/A'}</span>;
                           } else {
@@ -1069,8 +1107,12 @@ export default function HRDirectory({ isMobile }) {
                       <span className="text-on-surface truncate block">{emp.department || 'Not Assigned'}</span>
                     </div>
                     <div>
+                      <span className="text-[8px] uppercase tracking-wider text-outline block">Division</span>
+                      <span className="text-primary font-bold truncate block">{emp.division || emp.section || 'AJ Synthetic'}</span>
+                    </div>
+                    <div>
                       <span className="text-[8px] uppercase tracking-wider text-outline block">Salary</span>
-                      <span className="font-mono text-on-surface font-bold">${Number(emp.basicSalary || 0).toLocaleString()}</span>
+                      <span className="font-mono text-on-surface font-bold">{currSym} {Number(emp.basicSalary || 0).toLocaleString()}</span>
                     </div>
                     <div>
                       <span className="text-[8px] uppercase tracking-wider text-outline block">Primary Number</span>
@@ -1190,14 +1232,27 @@ export default function HRDirectory({ isMobile }) {
                   type="text"
                   value={formData.department}
                   onChange={(e) => setFormData({...formData, department: e.target.value})}
-                  placeholder="e.g. Operations, Marketing"
+                  placeholder="e.g. Production, Store"
                   className="w-full bg-surface-container-low border border-outline-variant/20 rounded-xl px-3.5 py-2 text-xs text-on-surface focus:bg-surface-container-lowest focus:border-primary/50 focus:ring-0 outline-none transition-all"
                 />
               </div>
 
+              {/* Division */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">Division</label>
+                <select
+                  value={formData.division || 'AJ Synthetic'}
+                  onChange={(e) => setFormData({...formData, division: e.target.value})}
+                  className="w-full bg-surface-container-low border border-outline-variant/20 rounded-xl px-3.5 py-2 text-xs text-on-surface focus:bg-surface-container-lowest focus:border-primary/50 focus:ring-0 outline-none transition-all font-semibold"
+                >
+                  <option value="AJ Synthetic">AJ Synthetic</option>
+                  <option value="AAA">AAA</option>
+                </select>
+              </div>
+
               {/* Basic Salary */}
               <div className="flex flex-col gap-1.5">
-                <label className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">Basic Salary *</label>
+                <label className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">Basic Salary ({currSym}) *</label>
                 <input 
                   type="number"
                   required

@@ -345,6 +345,67 @@ export default function HRSettings({ isMobile }) {
                 </div>
               </div>
 
+              
+              {/* Divisions Management App-Style Card */}
+              <div 
+                onClick={() => {
+                  setActiveCategory('divisions');
+                  setViewMode('departments');
+                }}
+                className="group relative bg-gradient-to-br from-surface-container-lowest via-surface-container-lowest to-indigo-500/5 border border-outline-variant/15 hover:border-indigo-500/30 rounded-3xl p-6 shadow-sm hover:shadow-xl hover:shadow-indigo-500/5 hover:-translate-y-1.5 transition-all duration-300 ease-out cursor-pointer flex flex-col justify-between min-h-[190px] overflow-hidden"
+              >
+                <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/5 rounded-full blur-3xl group-hover:bg-indigo-500/10 transition-all duration-300 animate-pulse"></div>
+                
+                <div className="flex items-start justify-between relative z-10">
+                  <div className="w-14 h-14 rounded-2xl bg-indigo-500/10 text-indigo-600 flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
+                    <span className="material-symbols-outlined text-[32px] icon-fill">apartment</span>
+                  </div>
+                  <span className="material-symbols-outlined text-outline-variant group-hover:text-indigo-600 transition-colors text-[20px] font-bold">arrow_forward</span>
+                </div>
+                
+                <div className="mt-6 relative z-10">
+                  <h3 className="font-headline text-md font-black text-on-surface leading-tight group-hover:text-indigo-600 transition-colors">Divisions Management</h3>
+                  <p className="font-body text-[11px] text-on-surface-variant mt-1.5 font-medium leading-relaxed">
+                    Corporate divisions, business units, division heads, and employee assignments.
+                  </p>
+                </div>
+                
+                <div className="mt-4 pt-4 border-t border-outline-variant/10 flex items-center justify-between relative z-10 text-[10px] uppercase tracking-wider font-bold">
+                  <span className="text-indigo-600 font-body">{divisions.length} Active Divisions</span>
+                  <span className="text-on-surface-variant font-body">{employees.filter(e => e.division || e.section).length} Assigned</span>
+                </div>
+              </div>
+
+              {/* Duty Hours & Shifts App-Style Card */}
+              <div 
+                onClick={() => {
+                  setActiveCategory('duty_hours');
+                  setViewMode('departments');
+                }}
+                className="group relative bg-gradient-to-br from-surface-container-lowest via-surface-container-lowest to-amber-500/5 border border-outline-variant/15 hover:border-amber-500/30 rounded-3xl p-6 shadow-sm hover:shadow-xl hover:shadow-amber-500/5 hover:-translate-y-1.5 transition-all duration-300 ease-out cursor-pointer flex flex-col justify-between min-h-[190px] overflow-hidden"
+              >
+                <div className="absolute top-0 right-0 w-32 h-32 bg-amber-500/5 rounded-full blur-3xl group-hover:bg-amber-500/10 transition-all duration-300 animate-pulse"></div>
+                
+                <div className="flex items-start justify-between relative z-10">
+                  <div className="w-14 h-14 rounded-2xl bg-amber-500/10 text-amber-600 flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
+                    <span className="material-symbols-outlined text-[32px] icon-fill">schedule</span>
+                  </div>
+                  <span className="material-symbols-outlined text-outline-variant group-hover:text-amber-600 transition-colors text-[20px] font-bold">arrow_forward</span>
+                </div>
+                
+                <div className="mt-6 relative z-10">
+                  <h3 className="font-headline text-md font-black text-on-surface leading-tight group-hover:text-amber-600 transition-colors">Duty Hours & Shifts</h3>
+                  <p className="font-body text-[11px] text-on-surface-variant mt-1.5 font-medium leading-relaxed">
+                    Standard shift hours, grace periods, half-day thresholds, and schedule management.
+                  </p>
+                </div>
+                
+                <div className="mt-4 pt-4 border-t border-outline-variant/10 flex items-center justify-between relative z-10 text-[10px] uppercase tracking-wider font-bold">
+                  <span className="text-amber-600 font-body">{dutySettings.standardHours}h Standard Shift</span>
+                  <span className="text-on-surface-variant font-body">{(dutySettings.shifts || []).length} Shifts</span>
+                </div>
+              </div>
+
               {/* Payroll Account Mapping App-Style Card */}
               <div 
                 onClick={() => {
@@ -462,6 +523,191 @@ export default function HRSettings({ isMobile }) {
 
         {/* Stateful Add/Edit Modal */}
         {showModal && renderFormModal()}
+
+        
+        {/* Division Modal */}
+        {showDivisionModal && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[1000] flex items-center justify-center p-4 animate-fade-in">
+            <div className="bg-surface-container-lowest rounded-3xl p-6 w-full max-w-lg border border-outline-variant/20 shadow-2xl relative animate-scale-up text-on-surface">
+              <header className="flex justify-between items-center mb-5 pb-3 border-b border-outline-variant/15">
+                <h3 className="font-headline font-black text-lg text-on-surface">
+                  {divisionModalMode === 'add' ? 'Add New Division' : 'Edit Division'}
+                </h3>
+                <button
+                  onClick={() => setShowDivisionModal(false)}
+                  className="w-8 h-8 rounded-full bg-surface-container flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-[18px]">close</span>
+                </button>
+              </header>
+
+              <form onSubmit={handleSaveDivisionSubmit} className="space-y-4 text-xs font-body">
+                <div>
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant block mb-1">Division Name *</label>
+                  <input
+                    type="text"
+                    required
+                    value={activeDivision.name}
+                    onChange={(e) => setActiveDivision({ ...activeDivision, name: e.target.value })}
+                    placeholder="e.g. AJ Synthetic, AAA"
+                    className="w-full bg-surface-container-low border border-outline-variant/30 rounded-xl px-3.5 py-2.5 font-bold text-on-surface outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant block mb-1">Division Code</label>
+                  <input
+                    type="text"
+                    value={activeDivision.code}
+                    onChange={(e) => setActiveDivision({ ...activeDivision, code: e.target.value.toUpperCase() })}
+                    placeholder="e.g. AJS, AAA"
+                    className="w-full bg-surface-container-low border border-outline-variant/30 rounded-xl px-3.5 py-2.5 font-mono font-bold text-on-surface outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant block mb-1">Description</label>
+                  <textarea
+                    rows={3}
+                    value={activeDivision.description}
+                    onChange={(e) => setActiveDivision({ ...activeDivision, description: e.target.value })}
+                    placeholder="Description of division operations and scope..."
+                    className="w-full bg-surface-container-low border border-outline-variant/30 rounded-xl px-3.5 py-2.5 text-on-surface outline-none resize-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant block mb-1">Head of Division</label>
+                  <select
+                    value={activeDivision.head}
+                    onChange={(e) => setActiveDivision({ ...activeDivision, head: e.target.value })}
+                    className="w-full bg-surface-container-low border border-outline-variant/30 rounded-xl px-3.5 py-2.5 font-bold text-on-surface outline-none"
+                  >
+                    <option value="">Select Division Head...</option>
+                    {employees.map(emp => (
+                      <option key={emp.id} value={emp.name}>{emp.name} ({emp.id} - {emp.designation || 'Staff'})</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="flex justify-end gap-3 pt-4 border-t border-outline-variant/15">
+                  <button
+                    type="button"
+                    onClick={() => setShowDivisionModal(false)}
+                    className="px-4 py-2 border border-outline-variant/30 rounded-xl font-bold text-on-surface-variant hover:bg-surface-container cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold shadow-md cursor-pointer"
+                  >
+                    {divisionModalMode === 'add' ? 'Create Division' : 'Save Changes'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* Shift Modal */}
+        {showShiftModal && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[1000] flex items-center justify-center p-4 animate-fade-in">
+            <div className="bg-surface-container-lowest rounded-3xl p-6 w-full max-w-md border border-outline-variant/20 shadow-2xl relative animate-scale-up text-on-surface">
+              <header className="flex justify-between items-center mb-5 pb-3 border-b border-outline-variant/15">
+                <h3 className="font-headline font-black text-lg text-on-surface">
+                  {shiftModalMode === 'add' ? 'Add Shift Schedule' : 'Edit Shift Schedule'}
+                </h3>
+                <button
+                  onClick={() => setShowShiftModal(false)}
+                  className="w-8 h-8 rounded-full bg-surface-container flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-[18px]">close</span>
+                </button>
+              </header>
+
+              <form onSubmit={handleSaveShiftSubmit} className="space-y-4 text-xs font-body">
+                <div>
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant block mb-1">Shift Name *</label>
+                  <input
+                    type="text"
+                    required
+                    value={activeShift.name}
+                    onChange={(e) => setActiveShift({ ...activeShift, name: e.target.value.toUpperCase() })}
+                    placeholder="e.g. GENERAL SHIFT, NIGHT SHIFT"
+                    className="w-full bg-surface-container-low border border-outline-variant/30 rounded-xl px-3.5 py-2.5 font-bold text-on-surface outline-none"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant block mb-1">Start Time</label>
+                    <input
+                      type="time"
+                      required
+                      value={activeShift.startTime}
+                      onChange={(e) => setActiveShift({ ...activeShift, startTime: e.target.value })}
+                      className="w-full bg-surface-container-low border border-outline-variant/30 rounded-xl px-3.5 py-2.5 font-mono font-bold text-on-surface outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant block mb-1">End Time</label>
+                    <input
+                      type="time"
+                      required
+                      value={activeShift.endTime}
+                      onChange={(e) => setActiveShift({ ...activeShift, endTime: e.target.value })}
+                      className="w-full bg-surface-container-low border border-outline-variant/30 rounded-xl px-3.5 py-2.5 font-mono font-bold text-on-surface outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant block mb-1">Duty Hours</label>
+                    <input
+                      type="number"
+                      step="0.5"
+                      required
+                      value={activeShift.hours}
+                      onChange={(e) => setActiveShift({ ...activeShift, hours: Number(e.target.value) || 8 })}
+                      className="w-full bg-surface-container-low border border-outline-variant/30 rounded-xl px-3.5 py-2.5 font-bold text-on-surface outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant block mb-1">Status</label>
+                    <select
+                      value={activeShift.status}
+                      onChange={(e) => setActiveShift({ ...activeShift, status: e.target.value })}
+                      className="w-full bg-surface-container-low border border-outline-variant/30 rounded-xl px-3.5 py-2.5 font-bold text-on-surface outline-none"
+                    >
+                      <option value="Active">Active</option>
+                      <option value="Inactive">Inactive</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-3 pt-4 border-t border-outline-variant/15">
+                  <button
+                    type="button"
+                    onClick={() => setShowShiftModal(false)}
+                    className="px-4 py-2 border border-outline-variant/30 rounded-xl font-bold text-on-surface-variant hover:bg-surface-container cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-6 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-bold shadow-md cursor-pointer"
+                  >
+                    {shiftModalMode === 'add' ? 'Create Shift' : 'Save Changes'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
 
         {/* Deletion Confirm Modal */}
         {deleteConfirm.show && renderDeleteConfirmModal()}
@@ -874,6 +1120,41 @@ export default function HRSettings({ isMobile }) {
         {/* Bento Grid Settings Categories (Accordion Style for Mobile) */}
         <section className="flex flex-col gap-4">
           
+          
+          {/* Divisions Management Bento Block */}
+          <div 
+            onClick={() => setActiveCategory('divisions')}
+            className="bg-surface-container-lowest rounded-2xl p-5 border border-outline-variant/15 shadow-sm cursor-pointer hover:border-indigo-500/30 transition-all flex justify-between items-center"
+          >
+            <div className="flex items-center gap-3 text-indigo-600">
+              <div className="w-10 h-10 rounded-xl bg-indigo-500/10 flex items-center justify-center">
+                <span className="material-symbols-outlined text-[24px]">apartment</span>
+              </div>
+              <div>
+                <h2 className="font-headline text-sm font-bold text-on-surface">Divisions Management</h2>
+                <p className="font-body text-[10px] text-on-surface-variant">{divisions.length} Divisions • AJ Synthetic</p>
+              </div>
+            </div>
+            <span className="material-symbols-outlined text-outline-variant text-[20px]">chevron_right</span>
+          </div>
+
+          {/* Duty Hours & Shifts Bento Block */}
+          <div 
+            onClick={() => setActiveCategory('duty_hours')}
+            className="bg-surface-container-lowest rounded-2xl p-5 border border-outline-variant/15 shadow-sm cursor-pointer hover:border-amber-500/30 transition-all flex justify-between items-center"
+          >
+            <div className="flex items-center gap-3 text-amber-600">
+              <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center">
+                <span className="material-symbols-outlined text-[24px]">schedule</span>
+              </div>
+              <div>
+                <h2 className="font-headline text-sm font-bold text-on-surface">Duty Hours & Shifts</h2>
+                <p className="font-body text-[10px] text-on-surface-variant font-medium">{dutySettings.standardHours}h Standard • {(dutySettings.shifts || []).length} Shifts</p>
+              </div>
+            </div>
+            <span className="material-symbols-outlined text-outline-variant text-[20px]">chevron_right</span>
+          </div>
+
           {/* Payroll Account Mapping Bento Block */}
           <div 
             onClick={() => setActiveCategory('payroll_mapping')}
@@ -1021,6 +1302,416 @@ export default function HRSettings({ isMobile }) {
   // ==========================================
   // SHARED FORM INPUT MODAL (PREMIUM & REDESIGNED)
   // ==========================================
+
+  // ==========================================
+  // DIVISIONS RENDERERS
+  // ==========================================
+  function renderDesktopDivisions() {
+    return (
+      <div className="space-y-6 animate-fade-in pb-12">
+        {/* Info banner */}
+        <div className="bg-surface-container-lowest p-6 rounded-2xl border border-outline-variant/15 flex justify-between items-center">
+          <div>
+            <h3 className="font-headline text-base font-bold text-on-surface">Corporate Divisions Structure</h3>
+            <p className="font-body text-xs text-on-surface-variant mt-1">
+              Divisions group operational departments and employees under dedicated operational wings.
+            </p>
+          </div>
+          <button
+            onClick={handleOpenAddDivision}
+            className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-xs shadow-md transition-all cursor-pointer"
+          >
+            <span className="material-symbols-outlined text-[18px]">add</span>
+            New Division
+          </button>
+        </div>
+
+        {/* Division Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+          {divisions.map(div => {
+            const divEmployees = employees.filter(e => (e.division === div.name || e.section === div.name));
+            const divDepts = Array.from(new Set(divEmployees.map(e => e.department).filter(Boolean)));
+
+            return (
+              <div
+                key={div.id}
+                className="bg-surface-container-lowest rounded-2xl p-6 border border-outline-variant/15 shadow-sm hover:shadow-lg hover:border-indigo-500/30 transition-all flex flex-col justify-between relative group"
+              >
+                <div>
+                  <div className="flex justify-between items-start mb-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-12 h-12 rounded-xl bg-indigo-500/10 text-indigo-600 flex items-center justify-center font-black text-sm">
+                        {div.code || 'DIV'}
+                      </div>
+                      <div>
+                        <h4 className="font-headline text-base font-black text-on-surface leading-tight">{div.name}</h4>
+                        <span className="inline-block px-2 py-0.5 rounded-full text-[9px] font-bold bg-indigo-500/10 text-indigo-600 border border-indigo-500/20 mt-1">
+                          Code: {div.code || 'N/A'}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => handleOpenEditDivision(div)}
+                        className="w-8 h-8 rounded-lg bg-surface-container flex items-center justify-center text-on-surface-variant hover:text-indigo-600 transition-colors cursor-pointer"
+                        title="Edit Division"
+                      >
+                        <span className="material-symbols-outlined text-[16px]">edit</span>
+                      </button>
+                      {div.name !== 'AJ Synthetic' && (
+                        <button
+                          onClick={() => handleDeleteDivision(div.id)}
+                          className="w-8 h-8 rounded-lg bg-surface-container flex items-center justify-center text-on-surface-variant hover:text-error transition-colors cursor-pointer"
+                          title="Delete Division"
+                        >
+                          <span className="material-symbols-outlined text-[16px]">delete</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-on-surface-variant mb-4 line-clamp-2">
+                    {div.description || 'No description provided.'}
+                  </p>
+
+                  <div className="space-y-2 bg-surface-container-low/50 p-3.5 rounded-xl border border-outline-variant/10 text-xs mb-4">
+                    <div className="flex justify-between items-center">
+                      <span className="text-on-surface-variant font-medium">Head of Division:</span>
+                      <span className="font-bold text-on-surface">{div.head || 'Not Assigned'}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-on-surface-variant font-medium">Headcount:</span>
+                      <span className="font-bold text-indigo-600">{divEmployees.length} Staff</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-on-surface-variant font-medium">Active Departments:</span>
+                      <span className="font-bold text-on-surface">{divDepts.length}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {divDepts.length > 0 && (
+                  <div className="border-t border-outline-variant/10 pt-3">
+                    <span className="text-[10px] uppercase tracking-wider text-outline block mb-1.5 font-bold">Departments</span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {divDepts.slice(0, 4).map(d => (
+                        <span key={d} className="px-2 py-0.5 rounded-md bg-surface-container text-[10px] font-semibold text-on-surface-variant truncate max-w-[120px]">
+                          {d}
+                        </span>
+                      ))}
+                      {divDepts.length > 4 && (
+                        <span className="px-1.5 py-0.5 rounded-md bg-surface-container text-[10px] font-bold text-on-surface-variant">
+                          +{divDepts.length - 4} more
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  function renderMobileDivisions() {
+    return (
+      <div className="flex flex-col gap-5 pb-20 animate-fade-in select-none">
+        <header className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setActiveCategory('departments')}
+              className="w-8 h-8 rounded-full bg-surface-container flex items-center justify-center text-on-surface"
+            >
+              <span className="material-symbols-outlined text-[18px]">arrow_back</span>
+            </button>
+            <div>
+              <h2 className="font-headline text-lg font-black text-on-surface leading-tight">Divisions Management</h2>
+              <p className="text-[10px] text-on-surface-variant">Corporate Structure</p>
+            </div>
+          </div>
+          <button
+            onClick={handleOpenAddDivision}
+            className="px-3 py-1.5 bg-indigo-600 text-white rounded-xl text-xs font-bold"
+          >
+            + Add
+          </button>
+        </header>
+
+        <div className="space-y-3">
+          {divisions.map(div => {
+            const count = employees.filter(e => (e.division === div.name || e.section === div.name)).length;
+            return (
+              <div key={div.id} className="bg-surface-container-lowest p-4 rounded-2xl border border-outline-variant/15 flex flex-col gap-2 shadow-sm">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <h3 className="font-headline font-black text-sm text-on-surface">{div.name}</h3>
+                    <span className="text-[10px] font-bold text-indigo-600">Code: {div.code || 'N/A'} • {count} Employees</span>
+                  </div>
+                  <button
+                    onClick={() => handleOpenEditDivision(div)}
+                    className="w-7 h-7 rounded-lg bg-surface-container flex items-center justify-center text-on-surface-variant"
+                  >
+                    <span className="material-symbols-outlined text-[14px]">edit</span>
+                  </button>
+                </div>
+                <p className="text-[11px] text-on-surface-variant">{div.description || 'No description.'}</p>
+                <div className="text-[10px] text-outline font-semibold">
+                  Head: <span className="text-on-surface font-bold">{div.head || 'Not Assigned'}</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  // ==========================================
+  // DUTY HOURS & SHIFTS RENDERERS
+  // ==========================================
+  function renderDesktopDutyHours() {
+    return (
+      <div className="space-y-6 animate-fade-in pb-12">
+        {/* Top Configuration Bento Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          
+          {/* Card 1: Standard Duty Hours */}
+          <div className="bg-surface-container-lowest p-6 rounded-2xl border border-outline-variant/15 shadow-sm flex flex-col justify-between">
+            <div>
+              <div className="flex items-center gap-2.5 text-amber-600 mb-3">
+                <span className="material-symbols-outlined text-[24px]">timer</span>
+                <h4 className="font-headline text-sm font-bold text-on-surface">Standard Duty Hours</h4>
+              </div>
+              <p className="text-xs text-on-surface-variant mb-4">
+                Baseline full-day working hours for standard salary calculation.
+              </p>
+              <div className="flex items-center gap-2">
+                {[8, 9, 10, 12].map(hrs => (
+                  <button
+                    key={hrs}
+                    onClick={() => saveDutySettings({ ...dutySettings, standardHours: hrs })}
+                    className={`flex-1 py-2 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                      dutySettings.standardHours === hrs
+                        ? 'bg-amber-600 text-white shadow-md'
+                        : 'bg-surface-container-low text-on-surface hover:bg-surface-container'
+                    }`}
+                  >
+                    {hrs} Hours
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <button
+              onClick={handleSyncStandardHoursToAllEmployees}
+              className="mt-5 w-full py-2 bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 border border-amber-500/20 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5"
+            >
+              <span className="material-symbols-outlined text-[16px]">sync</span>
+              Apply to All Employees
+            </button>
+          </div>
+
+          {/* Card 2: Grace & Overtime Rules */}
+          <div className="bg-surface-container-lowest p-6 rounded-2xl border border-outline-variant/15 shadow-sm space-y-4">
+            <div className="flex items-center gap-2.5 text-blue-600">
+              <span className="material-symbols-outlined text-[24px]">timelapse</span>
+              <h4 className="font-headline text-sm font-bold text-on-surface">Grace & Penalty Rules</h4>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="text-[10px] uppercase font-bold text-outline block mb-1">Check-in Grace Time</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    value={dutySettings.gracePeriodMinutes || 15}
+                    onChange={(e) => saveDutySettings({ ...dutySettings, gracePeriodMinutes: Number(e.target.value) || 0 })}
+                    className="w-24 bg-surface-container-low border border-outline-variant/30 rounded-xl px-3 py-1.5 font-bold text-on-surface outline-none"
+                  />
+                  <span className="text-on-surface-variant font-medium">Minutes late permitted</span>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[10px] uppercase font-bold text-outline block mb-1">Half-Day Threshold</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    step="0.5"
+                    value={dutySettings.halfDayThresholdHours || 4}
+                    onChange={(e) => saveDutySettings({ ...dutySettings, halfDayThresholdHours: Number(e.target.value) || 0 })}
+                    className="w-24 bg-surface-container-low border border-outline-variant/30 rounded-xl px-3 py-1.5 font-bold text-on-surface outline-none"
+                  />
+                  <span className="text-on-surface-variant font-medium">Hours minimum</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Card 3: Customization Toggle */}
+          <div className="bg-surface-container-lowest p-6 rounded-2xl border border-outline-variant/15 shadow-sm flex flex-col justify-between">
+            <div>
+              <div className="flex items-center gap-2.5 text-emerald-600 mb-3">
+                <span className="material-symbols-outlined text-[24px]">tune</span>
+                <h4 className="font-headline text-sm font-bold text-on-surface">Employee Adjustability</h4>
+              </div>
+              <p className="text-xs text-on-surface-variant leading-relaxed">
+                Allow HR managers to set individual duty hours for specific workers in directory and onboarding.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-between p-3 bg-surface-container-low rounded-xl border border-outline-variant/10 mt-4">
+              <span className="text-xs font-bold text-on-surface">Duty Hours Adjustable</span>
+              <button
+                onClick={() => saveDutySettings({ ...dutySettings, dutyHoursAdjustable: !dutySettings.dutyHoursAdjustable })}
+                className={`w-11 h-6 rounded-full transition-colors relative duration-200 cursor-pointer ${
+                  dutySettings.dutyHoursAdjustable ? 'bg-emerald-600' : 'bg-surface-container-highest border border-outline-variant/50'
+                }`}
+              >
+                <div className={`w-4 h-4 rounded-full bg-white absolute top-1 transition-all duration-200 ${
+                  dutySettings.dutyHoursAdjustable ? 'left-6' : 'left-1'
+                }`}></div>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Shift Timings Table */}
+        <div className="bg-surface-container-lowest rounded-2xl border border-outline-variant/15 shadow-sm overflow-hidden">
+          <div className="p-5 border-b border-outline-variant/15 flex justify-between items-center">
+            <div>
+              <h4 className="font-headline text-sm font-black text-on-surface">Configured Shifts</h4>
+              <p className="text-xs text-on-surface-variant mt-0.5">Define shift work hours and assigned duty durations.</p>
+            </div>
+            <button
+              onClick={handleOpenAddShift}
+              className="flex items-center gap-1.5 px-3.5 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold transition-all cursor-pointer"
+            >
+              <span className="material-symbols-outlined text-[16px]">add</span>
+              Add Shift
+            </button>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="border-b border-outline-variant/10 bg-surface-container-low/40 text-[10px] font-bold uppercase tracking-wider text-outline">
+                  <th className="p-4">Shift Name</th>
+                  <th className="p-4">Start Time</th>
+                  <th className="p-4">End Time</th>
+                  <th className="p-4">Duration</th>
+                  <th className="p-4">Assigned Staff</th>
+                  <th className="p-4">Status</th>
+                  <th className="p-4 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-outline-variant/10">
+                {(dutySettings.shifts || []).map(shift => {
+                  const assignedCount = employees.filter(e => (e.shift || '').toLowerCase() === shift.name.toLowerCase()).length;
+                  return (
+                    <tr key={shift.id} className="hover:bg-surface-container-low/30 transition-colors">
+                      <td className="p-4 font-bold text-on-surface">{shift.name}</td>
+                      <td className="p-4 font-mono font-semibold">{shift.startTime}</td>
+                      <td className="p-4 font-mono font-semibold">{shift.endTime}</td>
+                      <td className="p-4 font-bold text-amber-600">{shift.hours} Hours</td>
+                      <td className="p-4 font-semibold text-on-surface-variant">{assignedCount} Employees</td>
+                      <td className="p-4">
+                        <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                          {shift.status || 'Active'}
+                        </span>
+                      </td>
+                      <td className="p-4 text-right">
+                        <div className="flex justify-end gap-1.5">
+                          <button
+                            onClick={() => handleOpenEditShift(shift)}
+                            className="w-7 h-7 rounded-lg bg-surface-container flex items-center justify-center text-on-surface-variant hover:text-amber-600 transition-colors cursor-pointer"
+                          >
+                            <span className="material-symbols-outlined text-[14px]">edit</span>
+                          </button>
+                          <button
+                            onClick={() => handleDeleteShift(shift.id)}
+                            className="w-7 h-7 rounded-lg bg-surface-container flex items-center justify-center text-on-surface-variant hover:text-error transition-colors cursor-pointer"
+                          >
+                            <span className="material-symbols-outlined text-[14px]">delete</span>
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  function renderMobileDutyHours() {
+    return (
+      <div className="flex flex-col gap-5 pb-20 animate-fade-in select-none">
+        <header className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setActiveCategory('departments')}
+              className="w-8 h-8 rounded-full bg-surface-container flex items-center justify-center text-on-surface"
+            >
+              <span className="material-symbols-outlined text-[18px]">arrow_back</span>
+            </button>
+            <div>
+              <h2 className="font-headline text-lg font-black text-on-surface leading-tight">Duty Hours & Shifts</h2>
+              <p className="text-[10px] text-on-surface-variant">Standard Shift Timings</p>
+            </div>
+          </div>
+          <button
+            onClick={handleOpenAddShift}
+            className="px-3 py-1.5 bg-amber-600 text-white rounded-xl text-xs font-bold"
+          >
+            + Add
+          </button>
+        </header>
+
+        {/* Standard hours selection */}
+        <div className="bg-surface-container-lowest p-4 rounded-2xl border border-outline-variant/15 flex flex-col gap-3">
+          <span className="text-xs font-bold text-on-surface">Standard Working Hours</span>
+          <div className="grid grid-cols-4 gap-2">
+            {[8, 9, 10, 12].map(hrs => (
+              <button
+                key={hrs}
+                onClick={() => saveDutySettings({ ...dutySettings, standardHours: hrs })}
+                className={`py-2 rounded-xl text-xs font-black transition-all ${
+                  dutySettings.standardHours === hrs ? 'bg-amber-600 text-white' : 'bg-surface-container text-on-surface'
+                }`}
+              >
+                {hrs}h
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Shifts */}
+        <div className="space-y-3">
+          {(dutySettings.shifts || []).map(shift => (
+            <div key={shift.id} className="bg-surface-container-lowest p-4 rounded-2xl border border-outline-variant/15 flex justify-between items-center shadow-sm">
+              <div>
+                <h4 className="font-headline font-black text-sm text-on-surface">{shift.name}</h4>
+                <p className="text-xs font-mono text-on-surface-variant mt-0.5">{shift.startTime} - {shift.endTime} ({shift.hours}h)</p>
+              </div>
+              <button
+                onClick={() => handleOpenEditShift(shift)}
+                className="w-7 h-7 rounded-lg bg-surface-container flex items-center justify-center text-on-surface-variant"
+              >
+                <span className="material-symbols-outlined text-[14px]">edit</span>
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   function renderFormModal() {
     // Helper to render custom multi-select selector with search
     function EmployeeMultiSelect({ label, selectedIds, onChange, placeholder }) {

@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 
 export default function SalaryAllowanceConfig({ isMobile, onBack }) {
-  const { state, setCollection } = useApp() || {};
+  const { state, setCollection, currencySymbol } = useApp() || {};
+  const currSym = currencySymbol || state?.adminSetup?.baseCurrency?.match(/\(([^)]+)\)/)?.[1] || 'Rs';
 
   // Initial State with localStorage & AppContext fallback
   const [config, setConfig] = useState(() => {
@@ -775,7 +776,7 @@ export default function SalaryAllowanceConfig({ isMobile, onBack }) {
             <div className="p-3 bg-emerald-50/60 rounded-xl border border-emerald-200/60 flex items-start gap-2 text-xs text-emerald-900 mt-2">
               <span className="material-symbols-outlined text-emerald-600 text-base">info</span>
               <p className="leading-tight text-[11px]">
-                Allowance will be calculated as a fixed <strong>${config.attendanceAllowance.bonusAmount}</strong> monthly bonus if selected conditions are met.
+                Allowance will be calculated as a fixed <strong>{currSym} {config.attendanceAllowance.bonusAmount}</strong> monthly bonus if selected conditions are met.
               </p>
             </div>
           </div>
@@ -844,7 +845,7 @@ export default function SalaryAllowanceConfig({ isMobile, onBack }) {
                   <h3 className="font-bold text-base text-slate-900 flex items-center gap-2">
                     Employee Allowance Configuration
                     <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full">
-                      Default PKR 1,500
+                      Default {currSym} 1,500
                     </span>
                   </h3>
                   <p className="text-xs text-slate-500">
@@ -918,7 +919,7 @@ export default function SalaryAllowanceConfig({ isMobile, onBack }) {
                   title="Reset all currently filtered employees to PKR 1,500"
                 >
                   <span className="material-symbols-outlined text-[15px]">auto_fix_high</span>
-                  Set All to PKR 1,500
+                  Set All to {currSym} 1,500
                 </button>
               </div>
             </div>
@@ -932,7 +933,7 @@ export default function SalaryAllowanceConfig({ isMobile, onBack }) {
                     <th className="p-3">Division</th>
                     <th className="p-3">Department</th>
                     <th className="p-3">Designation</th>
-                    <th className="p-3 text-right">Max Allowance (PKR)</th>
+                    <th className="p-3 text-right">Max Allowance ({currSym})</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -976,7 +977,7 @@ export default function SalaryAllowanceConfig({ isMobile, onBack }) {
                           </td>
                           <td className="p-3 text-right">
                             <div className="inline-flex items-center relative w-36 ml-auto">
-                              <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400 pointer-events-none">PKR</span>
+                              <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400 pointer-events-none">{currSym}</span>
                               <input
                                 type="number"
                                 min="0"

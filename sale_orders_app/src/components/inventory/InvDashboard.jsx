@@ -3,7 +3,8 @@ import { useApp } from '../../context/AppContext';
 import ResizableHeader from '../ui/ResizableHeader';
 
 export default function InvDashboard({ selectedDepartments = [] }) {
-  const { state } = useApp();
+  const { state, currencySymbol } = useApp();
+  const currSym = currencySymbol || state?.adminSetup?.baseCurrency?.match(/\(([^)]+)\)/)?.[1] || 'Rs';
   const [saleOrderViewType, setSaleOrderViewType] = useState('Sale Order Wise'); // 'Sale Order Wise', 'Item Wise'
 
   // Filter items based on selectedDepartments
@@ -132,7 +133,7 @@ export default function InvDashboard({ selectedDepartments = [] }) {
         <div className="bg-surface-container-lowest p-6 rounded-xl border border-outline-variant/10 shadow-[0_20px_40px_rgba(0,28,56,0.04)] flex flex-col justify-between h-32 relative overflow-hidden">
           <div className="z-10">
             <p className="text-xs font-label font-bold text-on-surface-variant uppercase tracking-widest">Total Stock Value</p>
-            <h3 className="text-2xl font-headline font-extrabold text-on-surface mt-1">${(totalStockValue / 1000).toFixed(1)}k</h3>
+            <h3 className="text-2xl font-headline font-extrabold text-on-surface mt-1">{currSym} {(totalStockValue / 1000).toFixed(1)}k</h3>
           </div>
           <div className="flex items-center gap-1 text-xs font-bold text-emerald-600 z-10">
             <span className="material-symbols-outlined text-sm" style={{ fontVariationSettings: "'FILL' 0" }}>inventory_2</span>

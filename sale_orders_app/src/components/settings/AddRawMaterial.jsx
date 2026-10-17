@@ -7,7 +7,8 @@ import CustomSelect from '../ui/CustomSelect';
 import GlobalPagination from '../ui/GlobalPagination';
 
 export default function AddRawMaterial() {
-  const { state, setCollection } = useApp();
+  const { state, setCollection, currencySymbol } = useApp();
+  const currSym = currencySymbol || state?.adminSetup?.baseCurrency?.match(/\(([^)]+)\)/)?.[1] || 'Rs';
   const { appConfirm, appAlert } = useDialog();
   const [showHistory, setShowHistory] = useState(false);
   const [isBulkUploadOpen, setIsBulkUploadOpen] = useState(false);
@@ -327,7 +328,7 @@ export default function AddRawMaterial() {
 
               <div className="relative group">
                 <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                  <span className="text-slate-400 text-sm">$</span>
+                  <span className="text-slate-400 text-xs font-bold">{currSym}</span>
                 </div>
                 <input name="price" value={formData.price} onChange={handleInputChange} type="text" placeholder="0.00" className={`w-full bg-surface border rounded-xl pl-8 pr-4 py-3 text-sm text-on-surface focus:outline-none focus:ring-2 focus:ring-primary-container focus:border-transparent transition-all ${formErrors.price ? 'border-error/80 ring-1 ring-error/30' : 'border-outline-variant/30'}`} />
                 <label className={`absolute -top-2 left-3 bg-surface px-1 text-[10px] font-bold uppercase tracking-wider ${formErrors.price ? 'text-error' : 'text-primary'}`}>Estimated Cost / Unit</label>
