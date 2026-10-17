@@ -174,14 +174,17 @@ export default function HRLoanRequest({ isMobile }) {
   };
 
   
-  // Distinct Departments & Divisions for Loan Request Filtering
+  // Distinct Departments & Divisions for Loan Request Filtering (Cascaded)
   const departmentsList = React.useMemo(() => {
     const set = new Set();
     employees.forEach(emp => {
-      if (emp.department) set.add(emp.department);
+      const div = emp.division || emp.section;
+      if (divisionFilter === 'ALL' || !divisionFilter || div === divisionFilter) {
+        if (emp.department) set.add(emp.department);
+      }
     });
     return ['ALL', ...Array.from(set).sort()];
-  }, [employees]);
+  }, [employees, divisionFilter]);
 
   const divisionsList = React.useMemo(() => {
     const set = new Set();
@@ -485,8 +488,48 @@ export default function HRLoanRequest({ isMobile }) {
                 <p className="text-xs text-on-surface-variant">Track status of submitted loan applications and approvals.</p>
               </div>
 
-              {/* Status Filter Tabs */}
-              <div className="flex items-center bg-surface-container-low p-1 rounded-xl border border-outline-variant/10">
+              <div className="flex items-center gap-2.5 flex-wrap">
+                {/* Division Filter Dropdown */}
+                <div className="relative flex items-center bg-surface-container-low border border-outline-variant/20 hover:border-primary/40 rounded-xl px-3 py-1.5 transition-all shadow-xs group">
+                  <span className="material-symbols-outlined text-[16px] text-primary mr-1.5 group-hover:scale-110 transition-transform">apartment</span>
+                  <select
+                    value={divisionFilter}
+                    onChange={(e) => {
+                      setDivisionFilter(e.target.value);
+                      setDepartmentFilter('ALL');
+                    }}
+                    className="bg-transparent text-on-surface outline-none cursor-pointer font-bold text-xs border-none focus:ring-0 pr-5 appearance-none"
+                    title="Filter Loans by Division"
+                  >
+                    {divisionsList.map(div => (
+                      <option key={div} value={div} className="bg-surface-container-lowest text-on-surface">
+                        {div === 'ALL' ? '🏬 All Divisions' : div}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="material-symbols-outlined text-[14px] text-outline absolute right-1.5 pointer-events-none">arrow_drop_down</span>
+                </div>
+
+                {/* Department Filter Dropdown (Cascaded) */}
+                <div className="relative flex items-center bg-surface-container-low border border-outline-variant/20 hover:border-primary/40 rounded-xl px-3 py-1.5 transition-all shadow-xs group">
+                  <span className="material-symbols-outlined text-[16px] text-primary mr-1.5 group-hover:scale-110 transition-transform">domain</span>
+                  <select
+                    value={departmentFilter}
+                    onChange={(e) => setDepartmentFilter(e.target.value)}
+                    className="bg-transparent text-on-surface outline-none cursor-pointer font-bold text-xs border-none focus:ring-0 pr-5 appearance-none"
+                    title="Filter Loans by Department"
+                  >
+                    {departmentsList.map(dept => (
+                      <option key={dept} value={dept} className="bg-surface-container-lowest text-on-surface">
+                        {dept === 'ALL' ? '🏢 All Departments' : dept}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="material-symbols-outlined text-[14px] text-outline absolute right-1.5 pointer-events-none">arrow_drop_down</span>
+                </div>
+
+                {/* Status Filter Tabs */}
+                <div className="flex items-center bg-surface-container-low p-1 rounded-xl border border-outline-variant/10">
                 {['All', 'Pending', 'Approved', 'Rejected', 'Repaid'].map(tab => (
                   <button 
                     key={tab}
@@ -500,6 +543,7 @@ export default function HRLoanRequest({ isMobile }) {
                     {tab}
                   </button>
                 ))}
+                </div>
               </div>
             </div>
 

@@ -27,6 +27,11 @@ export default function HRSalaryGeneration({ isMobile }) {
   // Selected departments multi-select state
   const [selectedDepartments, setSelectedDepartments] = useState(['ALL']);
   const [selectedDivision, setSelectedDivision] = useState('ALL');
+
+  const handleDivisionChange = (newDiv) => {
+    setSelectedDivision(newDiv);
+    setSelectedDepartments(['ALL']);
+  };
   const [isDeptDropdownOpen, setIsDeptDropdownOpen] = useState(false);
   const deptDropdownRef = useRef(null);
 
@@ -62,8 +67,10 @@ export default function HRSalaryGeneration({ isMobile }) {
     { id: 'section', label: 'Section', visible: true, width: 110, align: 'left', numeric: false },
     { id: 'employeeName', label: 'Employee Name', visible: true, width: 160, align: 'left', numeric: false },
     { id: 'basicSalary', label: `Basic Salary (${currSym})`, visible: true, width: 120, align: 'right', numeric: true },
+    { id: 'otHours', label: 'Overtime (Hrs)', visible: true, width: 110, align: 'right', numeric: true },
     { id: 'overtime', label: `Overtime (${currSym})`, visible: true, width: 110, align: 'right', numeric: true },
-    { id: 'lateComingHours', label: 'Late Deduction (Hrs)', visible: true, width: 150, align: 'right', numeric: true },
+    { id: 'lateComingHours', label: 'Deduction (Hrs)', visible: true, width: 120, align: 'right', numeric: true },
+    { id: 'lateDeduction', label: `Late Deduction (${currSym})`, visible: true, width: 130, align: 'right', numeric: true },
     { id: 'absents', label: `Absents (${currSym})`, visible: true, width: 110, align: 'right', numeric: true },
     { id: 'fine', label: `Fine (${currSym})`, visible: true, width: 90, align: 'right', numeric: true },
     { id: 'allowance', label: `Allowance (${currSym})`, visible: true, width: 110, align: 'right', numeric: true },
@@ -164,36 +171,41 @@ export default function HRSalaryGeneration({ isMobile }) {
     return found ? found.label : periodKey;
   };
 
-  // Unique Departments List
+  // Unique Departments List filtered strictly by selectedDivision
   const availableDepartments = React.useMemo(() => {
     const set = new Set();
-    (state.departments || []).forEach(d => {
-      const name = typeof d === 'string' ? d : (d.name || d.label || d.value);
-      if (name) set.add(name);
-    });
     (state.hr_employees_list || []).forEach(emp => {
-      if (emp.department) set.add(emp.department);
+      const div = emp.division || emp.section;
+      if (selectedDivision === 'ALL' || !selectedDivision || div === selectedDivision) {
+        if (emp.department) set.add(emp.department);
+      }
     });
-    if (set.size === 0) {
-      ['Global Logistics', 'Supply Chain Finance', 'Quality Assurance', 'Strategic Operations', 'ADMIN', 'FINANCE', 'PRODUCTION', 'SALES', 'WAREHOUSE'].forEach(d => set.add(d));
+    if (set.size === 0 && (selectedDivision === 'ALL' || !selectedDivision)) {
+      (state.departments || []).forEach(d => {
+        const name = typeof d === 'string' ? d : (d.name || d.label || d.value);
+        if (name) set.add(name);
+      });
+      if (set.size === 0) {
+        ['Global Logistics', 'Supply Chain Finance', 'Quality Assurance', 'Strategic Operations', 'ADMIN', 'FINANCE', 'PRODUCTION', 'SALES', 'WAREHOUSE'].forEach(d => set.add(d));
+      }
     }
-    return Array.from(set);
-  }, [state.departments, state.hr_employees_list]);
+    return Array.from(set).sort();
+  }, [state.departments, state.hr_employees_list, selectedDivision]);
 
   // Dynamic Divisions/Sections for Filter Dropdown
   const availableDivisions = React.useMemo(() => {
     const set = new Set();
     (state.hr_employees_list || []).forEach(emp => {
       const div = emp.division || emp.section;
-      const deptMatches = selectedDepartments.includes('ALL') || selectedDepartments.includes(emp.department);
-      if (div && deptMatches) {
-        set.add(div);
-      }
+      if (div) set.add(div);
     });
+    if (set.size === 0) {
+      ['AAA', 'AJ Synthetic', 'Operations'].forEach(d => set.add(d));
+    }
     return ['ALL', ...Array.from(set).sort()];
-  }, [state.hr_employees_list, selectedDepartments]);
+  }, [state.hr_employees_list]);
 
-  // Comprehensive Realtime Payroll Calculation from Attendance Management
+    // Comprehensive Realtime Payroll Calculation from Attendance Management
   const computePayrollForPeriod = (period) => {
     const allEmployees = state.hr_employees_list || [];
     const attendanceLogs = state.hr_uploaded_attendance || [];
@@ -286,18 +298,21 @@ export default function HRSalaryGeneration({ isMobile }) {
         otHours += safeNum(r.hours);
       });
 
-      // If no explicit logs at all, default to full month present
+      // If no explicit logs at all, default to 0 days worked for this month (basic salary not gifted)
       if (!hasExplicitLogs) {
-        workedDays = totalWorkingDays;
-        absentsCount = 0;
+        workedDays = 0;
+        absentsCount = totalWorkingDays;
       }
 
       // Financials
       const otMultiplier = safeNum(salaryConfig?.overtimeMultipliers?.weekday || 1.5);
       const hourlyRate = baseSalary / (totalWorkingDays * 8);
-      const otPay = otHours * (hourlyRate * otMultiplier);
-      const absentDeduction = absentsCount * (baseSalary / 30);
-      const lateDeduction = lateComingHours * hourlyRate;
+      const dailyRate = baseSalary / totalWorkingDays;
+
+      const earnedBasicSalary = Math.round(dailyRate * workedDays * 100) / 100;
+      const otPay = Math.round(otHours * (hourlyRate * otMultiplier) * 100) / 100;
+      const absentDeduction = Math.round(absentsCount * dailyRate * 100) / 100;
+      const lateDeduction = Math.round(lateComingHours * hourlyRate * 100) / 100;
 
       // Loans & Advances
       let loanAmount = safeNum(emp.loan || emp.loanAmount);
@@ -317,17 +332,34 @@ export default function HRSalaryGeneration({ isMobile }) {
         }
       }
 
-      // Attendance allowance: Bonus if 0 absents
+      // Configured Employee Allowance Lookup (Default PKR 1,500)
+      let customAllowanceLimit = 1500;
+      try {
+        const savedMap = localStorage.getItem('hr_employee_allowance_map');
+        if (savedMap) {
+          const parsed = JSON.parse(savedMap);
+          if (parsed && (parsed[emp.id] !== undefined || parsed[emp.name] !== undefined)) {
+            customAllowanceLimit = safeNum(parsed[emp.id] !== undefined ? parsed[emp.id] : parsed[emp.name]);
+          } else if (emp.allowance !== undefined && emp.allowance !== null && Number(emp.allowance) > 0) {
+            customAllowanceLimit = safeNum(emp.allowance);
+          }
+        } else if (emp.allowance !== undefined && emp.allowance !== null && Number(emp.allowance) > 0) {
+          customAllowanceLimit = safeNum(emp.allowance);
+        }
+      } catch (e) {}
+
+      // Attendance allowance: Bonus only if 0 absents and worked days > 0
       let allowanceAmount = 0;
       if (absentsCount === 0 && workedDays > 0) {
-        allowanceAmount = salaryConfig?.attendanceAllowance?.bonusAmount !== undefined 
-          ? safeNum(salaryConfig.attendanceAllowance.bonusAmount) 
-          : 150;
+        allowanceAmount = customAllowanceLimit;
       }
 
       const totalAdditions = otPay + allowanceAmount;
       const totalDeductions = absentDeduction + lateDeduction + totalFines + loanAmount + safeNum(emp.advance);
-      const netSalary = Math.max(0, baseSalary + totalAdditions - totalDeductions);
+
+      // Net Salary is strictly actual earned salary from attendance + overtime + allowance minus deductions
+      // If employee worked 0 days, earnedBasicSalary is 0, so netSalary will not blindly include basic salary!
+      const netSalary = Math.max(0, earnedBasicSalary + totalAdditions - (lateDeduction + totalFines + loanAmount + safeNum(emp.advance)));
 
       return {
         employeeId: empIdStr || `EMP-${Date.now()}`,
@@ -373,6 +405,16 @@ export default function HRSalaryGeneration({ isMobile }) {
       setPayrollStatus('calculated');
     }
   }, [payrollPeriod, state.hr_generated_salaries, state.hr_employees_list, state.hr_uploaded_attendance, state.hr_overtime_requests, state.hr_loan_requests, state.hr_loan_ledger]);
+
+  // Listen for employee allowance configuration updates from HR Settings
+  useEffect(() => {
+    const handleAllowanceSync = () => {
+      const computed = computePayrollForPeriod(payrollPeriod);
+      setLocalPayrollList(computed);
+    };
+    window.addEventListener('hr_employee_allowance_updated', handleAllowanceSync);
+    return () => window.removeEventListener('hr_employee_allowance_updated', handleAllowanceSync);
+  }, [payrollPeriod, state.hr_employees_list]);
 
   // Handle Multi-Department Checkbox Selection
   const toggleDepartment = (deptName) => {
@@ -500,10 +542,12 @@ export default function HRSalaryGeneration({ isMobile }) {
         const otMultiplier = safeNum(salaryConfig?.overtimeMultipliers?.weekday || 1.5);
         
         // Financial Calculations
-        const hourlyRate = baseSalary / 176; // 8 hrs * 22 days
-        const otPay = otHours * (hourlyRate * otMultiplier);
-        const absentDeduction = absentsCount * (baseSalary / totalWorkingDays);
-        const lateDeduction = lateComingHours * hourlyRate;
+        const hourlyRate = baseSalary / (totalWorkingDays * 8);
+        const dailyRate = baseSalary / totalWorkingDays;
+        const earnedBasicSalary = Math.round(dailyRate * workedDays * 100) / 100;
+        const otPay = Math.round(otHours * (hourlyRate * otMultiplier) * 100) / 100;
+        const absentDeduction = Math.round(absentsCount * dailyRate * 100) / 100;
+        const lateDeduction = Math.round(lateComingHours * hourlyRate * 100) / 100;
 
         // Approved Loan Ledger & Requests sync
         let loanAmount = safeNum(emp.loan || emp.loanAmount);
@@ -524,22 +568,34 @@ export default function HRSalaryGeneration({ isMobile }) {
           }
         }
 
-        // Attendance Allowance Calculation: ALLOWANCE IS ONLY GRANTED IF ABSENTS COUNT IS EXACTLY 0!
+        // Configured Employee Allowance Lookup (Default PKR 1,500)
+        let customAllowanceLimit = 1500;
+        try {
+          const savedMap = localStorage.getItem('hr_employee_allowance_map');
+          if (savedMap) {
+            const parsed = JSON.parse(savedMap);
+            if (parsed && (parsed[emp.id] !== undefined || parsed[emp.name] !== undefined)) {
+              customAllowanceLimit = safeNum(parsed[emp.id] !== undefined ? parsed[emp.id] : parsed[emp.name]);
+            } else if (emp.allowance !== undefined && emp.allowance !== null && Number(emp.allowance) > 0) {
+              customAllowanceLimit = safeNum(emp.allowance);
+            }
+          } else if (emp.allowance !== undefined && emp.allowance !== null && Number(emp.allowance) > 0) {
+            customAllowanceLimit = safeNum(emp.allowance);
+          }
+        } catch (e) {}
+
+        // Attendance Allowance: Granted only if 0 absents and worked days > 0
         let allowanceAmount = 0;
-        if (absentsCount === 0) {
-          const configuredBonus = salaryConfig?.attendanceAllowance?.bonusAmount !== undefined 
-            ? safeNum(salaryConfig.attendanceAllowance.bonusAmount) 
-            : 150;
-          allowanceAmount = configuredBonus;
-        } else {
-          allowanceAmount = 0;
+        if (absentsCount === 0 && workedDays > 0) {
+          allowanceAmount = customAllowanceLimit;
         }
 
         const advanceAmount = safeNum(emp.advance || emp.advanceAmount);
-
         const totalAdditions = otPay + allowanceAmount;
         const totalDeductions = absentDeduction + lateDeduction + totalFines + advanceAmount + loanAmount;
-        const netSalary = Math.max(0, baseSalary + totalAdditions - totalDeductions);
+
+        // Net salary calculation: strictly actual earned salary from attendance + overtime + allowance minus deductions
+        const netSalary = Math.max(0, earnedBasicSalary + totalAdditions - (lateDeduction + totalFines + loanAmount + advanceAmount));
 
         return {
           employeeId: emp.id || `EMP-${Date.now()}`,
@@ -627,41 +683,56 @@ export default function HRSalaryGeneration({ isMobile }) {
     }, 4000);
   };
 
-  // Calculate Summary Totals for Header Cards with safe numerical reduction
+  // Filter list strictly by selectedDivision, selectedDepartments, and statusFilter
+  const filteredList = React.useMemo(() => {
+    return localPayrollList.filter(item => {
+      // 1. Division filter
+      if (selectedDivision && selectedDivision !== 'ALL') {
+        const itemDiv = item.division || item.section;
+        if (itemDiv !== selectedDivision) return false;
+      }
+
+      // 2. Department filter
+      if (selectedDepartments && !selectedDepartments.includes('ALL') && selectedDepartments.length > 0) {
+        if (!selectedDepartments.includes(item.department)) return false;
+      }
+
+      // 3. Status filter
+      if (statusFilter === 'Calculated' && item.status !== 'Calculated') return false;
+      if (statusFilter === 'Finalized' && item.status !== 'Finalized') return false;
+
+      return true;
+    });
+  }, [localPayrollList, selectedDivision, selectedDepartments, statusFilter]);
+
+  // Calculate Summary Totals for Header Cards strictly from filteredList
   const summaryTotals = React.useMemo(() => {
     return {
-      netPayout: localPayrollList.reduce((acc, curr) => acc + safeNum(curr.netSalary), 0),
-      headcount: localPayrollList.length,
-      overtime: localPayrollList.reduce((acc, curr) => acc + safeNum(curr.overtime), 0),
-      deductions: localPayrollList.reduce((acc, curr) => acc + safeNum(curr.lateDeduction) + safeNum(curr.absents) + safeNum(curr.fine) + safeNum(curr.loan) + safeNum(curr.advanceAmount), 0)
+      netPayout: filteredList.reduce((acc, curr) => acc + safeNum(curr.netSalary), 0),
+      headcount: filteredList.length,
+      overtime: filteredList.reduce((acc, curr) => acc + safeNum(curr.overtime), 0),
+      deductions: filteredList.reduce((acc, curr) => acc + safeNum(curr.lateDeduction) + safeNum(curr.absents) + safeNum(curr.fine) + safeNum(curr.loan) + safeNum(curr.advanceAmount), 0)
     };
-  }, [localPayrollList]);
+  }, [filteredList]);
 
-  // Calculate Table Footer Totals with safe numerical reduction
+  // Calculate Table Footer Totals strictly from filteredList
   const footerTotals = React.useMemo(() => {
     return {
-      basicSalary: localPayrollList.reduce((sum, r) => sum + safeNum(r.basicSalary), 0),
-      overtime: localPayrollList.reduce((sum, r) => sum + safeNum(r.overtime), 0),
-      lateComingHours: localPayrollList.reduce((sum, r) => sum + safeNum(r.lateComingHours), 0),
-      lateDeduction: localPayrollList.reduce((sum, r) => sum + safeNum(r.lateDeduction), 0),
-      absents: localPayrollList.reduce((sum, r) => sum + safeNum(r.absents), 0),
-      fine: localPayrollList.reduce((sum, r) => sum + safeNum(r.fine), 0),
-      allowance: localPayrollList.reduce((sum, r) => sum + safeNum(r.allowance), 0),
-      advanceAmount: localPayrollList.reduce((sum, r) => sum + safeNum(r.advanceAmount), 0),
-      loan: localPayrollList.reduce((sum, r) => sum + safeNum(r.loan), 0),
-      netSalary: localPayrollList.reduce((sum, r) => sum + safeNum(r.netSalary), 0)
+      basicSalary: filteredList.reduce((sum, r) => sum + safeNum(r.basicSalary), 0),
+      overtime: filteredList.reduce((sum, r) => sum + safeNum(r.overtime), 0),
+      otHours: filteredList.reduce((sum, r) => sum + safeNum(r.otHours), 0),
+      lateComingHours: filteredList.reduce((sum, r) => sum + safeNum(r.lateComingHours), 0),
+      lateDeduction: filteredList.reduce((sum, r) => sum + safeNum(r.lateDeduction), 0),
+      absents: filteredList.reduce((sum, r) => sum + safeNum(r.absents), 0),
+      fine: filteredList.reduce((sum, r) => sum + safeNum(r.fine), 0),
+      allowance: filteredList.reduce((sum, r) => sum + safeNum(r.allowance), 0),
+      advanceAmount: filteredList.reduce((sum, r) => sum + safeNum(r.advanceAmount), 0),
+      loan: filteredList.reduce((sum, r) => sum + safeNum(r.loan), 0),
+      netSalary: filteredList.reduce((sum, r) => sum + safeNum(r.netSalary), 0)
     };
-  }, [localPayrollList]);
+  }, [filteredList]);
 
-  // Filter list by status
-  const filteredList = localPayrollList.filter(item => {
-    if (statusFilter === 'All Records') return true;
-    if (statusFilter === 'Calculated') return item.status === 'Calculated';
-    if (statusFilter === 'Finalized') return item.status === 'Finalized';
-    return true;
-  });
-
-  // Toggle Column Visibility from 3-dot popover
+    // Toggle Column Visibility from 3-dot popover
   const toggleColumnVisibility = (colId) => {
     setColumns(prev => 
       prev.map(c => c.id === colId ? { ...c, visible: !c.visible } : c)
@@ -712,24 +783,18 @@ export default function HRSalaryGeneration({ isMobile }) {
         return <span className="text-sm font-bold text-on-surface">{record.employeeName}</span>;
       case 'basicSalary':
         return <span className="text-xs font-bold text-on-surface">{currSym} {safeMoney(record.basicSalary)}</span>;
+      case 'otHours':
+        const otH = safeNum(record.otHours);
+        return <span className="text-xs font-bold text-secondary">{otH > 0 ? `${otH} hrs` : '0 hrs'}</span>;
       case 'overtime':
         const otVal = safeNum(record.overtime);
-        const otH = safeNum(record.otHours);
-        return (
-          <div className="flex flex-col items-end">
-            <span className="text-xs font-bold text-secondary">{currSym} {safeMoney(otVal)}</span>
-            {otH > 0 && <span className="text-[10px] text-on-surface-variant">{otH} hrs</span>}
-          </div>
-        );
+        return <span className="text-xs font-bold text-secondary">{currSym} {safeMoney(otVal)}</span>;
       case 'lateComingHours':
-        const lDed = safeNum(record.lateDeduction);
         const lHrs = safeNum(record.lateComingHours);
-        return (
-          <div className="flex flex-col items-end">
-            <span className="text-xs font-bold text-error">-{currSym} {safeMoney(lDed)}</span>
-            {lHrs > 0 && <span className="text-[10px] text-on-surface-variant">{lHrs} hrs late</span>}
-          </div>
-        );
+        return <span className="text-xs font-bold text-error">{lHrs > 0 ? `${lHrs} hrs` : '0 hrs'}</span>;
+      case 'lateDeduction':
+        const lDed = safeNum(record.lateDeduction);
+        return <span className="text-xs font-bold text-error">-{currSym} {safeMoney(lDed)}</span>;
       case 'absents':
         const absDed = safeNum(record.absents);
         const absCnt = safeNum(record.absentsCount);
@@ -765,9 +830,13 @@ export default function HRSalaryGeneration({ isMobile }) {
         return <span className="font-bold text-xs text-on-surface">TOTALS</span>;
       case 'basicSalary':
         return <span className="font-bold text-xs text-on-surface">{currSym} {safeMoney(footerTotals.basicSalary)}</span>;
+      case 'otHours':
+        return <span className="font-bold text-xs text-secondary">{footerTotals.otHours} hrs</span>;
       case 'overtime':
         return <span className="font-bold text-xs text-secondary">{currSym} {safeMoney(footerTotals.overtime)}</span>;
       case 'lateComingHours':
+        return <span className="font-bold text-xs text-error">{footerTotals.lateComingHours} hrs</span>;
+      case 'lateDeduction':
         return <span className="font-bold text-xs text-error">-{currSym} {safeMoney(footerTotals.lateDeduction)}</span>;
       case 'absents':
         return <span className="font-bold text-xs text-error">-{currSym} {safeMoney(footerTotals.absents)}</span>;
@@ -842,7 +911,7 @@ export default function HRSalaryGeneration({ isMobile }) {
             <div className="relative w-full">
               <select 
                 value={selectedDivision}
-                onChange={(e) => setSelectedDivision(e.target.value)}
+                onChange={(e) => handleDivisionChange(e.target.value)}
                 className="w-full h-11 pl-4 pr-10 text-sm border border-outline-variant rounded-xl bg-surface-container-lowest hover:border-primary transition-colors focus:border-primary focus:ring-4 focus:ring-primary/10 appearance-none cursor-pointer font-medium text-on-surface"
               >
                 {availableDivisions.map(div => (

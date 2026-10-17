@@ -704,7 +704,26 @@ export default function HRDashboard({ isMobile, onNavigateTab }) {
             <p className="font-body text-xs text-on-surface-variant mb-1 uppercase tracking-widest font-bold">Overview</p>
             <h1 className="font-headline text-4xl font-black text-on-surface tracking-tight leading-none">Today's Pulse</h1>
           </div>
-          <div className="flex gap-3">
+          <div className="flex items-center gap-3">
+            {/* Khobsurat Division Filter Dropdown */}
+            <div className="relative flex items-center bg-surface-container-low border border-outline-variant/15 hover:border-primary/40 rounded-xl px-3.5 py-2 font-body text-xs font-bold text-on-surface transition-all shadow-sm group">
+              <span className="material-symbols-outlined text-[18px] text-primary mr-2 group-hover:scale-110 transition-transform">apartment</span>
+              <select
+                value={divisionFilter}
+                onChange={(e) => setDivisionFilter(e.target.value)}
+                className="bg-transparent text-on-surface outline-none cursor-pointer font-bold text-xs border-none focus:ring-0 pr-6 appearance-none"
+                title="Filter Workforce & Pulse by Division"
+              >
+                {divisionsList.map(div => (
+                  <option key={div} value={div} className="bg-surface-container-lowest text-on-surface">
+                    {div === 'ALL' ? '🏬 All Divisions' : div}
+                  </option>
+                ))}
+              </select>
+              <span className="material-symbols-outlined text-[16px] text-outline-variant absolute right-2.5 pointer-events-none">arrow_drop_down</span>
+            </div>
+
+            {/* Date Picker */}
             <div className="relative flex items-center bg-surface-container-low border border-outline-variant/10 rounded-xl px-3.5 py-2.5 font-body text-xs font-bold text-on-surface hover:bg-surface-container transition-colors cursor-pointer group shadow-sm">
               <span className="material-symbols-outlined text-[16px] text-primary mr-2">calendar_today</span>
               <input 

@@ -5,6 +5,7 @@ import SalaryAllowanceConfig from './SalaryAllowanceConfig';
 
 export default function HRSettings({ isMobile }) {
   const { state, setCollection } = useApp();
+  const employees = state?.hr_employees_list || [];
   const [designations, setDesignations] = useState(() => {
     try {
       const saved = localStorage.getItem('hr_designations_config');
@@ -178,7 +179,6 @@ export default function HRSettings({ isMobile }) {
     sections: [] // Array of section objects: { id, name, incharges: [], employees: [] }
   });
 
-  const employees = state?.hr_employees_list || [];
 
   // Category list
   const categories = [

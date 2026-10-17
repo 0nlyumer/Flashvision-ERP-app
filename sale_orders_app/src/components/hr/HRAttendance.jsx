@@ -2004,36 +2004,47 @@ export default function HRAttendance({ isMobile }) {
               )}
             </div>
 
-            {/* Department Filter Dropdown (Saved per user) */}
-            <div className="flex items-center gap-2 w-full sm:w-auto">
-              <select
-                value={departmentFilter}
-                onChange={(e) => { setDepartmentFilter(e.target.value); setDivisionFilter('ALL'); setCurrentPage(1); }}
-                className="w-full sm:w-auto bg-white border border-outline-variant/20 rounded-xl px-3 py-2 text-xs font-bold text-on-surface cursor-pointer shadow-2xs outline-none focus:ring-1 focus:ring-primary"
-                title="Filter by Department (Saved for your user profile)"
-              >
-                {departmentsList.map(dept => (
-                  <option key={dept} value={dept}>
-                    {dept === 'ALL' ? '🏢 All Departments' : dept}
-                  </option>
-                ))}
-              </select>
-            </div>
-
             {/* Division Filter Dropdown (Saved per user) */}
-            <div className="flex items-center gap-2 w-full sm:w-auto">
+            <div className="relative flex items-center bg-white border border-outline-variant/20 hover:border-primary/50 rounded-xl px-3 py-2 transition-all shadow-2xs group w-full sm:w-auto">
+              <span className="material-symbols-outlined text-[16px] text-primary mr-1.5 group-hover:scale-110 transition-transform">apartment</span>
               <select
                 value={divisionFilter}
-                onChange={(e) => { setDivisionFilter(e.target.value); setCurrentPage(1); }}
-                className="w-full sm:w-auto bg-white border border-outline-variant/20 rounded-xl px-3 py-2 text-xs font-bold text-on-surface cursor-pointer shadow-2xs outline-none focus:ring-1 focus:ring-primary"
+                onChange={(e) => {
+                  setDivisionFilter(e.target.value);
+                  setDepartmentFilter('ALL');
+                  setCurrentPage(1);
+                }}
+                className="w-full sm:w-auto bg-transparent border-none text-xs font-bold text-on-surface cursor-pointer outline-none focus:ring-0 pr-5 appearance-none"
                 title="Filter by Division (Saved for your user profile)"
               >
                 {divisionsList.map(div => (
-                  <option key={div} value={div}>
+                  <option key={div} value={div} className="bg-white text-on-surface">
                     {div === 'ALL' ? '🏬 All Divisions' : div}
                   </option>
                 ))}
               </select>
+              <span className="material-symbols-outlined text-[14px] text-outline absolute right-2 pointer-events-none">arrow_drop_down</span>
+            </div>
+
+            {/* Department Filter Dropdown (Saved per user, Cascaded) */}
+            <div className="relative flex items-center bg-white border border-outline-variant/20 hover:border-primary/50 rounded-xl px-3 py-2 transition-all shadow-2xs group w-full sm:w-auto">
+              <span className="material-symbols-outlined text-[16px] text-primary mr-1.5 group-hover:scale-110 transition-transform">domain</span>
+              <select
+                value={departmentFilter}
+                onChange={(e) => {
+                  setDepartmentFilter(e.target.value);
+                  setCurrentPage(1);
+                }}
+                className="w-full sm:w-auto bg-transparent border-none text-xs font-bold text-on-surface cursor-pointer outline-none focus:ring-0 pr-5 appearance-none"
+                title="Filter by Department (Saved for your user profile)"
+              >
+                {departmentsList.map(dept => (
+                  <option key={dept} value={dept} className="bg-white text-on-surface">
+                    {dept === 'ALL' ? '🏢 All Departments' : dept}
+                  </option>
+                ))}
+              </select>
+              <span className="material-symbols-outlined text-[14px] text-outline absolute right-2 pointer-events-none">arrow_drop_down</span>
             </div>
           </div>
 

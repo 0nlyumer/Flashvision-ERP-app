@@ -533,20 +533,32 @@ export default function SalaryAllowanceConfig({ isMobile, onBack }) {
               </div>
             </div>
 
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input
-                type="checkbox"
-                checked={config.attendanceAllowance.enabled}
-                onChange={(e) =>
-                  setConfig({
-                    ...config,
-                    attendanceAllowance: { ...config.attendanceAllowance, enabled: e.target.checked }
-                  })
-                }
-                className="sr-only peer"
-              />
-              <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
-            </label>
+            <div className="flex items-center gap-2.5">
+              {/* Gear Icon Button for Employee-wise Allowance Configuration */}
+              <button
+                type="button"
+                onClick={() => setShowEmployeeAllowanceModal(true)}
+                className="w-9 h-9 rounded-xl bg-slate-100 hover:bg-emerald-50 text-slate-600 hover:text-emerald-700 border border-slate-200/80 transition-all flex items-center justify-center cursor-pointer shadow-xs active:scale-95 group"
+                title="Configure Employee-wise Allowance (Default: PKR 1500)"
+              >
+                <span className="material-symbols-outlined text-[18px] group-hover:rotate-45 transition-transform duration-300">settings</span>
+              </button>
+
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={config.attendanceAllowance.enabled}
+                  onChange={(e) =>
+                    setConfig({
+                      ...config,
+                      attendanceAllowance: { ...config.attendanceAllowance, enabled: e.target.checked }
+                    })
+                  }
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
+              </label>
+            </div>
           </div>
 
           <div className="space-y-4">
@@ -728,6 +740,202 @@ export default function SalaryAllowanceConfig({ isMobile, onBack }) {
           </button>
         </div>
       </div>
+
+      {/* Employee Allowance Configuration Modal */}
+      {showEmployeeAllowanceModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[120] flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl border border-slate-200/80 shadow-2xl max-w-4xl w-full max-h-[88vh] flex flex-col overflow-hidden">
+            {/* Modal Header */}
+            <div className="px-6 py-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-emerald-100/70 text-emerald-700 flex items-center justify-center shadow-xs">
+                  <span className="material-symbols-outlined text-2xl">payments</span>
+                </div>
+                <div>
+                  <h3 className="font-bold text-base text-slate-900 flex items-center gap-2">
+                    Employee Allowance Configuration
+                    <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full">
+                      Default PKR 1,500
+                    </span>
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Set customized attendance allowance limit for each employee. By default, everyone is set to PKR 1,500.
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowEmployeeAllowanceModal(false)}
+                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-800 flex items-center justify-center transition-all cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Filter Toolbar */}
+            <div className="p-4 border-b border-slate-100 bg-white grid grid-cols-1 sm:grid-cols-4 gap-3 items-center">
+              {/* Search by Name or ID */}
+              <div className="relative sm:col-span-1">
+                <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">search</span>
+                <input
+                  type="text"
+                  value={allowanceSearchQuery}
+                  onChange={(e) => setAllowanceSearchQuery(e.target.value)}
+                  placeholder="Search employee..."
+                  className="w-full pl-8 pr-3 py-2 text-xs font-semibold bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:border-emerald-500 outline-none transition-all"
+                />
+              </div>
+
+              {/* Division Dropdown */}
+              <div className="relative sm:col-span-1">
+                <select
+                  value={allowanceDivisionFilter}
+                  onChange={(e) => {
+                    setAllowanceDivisionFilter(e.target.value);
+                    setAllowanceDepartmentFilter('ALL');
+                  }}
+                  className="w-full px-3 py-2 text-xs font-semibold bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:border-emerald-500 outline-none cursor-pointer"
+                >
+                  {allowanceDivisionsList.map(div => (
+                    <option key={div} value={div}>
+                      {div === 'ALL' ? '🏬 All Divisions' : div}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Department Dropdown (Cascaded) */}
+              <div className="relative sm:col-span-1">
+                <select
+                  value={allowanceDepartmentFilter}
+                  onChange={(e) => setAllowanceDepartmentFilter(e.target.value)}
+                  className="w-full px-3 py-2 text-xs font-semibold bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:border-emerald-500 outline-none cursor-pointer"
+                >
+                  {allowanceDepartmentsList.map(dept => (
+                    <option key={dept} value={dept}>
+                      {dept === 'ALL' ? '🏢 All Departments' : dept}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Quick Set All to 1500 button */}
+              <div className="sm:col-span-1 flex justify-end">
+                <button
+                  type="button"
+                  onClick={handleSetAllTo1500}
+                  className="w-full px-3 py-2 text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200/80 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                  title="Reset all currently filtered employees to PKR 1,500"
+                >
+                  <span className="material-symbols-outlined text-[15px]">auto_fix_high</span>
+                  Set All to PKR 1,500
+                </button>
+              </div>
+            </div>
+
+            {/* Employee Table */}
+            <div className="flex-1 overflow-y-auto custom-scrollbar p-6">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                    <th className="p-3">Employee</th>
+                    <th className="p-3">Division</th>
+                    <th className="p-3">Department</th>
+                    <th className="p-3">Designation</th>
+                    <th className="p-3 text-right">Max Allowance (PKR)</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filteredAllowanceEmployees.length === 0 ? (
+                    <tr>
+                      <td colSpan="5" className="text-center py-10 text-xs text-slate-400 font-semibold">
+                        No employees found matching the filter criteria.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredAllowanceEmployees.map(emp => {
+                      const currentAllowance = employeeAllowanceMap[emp.id] !== undefined 
+                        ? employeeAllowanceMap[emp.id] 
+                        : (emp.allowance !== undefined && emp.allowance !== null && Number(emp.allowance) > 0 ? Number(emp.allowance) : 1500);
+
+                      return (
+                        <tr key={emp.id} className="hover:bg-slate-50/70 transition-colors group">
+                          <td className="p-3">
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-8 h-8 rounded-full bg-slate-100 text-slate-700 font-bold text-xs flex items-center justify-center border border-slate-200 uppercase">
+                                {(emp.name || 'E').slice(0, 2)}
+                              </div>
+                              <div>
+                                <div className="text-xs font-bold text-slate-800">{emp.name}</div>
+                                <div className="text-[10px] text-slate-400 font-mono">{emp.id}</div>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="p-3">
+                            <span className="text-xs font-medium text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md">
+                              {emp.division || emp.section || 'General'}
+                            </span>
+                          </td>
+                          <td className="p-3">
+                            <span className="text-xs font-semibold text-emerald-700">
+                              {emp.department || 'General'}
+                            </span>
+                          </td>
+                          <td className="p-3">
+                            <span className="text-xs text-slate-600">{emp.designation || 'Worker'}</span>
+                          </td>
+                          <td className="p-3 text-right">
+                            <div className="inline-flex items-center relative w-36 ml-auto">
+                              <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400 pointer-events-none">PKR</span>
+                              <input
+                                type="number"
+                                min="0"
+                                step="100"
+                                value={currentAllowance}
+                                onChange={(e) => {
+                                  const val = Math.max(0, Number(e.target.value) || 0);
+                                  setEmployeeAllowanceMap(prev => ({ ...prev, [emp.id]: val }));
+                                }}
+                                className="w-full pl-10 pr-2.5 py-1.5 text-xs font-bold text-right text-slate-900 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none transition-all"
+                              />
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-4 border-t border-slate-100 bg-slate-50/50 flex flex-wrap justify-between items-center gap-3">
+              <div className="text-xs text-slate-500 font-medium">
+                Showing <strong>{filteredAllowanceEmployees.length}</strong> of <strong>{(state?.hr_employees_list || []).length}</strong> employees
+              </div>
+
+              <div className="flex items-center gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setShowEmployeeAllowanceModal(false)}
+                  className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition-all cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveEmployeeAllowances}
+                  className="px-5 py-2 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl shadow-md transition-all active:scale-95 cursor-pointer flex items-center gap-1.5"
+                >
+                  <span className="material-symbols-outlined text-[16px]">check_circle</span>
+                  Save & Sync Allowances
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Filter Add Modal */}
       {activeFilterModal && (

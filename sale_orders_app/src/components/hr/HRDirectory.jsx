@@ -118,14 +118,17 @@ export default function HRDirectory({ isMobile }) {
   }, []);
 
   
-  // Distinct Departments for Filter Dropdown
+  // Distinct Departments for Filter Dropdown (Cascaded by divisionFilter)
   const departmentsList = React.useMemo(() => {
     const set = new Set();
     employees.forEach(emp => {
-      if (emp.department) set.add(emp.department);
+      const div = emp.division || emp.section;
+      if (divisionFilter === 'ALL' || !divisionFilter || div === divisionFilter) {
+        if (emp.department) set.add(emp.department);
+      }
     });
     return ['ALL', ...Array.from(set).sort()];
-  }, [employees]);
+  }, [employees, divisionFilter]);
 
   // Distinct Divisions for Filter Dropdown
   const divisionsList = React.useMemo(() => {
@@ -613,8 +616,51 @@ export default function HRDirectory({ isMobile }) {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search employees..."
-                className="bg-surface-container-lowest border border-outline-variant/20 rounded-xl py-2 pl-9 pr-4 text-xs focus:ring-1 focus:ring-primary focus:border-primary outline-none w-64 font-body transition-all"
+                className="bg-surface-container-lowest border border-outline-variant/20 rounded-xl py-2 pl-9 pr-4 text-xs focus:ring-1 focus:ring-primary focus:border-primary outline-none w-52 font-body transition-all"
               />
+            </div>
+
+            {/* Division Filter Dropdown */}
+            <div className="relative flex items-center bg-surface-container-lowest border border-outline-variant/20 hover:border-primary/50 rounded-xl px-3 py-2 transition-all shadow-xs group">
+              <span className="material-symbols-outlined text-[16px] text-primary mr-1.5 group-hover:scale-110 transition-transform">apartment</span>
+              <select
+                value={divisionFilter}
+                onChange={(e) => {
+                  setDivisionFilter(e.target.value);
+                  setDepartmentFilter('ALL');
+                  setCurrentPage(1);
+                }}
+                className="bg-transparent text-on-surface outline-none cursor-pointer font-bold text-xs border-none focus:ring-0 pr-5 appearance-none"
+                title="Filter by Division"
+              >
+                {divisionsList.map(div => (
+                  <option key={div} value={div} className="bg-surface-container-lowest text-on-surface">
+                    {div === 'ALL' ? '🏬 All Divisions' : div}
+                  </option>
+                ))}
+              </select>
+              <span className="material-symbols-outlined text-[14px] text-outline absolute right-1.5 pointer-events-none">arrow_drop_down</span>
+            </div>
+
+            {/* Department Filter Dropdown (Cascaded) */}
+            <div className="relative flex items-center bg-surface-container-lowest border border-outline-variant/20 hover:border-primary/50 rounded-xl px-3 py-2 transition-all shadow-xs group">
+              <span className="material-symbols-outlined text-[16px] text-primary mr-1.5 group-hover:scale-110 transition-transform">domain</span>
+              <select
+                value={departmentFilter}
+                onChange={(e) => {
+                  setDepartmentFilter(e.target.value);
+                  setCurrentPage(1);
+                }}
+                className="bg-transparent text-on-surface outline-none cursor-pointer font-bold text-xs border-none focus:ring-0 pr-5 appearance-none"
+                title="Filter by Department"
+              >
+                {departmentsList.map(dept => (
+                  <option key={dept} value={dept} className="bg-surface-container-lowest text-on-surface">
+                    {dept === 'ALL' ? '🏢 All Departments' : dept}
+                  </option>
+                ))}
+              </select>
+              <span className="material-symbols-outlined text-[14px] text-outline absolute right-1.5 pointer-events-none">arrow_drop_down</span>
             </div>
 
             {/* Download Template */}
