@@ -52,6 +52,95 @@ export default function SalaryAllowanceConfig({ isMobile, onBack }) {
   const [showNotification, setShowNotification] = useState(true);
   const [saveSuccessToast, setSaveSuccessToast] = useState(false);
 
+  // Employee-wise Allowance Configuration State (Default PKR 1500)
+  const [showEmployeeAllowanceModal, setShowEmployeeAllowanceModal] = useState(false);
+  const [allowanceDivisionFilter, setAllowanceDivisionFilter] = useState('ALL');
+  const [allowanceDepartmentFilter, setAllowanceDepartmentFilter] = useState('ALL');
+  const [allowanceSearchQuery, setAllowanceSearchQuery] = useState('');
+  const [employeeAllowanceMap, setEmployeeAllowanceMap] = useState(() => {
+    try {
+      const saved = localStorage.getItem('hr_employee_allowance_map');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    const initial = {};
+    (state?.hr_employees_list || []).forEach(emp => {
+      const val = emp.allowance !== undefined && emp.allowance !== null && Number(emp.allowance) > 0 
+        ? Number(emp.allowance) 
+        : 1500;
+      initial[emp.id] = val;
+    });
+    return initial;
+  });
+
+  // Distinct divisions for allowance modal
+  const allowanceDivisionsList = React.useMemo(() => {
+    const set = new Set();
+    (state?.hr_employees_list || []).forEach(emp => {
+      const div = emp.division || emp.section;
+      if (div) set.add(div);
+    });
+    if (set.size === 0) ['AAA', 'AJ Synthetic', 'Operations'].forEach(d => set.add(d));
+    return ['ALL', ...Array.from(set).sort()];
+  }, [state?.hr_employees_list]);
+
+  // Cascaded departments for allowance modal
+  const allowanceDepartmentsList = React.useMemo(() => {
+    const set = new Set();
+    (state?.hr_employees_list || []).forEach(emp => {
+      const div = emp.division || emp.section;
+      if (allowanceDivisionFilter === 'ALL' || !allowanceDivisionFilter || div === allowanceDivisionFilter) {
+        if (emp.department) set.add(emp.department);
+      }
+    });
+    return ['ALL', ...Array.from(set).sort()];
+  }, [state?.hr_employees_list, allowanceDivisionFilter]);
+
+  // Filtered employees for allowance modal
+  const filteredAllowanceEmployees = React.useMemo(() => {
+    const query = allowanceSearchQuery.toLowerCase().trim();
+    return (state?.hr_employees_list || []).filter(emp => {
+      const div = emp.division || emp.section || '';
+      if (allowanceDivisionFilter !== 'ALL' && div !== allowanceDivisionFilter) return false;
+      if (allowanceDepartmentFilter !== 'ALL' && emp.department !== allowanceDepartmentFilter) return false;
+      if (query) {
+        const nameMatch = (emp.name || '').toLowerCase().includes(query);
+        const idMatch = (emp.id || '').toLowerCase().includes(query);
+        const roleMatch = (emp.designation || '').toLowerCase().includes(query);
+        if (!nameMatch && !idMatch && !roleMatch) return false;
+      }
+      return true;
+    });
+  }, [state?.hr_employees_list, allowanceDivisionFilter, allowanceDepartmentFilter, allowanceSearchQuery]);
+
+  const handleSetAllTo1500 = () => {
+    setEmployeeAllowanceMap(prev => {
+      const next = { ...prev };
+      filteredAllowanceEmployees.forEach(emp => {
+        next[emp.id] = 1500;
+      });
+      return next;
+    });
+  };
+
+  const handleSaveEmployeeAllowances = () => {
+    try {
+      localStorage.setItem('hr_employee_allowance_map', JSON.stringify(employeeAllowanceMap));
+      if (setCollection && state?.hr_employees_list) {
+        const updatedEmployees = state.hr_employees_list.map(emp => ({
+          ...emp,
+          allowance: employeeAllowanceMap[emp.id] !== undefined ? employeeAllowanceMap[emp.id] : 1500
+        }));
+        setCollection('hr_employees_list', updatedEmployees);
+      }
+      window.dispatchEvent(new CustomEvent('hr_employee_allowance_updated'));
+      setSaveSuccessToast(true);
+      setTimeout(() => setSaveSuccessToast(false), 3000);
+      setShowEmployeeAllowanceModal(false);
+    } catch (e) {
+      console.error("Error saving employee allowances:", e);
+    }
+  };
+
   // Sync to localStorage
   useEffect(() => {
     try {
