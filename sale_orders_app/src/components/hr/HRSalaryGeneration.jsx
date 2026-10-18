@@ -24,16 +24,12 @@ export default function HRSalaryGeneration({ isMobile }) {
   };
   const [payrollPeriod, setPayrollPeriod] = useState(getCurrentPeriodKey);
   
-  // Selected departments multi-select state
-  const [selectedDepartments, setSelectedDepartments] = useState(['ALL']);
+  // Selected division filter state
   const [selectedDivision, setSelectedDivision] = useState('ALL');
 
   const handleDivisionChange = (newDiv) => {
     setSelectedDivision(newDiv);
-    setSelectedDepartments(['ALL']);
   };
-  const [isDeptDropdownOpen, setIsDeptDropdownOpen] = useState(false);
-  const deptDropdownRef = useRef(null);
 
   // UI States
   const [isProcessing, setIsProcessing] = useState(false);
@@ -107,9 +103,7 @@ export default function HRSalaryGeneration({ isMobile }) {
   // Click outside listener for popovers
   useEffect(() => {
     const handleClickOutside = (e) => {
-      if (deptDropdownRef.current && !deptDropdownRef.current.contains(e.target)) {
-        setIsDeptDropdownOpen(false);
-      }
+
       if (columnPickerRef.current && !columnPickerRef.current.contains(e.target)) {
         setIsColumnPickerOpen(false);
       }
@@ -150,54 +144,112 @@ export default function HRSalaryGeneration({ isMobile }) {
     };
   }, [resizingColId, startX, startWidth]);
 
-  // Dynamic month periods list helper
-  const monthsList = React.useMemo(() => {
-    const list = [];
-    const date = new Date();
-    const curYear = date.getFullYear();
-    for (let y = curYear; y >= curYear - 1; y--) {
-      for (let m = 12; m >= 1; m--) {
-        const key = `${y}-${String(m).padStart(2, '0')}`;
-        const d = new Date(y, m - 1, 1);
-        const label = d.toLocaleString('en-US', { month: 'long', year: 'numeric' });
-        list.push({ key, label });
-      }
-    }
-    return list;
-  }, []);
+  // Collect all months that have attendance recorded
+  const monthsWithAttendance = React.useMemo(() => {
+    const monthSet = new Set();
+    const MONTH_REGEX = /^\d{4}-(0[1-9]|1[0-2])/;
 
-  const getPeriodLabel = (periodKey) => {
-    const found = monthsList.find(m => m.key === periodKey);
-    return found ? found.label : periodKey;
-  };
-
-  // Unique Departments List filtered strictly by selectedDivision
-  const availableDepartments = React.useMemo(() => {
-    const set = new Set();
-    (state.hr_employees_list || []).forEach(emp => {
-      const div = emp.division || emp.section;
-      if (selectedDivision === 'ALL' || !selectedDivision || div === selectedDivision) {
-        if (emp.department) set.add(emp.department);
+    // 1. Uploaded attendance logs
+    const uploaded = state.hr_uploaded_attendance || [];
+    uploaded.forEach(log => {
+      if (log && log.date && typeof log.date === 'string' && MONTH_REGEX.test(log.date)) {
+        monthSet.add(log.date.substring(0, 7));
       }
     });
-    if (set.size === 0 && (selectedDivision === 'ALL' || !selectedDivision)) {
-      (state.departments || []).forEach(d => {
-        const name = typeof d === 'string' ? d : (d.name || d.label || d.value);
-        if (name) set.add(name);
-      });
-      if (set.size === 0) {
-        ['Global Logistics', 'Supply Chain Finance', 'Quality Assurance', 'Strategic Operations', 'ADMIN', 'FINANCE', 'PRODUCTION', 'SALES', 'WAREHOUSE'].forEach(d => set.add(d));
-      }
-    }
-    return Array.from(set).sort();
-  }, [state.departments, state.hr_employees_list, selectedDivision]);
 
-  // Dynamic Divisions/Sections for Filter Dropdown
+    // 2. Embedded employee attendance logs
+    const emps = state.hr_employees_list || [];
+    emps.forEach(emp => {
+      if (emp && emp.attendance && typeof emp.attendance === 'object') {
+        Object.keys(emp.attendance).forEach(dayKey => {
+          if (typeof dayKey === 'string' && MONTH_REGEX.test(dayKey)) {
+            monthSet.add(dayKey.substring(0, 7));
+          }
+        });
+      }
+    });
+
+    // 3. LocalStorage fallback
+    try {
+      const cached = localStorage.getItem('hr_uploaded_attendance');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed)) {
+          parsed.forEach(log => {
+            if (log && log.date && typeof log.date === 'string' && MONTH_REGEX.test(log.date)) {
+              monthSet.add(log.date.substring(0, 7));
+            }
+          });
+        }
+      }
+    } catch (e) {}
+
+    return Array.from(monthSet);
+  }, [state.hr_uploaded_attendance, state.hr_employees_list]);
+
+  // Set of months where salary has already been generated
+  const generatedMonthsSet = React.useMemo(() => {
+    const set = new Set();
+    const list = state.hr_generated_salaries || [];
+    list.forEach(item => {
+      if (item && item.month && (item.status === 'Finalized' || (Array.isArray(item.records) && item.records.length > 0))) {
+        set.add(item.month);
+      }
+    });
+    return set;
+  }, [state.hr_generated_salaries]);
+
+  // Dropdown options: ONLY months with attendance AND NOT already generated
+  const monthsList = React.useMemo(() => {
+    const pendingMonths = monthsWithAttendance
+      .filter(m => !generatedMonthsSet.has(m))
+      .sort()
+      .reverse();
+
+    return pendingMonths.map(key => {
+      const [year, month] = key.split('-');
+      const d = new Date(parseInt(year, 10), parseInt(month, 10) - 1, 1);
+      const label = !isNaN(d.getTime()) 
+        ? d.toLocaleString('en-US', { month: 'long', year: 'numeric' })
+        : key;
+      return { key, label };
+    });
+  }, [monthsWithAttendance, generatedMonthsSet]);
+
+  const getPeriodLabel = (periodKey) => {
+    if (!periodKey) return 'No Period Selected';
+    const found = monthsList.find(m => m.key === periodKey);
+    if (found) return found.label;
+    const [year, month] = periodKey.split('-');
+    if (year && month) {
+      const d = new Date(parseInt(year, 10), parseInt(month, 10) - 1, 1);
+      if (!isNaN(d.getTime())) return d.toLocaleString('en-US', { month: 'long', year: 'numeric' });
+    }
+    return periodKey;
+  };
+
+  // Sync selected payroll period with available months
+  React.useEffect(() => {
+    if (monthsList.length > 0) {
+      if (!payrollPeriod || !monthsList.some(m => m.key === payrollPeriod)) {
+        setPayrollPeriod(monthsList[0].key);
+      }
+    } else {
+      setPayrollPeriod('');
+    }
+  }, [monthsList, payrollPeriod]);
+
+
+
+  // Dynamic Divisions for Filter Dropdown (Active Employees Only)
   const availableDivisions = React.useMemo(() => {
     const set = new Set();
     (state.hr_employees_list || []).forEach(emp => {
-      const div = emp.division || emp.section;
-      if (div) set.add(div);
+      const isAct = (emp.status || 'Active').toLowerCase() === 'active';
+      if (isAct) {
+        const div = emp.division || emp.section;
+        if (div) set.add(div);
+      }
     });
     if (set.size === 0) {
       ['AAA', 'AJ Synthetic', 'Operations'].forEach(d => set.add(d));
@@ -207,7 +259,7 @@ export default function HRSalaryGeneration({ isMobile }) {
 
     // Comprehensive Realtime Payroll Calculation from Attendance Management
   const computePayrollForPeriod = (period) => {
-    const allEmployees = state.hr_employees_list || [];
+    const allEmployees = (state.hr_employees_list || []).filter(emp => (emp.status || 'Active').toLowerCase() === 'active');
     const attendanceLogs = state.hr_uploaded_attendance || [];
     const overtimeRequests = state.hr_overtime_requests || [];
     const loanRequests = state.hr_loan_requests || [];
@@ -416,30 +468,7 @@ export default function HRSalaryGeneration({ isMobile }) {
     return () => window.removeEventListener('hr_employee_allowance_updated', handleAllowanceSync);
   }, [payrollPeriod, state.hr_employees_list]);
 
-  // Handle Multi-Department Checkbox Selection
-  const toggleDepartment = (deptName) => {
-    if (deptName === 'ALL') {
-      if (selectedDepartments.includes('ALL')) {
-        setSelectedDepartments([]);
-      } else {
-        setSelectedDepartments(['ALL']);
-      }
-      return;
-    }
 
-    setSelectedDepartments(prev => {
-      let next = prev.filter(d => d !== 'ALL');
-      if (next.includes(deptName)) {
-        next = next.filter(d => d !== deptName);
-      } else {
-        next.push(deptName);
-      }
-      if (next.length === availableDepartments.length || next.length === 0) {
-        return ['ALL'];
-      }
-      return next;
-    });
-  };
 
   // Dynamic REAL Data Salary Calculation Engine EXACTLY synced with Attendance Management
   const runCalculationEngine = () => {
@@ -452,11 +481,10 @@ export default function HRSalaryGeneration({ isMobile }) {
       const overtimeRequests = state.hr_overtime_requests || [];
       const loanRequests = state.hr_loan_requests || [];
 
-      // Filter employees by selected departments
+      // Filter employees: ACTIVE ONLY
       const filteredEmployees = allEmployees.filter(emp => {
-        if (selectedDepartments.includes('ALL')) return true;
-        const empDept = emp.department || 'Global Logistics';
-        return selectedDepartments.includes(empDept);
+        const isAct = (emp.status || 'Active').toLowerCase() === 'active';
+        return isAct;
       });
 
       const calculatedRecords = filteredEmployees.map(emp => {
@@ -683,7 +711,7 @@ export default function HRSalaryGeneration({ isMobile }) {
     }, 4000);
   };
 
-  // Filter list strictly by selectedDivision, selectedDepartments, and statusFilter
+  // Filter list strictly by selectedDivision and statusFilter
   const filteredList = React.useMemo(() => {
     return localPayrollList.filter(item => {
       // 1. Division filter
@@ -692,10 +720,7 @@ export default function HRSalaryGeneration({ isMobile }) {
         if (itemDiv !== selectedDivision) return false;
       }
 
-      // 2. Department filter
-      if (selectedDepartments && !selectedDepartments.includes('ALL') && selectedDepartments.length > 0) {
-        if (!selectedDepartments.includes(item.department)) return false;
-      }
+
 
       // 3. Status filter
       if (statusFilter === 'Calculated' && item.status !== 'Calculated') return false;
@@ -703,7 +728,7 @@ export default function HRSalaryGeneration({ isMobile }) {
 
       return true;
     });
-  }, [localPayrollList, selectedDivision, selectedDepartments, statusFilter]);
+  }, [localPayrollList, selectedDivision, statusFilter]);
 
   // Calculate Summary Totals for Header Cards strictly from filteredList
   const summaryTotals = React.useMemo(() => {
@@ -897,9 +922,13 @@ export default function HRSalaryGeneration({ isMobile }) {
                 onChange={(e) => setPayrollPeriod(e.target.value)}
                 className="w-full h-11 pl-4 pr-10 text-sm border border-outline-variant rounded-xl bg-surface-container-lowest hover:border-primary transition-colors focus:border-primary focus:ring-4 focus:ring-primary/10 appearance-none cursor-pointer font-medium text-on-surface"
               >
-                {monthsList.map(m => (
-                  <option key={m.key} value={m.key}>{m.label}</option>
-                ))}
+                {monthsList.length === 0 ? (
+                  <option value="" disabled>No pending attendance months available</option>
+                ) : (
+                  monthsList.map(m => (
+                    <option key={m.key} value={m.key}>{m.label}</option>
+                  ))
+                )}
               </select>
               <span className="material-symbols-outlined absolute right-3 top-3 pointer-events-none text-outline">calendar_month</span>
             </div>
@@ -922,56 +951,6 @@ export default function HRSalaryGeneration({ isMobile }) {
               </select>
               <span className="material-symbols-outlined absolute right-3 top-3 pointer-events-none text-outline">apartment</span>
             </div>
-          </div>
-
-          {/* Multi-Department Checkbox Dropdown */}
-          <div className="space-y-2 relative min-w-[240px]" ref={deptDropdownRef}>
-            <label className="text-xs font-bold text-on-surface-variant uppercase tracking-wider block">Department Filter</label>
-            
-            <button 
-              type="button"
-              onClick={() => setIsDeptDropdownOpen(prev => !prev)}
-              className="w-full h-11 px-4 text-sm border border-outline-variant rounded-xl bg-surface-container-lowest hover:border-primary transition-all flex items-center justify-between cursor-pointer font-medium text-on-surface shadow-xs active:scale-[0.99]"
-            >
-              <span className="truncate pr-2">
-                {selectedDepartments.includes('ALL') 
-                  ? 'All Departments' 
-                  : `${selectedDepartments.length} Dept${selectedDepartments.length > 1 ? 's' : ''} Selected`}
-              </span>
-              <span className="material-symbols-outlined text-outline">arrow_drop_down</span>
-            </button>
-
-            {/* Department Dropdown Popover */}
-            {isDeptDropdownOpen && (
-              <div className="absolute left-0 top-full mt-2 w-72 bg-surface-container-lowest border border-outline-variant/30 rounded-2xl shadow-2xl z-[150] p-4 space-y-3 animate-in fade-in zoom-in-95 duration-200">
-                <div className="flex items-center justify-between border-b border-outline-variant/10 pb-2">
-                  <span className="text-xs font-bold text-on-surface">Select Departments</span>
-                  <button 
-                    onClick={() => toggleDepartment('ALL')} 
-                    className="text-[11px] font-bold text-primary hover:underline cursor-pointer"
-                  >
-                    {selectedDepartments.includes('ALL') ? 'Deselect All' : 'Select All'}
-                  </button>
-                </div>
-
-                <div className="max-h-48 overflow-y-auto custom-scrollbar space-y-1.5 pr-1">
-                  {availableDepartments.map(dept => (
-                    <label 
-                      key={dept} 
-                      className="flex items-center gap-3 p-2 rounded-xl hover:bg-primary/5 cursor-pointer text-xs font-semibold text-on-surface transition-colors"
-                    >
-                      <input 
-                        type="checkbox"
-                        checked={selectedDepartments.includes('ALL') || selectedDepartments.includes(dept)}
-                        onChange={() => toggleDepartment(dept)}
-                        className="w-4 h-4 rounded text-primary focus:ring-primary border-outline-variant cursor-pointer"
-                      />
-                      <span className="truncate">{dept}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
         </div>
 

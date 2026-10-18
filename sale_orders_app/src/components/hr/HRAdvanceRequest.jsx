@@ -10,7 +10,7 @@ export default function HRAdvanceRequest({ isMobile }) {
   const currSym = currencySymbol || 'Rs.';
 
   // Employees list from global state
-  const employees = state.hr_employees_list || [];
+  const employees = React.useMemo(() => (state.hr_employees_list || []).filter(e => (e.status || 'Active').toLowerCase() === 'active'), [state.hr_employees_list]);
 
   // Current date & default deduction month (YYYY-MM)
   const getCurrentMonthISO = () => {

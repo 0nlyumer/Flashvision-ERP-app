@@ -100,6 +100,8 @@ export default function SalaryAllowanceConfig({ isMobile, onBack }) {
   const filteredAllowanceEmployees = React.useMemo(() => {
     const query = allowanceSearchQuery.toLowerCase().trim();
     return (state?.hr_employees_list || []).filter(emp => {
+      const isAct = (emp.status || 'Active').toLowerCase() === 'active';
+      if (!isAct) return false;
       const div = emp.division || emp.section || '';
       if (allowanceDivisionFilter !== 'ALL' && div !== allowanceDivisionFilter) return false;
       if (allowanceDepartmentFilter !== 'ALL' && emp.department !== allowanceDepartmentFilter) return false;

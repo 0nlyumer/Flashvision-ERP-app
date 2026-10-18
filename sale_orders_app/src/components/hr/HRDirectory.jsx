@@ -31,6 +31,9 @@ export default function HRDirectory({ isMobile }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [departmentFilter, setDepartmentFilter] = useState('ALL');
   const [divisionFilter, setDivisionFilter] = useState('ALL');
+  const [statusFilter, setStatusFilter] = useState('ALL'); // 'ALL' | 'Active' | 'Inactive'
+  const [isBulkMenuOpen, setIsBulkMenuOpen] = useState(false);
+  const bulkMenuRef = useRef(null);
   
   useEffect(() => {
     setCurrentPage(1);
@@ -108,6 +111,17 @@ export default function HRDirectory({ isMobile }) {
   const [currentPage, setCurrentPage] = useState(1);
   const dropdownRef = useRef(null);
 
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (bulkMenuRef.current && !bulkMenuRef.current.contains(e.target)) {
+        setIsBulkMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   // Bulk Upload / Template States & Refs
   const fileInputRef = useRef(null);
   const [uploadErrors, setUploadErrors] = useState([]);
@@ -181,7 +195,9 @@ export default function HRDirectory({ isMobile }) {
     );
     const matchesDept = departmentFilter === 'ALL' || !departmentFilter || emp.department === departmentFilter;
     const matchesDiv = divisionFilter === 'ALL' || !divisionFilter || (emp.division === divisionFilter || emp.section === divisionFilter);
-    return matchesSearch && matchesDept && matchesDiv;
+    const isAct = (emp.status || 'Active').toLowerCase() === 'active';
+    const matchesStatus = statusFilter === 'ALL' || (statusFilter === 'Active' ? isAct : !isAct);
+    return matchesSearch && matchesDept && matchesDiv && matchesStatus;
   });
 
   // Padded consecutive sequential ID Generator
@@ -695,23 +711,92 @@ export default function HRDirectory({ isMobile }) {
               <span className="material-symbols-outlined text-[14px] text-outline absolute right-1.5 pointer-events-none">arrow_drop_down</span>
             </div>
 
-            {/* Download Template */}
-            <button 
-              onClick={downloadCSVTemplate}
-              className="border border-outline-variant/30 text-on-surface hover:bg-surface-container font-headline font-bold text-xs py-2.5 px-4 rounded-xl transition-all active:scale-[0.97] flex items-center gap-1.5 cursor-pointer"
-            >
-              <span className="material-symbols-outlined text-[16px]">download</span>
-              Download Template
-            </button>
+            {/* Status Filter Keys (All / Active / Inactive) */}
+            <div className="flex items-center bg-surface-container-low p-1 rounded-xl border border-outline-variant/20 shadow-xs">
+              <button
+                type="button"
+                onClick={() => { setStatusFilter('ALL'); setCurrentPage(1); }}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  statusFilter === 'ALL'
+                    ? 'bg-primary text-on-primary shadow-xs'
+                    : 'text-on-surface-variant hover:text-on-surface'
+                }`}
+              >
+                All ({employees.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => { setStatusFilter('Active'); setCurrentPage(1); }}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  statusFilter === 'Active'
+                    ? 'bg-emerald-600 text-white shadow-xs'
+                    : 'text-emerald-700 hover:text-emerald-800'
+                }`}
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                Active ({employees.filter(e => (e.status || 'Active').toLowerCase() === 'active').length})
+              </button>
+              <button
+                type="button"
+                onClick={() => { setStatusFilter('Inactive'); setCurrentPage(1); }}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  statusFilter === 'Inactive'
+                    ? 'bg-rose-600 text-white shadow-xs'
+                    : 'text-rose-600 hover:text-rose-700'
+                }`}
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-rose-400"></span>
+                Inactive ({employees.filter(e => (e.status || '').toLowerCase() === 'inactive').length})
+              </button>
+            </div>
 
-            {/* Bulk Upload */}
-            <button 
-              onClick={() => fileInputRef.current?.click()}
-              className="bg-secondary text-on-secondary font-headline font-bold text-xs py-2.5 px-4 rounded-xl shadow-[0_8px_16px_rgba(0,0,0,0.05)] hover:bg-secondary/90 transition-all active:scale-[0.97] flex items-center gap-1.5 cursor-pointer"
-            >
-              <span className="material-symbols-outlined text-[16px]">upload_file</span>
-              Bulk Upload
-            </button>
+            {/* Merged Bulk Actions Button (Upload & Template) */}
+            <div className="relative" ref={bulkMenuRef}>
+              <button 
+                type="button"
+                onClick={() => setIsBulkMenuOpen(prev => !prev)}
+                className="bg-secondary text-on-secondary font-headline font-bold text-xs py-2.5 px-4 rounded-xl shadow-xs hover:bg-secondary/90 transition-all active:scale-[0.97] flex items-center gap-1.5 cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-[16px]">cloud_sync</span>
+                Bulk Actions
+                <span className="material-symbols-outlined text-[16px]">
+                  {isBulkMenuOpen ? 'arrow_drop_up' : 'arrow_drop_down'}
+                </span>
+              </button>
+
+              {isBulkMenuOpen && (
+                <div className="absolute right-0 mt-2 w-52 bg-surface-container-lowest border border-outline-variant/20 rounded-2xl shadow-xl z-50 p-1.5 animate-scale-up text-on-surface">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsBulkMenuOpen(false);
+                      fileInputRef.current?.click();
+                    }}
+                    className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl hover:bg-surface-container-high text-xs font-bold text-on-surface transition-colors cursor-pointer text-left"
+                  >
+                    <span className="material-symbols-outlined text-[18px] text-primary">upload_file</span>
+                    <div>
+                      <p className="font-bold">Upload CSV / Excel</p>
+                      <p className="text-[10px] text-on-surface-variant font-normal">Import multiple employees</p>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsBulkMenuOpen(false);
+                      downloadCSVTemplate();
+                    }}
+                    className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl hover:bg-surface-container-high text-xs font-bold text-on-surface transition-colors cursor-pointer text-left border-t border-outline-variant/10"
+                  >
+                    <span className="material-symbols-outlined text-[18px] text-emerald-600">download</span>
+                    <div>
+                      <p className="font-bold">Download Template</p>
+                      <p className="text-[10px] text-on-surface-variant font-normal">Sample CSV structure</p>
+                    </div>
+                  </button>
+                </div>
+              )}
+            </div>
 
             {/* Custom CTA Add Employee */}
             <button 

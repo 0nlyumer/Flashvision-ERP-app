@@ -276,7 +276,7 @@ export default function HRDashboard({ isMobile, onNavigateTab }) {
         tempDate.setDate(monday.getDate() + idx);
         const dateStr = tempDate.toISOString().split('T')[0];
         
-        const activeOnDay = employees.filter(e => !e.joiningDate || e.joiningDate <= dateStr);
+        const activeOnDay = employees.filter(e => (!e.joiningDate || e.joiningDate <= dateStr) && (e.status || 'Active').toLowerCase() === 'active');
         const presentOnDay = activeOnDay.filter(e => {
           const status = getEmployeeStatusOnDate(e, dateStr);
           return status === 'present' || status === 'late';
@@ -315,7 +315,7 @@ export default function HRDashboard({ isMobile, onNavigateTab }) {
           if (tempDate.getDay() === 0 || tempDate.getDay() === 6) continue;
           
           const dateStr = tempDate.toISOString().split('T')[0];
-          const activeOnDay = employees.filter(e => !e.joiningDate || e.joiningDate <= dateStr);
+          const activeOnDay = employees.filter(e => (!e.joiningDate || e.joiningDate <= dateStr) && (e.status || 'Active').toLowerCase() === 'active');
           const presentOnDay = activeOnDay.filter(e => {
             const status = getEmployeeStatusOnDate(e, dateStr);
             return status === 'present' || status === 'late';
@@ -360,7 +360,7 @@ export default function HRDashboard({ isMobile, onNavigateTab }) {
       const tempDate = new Date(year, month, d);
       const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
       
-      const activeOnDay = employees.filter(e => !e.joiningDate || e.joiningDate <= dateStr);
+      const activeOnDay = employees.filter(e => (!e.joiningDate || e.joiningDate <= dateStr) && (e.status || 'Active').toLowerCase() === 'active');
       const presentOnDay = activeOnDay.filter(e => {
         const status = getEmployeeStatusOnDate(e, dateStr);
         return status === 'present' || status === 'late';

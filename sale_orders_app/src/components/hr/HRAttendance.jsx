@@ -216,7 +216,7 @@ export default function HRAttendance({ isMobile }) {
     deductions: activeConditions.deductions && canFilterDeductions
   }), [activeConditions, canFilterAttendance, canFilterOvertime, canFilterFines, canFilterDeductions]);
 
-  const employees = appState?.hr_employees_list || [];
+  const employees = React.useMemo(() => (appState?.hr_employees_list || []).filter(e => (e.status || 'Active').toLowerCase() === 'active'), [appState?.hr_employees_list]);
   const uploadedAttendance = appState?.hr_uploaded_attendance || [];
 
   const [localEmployees, setLocalEmployees] = useState(() => {

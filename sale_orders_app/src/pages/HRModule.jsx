@@ -11,6 +11,7 @@ import HRLoanRequest from '../components/hr/HRLoanRequest';
 import HRLoanLedger from '../components/hr/HRLoanLedger';
 import HRAdvanceRequest from '../components/hr/HRAdvanceRequest';
 import HRSalaryGeneration from '../components/hr/HRSalaryGeneration';
+import HRPayslip from '../components/hr/HRPayslip';
 import { useSearchParams } from 'react-router-dom';
 import { useDialog } from '../context/DialogContext';
 import { useApp } from '../context/AppContext';
@@ -32,6 +33,7 @@ export default function HRModule() {
     { id: 'loanLedger', screenId: 'hrLoanLedger', label: 'Loan Ledger', icon: 'menu_book' },
     { id: 'advance', screenId: 'hrAdvance', label: 'Advance Request', icon: 'account_balance' },
     { id: 'salary', screenId: 'hrSalary', label: 'Salary Generation', icon: 'account_balance_wallet' },
+    { id: 'payslip', screenId: 'hrPayslip', label: 'Payslip', icon: 'receipt_long' },
     { id: 'settings', screenId: 'hrSettings', label: 'HR Settings', icon: 'settings' }
   ], []);
 
@@ -87,6 +89,7 @@ export default function HRModule() {
         {activeTab === 'loanLedger' && <HRLoanLedger isMobile={isMobile} />}
         {activeTab === 'advance' && <HRAdvanceRequest isMobile={isMobile} />}
         {activeTab === 'salary' && <HRSalaryGeneration isMobile={isMobile} />}
+        {activeTab === 'payslip' && <HRPayslip isMobile={isMobile} />}
         {activeTab === 'settings' && <HRSettings isMobile={isMobile} />}
       </div>
     </Layout>

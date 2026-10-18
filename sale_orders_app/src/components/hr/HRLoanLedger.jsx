@@ -87,7 +87,7 @@ export default function HRLoanLedger({ isMobile }) {
   // Distinct Departments & Divisions for Loan Ledger Filtering
   const departmentsList = React.useMemo(() => {
     const set = new Set();
-    (state.hr_employees_list || []).forEach(emp => {
+    (state.hr_employees_list || []).filter(e => (e.status || 'Active').toLowerCase() === 'active').forEach(emp => {
       if (emp.department) set.add(emp.department);
     });
     return ['ALL', ...Array.from(set).sort()];
