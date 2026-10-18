@@ -1,5 +1,5 @@
 import React, { useState, useEffect, lazy, Suspense } from 'react';
-import { createBrowserRouter, RouterProvider, Navigate, useLocation, Outlet } from 'react-router-dom';
+import { createBrowserRouter, RouterProvider, Navigate, useLocation, useRouteError, Outlet } from 'react-router-dom';
 import GlobalNavGuard from './components/GlobalNavGuard';
 import { useApp } from './context/AppContext';
 import CallingOverlay from './components/CallingOverlay';
@@ -227,16 +227,26 @@ const IndexRedirect = () => {
 
 function RouteErrorBoundary() {
   const location = useLocation();
+  const error = useRouteError();
+  console.error('RouteErrorBoundary captured error:', error);
+
   return (
     <div className="min-h-screen bg-[#090d16] text-white flex flex-col items-center justify-center p-6 text-center font-sans">
       <div className="bg-[#121927] border border-slate-800 rounded-3xl p-8 max-w-lg shadow-2xl space-y-4 animate-fade-in">
-        <div className="w-14 h-14 rounded-2xl bg-cyan-500/10 text-cyan-400 mx-auto flex items-center justify-center">
-          <span className="material-symbols-outlined text-3xl">cloud_sync</span>
+        <div className="w-14 h-14 rounded-2xl bg-amber-500/10 text-amber-400 mx-auto flex items-center justify-center">
+          <span className="material-symbols-outlined text-3xl">warning</span>
         </div>
         <h2 className="text-xl font-black text-white tracking-tight">Flashvision ERP</h2>
         <p className="text-xs text-slate-400 leading-relaxed">
-          Application cache was refreshed. Click below to load the latest verified update.
+          An unexpected error occurred while loading this view.
         </p>
+        {error && (
+          <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-3 text-left max-h-36 overflow-y-auto">
+            <p className="text-[11px] font-mono text-rose-400 font-semibold break-all">
+              {error?.message || error?.statusText || String(error)}
+            </p>
+          </div>
+        )}
         <div className="flex justify-center gap-3 pt-3">
           <button
             onClick={() => {

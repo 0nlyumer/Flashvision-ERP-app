@@ -180,6 +180,239 @@ export default function HRSettings({ isMobile }) {
   });
 
 
+
+  // ==========================================
+  // DIVISIONS STATE & HANDLERS
+  // ==========================================
+  const [divisions, setDivisions] = useState(() => {
+    try {
+      const saved = localStorage.getItem('hr_divisions_config');
+      if (saved) return JSON.parse(saved);
+      return [
+        { id: 1, name: 'AJ Synthetic', code: 'AJS', description: 'AJ Synthetic Core Division', head: '' },
+        { id: 2, name: 'AAA', code: 'AAA', description: 'AAA Operations Wing', head: '' }
+      ];
+    } catch (e) {
+      return [
+        { id: 1, name: 'AJ Synthetic', code: 'AJS', description: 'AJ Synthetic Core Division', head: '' },
+        { id: 2, name: 'AAA', code: 'AAA', description: 'AAA Operations Wing', head: '' }
+      ];
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('hr_divisions_config', JSON.stringify(divisions));
+    } catch (e) {}
+  }, [divisions]);
+
+  const [showDivisionModal, setShowDivisionModal] = useState(false);
+  const [divisionModalMode, setDivisionModalMode] = useState('add');
+  const [activeDivision, setActiveDivision] = useState({
+    id: null,
+    name: '',
+    code: '',
+    description: '',
+    head: ''
+  });
+
+  const handleOpenAddDivision = () => {
+    setDivisionModalMode('add');
+    setActiveDivision({
+      id: null,
+      name: '',
+      code: '',
+      description: '',
+      head: ''
+    });
+    setShowDivisionModal(true);
+  };
+
+  const handleOpenEditDivision = (div) => {
+    setDivisionModalMode('edit');
+    setActiveDivision({
+      id: div.id,
+      name: div.name,
+      code: div.code || '',
+      description: div.description || '',
+      head: div.head || ''
+    });
+    setShowDivisionModal(true);
+  };
+
+  const handleDeleteDivision = (id) => {
+    if (confirm('Are you sure you want to delete this division?')) {
+      setDivisions(prev => prev.filter(d => d.id !== id));
+    }
+  };
+
+  const handleSaveDivisionSubmit = (e) => {
+    if (e) e.preventDefault();
+    if (!activeDivision.name) {
+      alert('Division name is required.');
+      return;
+    }
+
+    if (divisionModalMode === 'add') {
+      const newId = divisions.length ? Math.max(...divisions.map(d => Number(d.id) || 0)) + 1 : 1;
+      const newDiv = {
+        id: newId,
+        name: activeDivision.name.trim(),
+        code: activeDivision.code ? activeDivision.code.trim().toUpperCase() : activeDivision.name.slice(0, 3).toUpperCase(),
+        description: activeDivision.description.trim(),
+        head: activeDivision.head || ''
+      };
+      setDivisions(prev => [...prev, newDiv]);
+    } else {
+      setDivisions(prev => prev.map(d => d.id === activeDivision.id ? {
+        ...d,
+        name: activeDivision.name.trim(),
+        code: activeDivision.code ? activeDivision.code.trim().toUpperCase() : d.code,
+        description: activeDivision.description.trim(),
+        head: activeDivision.head || ''
+      } : d));
+    }
+
+    setShowDivisionModal(false);
+  };
+
+  // ==========================================
+  // DUTY SETTINGS & SHIFTS STATE & HANDLERS
+  // ==========================================
+  const [dutySettings, setDutySettings] = useState(() => {
+    try {
+      const saved = localStorage.getItem('hr_duty_settings');
+      if (saved) return JSON.parse(saved);
+      return {
+        standardHours: 8,
+        gracePeriodMinutes: 15,
+        halfDayThresholdHours: 4,
+        dutyHoursAdjustable: true,
+        shifts: [
+          { id: 1, name: 'GENERAL SHIFT', startTime: '09:00', endTime: '17:00', hours: 8, status: 'Active' },
+          { id: 2, name: 'MORNING SHIFT', startTime: '06:00', endTime: '14:00', hours: 8, status: 'Active' },
+          { id: 3, name: 'EVENING SHIFT', startTime: '14:00', endTime: '22:00', hours: 8, status: 'Active' },
+          { id: 4, name: 'NIGHT SHIFT', startTime: '22:00', endTime: '06:00', hours: 8, status: 'Active' }
+        ]
+      };
+    } catch (e) {
+      return {
+        standardHours: 8,
+        gracePeriodMinutes: 15,
+        halfDayThresholdHours: 4,
+        dutyHoursAdjustable: true,
+        shifts: [
+          { id: 1, name: 'GENERAL SHIFT', startTime: '09:00', endTime: '17:00', hours: 8, status: 'Active' },
+          { id: 2, name: 'MORNING SHIFT', startTime: '06:00', endTime: '14:00', hours: 8, status: 'Active' },
+          { id: 3, name: 'EVENING SHIFT', startTime: '14:00', endTime: '22:00', hours: 8, status: 'Active' },
+          { id: 4, name: 'NIGHT SHIFT', startTime: '22:00', endTime: '06:00', hours: 8, status: 'Active' }
+        ]
+      };
+    }
+  });
+
+  const saveDutySettings = (updated) => {
+    setDutySettings(updated);
+    try {
+      localStorage.setItem('hr_duty_settings', JSON.stringify(updated));
+    } catch (e) {}
+  };
+
+  const handleSyncStandardHoursToAllEmployees = () => {
+    const hrs = dutySettings.standardHours || 8;
+    if (confirm(`Do you want to update standard duty hours to ${hrs}h for all active employees?`)) {
+      const updatedList = (state?.hr_employees_list || []).map(emp => ({
+        ...emp,
+        dutyHours: hrs,
+        dailyHours: hrs
+      }));
+      if (setCollection) {
+        setCollection('hr_employees_list', updatedList);
+      }
+      alert(`Updated ${updatedList.length} employees with ${hrs} standard duty hours.`);
+    }
+  };
+
+  const [showShiftModal, setShowShiftModal] = useState(false);
+  const [shiftModalMode, setShiftModalMode] = useState('add');
+  const [activeShift, setActiveShift] = useState({
+    id: null,
+    name: '',
+    startTime: '09:00',
+    endTime: '17:00',
+    hours: 8,
+    status: 'Active'
+  });
+
+  const handleOpenAddShift = () => {
+    setShiftModalMode('add');
+    setActiveShift({
+      id: null,
+      name: '',
+      startTime: '09:00',
+      endTime: '17:00',
+      hours: 8,
+      status: 'Active'
+    });
+    setShowShiftModal(true);
+  };
+
+  const handleOpenEditShift = (shift) => {
+    setShiftModalMode('edit');
+    setActiveShift({
+      id: shift.id,
+      name: shift.name,
+      startTime: shift.startTime || '09:00',
+      endTime: shift.endTime || '17:00',
+      hours: shift.hours || 8,
+      status: shift.status || 'Active'
+    });
+    setShowShiftModal(true);
+  };
+
+  const handleDeleteShift = (id) => {
+    if (confirm('Are you sure you want to delete this shift?')) {
+      const updatedShifts = (dutySettings.shifts || []).filter(s => s.id !== id);
+      saveDutySettings({ ...dutySettings, shifts: updatedShifts });
+    }
+  };
+
+  const handleSaveShiftSubmit = (e) => {
+    if (e) e.preventDefault();
+    if (!activeShift.name) {
+      alert('Shift name is required.');
+      return;
+    }
+
+    const currentShifts = dutySettings.shifts || [];
+    let updatedShifts;
+
+    if (shiftModalMode === 'add') {
+      const newId = currentShifts.length ? Math.max(...currentShifts.map(s => Number(s.id) || 0)) + 1 : 1;
+      const newShift = {
+        id: newId,
+        name: activeShift.name.trim().toUpperCase(),
+        startTime: activeShift.startTime,
+        endTime: activeShift.endTime,
+        hours: Number(activeShift.hours) || 8,
+        status: activeShift.status || 'Active'
+      };
+      updatedShifts = [...currentShifts, newShift];
+    } else {
+      updatedShifts = currentShifts.map(s => s.id === activeShift.id ? {
+        ...s,
+        name: activeShift.name.trim().toUpperCase(),
+        startTime: activeShift.startTime,
+        endTime: activeShift.endTime,
+        hours: Number(activeShift.hours) || 8,
+        status: activeShift.status || 'Active'
+      } : s);
+    }
+
+    saveDutySettings({ ...dutySettings, shifts: updatedShifts });
+    setShowShiftModal(false);
+  };
+
   // Category list
   const categories = [
     { id: 'departments', label: 'Departments', icon: 'domain' },
