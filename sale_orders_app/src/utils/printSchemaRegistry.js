@@ -693,117 +693,138 @@ export const DEFAULT_DOCUMENT_SCHEMAS = {
  * Map document type to real collection in AppContext state
  */
 export function getSampleRecordFromState(docType, state) {
-  if (!state) return null;
-  const map = {
-    sale_order: state.saleOrders?.[0] ? {
-      ...state.saleOrders[0],
-      customer: state.customers?.find(c => c.id === state.saleOrders[0].customerId)?.name || state.saleOrders[0].customerName || 'Customer',
-      contact: state.customers?.find(c => c.id === state.saleOrders[0].customerId)?.contactPerson || 'N/A',
-      shipping_address: state.saleOrders[0].shippingAddress || 'Factory Gate, Industrial Estate'
-    } : null,
-    planning_history: state.productionPlans?.[0],
-    bom_master: state.boms?.[0],
-    batch_closing_history: state.productionOutputs?.[0],
-    delivery_challan: state.deliveries?.[0] ? {
-      ...state.deliveries[0],
-      customer: state.deliveries[0].customerName || 'Consignee Party',
-      contact: state.deliveries[0].consignee?.contactNumber || 'N/A',
-      shipping_address: state.deliveries[0].consignee?.address || 'Site Delivery',
-      items: state.deliveries[0].items || []
-    } : null,
-    inventory_ledger: state.items?.[0] ? {
-      id: 'INV-LEDGER-01',
-      date: new Date().toISOString(),
-      department: state.items[0].department || 'Raw Material Department',
-      items: (state.items || []).slice(0, 15).map((it, idx) => ({
-        serial_no: idx + 1,
-        item_code: it.itemCode || it.sku || `ITEM-${idx + 1}`,
-        item_name: it.name || it.description || 'Inventory Item',
-        category: it.category || 'General',
-        department: it.department || 'Warehouse',
-        stock_level: it.stockLevel || it.quantity || 0,
-        rolls: it.rolls || '-',
-        uom: it.uom || 'Meters'
-      }))
-    } : null,
-    inventory_adjustment: (state.inventoryAdjustments || state.adjustments)?.[0],
-    inventory_return: state.returns?.[0],
-    purchase_demand: state.purchaseDemands?.[0],
-    purchase_order: state.purchaseOrders?.[0],
-    inward_gate_pass: state.gatePassActivities?.[0],
-    grn_note: state.approvals?.find(a => a.type === 'GRN Log') || state.stockReceiving?.[0],
-    sale_invoice: state.salesInvoices?.[0],
-    purchase_invoice: state.purchaseInvoices?.[0],
-    voucher_receipt: state.paymentVouchers?.[0],
-    voucher_payment: state.paymentVouchers?.[0],
-    voucher_journal: state.paymentVouchers?.[0],
-    hr_payslip: state.hr_generated_salaries?.[0],
-    hr_overtime_request: state.hr_overtime_requests?.[0],
-    hr_leave_request: state.hr_leave_requests?.[0],
-    hr_loan_request: state.hr_loan_requests?.[0]
-  };
-  return map[docType] || null;
+  if (!state || typeof state !== 'object') return null;
+  try {
+    const map = {
+      sale_order: (state.saleOrders && state.saleOrders[0]) ? {
+        ...state.saleOrders[0],
+        customer: state.customers?.find(c => c && c.id === state.saleOrders[0].customerId)?.name || state.saleOrders[0].customerName || 'Customer',
+        contact: state.customers?.find(c => c && c.id === state.saleOrders[0].customerId)?.contactPerson || 'N/A',
+        shipping_address: state.saleOrders[0].shippingAddress || 'Factory Gate, Industrial Estate'
+      } : null,
+      planning_history: state.productionPlans?.[0] || null,
+      bom_master: state.boms?.[0] || null,
+      batch_closing_history: state.productionOutputs?.[0] || null,
+      delivery_challan: (state.deliveries && state.deliveries[0]) ? {
+        ...state.deliveries[0],
+        customer: state.deliveries[0].customerName || 'Consignee Party',
+        contact: state.deliveries[0].consignee?.contactNumber || 'N/A',
+        shipping_address: state.deliveries[0].consignee?.deliveryAddress || state.deliveries[0].consignee?.address || 'Site Delivery',
+        items: Array.isArray(state.deliveries[0].items) ? state.deliveries[0].items : []
+      } : null,
+      inventory_ledger: (state.items && state.items[0]) ? {
+        id: 'INV-LEDGER-01',
+        date: new Date().toISOString(),
+        department: state.items[0].department || 'Raw Material Department',
+        items: (state.items || []).slice(0, 15).map((it, idx) => ({
+          serial_no: idx + 1,
+          item_code: it?.itemCode || it?.sku || `ITEM-${idx + 1}`,
+          item_name: it?.name || it?.description || 'Inventory Item',
+          category: it?.category || 'General',
+          department: it?.department || 'Warehouse',
+          stock_level: it?.stockLevel || it?.quantity || 0,
+          rolls: it?.rolls || '-',
+          uom: it?.uom || 'Meters'
+        }))
+      } : null,
+      inventory_adjustment: (state.inventoryAdjustments || state.adjustments)?.[0] || null,
+      inventory_return: state.returns?.[0] || null,
+      purchase_demand: state.purchaseDemands?.[0] || null,
+      purchase_order: state.purchaseOrders?.[0] || null,
+      inward_gate_pass: state.gatePassActivities?.[0] || null,
+      grn_note: state.approvals?.find(a => a && a.type === 'GRN Log') || state.stockReceiving?.[0] || null,
+      sale_invoice: state.salesInvoices?.[0] || null,
+      purchase_invoice: state.purchaseInvoices?.[0] || null,
+      voucher_receipt: state.paymentVouchers?.[0] || null,
+      voucher_payment: state.paymentVouchers?.[0] || null,
+      voucher_journal: state.paymentVouchers?.[0] || null,
+      hr_payslip: state.hr_generated_salaries?.[0] || null,
+      hr_overtime_request: state.hr_overtime_requests?.[0] || null,
+      hr_leave_request: state.hr_leave_requests?.[0] || null,
+      hr_loan_request: state.hr_loan_requests?.[0] || null
+    };
+    return map[docType] || null;
+  } catch (e) {
+    console.warn('Error in getSampleRecordFromState:', e);
+    return null;
+  }
 }
 
 export function discoverDocumentSchema(docType, sampleRecord = null, existingLayout = null, state = null) {
   const baseSchema = existingLayout || DEFAULT_DOCUMENT_SCHEMAS[docType] || DEFAULT_LAYOUT_SETTINGS;
   let record = sampleRecord;
   if ((!record || typeof record !== 'object') && state) {
-    record = getSampleRecordFromState(docType, state);
+    try {
+      record = getSampleRecordFromState(docType, state);
+    } catch (e) {
+      record = null;
+    }
   }
   if (!record || typeof record !== 'object') {
-    record = getMockPreviewData(docType);
+    try {
+      record = getMockPreviewData(docType);
+    } catch (e) {
+      record = null;
+    }
   }
-  if (!record || typeof record !== 'object') {
-    return baseSchema;
+  if (!record || typeof record !== 'object' || record === null) {
+    return baseSchema || DEFAULT_LAYOUT_SETTINGS;
   }
 
-  const discoveredHeaderFields = [...(baseSchema.headerFields || [])];
-  const discoveredColumns = [...(baseSchema.gridColumns || [])];
+  const discoveredHeaderFields = [...((baseSchema && baseSchema.headerFields) || [])];
+  const discoveredColumns = [...((baseSchema && baseSchema.gridColumns) || [])];
 
   // Inspect resolved record keys for new header fields
-  if (record && typeof record === 'object') {
-    Object.keys(record).forEach((key) => {
-      if (key === 'items' || key === 'lineItems' || key === 'rows' || Array.isArray(record[key])) {
-        return; // line items array handled separately below
-      }
+  if (record && typeof record === 'object' && record !== null && !Array.isArray(record)) {
+    try {
+      Object.keys(record).forEach((key) => {
+        if (!key || key === 'items' || key === 'lineItems' || key === 'rows' || Array.isArray(record[key])) {
+          return; // line items array handled separately below
+        }
 
-      const exists = discoveredHeaderFields.some((f) => f.key === key);
-      if (!exists && typeof record[key] !== 'object' && record[key] !== null && record[key] !== undefined) {
-        const formattedLabel = key.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
-        discoveredHeaderFields.push({
-          key,
-          label: formattedLabel,
-          enabled: true,
-          width: 'span-1'
-        });
-      }
-    });
+        const exists = discoveredHeaderFields.some((f) => f && f.key === key);
+        if (!exists && typeof record[key] !== 'object' && record[key] !== null && record[key] !== undefined) {
+          const formattedLabel = String(key).replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
+          discoveredHeaderFields.push({
+            key,
+            label: formattedLabel,
+            enabled: true,
+            width: 'span-1'
+          });
+        }
+      });
+    } catch (e) {
+      console.warn('Error reading record keys in discoverDocumentSchema:', e);
+    }
 
     // Inspect line items array for new table columns
-    const lineItems = record.items || record.lineItems || record.rows || [];
-    if (Array.isArray(lineItems) && lineItems.length > 0) {
-      const itemSample = lineItems[0];
-      if (itemSample && typeof itemSample === 'object') {
-        Object.keys(itemSample).forEach((colKey) => {
-          const colExists = discoveredColumns.some((c) => c.key === colKey);
-          if (!colExists && typeof itemSample[colKey] !== 'object') {
-            const formattedLabel = colKey.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
-            discoveredColumns.push({
-              key: colKey,
-              label: formattedLabel,
-              enabled: true,
-              width: '12%',
-              align: typeof itemSample[colKey] === 'number' ? 'right' : 'left'
-            });
-          }
-        });
+    try {
+      const lineItems = record.items || record.lineItems || record.rows || [];
+      if (Array.isArray(lineItems) && lineItems.length > 0) {
+        const itemSample = lineItems[0];
+        if (itemSample && typeof itemSample === 'object' && itemSample !== null && !Array.isArray(itemSample)) {
+          Object.keys(itemSample).forEach((colKey) => {
+            const colExists = discoveredColumns.some((c) => c && c.key === colKey);
+            if (!colExists && typeof itemSample[colKey] !== 'object' && itemSample[colKey] !== null && itemSample[colKey] !== undefined) {
+              const formattedLabel = String(colKey).replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
+              discoveredColumns.push({
+                key: colKey,
+                label: formattedLabel,
+                enabled: true,
+                width: '12%',
+                align: typeof itemSample[colKey] === 'number' ? 'right' : 'left'
+              });
+            }
+          });
+        }
       }
+    } catch (e) {
+      console.warn('Error reading itemSample keys in discoverDocumentSchema:', e);
     }
   }
 
   return {
-    ...baseSchema,
+    ...(baseSchema || DEFAULT_LAYOUT_SETTINGS),
     headerFields: discoveredHeaderFields,
     gridColumns: discoveredColumns
   };

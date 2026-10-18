@@ -72,6 +72,34 @@ export default function PrintSettings() {
   const [showPrintPreview, setShowPrintPreview] = useState(false);
   const [showStudioModal, setShowStudioModal] = useState(false);
 
+
+  const handleResetToDefaultLayout = () => {
+    if (confirm(`Reset layout for ${currentDocMeta?.name || selectedDocId} to default factory template?`)) {
+      const defaultSchema = DEFAULT_DOCUMENT_SCHEMAS[selectedDocId] || DEFAULT_LAYOUT_SETTINGS;
+      setDocumentLayouts(prev => ({
+        ...prev,
+        [selectedDocId]: defaultSchema
+      }));
+      if (setCollection) {
+        const currentPrintSettings = state?.adminSetup?.printSettings || {};
+        const updatedDocLayouts = {
+          ...(currentPrintSettings.documentLayouts || {}),
+          [selectedDocId]: defaultSchema
+        };
+        setCollection('adminSetup', {
+          ...(state?.adminSetup || {}),
+          printSettings: {
+            ...currentPrintSettings,
+            documentLayouts: updatedDocLayouts
+          }
+        });
+      }
+      try {
+        localStorage.removeItem(`fv_print_layout_${selectedDocId}`);
+      } catch (e) {}
+    }
+  };
+
   // Local state for layout configurations of all 26 documents
   const [documentLayouts, setDocumentLayouts] = useState({});
 
@@ -342,11 +370,17 @@ export default function PrintSettings() {
       contact: fromState.contactPerson || fromState.contact || 'N/A'
     };
 
-    Object.keys(fromState).forEach(k => {
-      if (k !== 'items' && k !== 'lineItems' && k !== 'rows') {
-        header[k] = fromState[k];
+    if (fromState && typeof fromState === 'object' && !Array.isArray(fromState)) {
+      try {
+        Object.keys(fromState).forEach(k => {
+          if (k !== 'items' && k !== 'lineItems' && k !== 'rows') {
+            header[k] = fromState[k];
+          }
+        });
+      } catch (e) {
+        console.warn('Error reading fromState keys in PrintSettings:', e);
       }
-    });
+    }
 
     return {
       header,

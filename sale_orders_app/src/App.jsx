@@ -224,9 +224,50 @@ const IndexRedirect = () => {
   return <Navigate to="/login" replace />;
 };
 
+
+function RouteErrorBoundary() {
+  const location = useLocation();
+  return (
+    <div className="min-h-screen bg-[#090d16] text-white flex flex-col items-center justify-center p-6 text-center font-sans">
+      <div className="bg-[#121927] border border-slate-800 rounded-3xl p-8 max-w-lg shadow-2xl space-y-4 animate-fade-in">
+        <div className="w-14 h-14 rounded-2xl bg-cyan-500/10 text-cyan-400 mx-auto flex items-center justify-center">
+          <span className="material-symbols-outlined text-3xl">cloud_sync</span>
+        </div>
+        <h2 className="text-xl font-black text-white tracking-tight">Flashvision ERP</h2>
+        <p className="text-xs text-slate-400 leading-relaxed">
+          Application cache was refreshed. Click below to load the latest verified update.
+        </p>
+        <div className="flex justify-center gap-3 pt-3">
+          <button
+            onClick={() => {
+              if (window.caches) {
+                caches.keys().then(names => {
+                  names.forEach(name => caches.delete(name));
+                });
+              }
+              window.location.reload();
+            }}
+            className="px-6 py-2.5 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white rounded-xl text-xs font-bold shadow-lg transition-all active:scale-95 cursor-pointer flex items-center gap-2"
+          >
+            <span className="material-symbols-outlined text-base">cached</span>
+            Refresh Page
+          </button>
+          <a
+            href="/dashboard"
+            className="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-bold transition-all"
+          >
+            Dashboard
+          </a>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const router = createBrowserRouter([
   {
     element: <RootLayout />,
+    errorElement: <RouteErrorBoundary />,
     children: [
       { path: "/", element: <IndexRedirect /> },
       { path: "/login", element: <Login /> },
