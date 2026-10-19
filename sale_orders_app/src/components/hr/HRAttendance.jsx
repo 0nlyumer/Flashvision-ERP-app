@@ -171,6 +171,10 @@ export default function HRAttendance({ isMobile }) {
 
   const handleCycleStatus = (empId, dayKey, currentStatusVal) => {
     if (!canEditAttendance) return;
+    if (isCurrentMonthFinalized || isDateFinalized(dayKey)) {
+      alertSalaryFinalizedLocked();
+      return;
+    }
     if (!allowedStatuses || allowedStatuses.length === 0) return;
     const currentVal = String(currentStatusVal || 'absent').toLowerCase();
     const currIndex = allowedStatuses.findIndex(st => st.value.toLowerCase() === currentVal);
@@ -296,6 +300,10 @@ export default function HRAttendance({ isMobile }) {
 
   const saveComment = () => {
     if (!activeComment) return;
+    if (isCurrentMonthFinalized || isDateFinalized(activeComment?.dayKey)) {
+      alertSalaryFinalizedLocked();
+      return;
+    }
     const { empId, dayKey, field } = activeComment;
     setIsDirty(true);
     setLocalEmployees(prev => prev.map(emp => {
@@ -578,6 +586,43 @@ export default function HRAttendance({ isMobile }) {
     setEndDate(formatDate(lastDay));
   };
 
+  // Active Payroll Month Key & Strict Finalized Salary Lock Check
+  const activeMonthKey = `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}`;
+
+  const isCurrentMonthFinalized = React.useMemo(() => {
+    const list = appState?.hr_generated_salaries || [];
+    return list.some(item => 
+      item.month === activeMonthKey && (item.status === 'Finalized' || item.status === 'finalized' || (item.records && item.records.length > 0))
+    );
+  }, [appState?.hr_generated_salaries, activeMonthKey]);
+
+  const isDateFinalized = React.useCallback((dateStr) => {
+    if (!dateStr) return false;
+    const cleanStr = String(dateStr).trim();
+    const parts = cleanStr.split(/[-/]/);
+    let monthKey = '';
+    if (parts.length >= 2) {
+      if (parts[0].length === 4) {
+        monthKey = `${parts[0]}-${parts[1].padStart(2, '0')}`;
+      } else if (parts[2] && parts[2].length === 4) {
+        monthKey = `${parts[2]}-${parts[0].padStart(2, '0')}`;
+      }
+    }
+    if (!monthKey && cleanStr.length >= 7) {
+      monthKey = cleanStr.substring(0, 7);
+    }
+    if (!monthKey) return false;
+
+    const list = appState?.hr_generated_salaries || [];
+    return list.some(item => 
+      item.month === monthKey && (item.status === 'Finalized' || item.status === 'finalized' || (item.records && item.records.length > 0))
+    );
+  }, [appState?.hr_generated_salaries]);
+
+  const alertSalaryFinalizedLocked = () => {
+    appAlert(`Is month (${monthsList[selectedMonth]?.name || activeMonthKey} ${selectedYear}) ki salary Salary Generation screen per finalize ho chuki hai. Attendance sirf read-only hai aur edit nahi ki ja sakti. Agar edit karni hai to pehle Salary Generation History se is month ki finalized salary delete karein.`);
+  };
+
   useEffect(() => {
     const date = new Date(startDate);
     if (!isNaN(date.getTime())) {
@@ -657,6 +702,10 @@ export default function HRAttendance({ isMobile }) {
 
   // Save changes callback
   const handleSaveChanges = () => {
+    if (isCurrentMonthFinalized) {
+      alertSalaryFinalizedLocked();
+      return;
+    }
     if (setCollection) {
       setCollection('hr_employees_list', localEmployees);
     } else {
@@ -723,6 +772,10 @@ export default function HRAttendance({ isMobile }) {
 
   // Change employee attendance status inside draft (via select dropdown)
   const handleStatusChange = (empId, day, nextStatus) => {
+    if (isCurrentMonthFinalized || isDateFinalized(day)) {
+      alertSalaryFinalizedLocked();
+      return;
+    }
     if (!empId) return;
     setIsDirty(true);
     setLocalEmployees(prev => prev.map(emp => {
@@ -747,6 +800,10 @@ export default function HRAttendance({ isMobile }) {
 
   // Bulk set status for all employees for a specific day
   const handleBulkSetDayStatus = (dayKey, nextStatus) => {
+    if (isCurrentMonthFinalized || isDateFinalized(dayKey)) {
+      alertSalaryFinalizedLocked();
+      return;
+    }
     setIsDirty(true);
     setLocalEmployees(prev => prev.map(emp => {
       const att = emp.attendance || {};
@@ -768,6 +825,10 @@ export default function HRAttendance({ isMobile }) {
 
   // Toggle status (retained for backward compatibility or simple toggles)
   const handleToggleStatus = (empId, day) => {
+    if (isCurrentMonthFinalized || isDateFinalized(day)) {
+      alertSalaryFinalizedLocked();
+      return;
+    }
     setIsDirty(true);
     setLocalEmployees(prev => prev.map(emp => {
       if (emp.id !== empId) return emp;
@@ -790,6 +851,10 @@ export default function HRAttendance({ isMobile }) {
 
   // Stepper adjustment for OT in mobile
   const handleAdjustOT = (empId, day, direction) => {
+    if (isCurrentMonthFinalized || isDateFinalized(day)) {
+      alertSalaryFinalizedLocked();
+      return;
+    }
     if (!empId) return;
     setIsDirty(true);
     setLocalEmployees(prev => prev.map(emp => {
@@ -816,6 +881,10 @@ export default function HRAttendance({ isMobile }) {
 
   // Input change handler for OT/Fines/Deductions inside draft
   const handleValueChange = (empId, day, field, value) => {
+    if (isCurrentMonthFinalized || isDateFinalized(day)) {
+      alertSalaryFinalizedLocked();
+      return;
+    }
     if (!empId) return;
     setIsDirty(true);
     setLocalEmployees(prev => prev.map(emp => {
@@ -1072,6 +1141,10 @@ export default function HRAttendance({ isMobile }) {
   };
 
   const handleCSVFileChange = (e) => {
+    if (isCurrentMonthFinalized) {
+      alertSalaryFinalizedLocked();
+      return;
+    }
     const file = e.target.files[0];
     if (!file) return;
     
@@ -1205,7 +1278,17 @@ export default function HRAttendance({ isMobile }) {
   function renderMobileView() {
     return (
       <div className="flex flex-col gap-6 animate-fade-in pb-28 select-none">
-        
+        {/* Payroll Finalized Locked Notice Banner */}
+        {isCurrentMonthFinalized && (
+          <div className="bg-amber-500/10 border-2 border-amber-500/40 text-amber-950 dark:text-amber-100 p-4 rounded-2xl flex flex-col gap-2 shadow-sm animate-fade-in">
+            <div className="flex items-center gap-2">
+              <span className="material-symbols-outlined text-[20px] text-amber-700">lock</span>
+              <span className="font-headline font-black text-xs text-amber-900 uppercase">Attendance Locked (Read-Only)</span>
+            </div>
+            <p className="text-[11px] text-amber-800/90 font-medium">Is month ki salary finalize ho chuki hai. Record edit karne ke liye pehle finalized salary delete karein.</p>
+          </div>
+        )}
+
         {/* Welcome Header */}
         <header className="flex flex-col gap-1">
           <h2 className="font-headline text-2xl font-black text-on-surface tracking-tight leading-tight">Shift Log</h2>
@@ -1950,10 +2033,29 @@ export default function HRAttendance({ isMobile }) {
       </div>
     );
   }
-  function FieldCommentButton({ empId, dayKey, field, value, reasonField }) {
+  function FieldCommentButton({ empId, dayKey, field, value, reasonField, disabled }) {
     const isSelected = activeComment?.empId === empId && activeComment?.dayKey === dayKey && activeComment?.field === reasonField;
     const reasonText = value[reasonField] || '';
     const hasReason = reasonText.trim().length > 0;
+
+    if (disabled) {
+      if (!hasReason) return null;
+      return (
+        <div className="relative flex items-center justify-center shrink-0 group">
+          <div
+            className="w-6 h-6 rounded-lg flex items-center justify-center transition-all bg-primary/10 text-primary cursor-default"
+            title={`Reason: ${reasonText}`}
+          >
+            <span className="material-symbols-outlined text-[15px]" style={{ fontVariationSettings: "'FILL' 1" }}>
+              chat_bubble
+            </span>
+          </div>
+          <div className="absolute bottom-full mb-1.5 left-1/2 -translate-x-1/2 hidden group-hover:block z-30 bg-slate-800 text-white text-[9px] font-bold py-1 px-2 rounded shadow-md whitespace-nowrap pointer-events-none">
+            {reasonText}
+          </div>
+        </div>
+      );
+    }
     
     return (
       <div className="relative flex items-center justify-center shrink-0 group">
@@ -2030,6 +2132,20 @@ export default function HRAttendance({ isMobile }) {
   function renderMobileCardView() {
     return (
       <div className="flex flex-col gap-6 animate-fade-in pb-12 select-none relative">
+        {/* Payroll Finalized Locked Notice Banner */}
+        {isCurrentMonthFinalized && (
+          <div className="bg-amber-500/10 border-2 border-amber-500/40 text-amber-950 dark:text-amber-100 p-4 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm animate-fade-in">
+            <div className="flex items-center gap-2.5">
+              <span className="material-symbols-outlined text-[22px] text-amber-700 shrink-0">lock</span>
+              <div>
+                <span className="font-headline font-black text-xs text-amber-900 uppercase block">Attendance Locked (Read-Only)</span>
+                <span className="text-[11px] text-amber-800/90 font-medium">Is month ki salary finalize ho chuki hai. Record edit karne ke liye pehle finalized salary delete karein.</span>
+              </div>
+            </div>
+            <span className="text-[10px] font-bold bg-amber-500/20 text-amber-900 px-2.5 py-1 rounded-lg shrink-0">Finalized</span>
+          </div>
+        )}
+
         {/* Mobile Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-surface-container-lowest p-4 rounded-2xl border border-outline-variant/10 shadow-sm">
           <div>
@@ -2278,6 +2394,54 @@ export default function HRAttendance({ isMobile }) {
               )}
             </div>
           )}
+
+          {/* ALPHABETICAL FILTER KEYS & SORTING PILLS (Mobile Card View) */}
+          <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-outline-variant/10 text-xs w-full">
+            <span className="text-[10px] font-black uppercase tracking-wider text-on-surface-variant mr-1 flex items-center gap-1">
+              <span className="material-symbols-outlined text-[14px] text-primary">sort_by_alpha</span>
+              Alpha:
+            </span>
+
+            <button
+              type="button"
+              onClick={() => setNameSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')}
+              className={`px-2 py-0.5 rounded-lg text-[10px] font-bold border transition-all flex items-center gap-1 cursor-pointer ${
+                nameSortOrder === 'asc' ? 'bg-primary/10 text-primary border-primary/20' : 'bg-secondary/10 text-secondary border-secondary/20'
+              }`}
+            >
+              <span>{nameSortOrder === 'asc' ? 'A → Z' : 'Z → A'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => { setSelectedAlphaLetter('ALL'); setCurrentPage(1); }}
+              className={`px-2 py-0.5 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
+                selectedAlphaLetter === 'ALL' ? 'bg-primary text-on-primary font-black' : 'bg-surface-container-low text-on-surface-variant'
+              }`}
+            >
+              All
+            </button>
+
+            {['A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y','Z'].map(char => (
+              <button
+                key={char}
+                type="button"
+                onClick={() => {
+                  setSelectedAlphaLetter(selectedAlphaLetter === char ? 'ALL' : char);
+                  setCurrentPage(1);
+                }}
+                className={`w-5 h-5 rounded text-[10px] font-bold flex items-center justify-center transition-all cursor-pointer ${
+                  selectedAlphaLetter === char ? 'bg-primary text-on-primary font-black scale-105' : 'bg-surface-container-low text-on-surface-variant hover:bg-surface-container-high'
+                }`}
+              >
+                {char}
+              </button>
+            ))}
+
+            <div className="ml-auto text-[10px] font-bold text-on-surface-variant">
+              Total: <strong className="text-on-surface">{filteredEmployees.length}</strong>
+            </div>
+          </div>
         </div>
 
         {/* Employee Cards Container */}
@@ -2410,19 +2574,19 @@ export default function HRAttendance({ isMobile }) {
                             <div className="flex gap-1.5 items-center">
                               <button
                                 type="button"
-                                disabled={!canEditAttendance}
-                                onClick={() => canEditAttendance && handleCycleStatus(emp.id, day.date || day.key, rec.status)}
-                                className={`flex-1 rounded-xl px-2.5 py-1.5 text-xs font-black transition-all flex items-center justify-between shadow-2xs ${!canEditAttendance ? 'cursor-not-allowed opacity-80' : 'cursor-pointer active:scale-95'} ${
+                                disabled={!canEditAttendance || isCurrentMonthFinalized || isDateFinalized(day.date || day.key)}
+                                onClick={() => canEditAttendance && !isCurrentMonthFinalized && !isDateFinalized(day.date || day.key) && handleCycleStatus(emp.id, day.date || day.key, rec.status)}
+                                className={`flex-1 rounded-xl px-2.5 py-1.5 text-xs font-black transition-all flex items-center justify-between shadow-2xs ${(!canEditAttendance || isCurrentMonthFinalized || isDateFinalized(day.date || day.key)) ? 'cursor-not-allowed opacity-75' : 'cursor-pointer active:scale-95'} ${
                                   rec.status === 'present' ? 'text-emerald-700 bg-emerald-500/15 border border-emerald-500/30' :
                                   rec.status === 'absent' ? 'text-red-700 bg-red-500/15 border border-red-500/30' :
                                   rec.status === 'leave' ? 'text-amber-700 bg-amber-500/15 border border-amber-500/30' :
                                   rec.status === 'holiday' ? 'text-blue-700 bg-blue-500/15 border border-blue-500/30' :
                                   'text-indigo-700 bg-indigo-500/15 border border-indigo-500/30'
                                 }`}
-                                title="Tap to cycle status"
+                                title={isCurrentMonthFinalized || isDateFinalized(day.date || day.key) ? "Locked by Finalized Payroll" : "Tap to cycle status"}
                               >
                                 <span className="capitalize">{rec.status || 'absent'}</span>
-                                {canEditAttendance && <span className="material-symbols-outlined text-[13px] opacity-70">sync</span>}
+                                {canEditAttendance && !isCurrentMonthFinalized && !isDateFinalized(day.date || day.key) && <span className="material-symbols-outlined text-[13px] opacity-70">sync</span>}
                               </button>
                               {canEditAttendance && (
                                 <FieldCommentButton 
@@ -2431,6 +2595,7 @@ export default function HRAttendance({ isMobile }) {
                                   field="statusReason" 
                                   value={rec} 
                                   reasonField="statusReason" 
+                                  disabled={!canEditAttendance || isCurrentMonthFinalized || isDateFinalized(day.date || day.key)}
                                 />
                               )}
                             </div>
@@ -2588,6 +2753,36 @@ export default function HRAttendance({ isMobile }) {
     return (
       <div className="flex flex-col gap-8 animate-fade-in pb-12 select-none relative">
         
+        {/* Payroll Finalized Locked Notice Banner */}
+        {isCurrentMonthFinalized && (
+          <div className="bg-amber-500/10 border-2 border-amber-500/40 text-amber-950 dark:text-amber-100 p-4 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-sm animate-fade-in">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-amber-500/20 flex items-center justify-center text-amber-700 dark:text-amber-400 shrink-0">
+                <span className="material-symbols-outlined text-[24px]">lock</span>
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="font-headline font-black text-sm text-amber-900 dark:text-amber-100 uppercase tracking-wide">
+                    Attendance Locked (Read-Only Mode)
+                  </span>
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-amber-500/25 text-amber-800 dark:text-amber-200 uppercase">
+                    Salary Finalized
+                  </span>
+                </div>
+                <p className="text-xs text-amber-800/90 dark:text-amber-300/90 font-medium mt-0.5">
+                  <strong>{monthsList[selectedMonth]?.name} {selectedYear}</strong> ki salary Salary Generation screen per finalize ho chuki hai. Is month ki attendance edit nahi ki ja sakti (sirf readable / view-only). Agar attendance edit karni hai to pehle Salary Generation History se is month ki finalized salary delete karein.
+                </p>
+              </div>
+            </div>
+            <div className="shrink-0 flex items-center gap-2">
+              <span className="text-[11px] font-bold text-amber-800 dark:text-amber-200 bg-amber-500/20 px-3.5 py-1.5 rounded-xl border border-amber-500/30 flex items-center gap-1.5 shadow-2xs">
+                <span className="material-symbols-outlined text-[15px]">lock_clock</span>
+                Locked by Payroll
+              </span>
+            </div>
+          </div>
+        )}
+        
         {/* Dynamic Action Bar */}
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
           <div>
@@ -2600,15 +2795,21 @@ export default function HRAttendance({ isMobile }) {
             {canEditAttendance && (
               <button 
                 onClick={handleSaveChanges}
-                className={`px-5 py-2.5 rounded-xl text-xs font-black flex items-center gap-2 transition-all active:scale-[0.97] cursor-pointer relative shadow-lg ${
-                  isDirty 
-                    ? 'bg-emerald-600 hover:bg-emerald-700 text-white animate-pulse' 
+                disabled={isCurrentMonthFinalized}
+                title={isCurrentMonthFinalized ? "Locked: Salary finalized for this month" : "Save Changes"}
+                className={`px-5 py-2.5 rounded-xl text-xs font-black flex items-center gap-2 transition-all active:scale-[0.97] relative shadow-lg ${
+                  isCurrentMonthFinalized
+                    ? 'bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400 border border-slate-300 dark:border-slate-600 cursor-not-allowed opacity-75'
+                    : isDirty 
+                    ? 'bg-emerald-600 hover:bg-emerald-700 text-white animate-pulse cursor-pointer' 
                     : 'bg-emerald-500/10 text-emerald-600 border border-emerald-500/20 cursor-default opacity-85'
                 }`}
               >
-                <span className="material-symbols-outlined text-[18px]">save</span>
-                Save Changes
-                {isDirty && (
+                <span className="material-symbols-outlined text-[18px]">
+                  {isCurrentMonthFinalized ? 'lock' : 'save'}
+                </span>
+                {isCurrentMonthFinalized ? 'Payroll Finalized (Locked)' : 'Save Changes'}
+                {isDirty && !isCurrentMonthFinalized && (
                   <span className="absolute -top-1.5 -right-1.5 w-3 h-3 bg-red-500 rounded-full border-2 border-white animate-bounce"></span>
                 )}
               </button>
@@ -2667,160 +2868,267 @@ export default function HRAttendance({ isMobile }) {
         </div>
 
         {/* Global Controls & Date Search */}
-        <div className="bg-surface-container-lowest p-4 rounded-2xl border border-outline-variant/10 shadow-sm flex flex-col md:flex-row gap-4 items-center justify-between">
-          <div className="flex items-center gap-3 w-full md:w-auto">
-            <div className="relative flex-1 md:flex-initial">
-              <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline-variant text-[16px]">search</span>
-              <input 
-                type="text"
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                placeholder="Quick search employees..."
-                className="w-full md:w-64 bg-surface-container-low border border-outline-variant/15 rounded-xl pl-9 pr-4 py-2 text-xs text-on-surface font-semibold focus:bg-surface-container-lowest focus:border-primary/50 transition-all focus:ring-0 outline-none"
-              />
-            </div>
-            
-            {/* Month Select, Year Select & Date Picker */}
-            {canUseDateFilter && (
-              <>
-                {/* Month Select */}
-                <div className="relative">
+        <div className="bg-surface-container-lowest p-4 rounded-2xl border border-outline-variant/10 shadow-sm flex flex-col gap-3">
+          <div className="flex flex-col xl:flex-row gap-4 items-center justify-between">
+            <div className="flex items-center gap-3 w-full xl:w-auto flex-wrap">
+              {/* Quick search employees */}
+              <div className="relative flex-1 sm:flex-initial">
+                <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline-variant text-[16px]">search</span>
+                <input 
+                  type="text"
+                  value={searchQuery}
+                  onChange={e => { setSearchQuery(e.target.value); setCurrentPage(1); }}
+                  placeholder="Quick search employees..."
+                  className="w-full sm:w-56 bg-surface-container-low border border-outline-variant/15 rounded-xl pl-9 pr-4 py-2 text-xs text-on-surface font-semibold focus:bg-surface-container-lowest focus:border-primary/50 transition-all focus:ring-0 outline-none"
+                />
+              </div>
+
+              {/* MODERN UI DIVISION DROPDOWN - System UI Matched */}
+              <div className="relative group">
+                <div className="flex items-center bg-surface-container-low hover:bg-surface-container-high border border-outline-variant/20 hover:border-primary/50 rounded-xl px-3 py-1.5 transition-all shadow-xs">
+                  <span className="material-symbols-outlined text-[17px] text-primary mr-1.5">apartment</span>
                   <select 
-                    value={selectedMonth}
+                    value={divisionFilter}
                     onChange={e => {
-                      const m = parseInt(e.target.value);
-                      setSelectedMonth(m);
-                      updateDateRangeFromMonthYear(m, selectedYear);
+                      setDivisionFilter(e.target.value);
+                      setDepartmentFilter('ALL');
+                      setCurrentPage(1);
                     }}
-                    className="bg-surface-container-low hover:bg-surface-container-high px-3 py-2 rounded-xl border border-outline-variant/15 text-xs font-semibold text-on-surface transition-all outline-none cursor-pointer"
+                    className="bg-transparent border-none text-xs font-bold text-on-surface cursor-pointer outline-none focus:ring-0 pr-6 appearance-none"
+                    title="Filter by Division"
                   >
-                    {["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"].map((month, idx) => (
-                      <option key={month} value={idx}>{month}</option>
+                    {divisionsList.map(div => (
+                      <option key={div} value={div} className="bg-surface-container-lowest text-on-surface font-semibold">
+                        {div === 'ALL' ? '🏬 All Divisions' : div}
+                      </option>
                     ))}
                   </select>
+                  <span className="material-symbols-outlined text-[16px] text-outline absolute right-2 pointer-events-none group-hover:text-primary transition-colors">
+                    expand_more
+                  </span>
                 </div>
-
-                {/* Year Select */}
-                <div className="relative">
-                  <select 
-                    value={selectedYear}
-                    onChange={e => {
-                      const y = parseInt(e.target.value);
-                      setSelectedYear(y);
-                      updateDateRangeFromMonthYear(selectedMonth, y);
-                    }}
-                    className="bg-surface-container-low hover:bg-surface-container-high px-3 py-2 rounded-xl border border-outline-variant/15 text-xs font-semibold text-on-surface transition-all outline-none cursor-pointer"
-                  >
-                    {[2022, 2023, 2024, 2025, 2026].map(year => (
-                      <option key={year} value={year}>{year}</option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Interactive Date Picker Button */}
-                <div className="relative">
-                  <button 
-                    onClick={() => setIsDatePickerOpen(!isDatePickerOpen)}
-                    className="bg-surface-container-low hover:bg-surface-container-high px-4 py-2 rounded-xl border border-outline-variant/15 text-xs font-semibold text-on-surface flex items-center gap-2 transition-all active:scale-95 cursor-pointer"
-                  >
-                    <span className="material-symbols-outlined text-[16px] text-primary">calendar_month</span>
-                    {new Date(startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - {new Date(endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                    <span className="material-symbols-outlined text-[14px] text-slate-400">expand_more</span>
-                  </button>
-                  
-                  {isDatePickerOpen && (
-                    <div className="absolute left-0 mt-2 z-50 bg-surface border border-outline-variant/30 rounded-2xl p-4 shadow-xl flex flex-col gap-3 min-w-[280px] animate-in fade-in slide-in-from-top-2 duration-200">
-                      <div className="flex flex-col gap-1">
-                        <span className="text-[9px] uppercase tracking-wider font-bold text-primary">Start Date</span>
-                        <input 
-                          type="date"
-                          value={startDate}
-                          onChange={e => setStartDate(e.target.value)}
-                          className="bg-surface border border-outline-variant/30 rounded-xl px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary focus:border-transparent text-on-surface"
-                        />
-                      </div>
-                      <div className="flex flex-col gap-1">
-                        <span className="text-[9px] uppercase tracking-wider font-bold text-primary">End Date</span>
-                        <input 
-                          type="date"
-                          value={endDate}
-                          onChange={e => setEndDate(e.target.value)}
-                          className="bg-surface border border-outline-variant/30 rounded-xl px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary focus:border-transparent text-on-surface"
-                        />
-                      </div>
-                      <button 
-                        onClick={() => setIsDatePickerOpen(false)}
-                        className="w-full bg-primary hover:bg-primary-container text-on-primary text-xs font-bold py-2 rounded-xl transition-colors mt-1 cursor-pointer"
+              </div>
+              
+              {/* Month Select, Year Select & Date Picker */}
+              {canUseDateFilter && (
+                <>
+                  {/* Month Select */}
+                  <div className="relative group">
+                    <div className="flex items-center bg-surface-container-low hover:bg-surface-container-high border border-outline-variant/20 hover:border-primary/50 rounded-xl px-3 py-1.5 transition-all shadow-xs">
+                      <span className="material-symbols-outlined text-[16px] text-secondary mr-1">calendar_month</span>
+                      <select 
+                        value={selectedMonth}
+                        onChange={e => {
+                          const m = parseInt(e.target.value);
+                          setSelectedMonth(m);
+                          updateDateRangeFromMonthYear(m, selectedYear);
+                        }}
+                        className="bg-transparent border-none text-xs font-bold text-on-surface cursor-pointer outline-none focus:ring-0 pr-6 appearance-none"
                       >
-                        Apply Filter
-                      </button>
+                        {["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"].map((month, idx) => (
+                          <option key={month} value={idx} className="bg-surface-container-lowest text-on-surface font-semibold">{month}</option>
+                        ))}
+                      </select>
+                      <span className="material-symbols-outlined text-[16px] text-outline absolute right-2 pointer-events-none group-hover:text-secondary transition-colors">
+                        expand_more
+                      </span>
                     </div>
+                  </div>
+
+                  {/* Year Select */}
+                  <div className="relative group">
+                    <div className="flex items-center bg-surface-container-low hover:bg-surface-container-high border border-outline-variant/20 hover:border-primary/50 rounded-xl px-3 py-1.5 transition-all shadow-xs">
+                      <select 
+                        value={selectedYear}
+                        onChange={e => {
+                          const y = parseInt(e.target.value);
+                          setSelectedYear(y);
+                          updateDateRangeFromMonthYear(selectedMonth, y);
+                        }}
+                        className="bg-transparent border-none text-xs font-bold text-on-surface cursor-pointer outline-none focus:ring-0 pr-6 appearance-none"
+                      >
+                        {[2022, 2023, 2024, 2025, 2026].map(year => (
+                          <option key={year} value={year} className="bg-surface-container-lowest text-on-surface font-semibold">{year}</option>
+                        ))}
+                      </select>
+                      <span className="material-symbols-outlined text-[16px] text-outline absolute right-2 pointer-events-none group-hover:text-primary transition-colors">
+                        expand_more
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Interactive Date Picker Button */}
+                  <div className="relative">
+                    <button 
+                      onClick={() => setIsDatePickerOpen(!isDatePickerOpen)}
+                      className="bg-surface-container-low hover:bg-surface-container-high px-3.5 py-1.5 rounded-xl border border-outline-variant/20 text-xs font-bold text-on-surface flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer shadow-xs"
+                    >
+                      <span className="material-symbols-outlined text-[16px] text-primary">calendar_month</span>
+                      {new Date(startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - {new Date(endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                      <span className="material-symbols-outlined text-[15px] text-outline">expand_more</span>
+                    </button>
+                    
+                    {isDatePickerOpen && (
+                      <div className="absolute left-0 mt-2 z-50 bg-surface-container-lowest border border-outline-variant/30 rounded-2xl p-4 shadow-xl flex flex-col gap-3 min-w-[280px] animate-in fade-in slide-in-from-top-2 duration-200">
+                        <div className="flex flex-col gap-1">
+                          <span className="text-[9px] uppercase tracking-wider font-bold text-primary">Start Date</span>
+                          <input 
+                            type="date"
+                            value={startDate}
+                            onChange={e => setStartDate(e.target.value)}
+                            className="bg-surface-container-low border border-outline-variant/30 rounded-xl px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary focus:border-transparent text-on-surface"
+                          />
+                        </div>
+                        <div className="flex flex-col gap-1">
+                          <span className="text-[9px] uppercase tracking-wider font-bold text-primary">End Date</span>
+                          <input 
+                            type="date"
+                            value={endDate}
+                            onChange={e => setEndDate(e.target.value)}
+                            className="bg-surface-container-low border border-outline-variant/30 rounded-xl px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary focus:border-transparent text-on-surface"
+                          />
+                        </div>
+                        <button 
+                          onClick={() => setIsDatePickerOpen(false)}
+                          className="w-full bg-primary hover:bg-primary-container text-on-primary text-xs font-bold py-2 rounded-xl transition-colors mt-1 cursor-pointer"
+                        >
+                          Apply Filter
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Condition selector chips */}
+            {(canFilterAttendance || canFilterOvertime || canFilterFines || canFilterDeductions) && (
+              <div className="flex items-center gap-2.5">
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Active Filters:</span>
+                <div className="flex gap-2">
+                  {canFilterAttendance && (
+                    <button
+                      onClick={() => handleToggleCondition('attendance')}
+                      className={`px-3 py-1.5 rounded-full text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer ${
+                        activeConditions.attendance 
+                          ? 'bg-primary-fixed text-on-primary-fixed shadow-2xs' 
+                          : 'bg-surface-container text-on-surface-variant hover:bg-surface-container-high'
+                      }`}
+                    >
+                      <span>Attendance</span>
+                      {activeConditions.attendance && <span className="material-symbols-outlined text-[10px]">close</span>}
+                    </button>
+                  )}
+                  {canFilterOvertime && (
+                    <button
+                      onClick={() => handleToggleCondition('overtime')}
+                      className={`px-3 py-1.5 rounded-full text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer ${
+                        activeConditions.overtime 
+                          ? 'bg-primary-fixed text-on-primary-fixed shadow-2xs' 
+                          : 'bg-surface-container text-on-surface-variant hover:bg-surface-container-high'
+                      }`}
+                    >
+                      <span>Overtime</span>
+                      {activeConditions.overtime && <span className="material-symbols-outlined text-[10px]">close</span>}
+                    </button>
+                  )}
+                  {canFilterFines && (
+                    <button
+                      onClick={() => handleToggleCondition('fines')}
+                      className={`px-3 py-1.5 rounded-full text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer ${
+                        activeConditions.fines 
+                          ? 'bg-primary-fixed text-on-primary-fixed shadow-2xs' 
+                          : 'bg-surface-container text-on-surface-variant hover:bg-surface-container-high'
+                      }`}
+                    >
+                      <span>Fines</span>
+                      {activeConditions.fines && <span className="material-symbols-outlined text-[10px]">close</span>}
+                    </button>
+                  )}
+                  {canFilterDeductions && (
+                    <button
+                      onClick={() => handleToggleCondition('deductions')}
+                      className={`px-3 py-1.5 rounded-full text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer ${
+                        activeConditions.deductions 
+                          ? 'bg-primary-fixed text-on-primary-fixed shadow-2xs' 
+                          : 'bg-surface-container text-on-surface-variant hover:bg-surface-container-high'
+                      }`}
+                    >
+                      <span>Late Coming</span>
+                      {activeConditions.deductions && <span className="material-symbols-outlined text-[10px]">close</span>}
+                    </button>
                   )}
                 </div>
-              </>
+              </div>
             )}
           </div>
 
-          {/* Condition selector chips */}
-          {(canFilterAttendance || canFilterOvertime || canFilterFines || canFilterDeductions) && (
-            <div className="flex items-center gap-2.5">
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Active Filters:</span>
-              <div className="flex gap-2">
-                {canFilterAttendance && (
-                  <button
-                    onClick={() => handleToggleCondition('attendance')}
-                    className={`px-3 py-1.5 rounded-full text-[11px] font-bold flex items-center gap-1 transition-all ${
-                      activeConditions.attendance 
-                        ? 'bg-primary-fixed text-on-primary-fixed' 
-                        : 'bg-surface-container text-on-surface-variant hover:bg-surface-container-high'
-                    }`}
-                  >
-                    <span>Attendance</span>
-                    {activeConditions.attendance && <span className="material-symbols-outlined text-[10px]">close</span>}
-                  </button>
-                )}
-                {canFilterOvertime && (
-                  <button
-                    onClick={() => handleToggleCondition('overtime')}
-                    className={`px-3 py-1.5 rounded-full text-[11px] font-bold flex items-center gap-1 transition-all ${
-                      activeConditions.overtime 
-                        ? 'bg-primary-fixed text-on-primary-fixed' 
-                        : 'bg-surface-container text-on-surface-variant hover:bg-surface-container-high'
-                    }`}
-                  >
-                    <span>Overtime</span>
-                    {activeConditions.overtime && <span className="material-symbols-outlined text-[10px]">close</span>}
-                  </button>
-                )}
-                {canFilterFines && (
-                  <button
-                    onClick={() => handleToggleCondition('fines')}
-                    className={`px-3 py-1.5 rounded-full text-[11px] font-bold flex items-center gap-1 transition-all ${
-                      activeConditions.fines 
-                        ? 'bg-primary-fixed text-on-primary-fixed' 
-                        : 'bg-surface-container text-on-surface-variant hover:bg-surface-container-high'
-                    }`}
-                  >
-                    <span>Fines</span>
-                    {activeConditions.fines && <span className="material-symbols-outlined text-[10px]">close</span>}
-                  </button>
-                )}
-                {canFilterDeductions && (
-                  <button
-                    onClick={() => handleToggleCondition('deductions')}
-                    className={`px-3 py-1.5 rounded-full text-[11px] font-bold flex items-center gap-1 transition-all ${
-                      activeConditions.deductions 
-                        ? 'bg-primary-fixed text-on-primary-fixed' 
-                        : 'bg-surface-container text-on-surface-variant hover:bg-surface-container-high'
-                    }`}
-                  >
-                    <span>Late Coming</span>
-                    {activeConditions.deductions && <span className="material-symbols-outlined text-[10px]">close</span>}
-                  </button>
-                )}
-              </div>
+          {/* ALPHABETICAL FILTER KEYS & SORTING PILLS */}
+          <div className="flex flex-wrap items-center gap-1.5 pt-3 border-t border-outline-variant/10 text-xs w-full">
+            <span className="text-[10px] font-black uppercase tracking-wider text-on-surface-variant mr-1 flex items-center gap-1">
+              <span className="material-symbols-outlined text-[15px] text-primary">sort_by_alpha</span>
+              Alpha:
+            </span>
+
+            {/* A to Z Sort Toggle */}
+            <button
+              type="button"
+              onClick={() => setNameSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')}
+              className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all flex items-center gap-1 cursor-pointer ${
+                nameSortOrder === 'asc'
+                  ? 'bg-primary/10 text-primary border-primary/20'
+                  : 'bg-secondary/10 text-secondary border-secondary/20'
+              }`}
+              title="Toggle Ascending / Descending Name Sorting"
+            >
+              <span>{nameSortOrder === 'asc' ? 'A → Z' : 'Z → A'}</span>
+              <span className="material-symbols-outlined text-[13px]">{nameSortOrder === 'asc' ? 'arrow_upward' : 'arrow_downward'}</span>
+            </button>
+
+            {/* All Pill */}
+            <button
+              type="button"
+              onClick={() => { setSelectedAlphaLetter('ALL'); setCurrentPage(1); }}
+              className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                selectedAlphaLetter === 'ALL'
+                  ? 'bg-primary text-on-primary shadow-xs font-black'
+                  : 'bg-surface-container-low text-on-surface-variant hover:bg-surface-container-high'
+              }`}
+            >
+              All
+            </button>
+
+            {/* Individual Letter Pills A-Z */}
+            {['A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y','Z'].map(char => (
+              <button
+                key={char}
+                type="button"
+                onClick={() => {
+                  setSelectedAlphaLetter(selectedAlphaLetter === char ? 'ALL' : char);
+                  setCurrentPage(1);
+                }}
+                className={`w-6 h-6 rounded-md text-[11px] font-bold flex items-center justify-center transition-all cursor-pointer ${
+                  selectedAlphaLetter === char
+                    ? 'bg-primary text-on-primary shadow-xs font-black scale-105'
+                    : 'bg-surface-container-low text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface'
+                }`}
+              >
+                {char}
+              </button>
+            ))}
+
+            {selectedAlphaLetter !== 'ALL' && (
+              <span className="text-[11px] text-primary font-bold ml-2">
+                Showing "{selectedAlphaLetter}" ({filteredEmployees.length} employees)
+              </span>
+            )}
+
+            {/* Total count badge */}
+            <div className="ml-auto text-[11px] font-bold text-on-surface-variant flex items-center gap-1.5 bg-surface-container-low px-3 py-1 rounded-xl border border-outline-variant/10">
+              <span className="material-symbols-outlined text-[15px] text-primary">badge</span>
+              <span>Total: <strong className="text-on-surface font-black">{filteredEmployees.length}</strong></span>
             </div>
-          )}
+          </div>
         </div>
 
         {/* Workforce Attendance Sheet Grid */}
@@ -2873,7 +3181,7 @@ export default function HRAttendance({ isMobile }) {
                           <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">{day.key}</span>
                           <div className="flex items-center gap-1.5 mt-0.5 justify-center">
                             <span className="text-base font-black text-on-surface">{day.num}</span>
-                            {canEditAttendance && (
+                            {canEditAttendance && !isCurrentMonthFinalized && !isDateFinalized(day.date) && (
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
@@ -2932,10 +3240,10 @@ export default function HRAttendance({ isMobile }) {
                     >
                       {/* Sticky employee details card - Drag limited ONLY to this cell */}
                       <td 
-                        draggable={canEditAttendance}
-                        onDragStart={(e) => canEditAttendance && handleDragStart(e, emp.id)}
+                        draggable={canEditAttendance && !isCurrentMonthFinalized}
+                        onDragStart={(e) => canEditAttendance && !isCurrentMonthFinalized && handleDragStart(e, emp.id)}
                         onDragOver={handleDragOver}
-                        onDrop={(e) => canEditAttendance && handleDrop(e, emp.id)}
+                        onDrop={(e) => canEditAttendance && !isCurrentMonthFinalized && handleDrop(e, emp.id)}
                         style={{ width: getColWidth('details'), minWidth: getColWidth('details'), maxWidth: getColWidth('details') }}
                         className={`${isColumnPinned ? 'sticky left-0 z-10 bg-white group-hover:bg-slate-50 border-r border-outline-variant/10 shadow-[2px_0_5px_rgba(0,0,0,0.03)]' : ''} transition-colors px-6 py-4 relative ${canEditAttendance ? 'cursor-grab active:cursor-grabbing' : ''}`}
                       >
@@ -3029,6 +3337,7 @@ export default function HRAttendance({ isMobile }) {
                           rec = { ...rec, status: 'absent' };
                         }
                         const isPresent = rec.status === 'present';
+                        const isDayLocked = isCurrentMonthFinalized || isDateFinalized(day.date || day.key);
                         
                         return (
                           <td 
@@ -3050,9 +3359,9 @@ export default function HRAttendance({ isMobile }) {
                                   <div className="flex gap-1.5 items-center">
                                     <select
                                       value={rec.status || 'absent'}
-                                      disabled={!canEditAttendance}
-                                      onChange={(e) => canEditAttendance && handleStatusChange(emp.id, day.date || day.key, e.target.value)}
-                                      className={`flex-1 bg-white border border-outline-variant/20 rounded-xl px-2 py-1 text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-primary focus:border-transparent transition-all ${!canEditAttendance ? 'cursor-not-allowed opacity-80' : 'cursor-pointer'} ${
+                                      disabled={!canEditAttendance || isDayLocked}
+                                      onChange={(e) => canEditAttendance && !isDayLocked && handleStatusChange(emp.id, day.date || day.key, e.target.value)}
+                                      className={`flex-1 bg-white border border-outline-variant/20 rounded-xl px-2 py-1 text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-primary focus:border-transparent transition-all ${(!canEditAttendance || isDayLocked) ? 'cursor-not-allowed opacity-75' : 'cursor-pointer'} ${
                                         rec.status === 'present' ? 'text-emerald-700 bg-emerald-500/10 border-emerald-500/20' :
                                         rec.status === 'absent' ? 'text-red-700 bg-red-500/10 border-red-500/20' :
                                         rec.status === 'leave' ? 'text-amber-700 bg-amber-500/10 border-amber-500/20' :
@@ -3071,6 +3380,7 @@ export default function HRAttendance({ isMobile }) {
                                         field="statusReason" 
                                         value={rec} 
                                         reasonField="statusReason" 
+                                        disabled={!canEditAttendance || isDayLocked}
                                       />
                                     )}
                                   </div>
@@ -3098,7 +3408,7 @@ export default function HRAttendance({ isMobile }) {
 
                               {/* Overtime input */}
                               {effectiveActiveConditions.overtime && (
-                                <div className={`flex flex-col gap-1 ${(!isPresent || !canEditAttendance) ? 'opacity-40 pointer-events-none' : ''}`}>
+                                <div className={`flex flex-col gap-1 ${(!isPresent || !canEditAttendance || isDayLocked) ? 'opacity-40 pointer-events-none' : ''}`}>
                                   <span className="text-[8px] font-bold uppercase tracking-wider text-slate-400">Overtime</span>
                                   <div className="flex gap-1.5 items-center">
                                     <div className="relative flex-1 flex items-center">
@@ -3106,13 +3416,16 @@ export default function HRAttendance({ isMobile }) {
                                       <input 
                                         type="text"
                                         value={isPresent ? `${rec.ot}h` : '-'}
-                                        disabled={!isPresent || !canEditAttendance}
+                                        disabled={!isPresent || !canEditAttendance || isDayLocked}
+                                        readOnly={isDayLocked}
                                         onChange={(e) => {
-                                          if (!canEditAttendance) return;
+                                          if (!canEditAttendance || isDayLocked) return;
                                           const cleaned = e.target.value.replace(/[^0-9.]/g, '');
                                           handleValueChange(emp.id, day.date || day.key, 'ot', parseFloat(cleaned) || 0);
                                         }}
-                                        className="w-full bg-surface-container-low border border-outline-variant/15 rounded px-2 pl-8 py-1 text-[11px] text-right font-black text-primary focus:bg-surface-container-lowest focus:ring-0 focus:border-primary/50 transition-all outline-none"
+                                        className={`w-full bg-surface-container-low border border-outline-variant/15 rounded px-2 pl-8 py-1 text-[11px] text-right font-black transition-all outline-none ${
+                                          isDayLocked ? 'cursor-not-allowed opacity-75 text-slate-500' : 'text-primary focus:bg-surface-container-lowest focus:ring-0 focus:border-primary/50'
+                                        }`}
                                       />
                                     </div>
                                     {canEditAttendance && (
@@ -3122,6 +3435,7 @@ export default function HRAttendance({ isMobile }) {
                                         field="otReason" 
                                         value={rec} 
                                         reasonField="otReason" 
+                                        disabled={!canEditAttendance || isDayLocked}
                                       />
                                     )}
                                   </div>
@@ -3130,7 +3444,7 @@ export default function HRAttendance({ isMobile }) {
 
                               {/* Fines input */}
                               {effectiveActiveConditions.fines && (
-                                <div className={`flex flex-col gap-1 ${!canEditAttendance ? 'opacity-60 pointer-events-none' : ''}`}>
+                                <div className={`flex flex-col gap-1 ${(!canEditAttendance || isDayLocked) ? 'opacity-60 pointer-events-none' : ''}`}>
                                   <span className="text-[8px] font-bold uppercase tracking-wider text-slate-400">Fine</span>
                                   <div className="flex gap-1.5 items-center">
                                     <div className="relative flex-1 flex items-center">
@@ -3138,10 +3452,13 @@ export default function HRAttendance({ isMobile }) {
                                       <input 
                                         type="number"
                                         value={rec.fines || ''}
-                                        disabled={!canEditAttendance}
-                                        onChange={(e) => canEditAttendance && handleValueChange(emp.id, day.date || day.key, 'fines', parseFloat(e.target.value) || 0)}
+                                        disabled={!canEditAttendance || isDayLocked}
+                                        readOnly={isDayLocked}
+                                        onChange={(e) => canEditAttendance && !isDayLocked && handleValueChange(emp.id, day.date || day.key, 'fines', parseFloat(e.target.value) || 0)}
                                         placeholder="0"
-                                        className="w-full bg-surface-container-low border border-outline-variant/15 rounded px-2 pl-10 py-1 text-[11px] text-right font-semibold text-on-surface focus:bg-surface-container-lowest focus:ring-0 focus:border-primary/50 transition-all outline-none"
+                                        className={`w-full bg-surface-container-low border border-outline-variant/15 rounded px-2 pl-10 py-1 text-[11px] text-right font-semibold text-on-surface transition-all outline-none ${
+                                          isDayLocked ? 'cursor-not-allowed opacity-75' : 'focus:bg-surface-container-lowest focus:ring-0 focus:border-primary/50'
+                                        }`}
                                       />
                                     </div>
                                     {canEditAttendance && (
@@ -3151,6 +3468,7 @@ export default function HRAttendance({ isMobile }) {
                                         field="finesReason" 
                                         value={rec} 
                                         reasonField="finesReason" 
+                                        disabled={!canEditAttendance || isDayLocked}
                                       />
                                     )}
                                   </div>
@@ -3159,7 +3477,7 @@ export default function HRAttendance({ isMobile }) {
 
                               {/* Late coming deduction input (Upgraded time deduction in hours) */}
                               {effectiveActiveConditions.deductions && (
-                                <div className={`flex flex-col gap-1 ${!canEditAttendance ? 'opacity-60 pointer-events-none' : ''}`}>
+                                <div className={`flex flex-col gap-1 ${(!canEditAttendance || isDayLocked) ? 'opacity-60 pointer-events-none' : ''}`}>
                                   <span className="text-[8px] font-bold uppercase tracking-wider text-slate-400">Late Coming</span>
                                   <div className="flex gap-1.5 items-center">
                                     <div className="relative flex-1 flex items-center">
@@ -3167,14 +3485,17 @@ export default function HRAttendance({ isMobile }) {
                                       <input 
                                         type="text"
                                         value={rec.deductions ? `${rec.deductions}h` : ''}
-                                        disabled={!canEditAttendance}
+                                        disabled={!canEditAttendance || isDayLocked}
+                                        readOnly={isDayLocked}
                                         onChange={(e) => {
-                                          if (!canEditAttendance) return;
+                                          if (!canEditAttendance || isDayLocked) return;
                                           const cleaned = e.target.value.replace(/[^0-9.]/g, '');
                                           handleValueChange(emp.id, day.date || day.key, 'deductions', parseFloat(cleaned) || 0);
                                         }}
                                         placeholder="hours"
-                                        className="w-full bg-surface-container-low border border-outline-variant/15 rounded px-2 pl-10 py-1 text-[11px] text-right font-semibold text-on-surface focus:bg-surface-container-lowest focus:ring-0 focus:border-primary/50 transition-all outline-none"
+                                        className={`w-full bg-surface-container-low border border-outline-variant/15 rounded px-2 pl-10 py-1 text-[11px] text-right font-semibold text-on-surface transition-all outline-none ${
+                                          isDayLocked ? 'cursor-not-allowed opacity-75' : 'focus:bg-surface-container-lowest focus:ring-0 focus:border-primary/50'
+                                        }`}
                                       />
                                     </div>
                                     {canEditAttendance && (
@@ -3184,6 +3505,7 @@ export default function HRAttendance({ isMobile }) {
                                         field="deductionsReason" 
                                         value={rec} 
                                         reasonField="deductionsReason" 
+                                        disabled={!canEditAttendance || isDayLocked}
                                       />
                                     )}
                                   </div>
