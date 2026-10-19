@@ -284,6 +284,8 @@ export default function HRAttendance({ isMobile }) {
   };
 
   const [searchQuery, setSearchQuery] = useState(() => savedUserFilters?.searchQuery || '');
+  const [selectedAlphaLetter, setSelectedAlphaLetter] = useState('ALL');
+  const [nameSortOrder, setNameSortOrder] = useState('asc'); // 'asc' | 'desc'
   const [activeComment, setActiveComment] = useState(null); // { empId, dayKey, field }
   const [commentText, setCommentText] = useState('');
 
@@ -1025,6 +1027,12 @@ export default function HRAttendance({ isMobile }) {
 
     if (!matchSearch || !matchDept || !matchDiv) return false;
 
+    // Alphabetical Letter Filter
+    if (selectedAlphaLetter !== 'ALL') {
+      const firstChar = (emp.name || '').trim().charAt(0).toUpperCase();
+      if (firstChar !== selectedAlphaLetter) return false;
+    }
+
     if (statusFilter !== 'ALL' && statusFilter) {
       const att = emp.attendance || {};
       const rec = att[startDate] || att[selectedDay] || {};
@@ -1034,6 +1042,10 @@ export default function HRAttendance({ isMobile }) {
     }
 
     return true;
+  }).sort((a, b) => {
+    const nameA = (a.name || '').toLowerCase();
+    const nameB = (b.name || '').toLowerCase();
+    return nameSortOrder === 'asc' ? nameA.localeCompare(nameB) : nameB.localeCompare(nameA);
   });
 
   // Pagination bounds (20 entries per page)
@@ -1542,113 +1554,198 @@ export default function HRAttendance({ isMobile }) {
         </div>
 
         {/* Global Controls & Date Search */}
-        <div className="bg-surface-container-lowest p-4 rounded-2xl border border-outline-variant/10 shadow-sm flex flex-col md:flex-row gap-4 items-center justify-between">
-          <div className="flex items-center gap-3 w-full md:w-auto">
-            <div className="relative flex-1 md:flex-initial">
-              <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline-variant text-[16px]">search</span>
-              <input 
-                type="text"
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                placeholder="Quick search employees..."
-                className="w-full md:w-64 bg-surface-container-low border border-outline-variant/15 rounded-xl pl-9 pr-4 py-2 text-xs text-on-surface font-semibold focus:bg-surface-container-lowest focus:border-primary/50 transition-all focus:ring-0 outline-none"
-              />
-            </div>
-            
-            {/* Month Select */}
-            <div className="relative">
-              <select 
-                value={selectedMonth}
-                onChange={e => {
-                  const m = parseInt(e.target.value);
-                  setSelectedMonth(m);
-                  updateDateRangeFromMonthYear(m, selectedYear);
-                }}
-                className="bg-surface-container-low hover:bg-surface-container-high px-3 py-2 rounded-xl border border-outline-variant/15 text-xs font-semibold text-on-surface transition-all outline-none cursor-pointer"
-              >
-                {["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"].map((month, idx) => (
-                  <option key={month} value={idx}>{month}</option>
-                ))}
-              </select>
+        <div className="bg-surface-container-lowest p-4 rounded-2xl border border-outline-variant/10 shadow-sm flex flex-col gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
+              
+              {/* Quick Search */}
+              <div className="relative flex-1 sm:flex-initial">
+                <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline-variant text-[16px]">search</span>
+                <input 
+                  type="text"
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  placeholder="Quick search employees..."
+                  className="w-full sm:w-56 bg-surface-container-low border border-outline-variant/20 rounded-xl pl-9 pr-4 py-2 text-xs text-on-surface font-semibold focus:bg-surface-container-lowest focus:border-primary/50 transition-all focus:ring-2 focus:ring-primary/10 outline-none"
+                />
+              </div>
+
+              {/* MODERN UI DIVISION DROPDOWN - System UI Matched */}
+              <div className="relative group">
+                <div className="flex items-center bg-surface-container-low hover:bg-surface-container-high border border-outline-variant/20 hover:border-primary/50 rounded-xl px-3 py-1.5 transition-all shadow-xs">
+                  <span className="material-symbols-outlined text-[17px] text-primary mr-1.5">apartment</span>
+                  <select 
+                    value={divisionFilter}
+                    onChange={e => {
+                      setDivisionFilter(e.target.value);
+                      setDepartmentFilter('ALL');
+                      setCurrentPage(1);
+                    }}
+                    className="bg-transparent border-none text-xs font-bold text-on-surface cursor-pointer outline-none focus:ring-0 pr-6 appearance-none"
+                    title="Filter by Division"
+                  >
+                    {divisionsList.map(div => (
+                      <option key={div} value={div} className="bg-surface-container-lowest text-on-surface font-semibold">
+                        {div === 'ALL' ? '🏬 All Divisions' : div}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="material-symbols-outlined text-[16px] text-outline absolute right-2 pointer-events-none group-hover:text-primary transition-colors">
+                    expand_more
+                  </span>
+                </div>
+              </div>
+
+              {/* Month Select */}
+              <div className="relative group">
+                <div className="flex items-center bg-surface-container-low hover:bg-surface-container-high border border-outline-variant/20 hover:border-primary/50 rounded-xl px-3 py-1.5 transition-all shadow-xs">
+                  <span className="material-symbols-outlined text-[17px] text-secondary mr-1.5">calendar_month</span>
+                  <select 
+                    value={selectedMonth}
+                    onChange={e => {
+                      const m = parseInt(e.target.value);
+                      setSelectedMonth(m);
+                      updateDateRangeFromMonthYear(m, selectedYear);
+                    }}
+                    className="bg-transparent border-none text-xs font-bold text-on-surface cursor-pointer outline-none focus:ring-0 pr-6 appearance-none"
+                  >
+                    {["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"].map((month, idx) => (
+                      <option key={month} value={idx} className="bg-surface-container-lowest text-on-surface font-semibold">{month}</option>
+                    ))}
+                  </select>
+                  <span className="material-symbols-outlined text-[16px] text-outline absolute right-2 pointer-events-none group-hover:text-secondary transition-colors">
+                    expand_more
+                  </span>
+                </div>
+              </div>
+
+              {/* Year Select */}
+              <div className="relative group">
+                <div className="flex items-center bg-surface-container-low hover:bg-surface-container-high border border-outline-variant/20 hover:border-primary/50 rounded-xl px-3 py-1.5 transition-all shadow-xs">
+                  <select 
+                    value={selectedYear}
+                    onChange={e => {
+                      const y = parseInt(e.target.value);
+                      setSelectedYear(y);
+                      updateDateRangeFromMonthYear(selectedMonth, y);
+                    }}
+                    className="bg-transparent border-none text-xs font-bold text-on-surface cursor-pointer outline-none focus:ring-0 pr-6 appearance-none"
+                  >
+                    {[2022, 2023, 2024, 2025, 2026].map(year => (
+                      <option key={year} value={year} className="bg-surface-container-lowest text-on-surface font-semibold">{year}</option>
+                    ))}
+                  </select>
+                  <span className="material-symbols-outlined text-[16px] text-outline absolute right-2 pointer-events-none group-hover:text-primary transition-colors">
+                    expand_more
+                  </span>
+                </div>
+              </div>
+
+              {/* Interactive Date Picker Button */}
+              <div className="relative">
+                <button 
+                  onClick={() => setIsDatePickerOpen(!isDatePickerOpen)}
+                  className="bg-surface-container-low hover:bg-surface-container-high px-3.5 py-1.5 rounded-xl border border-outline-variant/20 text-xs font-bold text-on-surface flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer shadow-xs"
+                >
+                  <span className="material-symbols-outlined text-[16px] text-primary">date_range</span>
+                  {new Date(startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - {new Date(endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                  <span className="material-symbols-outlined text-[15px] text-outline">expand_more</span>
+                </button>
+                
+                {isDatePickerOpen && (
+                  <div className="absolute left-0 mt-2 z-50 bg-surface-container-lowest border border-outline-variant/30 rounded-2xl p-4 shadow-xl flex flex-col gap-3 min-w-[280px] animate-in fade-in slide-in-from-top-2 duration-200">
+                    <div className="flex flex-col gap-1">
+                      <span className="text-[9px] uppercase tracking-wider font-bold text-primary">Start Date</span>
+                      <input 
+                        type="date"
+                        value={startDate}
+                        onChange={e => setStartDate(e.target.value)}
+                        className="bg-surface-container-low border border-outline-variant/30 rounded-xl px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary focus:border-transparent text-on-surface"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <span className="text-[9px] uppercase tracking-wider font-bold text-primary">End Date</span>
+                      <input 
+                        type="date"
+                        value={endDate}
+                        onChange={e => setEndDate(e.target.value)}
+                        className="bg-surface-container-low border border-outline-variant/30 rounded-xl px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary focus:border-transparent text-on-surface"
+                      />
+                    </div>
+                    <button 
+                      onClick={() => setIsDatePickerOpen(false)}
+                      className="w-full bg-primary hover:bg-primary-container text-on-primary text-xs font-bold py-2 rounded-xl transition-colors mt-1 cursor-pointer"
+                    >
+                      Apply Filter
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
 
-            {/* Year Select */}
-            <div className="relative">
-              <select 
-                value={selectedYear}
-                onChange={e => {
-                  const y = parseInt(e.target.value);
-                  setSelectedYear(y);
-                  updateDateRangeFromMonthYear(selectedMonth, y);
-                }}
-                className="bg-surface-container-low hover:bg-surface-container-high px-3 py-2 rounded-xl border border-outline-variant/15 text-xs font-semibold text-on-surface transition-all outline-none cursor-pointer"
-              >
-                {[2022, 2023, 2024, 2025, 2026].map(year => (
-                  <option key={year} value={year}>{year}</option>
-                ))}
-              </select>
+            {/* Total count badge */}
+            <div className="text-[11px] font-bold text-on-surface-variant flex items-center gap-1.5 bg-surface-container-low px-3 py-1.5 rounded-xl border border-outline-variant/10">
+              <span className="material-symbols-outlined text-[16px] text-primary">badge</span>
+              <span>Total: <strong className="text-on-surface font-black">{filteredEmployees.length}</strong></span>
             </div>
+          </div>
 
-            {/* Division Filter Dropdown */}
-            <div className="relative">
-              <select 
-                value={divisionFilter}
-                onChange={e => {
-                  setDivisionFilter(e.target.value);
-                  setDepartmentFilter('ALL');
+          {/* ALPHABETICAL FILTER KEYS & SORTING PILLS */}
+          <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-outline-variant/10 text-xs">
+            <span className="text-[10px] font-black uppercase tracking-wider text-on-surface-variant mr-1 flex items-center gap-1">
+              <span className="material-symbols-outlined text-[15px] text-primary">sort_by_alpha</span>
+              Alpha:
+            </span>
+
+            {/* A to Z Sort Toggle */}
+            <button
+              onClick={() => setNameSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')}
+              className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all flex items-center gap-1 cursor-pointer ${
+                nameSortOrder === 'asc'
+                  ? 'bg-primary/10 text-primary border-primary/20'
+                  : 'bg-secondary/10 text-secondary border-secondary/20'
+              }`}
+              title="Toggle Ascending / Descending Name Sorting"
+            >
+              <span>{nameSortOrder === 'asc' ? 'A → Z' : 'Z → A'}</span>
+              <span className="material-symbols-outlined text-[13px]">{nameSortOrder === 'asc' ? 'arrow_upward' : 'arrow_downward'}</span>
+            </button>
+
+            {/* All Pill */}
+            <button
+              onClick={() => { setSelectedAlphaLetter('ALL'); setCurrentPage(1); }}
+              className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                selectedAlphaLetter === 'ALL'
+                  ? 'bg-primary text-on-primary shadow-xs font-black'
+                  : 'bg-surface-container-low text-on-surface-variant hover:bg-surface-container-high'
+              }`}
+            >
+              All
+            </button>
+
+            {/* Individual Letter Pills A-Z */}
+            {['A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y','Z'].map(char => (
+              <button
+                key={char}
+                onClick={() => {
+                  setSelectedAlphaLetter(selectedAlphaLetter === char ? 'ALL' : char);
                   setCurrentPage(1);
                 }}
-                className="bg-surface-container-low hover:bg-surface-container-high px-3 py-2 rounded-xl border border-outline-variant/15 text-xs font-semibold text-on-surface transition-all outline-none cursor-pointer"
-                title="Filter by Division"
+                className={`w-6 h-6 rounded-md text-[11px] font-bold flex items-center justify-center transition-all cursor-pointer ${
+                  selectedAlphaLetter === char
+                    ? 'bg-primary text-on-primary shadow-xs font-black scale-105'
+                    : 'bg-surface-container-low text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface'
+                }`}
               >
-                {divisionsList.map(div => (
-                  <option key={div} value={div}>
-                    {div === 'ALL' ? '🏬 All Divisions' : div}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Interactive Date Picker Button */}
-            <div className="relative">
-              <button 
-                onClick={() => setIsDatePickerOpen(!isDatePickerOpen)}
-                className="bg-surface-container-low hover:bg-surface-container-high px-4 py-2 rounded-xl border border-outline-variant/15 text-xs font-semibold text-on-surface flex items-center gap-2 transition-all active:scale-95 cursor-pointer"
-              >
-                <span className="material-symbols-outlined text-[16px] text-primary">calendar_month</span>
-                {new Date(startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - {new Date(endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                <span className="material-symbols-outlined text-[14px] text-slate-400">expand_more</span>
+                {char}
               </button>
-              
-              {isDatePickerOpen && (
-                <div className="absolute left-0 mt-2 z-50 bg-surface border border-outline-variant/30 rounded-2xl p-4 shadow-xl flex flex-col gap-3 min-w-[280px] animate-in fade-in slide-in-from-top-2 duration-200">
-                  <div className="flex flex-col gap-1">
-                    <span className="text-[9px] uppercase tracking-wider font-bold text-primary">Start Date</span>
-                    <input 
-                      type="date"
-                      value={startDate}
-                      onChange={e => setStartDate(e.target.value)}
-                      className="bg-surface border border-outline-variant/30 rounded-xl px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary focus:border-transparent text-on-surface"
-                    />
-                  </div>
-                  <div className="flex flex-col gap-1">
-                    <span className="text-[9px] uppercase tracking-wider font-bold text-primary">End Date</span>
-                    <input 
-                      type="date"
-                      value={endDate}
-                      onChange={e => setEndDate(e.target.value)}
-                      className="bg-surface border border-outline-variant/30 rounded-xl px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary focus:border-transparent text-on-surface"
-                    />
-                  </div>
-                  <button 
-                    onClick={() => setIsDatePickerOpen(false)}
-                    className="w-full bg-primary hover:bg-primary-container text-on-primary text-xs font-bold py-2 rounded-xl transition-colors mt-1 cursor-pointer"
-                  >
-                    Apply Filter
-                  </button>
-                </div>
-              )}
-            </div>
+            ))}
+
+            {selectedAlphaLetter !== 'ALL' && (
+              <span className="text-[11px] text-primary font-bold ml-2">
+                Showing "{selectedAlphaLetter}" ({filteredEmployees.length} employees)
+              </span>
+            )}
           </div>
         </div>
 

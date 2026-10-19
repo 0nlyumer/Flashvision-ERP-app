@@ -40,6 +40,7 @@ export default function HRSalaryGeneration({ isMobile }) {
   const [isExporting, setIsExporting] = useState(false);
   const [monthToDelete, setMonthToDelete] = useState(null); // modal confirmation for delete
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [isFinalizeModalOpen, setIsFinalizeModalOpen] = useState(false);
 
   // UI Processing States
   const [isProcessing, setIsProcessing] = useState(false);
@@ -383,6 +384,11 @@ export default function HRSalaryGeneration({ isMobile }) {
       // Paid Days = Actual worked days + paid leaves
       const payableDays = Math.min(totalWorkingDays, Math.max(0, workedDays + leavesCount));
 
+      // STRICT RULE: If employee has 0 paid days (all absences or no positive attendance), EXCLUDE COMPLETELY!
+      if (payableDays === 0) {
+        return null;
+      }
+
       // Absents Count = Remaining unworked days in the month (e.g. 26 - 1 = 25 absents)
       absentsCount = Math.max(0, totalWorkingDays - payableDays);
 
@@ -521,13 +527,26 @@ export default function HRSalaryGeneration({ isMobile }) {
     }, 900);
   };
 
-  // Finalize payroll handler
+  // Finalize payroll trigger: Validates > 0 Net Salary and opens Confirmation Modal
   const handleFinalizePayroll = () => {
     if (localPayrollList.length === 0) {
       triggerToast('⚠️ No payroll records available to finalize.');
       return;
     }
 
+    // RULE: 0 net salary amount ho to salary generate nahi honi chahie, > 0 net amount ho gi to he generate ho gi
+    if (summaryTotals.netPayout <= 0) {
+      triggerToast('⚠️ Cannot finalize payroll with Net Payout of 0. Net amount must be greater than 0.');
+      return;
+    }
+
+    // Open confirmation popup
+    setIsFinalizeModalOpen(true);
+  };
+
+  // Execution after user confirms on confirmation popup
+  const executeFinalizePayroll = () => {
+    setIsFinalizeModalOpen(false);
     setIsProcessing(true);
     setProcessingMessage('Locking calculated entries and finalizing payroll account mappings...');
 
@@ -1800,6 +1819,76 @@ export default function HRSalaryGeneration({ isMobile }) {
               </button>
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* FINALIZE CONFIRMATION MODAL                                */}
+      {/* ========================================================= */}
+      {isFinalizeModalOpen && (
+        <div className="fixed inset-0 bg-on-surface/40 backdrop-blur-sm z-[300] flex items-center justify-center p-4">
+          <div className="bg-surface-container-lowest max-w-md w-full rounded-3xl border border-outline-variant/30 shadow-2xl p-6 space-y-5 animate-in zoom-in-95 duration-200">
+            
+            <div className="flex items-center gap-3">
+              <span className="p-3 rounded-2xl bg-primary/10 text-primary material-symbols-outlined text-[26px]">
+                verified_user
+              </span>
+              <div>
+                <h4 className="text-base font-black text-on-surface font-headline">Confirm Payroll Finalization</h4>
+                <p className="text-[11px] text-on-surface-variant font-medium">Please review payroll summary before locking.</p>
+              </div>
+            </div>
+
+            {/* Summary details */}
+            <div className="bg-surface-container-low p-4 rounded-2xl space-y-2.5 text-xs">
+              <div className="flex justify-between items-center">
+                <span className="text-on-surface-variant font-semibold">Payroll Period:</span>
+                <span className="font-bold text-on-surface">{getPeriodLabel(payrollPeriod)}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-on-surface-variant font-semibold">Division:</span>
+                <span className="font-bold text-on-surface">{selectedDivision || 'All'}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-on-surface-variant font-semibold">Paid Staff Count:</span>
+                <span className="font-bold text-on-surface">{summaryTotals.headcount} Employees</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-on-surface-variant font-semibold">Total Overtime:</span>
+                <span className="font-bold text-secondary">{currSym} {safeMoney(summaryTotals.overtime)}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-on-surface-variant font-semibold">Total Deductions:</span>
+                <span className="font-bold text-error">-{currSym} {safeMoney(summaryTotals.deductions)}</span>
+              </div>
+              <div className="pt-2 border-t border-outline-variant/20 flex justify-between items-center">
+                <span className="text-sm font-black text-on-surface">Total Net Disbursal:</span>
+                <span className="text-base font-black text-primary font-headline">
+                  {currSym} {safeMoney(summaryTotals.netPayout)}
+                </span>
+              </div>
+            </div>
+
+            <p className="text-[11px] text-on-surface-variant leading-relaxed">
+              Are you sure you want to lock and finalize this payroll? Once finalized, it will be safely archived into <strong>Payroll History</strong> with printable vouchers.
+            </p>
+
+            <div className="flex justify-end gap-3 pt-1">
+              <button
+                onClick={() => setIsFinalizeModalOpen(false)}
+                className="px-4 py-2.5 rounded-xl text-xs font-bold border border-outline-variant text-on-surface hover:bg-surface-container-low cursor-pointer transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={executeFinalizePayroll}
+                className="px-6 py-2.5 rounded-xl text-xs font-black bg-primary text-on-primary hover:bg-primary-container shadow-md cursor-pointer transition-all active:scale-[0.98] flex items-center gap-1.5"
+              >
+                <span className="material-symbols-outlined text-[16px]">check_circle</span>
+                Confirm & Finalize
+              </button>
+            </div>
           </div>
         </div>
       )}
