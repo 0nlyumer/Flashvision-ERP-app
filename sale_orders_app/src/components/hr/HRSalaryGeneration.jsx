@@ -159,47 +159,45 @@ export default function HRSalaryGeneration({ isMobile }) {
     };
   }, [resizingColId, startX, startWidth]);
 
-  // RULE: Collect ALL months where ANY employee has at least a single date's attendance saved
+  // RULE: Collect ALL months where ANY active employee has at least a single date's verified attendance saved
   const monthsWithAttendance = useMemo(() => {
     const monthSet = new Set();
     const MONTH_REGEX = /^\d{4}-(0[1-9]|1[0-2])/;
 
-    // 1. Uploaded attendance logs
+    const activeEmps = (state.hr_employees_list || []).filter(e => (e.status || 'Active').toLowerCase() === 'active');
+    const activeIds = new Set(activeEmps.map(e => String(e.id || '').trim()));
+    const activeNames = new Set(activeEmps.map(e => String(e.name || '').toLowerCase().trim()));
+
+    // 1. Uploaded attendance logs (strictly active employees with positive attendance)
     const uploaded = state.hr_uploaded_attendance || [];
     uploaded.forEach(log => {
+      const logEmpId = log.employeeId ? String(log.employeeId).trim() : (log.id && String(log.id).startsWith('EMP-') ? String(log.id).trim() : '');
+      const logName = log.employeeName ? String(log.employeeName).toLowerCase().trim() : '';
+      const isActEmp = (logEmpId && activeIds.has(logEmpId)) || (logName && activeNames.has(logName));
+      if (!isActEmp) return;
+
       const dt = log?.date || log?.logDate || log?.punchDate;
-      if (dt && typeof dt === 'string' && MONTH_REGEX.test(dt)) {
+      const st = String(log?.status || '').toLowerCase();
+      // Must have actual attendance (present, completed, leave, or punch in/out)
+      if (dt && typeof dt === 'string' && MONTH_REGEX.test(dt) && (st === 'present' || st === 'completed' || st === 'leave' || log.inTime)) {
         monthSet.add(dt.substring(0, 7));
       }
     });
 
-    // 2. Embedded employee attendance logs
-    const emps = state.hr_employees_list || [];
-    emps.forEach(emp => {
+    // 2. Embedded employee attendance logs for active employees
+    activeEmps.forEach(emp => {
       if (emp && emp.attendance && typeof emp.attendance === 'object') {
         Object.entries(emp.attendance).forEach(([dayKey, dayVal]) => {
           if (typeof dayKey === 'string' && MONTH_REGEX.test(dayKey) && dayVal) {
-            monthSet.add(dayKey.substring(0, 7));
+            const st = String(dayVal.status || '').toLowerCase();
+            // Must have actual positive attendance mark (present, leave, or valid punch)
+            if (st === 'present' || st === 'leave' || dayVal.inTime || (dayVal.userEdited && st !== 'absent')) {
+              monthSet.add(dayKey.substring(0, 7));
+            }
           }
         });
       }
     });
-
-    // 3. LocalStorage fallback
-    try {
-      const cached = localStorage.getItem('hr_uploaded_attendance');
-      if (cached) {
-        const parsed = JSON.parse(cached);
-        if (Array.isArray(parsed)) {
-          parsed.forEach(log => {
-            const dt = log?.date || log?.logDate;
-            if (dt && typeof dt === 'string' && MONTH_REGEX.test(dt)) {
-              monthSet.add(dt.substring(0, 7));
-            }
-          });
-        }
-      }
-    } catch (e) {}
 
     return Array.from(monthSet);
   }, [state.hr_uploaded_attendance, state.hr_employees_list]);
@@ -382,12 +380,15 @@ export default function HRSalaryGeneration({ isMobile }) {
       const hourlyRate = baseSalary / (totalWorkingDays * 8);
       const dailyRate = baseSalary / totalWorkingDays;
 
-      // Paid Days = Actual worked days (payable days)
-      const payableDays = Math.min(totalWorkingDays, Math.max(0, workedDays));
+      // Paid Days = Actual worked days + paid leaves
+      const payableDays = Math.min(totalWorkingDays, Math.max(0, workedDays + leavesCount));
+
+      // Absents Count = Remaining unworked days in the month (e.g. 26 - 1 = 25 absents)
+      absentsCount = Math.max(0, totalWorkingDays - payableDays);
 
       const earnedBasicSalary = Math.round(dailyRate * payableDays * 100) / 100;
+      const absentDeduction = Math.round(dailyRate * absentsCount * 100) / 100;
       const otPay = Math.round(otHours * (hourlyRate * otMultiplier) * 100) / 100;
-      const absentDeduction = Math.round(absentsCount * dailyRate * 100) / 100;
       const lateDeduction = Math.round(lateComingHours * hourlyRate * 100) / 100;
 
       // Loans & Advances
@@ -424,17 +425,33 @@ export default function HRSalaryGeneration({ isMobile }) {
         }
       } catch (e) {}
 
-      // Attendance allowance: Bonus only if 0 absents and worked days > 0
+      // Attendance allowance rule: ZERO ABSENCES REQUIRED
+      // Employee MUST have worked the full month (payableDays >= totalWorkingDays) and have 0 absences!
+      // If employee only worked 1 day (or less than full month), absentsCount > 0, so NO allowance is given!
       let allowanceAmount = 0;
-      if (absentsCount === 0 && workedDays > 0) {
-        allowanceAmount = customAllowanceLimit;
+      const isZeroAbsencesEnforced = salaryConfig?.attendanceAllowance?.zeroAbsences !== false; // Default true
+      const isZeroLateEnforced = salaryConfig?.attendanceAllowance?.zeroLate === true;
+
+      if (isZeroAbsencesEnforced) {
+        if (absentsCount === 0 && payableDays >= totalWorkingDays) {
+          if (!isZeroLateEnforced || lateComingHours === 0) {
+            allowanceAmount = customAllowanceLimit;
+          }
+        }
+      } else {
+        const allowedAbsences = safeNum(salaryConfig?.attendanceAllowance?.maxAbsencesAllowed || 0);
+        if (absentsCount <= allowedAbsences && payableDays >= (totalWorkingDays - allowedAbsences)) {
+          if (!isZeroLateEnforced || lateComingHours === 0) {
+            allowanceAmount = customAllowanceLimit;
+          }
+        }
       }
 
       const totalAdditions = otPay + allowanceAmount;
-      const totalDeductions = absentDeduction + lateDeduction + totalFines + loanAmount + safeNum(emp.advance);
+      const totalDeductions = lateDeduction + totalFines + loanAmount + safeNum(emp.advance);
 
-      // Net Salary
-      const netSalary = Math.max(0, earnedBasicSalary + totalAdditions - (lateDeduction + totalFines + loanAmount + safeNum(emp.advance)));
+      // Net Salary = Earned Basic Salary + Additions - Deductions
+      const netSalary = Math.max(0, earnedBasicSalary + totalAdditions - totalDeductions);
 
       return {
         employeeId: empIdStr || `EMP-${Date.now()}`,

@@ -1589,6 +1589,26 @@ export default function HRAttendance({ isMobile }) {
               </select>
             </div>
 
+            {/* Division Filter Dropdown */}
+            <div className="relative">
+              <select 
+                value={divisionFilter}
+                onChange={e => {
+                  setDivisionFilter(e.target.value);
+                  setDepartmentFilter('ALL');
+                  setCurrentPage(1);
+                }}
+                className="bg-surface-container-low hover:bg-surface-container-high px-3 py-2 rounded-xl border border-outline-variant/15 text-xs font-semibold text-on-surface transition-all outline-none cursor-pointer"
+                title="Filter by Division"
+              >
+                {divisionsList.map(div => (
+                  <option key={div} value={div}>
+                    {div === 'ALL' ? '🏬 All Divisions' : div}
+                  </option>
+                ))}
+              </select>
+            </div>
+
             {/* Interactive Date Picker Button */}
             <div className="relative">
               <button 
