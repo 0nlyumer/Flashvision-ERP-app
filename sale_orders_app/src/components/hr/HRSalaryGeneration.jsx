@@ -295,9 +295,16 @@ export default function HRSalaryGeneration({ isMobile }) {
       if (savedConfig) salaryConfig = JSON.parse(savedConfig);
     } catch (e) {}
 
+    let dutySettings = null;
+    try {
+      const savedDuty = localStorage.getItem('hr_duty_settings');
+      if (savedDuty) dutySettings = JSON.parse(savedDuty);
+    } catch (e) {}
+
     const [yearStr, monthStr] = period.split('-');
-    const daysInMonth = new Date(parseInt(yearStr), parseInt(monthStr), 0).getDate();
-    const totalWorkingDays = 26; // Standard payroll working days
+    const currentMonthDays = new Date(parseInt(yearStr), parseInt(monthStr), 0).getDate();
+    const daysInMonth = currentMonthDays;
+    const totalWorkingDays = currentMonthDays; // Precise days of current payroll month
 
     const results = allEmployees.map(emp => {
       const baseSalary = safeNum(emp.basicSalary || emp.salary || emp.baseSalary || 35000);
@@ -376,25 +383,46 @@ export default function HRSalaryGeneration({ isMobile }) {
         otHours += safeNum(r.hours);
       });
 
-      // Financials
-      const otMultiplier = safeNum(salaryConfig?.overtimeMultipliers?.weekday || 1.5);
-      const hourlyRate = baseSalary / (totalWorkingDays * 8);
-      const dailyRate = baseSalary / totalWorkingDays;
+      // ========================================================
+      // PRECISE FORMULA:
+      // (basic salary / current month days = 1 day amount / duty hours = 1 hours amount)
+      // ========================================================
+      const oneDayAmount = currentMonthDays > 0 ? (baseSalary / currentMonthDays) : 0;
+      const dailyRate = oneDayAmount;
+
+      // Duty Hours Resolution: Employee specific -> Shift duration -> Standard Hours -> 8h default
+      const shiftObj = (dutySettings?.shifts || []).find(s => 
+        String(s.name || '').trim().toLowerCase() === String(emp.shift || '').trim().toLowerCase()
+      );
+      const empDutyHours = safeNum(emp.dutyHours || emp.dailyHours) || 
+                           safeNum(shiftObj?.hours) || 
+                           safeNum(dutySettings?.standardHours) || 
+                           8;
+
+      const oneHourAmount = empDutyHours > 0 ? (oneDayAmount / empDutyHours) : 0;
+      const hourlyRate = oneHourAmount;
+
+      // Overtime Multiplier & Hourly Rate from Duty Hours & Shifts Configuration
+      const otConfig = dutySettings?.overtimeCalculation || {};
+      const otMultiplier = safeNum(otConfig.rateMultiplier || dutySettings?.overtimeMultiplier || salaryConfig?.overtimeMultipliers?.weekday || 1.5);
+      const otHourlyRate = (otConfig.type === 'flat' && safeNum(otConfig.flatHourlyRate) > 0)
+        ? safeNum(otConfig.flatHourlyRate)
+        : (hourlyRate * otMultiplier);
 
       // Paid Days = Actual worked days + paid leaves
-      const payableDays = Math.min(totalWorkingDays, Math.max(0, workedDays + leavesCount));
+      const payableDays = Math.min(currentMonthDays, Math.max(0, workedDays + leavesCount));
 
       // STRICT RULE: If employee has 0 paid days (all absences or no positive attendance), EXCLUDE COMPLETELY!
       if (payableDays === 0) {
         return null;
       }
 
-      // Absents Count = Remaining unworked days in the month (e.g. 26 - 1 = 25 absents)
-      absentsCount = Math.max(0, totalWorkingDays - payableDays);
+      // Absents Count = Remaining unworked days in the current month (e.g. 31 - 1 = 30 absents)
+      absentsCount = Math.max(0, currentMonthDays - payableDays);
 
       const earnedBasicSalary = Math.round(dailyRate * payableDays * 100) / 100;
       const absentDeduction = Math.round(dailyRate * absentsCount * 100) / 100;
-      const otPay = Math.round(otHours * (hourlyRate * otMultiplier) * 100) / 100;
+      const otPay = Math.round(otHours * otHourlyRate * 100) / 100;
       const lateDeduction = Math.round(lateComingHours * hourlyRate * 100) / 100;
 
       // Loans & Advances
@@ -439,14 +467,14 @@ export default function HRSalaryGeneration({ isMobile }) {
       const isZeroLateEnforced = salaryConfig?.attendanceAllowance?.zeroLate === true;
 
       if (isZeroAbsencesEnforced) {
-        if (absentsCount === 0 && payableDays >= totalWorkingDays) {
+        if (absentsCount === 0 && payableDays >= currentMonthDays) {
           if (!isZeroLateEnforced || lateComingHours === 0) {
             allowanceAmount = customAllowanceLimit;
           }
         }
       } else {
         const allowedAbsences = safeNum(salaryConfig?.attendanceAllowance?.maxAbsencesAllowed || 0);
-        if (absentsCount <= allowedAbsences && payableDays >= (totalWorkingDays - allowedAbsences)) {
+        if (absentsCount <= allowedAbsences && payableDays >= (currentMonthDays - allowedAbsences)) {
           if (!isZeroLateEnforced || lateComingHours === 0) {
             allowanceAmount = customAllowanceLimit;
           }
@@ -467,22 +495,29 @@ export default function HRSalaryGeneration({ isMobile }) {
         section: section,
         division: division,
         employeeName: emp.name || 'Employee',
-        payableDays: payableDays, // ADDITION: Kitne din ka pay kiya ja raha hai
+        payableDays: payableDays,
         basicSalary: parseFloat(baseSalary.toFixed(2)),
-        overtime: parseFloat(otPay.toFixed(2)),
+        dailyRate: parseFloat(dailyRate.toFixed(2)),
+        hourlyRate: parseFloat(hourlyRate.toFixed(2)),
+        dutyHours: empDutyHours,
+        currentMonthDays: currentMonthDays,
         otHours: parseFloat(otHours.toFixed(1)),
+        otMultiplier: otMultiplier,
+        otHourlyRate: parseFloat(otHourlyRate.toFixed(2)),
+        overtime: parseFloat(otPay.toFixed(2)),
         lateComingHours: parseFloat(lateComingHours.toFixed(1)),
         lateDeduction: parseFloat(lateDeduction.toFixed(2)),
         absents: parseFloat(absentDeduction.toFixed(2)),
         absentsCount: absentsCount,
         workedDays: workedDays,
         leavesCount: leavesCount,
-        totalWorkingDays: totalWorkingDays,
-        daysInMonth: daysInMonth,
+        totalWorkingDays: currentMonthDays,
+        daysInMonth: currentMonthDays,
         fine: parseFloat(totalFines.toFixed(2)),
         allowance: parseFloat(allowanceAmount.toFixed(2)),
         advanceAmount: safeNum(emp.advance),
         loan: parseFloat(loanAmount.toFixed(2)),
+        earnedBasicSalary: parseFloat(earnedBasicSalary.toFixed(2)),
         netSalary: parseFloat(netSalary.toFixed(2)),
         status: 'Calculated'
       };
@@ -1077,7 +1112,13 @@ export default function HRSalaryGeneration({ isMobile }) {
             <div className="p-5 border-b border-outline-variant/10 space-y-4 bg-surface-container-lowest">
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div className="space-y-1">
-                  <h4 className="text-lg font-bold text-on-surface font-headline">Payroll Detail View</h4>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h4 className="text-lg font-bold text-on-surface font-headline">Payroll Detail View</h4>
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 text-[10px] font-mono font-bold">
+                      <span className="material-symbols-outlined text-[13px]">calculate</span>
+                      Formula: (Basic ÷ Days = 1d Rate) ÷ Duty Hrs = 1h Rate
+                    </span>
+                  </div>
                   <p className="text-xs text-on-surface-variant">
                     {selectedDivision ? `Showing active employees for Division: ${selectedDivision} in ${getPeriodLabel(payrollPeriod)}` : 'Please select division to view payroll records.'}
                   </p>
@@ -1995,12 +2036,38 @@ export default function HRSalaryGeneration({ isMobile }) {
                 </div>
               </div>
 
+              {/* Rate & Formula Breakdown */}
+              <div className="bg-surface-container-low/60 rounded-xl p-3 border border-outline-variant/15 text-[11px] font-mono space-y-1.5">
+                <div className="flex justify-between items-center text-on-surface-variant">
+                  <span>Month Days & Duty:</span>
+                  <span className="font-bold text-on-surface">{selectedRecordForDetail.currentMonthDays || 31} Days • {selectedRecordForDetail.dutyHours || 8} Hours/Day</span>
+                </div>
+                <div className="flex justify-between items-center text-on-surface-variant">
+                  <span>1 Day Rate (Basic ÷ Days):</span>
+                  <span className="font-bold text-primary">{currSym} {safeMoney(selectedRecordForDetail.dailyRate)} / day</span>
+                </div>
+                <div className="flex justify-between items-center text-on-surface-variant">
+                  <span>1 Hour Rate (1d ÷ Duty Hrs):</span>
+                  <span className="font-bold text-primary">{currSym} {safeMoney(selectedRecordForDetail.hourlyRate)} / hr</span>
+                </div>
+                {safeNum(selectedRecordForDetail.otHours) > 0 && (
+                  <div className="flex justify-between items-center text-secondary">
+                    <span>Overtime Hourly Rate:</span>
+                    <span className="font-bold">{currSym} {safeMoney(selectedRecordForDetail.otHourlyRate)} / hr ({selectedRecordForDetail.otMultiplier || 1.5}x)</span>
+                  </div>
+                )}
+              </div>
+
               {/* Earnings Breakdown */}
               <div className="space-y-2">
                 <p className="text-xs font-bold text-on-surface-variant uppercase tracking-wider border-b border-outline-variant/10 pb-1">Earnings</p>
                 <div className="flex justify-between items-center">
-                  <span className="text-on-surface-variant">Base Salary</span>
+                  <span className="text-on-surface-variant">Base Salary (Full Month)</span>
                   <span className="font-bold text-on-surface">{currSym} {safeMoney(selectedRecordForDetail.basicSalary)}</span>
+                </div>
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-emerald-700 dark:text-emerald-400 font-semibold">Earned Basic ({safeNum(selectedRecordForDetail.payableDays)} Paid Days)</span>
+                  <span className="font-bold text-emerald-700 dark:text-emerald-400">{currSym} {safeMoney(selectedRecordForDetail.earnedBasicSalary || (selectedRecordForDetail.dailyRate * selectedRecordForDetail.payableDays))}</span>
                 </div>
                 {safeNum(selectedRecordForDetail.overtime) > 0 && (
                   <div className="flex justify-between items-center">

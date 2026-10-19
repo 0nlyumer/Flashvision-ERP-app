@@ -280,41 +280,46 @@ export default function HRSettings({ isMobile }) {
   // DUTY SETTINGS & SHIFTS STATE & HANDLERS
   // ==========================================
   const [dutySettings, setDutySettings] = useState(() => {
+    const defaultDuty = {
+      standardHours: 8,
+      gracePeriodMinutes: 15,
+      halfDayThresholdHours: 4,
+      dutyHoursAdjustable: true,
+      overtimeCalculation: {
+        rateMultiplier: 1.5,
+        weekendMultiplier: 2.0,
+        holidayMultiplier: 3.0,
+        type: 'formula', // 'formula' | 'flat'
+        flatHourlyRate: 200
+      },
+      shifts: [
+        { id: 1, name: 'GENERAL SHIFT', startTime: '09:00', endTime: '17:00', hours: 8, status: 'Active' },
+        { id: 2, name: 'MORNING SHIFT', startTime: '06:00', endTime: '14:00', hours: 8, status: 'Active' },
+        { id: 3, name: 'EVENING SHIFT', startTime: '14:00', endTime: '22:00', hours: 8, status: 'Active' },
+        { id: 4, name: 'NIGHT SHIFT', startTime: '22:00', endTime: '06:00', hours: 8, status: 'Active' }
+      ]
+    };
     try {
       const saved = localStorage.getItem('hr_duty_settings');
-      if (saved) return JSON.parse(saved);
-      return {
-        standardHours: 8,
-        gracePeriodMinutes: 15,
-        halfDayThresholdHours: 4,
-        dutyHoursAdjustable: true,
-        shifts: [
-          { id: 1, name: 'GENERAL SHIFT', startTime: '09:00', endTime: '17:00', hours: 8, status: 'Active' },
-          { id: 2, name: 'MORNING SHIFT', startTime: '06:00', endTime: '14:00', hours: 8, status: 'Active' },
-          { id: 3, name: 'EVENING SHIFT', startTime: '14:00', endTime: '22:00', hours: 8, status: 'Active' },
-          { id: 4, name: 'NIGHT SHIFT', startTime: '22:00', endTime: '06:00', hours: 8, status: 'Active' }
-        ]
-      };
-    } catch (e) {
-      return {
-        standardHours: 8,
-        gracePeriodMinutes: 15,
-        halfDayThresholdHours: 4,
-        dutyHoursAdjustable: true,
-        shifts: [
-          { id: 1, name: 'GENERAL SHIFT', startTime: '09:00', endTime: '17:00', hours: 8, status: 'Active' },
-          { id: 2, name: 'MORNING SHIFT', startTime: '06:00', endTime: '14:00', hours: 8, status: 'Active' },
-          { id: 3, name: 'EVENING SHIFT', startTime: '14:00', endTime: '22:00', hours: 8, status: 'Active' },
-          { id: 4, name: 'NIGHT SHIFT', startTime: '22:00', endTime: '06:00', hours: 8, status: 'Active' }
-        ]
-      };
-    }
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (!parsed.overtimeCalculation) {
+          parsed.overtimeCalculation = defaultDuty.overtimeCalculation;
+        }
+        return parsed;
+      }
+    } catch (e) {}
+    return defaultDuty;
   });
 
   const saveDutySettings = (updated) => {
     setDutySettings(updated);
     try {
       localStorage.setItem('hr_duty_settings', JSON.stringify(updated));
+      if (setCollection) {
+        setCollection('hr_duty_settings', updated);
+      }
+      window.dispatchEvent(new CustomEvent('fv-duty-settings-updated', { detail: updated }));
     } catch (e) {}
   };
 
@@ -1811,6 +1816,221 @@ export default function HRSettings({ isMobile }) {
           </div>
         </div>
 
+        {/* Overtime Calculation & Rates Configuration (Duty Hours & Shifts Section) */}
+        <div className="bg-surface-container-lowest p-6 rounded-2xl border border-outline-variant/15 shadow-sm space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-outline-variant/10 pb-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-600 flex items-center justify-center shrink-0">
+                <span className="material-symbols-outlined text-[24px]">more_time</span>
+              </div>
+              <div>
+                <h4 className="font-headline text-base font-black text-on-surface">Overtime Calculation Configuration</h4>
+                <p className="text-xs text-on-surface-variant font-medium mt-0.5">
+                  Formula: <span className="font-mono text-primary font-bold">(Basic Salary ÷ Current Month Days = 1 Day Rate) ÷ Duty Hours = 1 Hour Rate × OT Multiplier</span>
+                </p>
+              </div>
+            </div>
+
+            {/* Method Toggle: Formula vs Flat */}
+            <div className="flex items-center bg-surface-container-low p-1 rounded-xl border border-outline-variant/15 text-xs font-bold">
+              <button
+                type="button"
+                onClick={() => saveDutySettings({
+                  ...dutySettings,
+                  overtimeCalculation: { ...(dutySettings.overtimeCalculation || {}), type: 'formula' }
+                })}
+                className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                  (dutySettings.overtimeCalculation?.type || 'formula') === 'formula'
+                    ? 'bg-amber-600 text-white shadow-xs font-black'
+                    : 'text-on-surface-variant hover:text-on-surface'
+                }`}
+              >
+                Formula-Based
+              </button>
+              <button
+                type="button"
+                onClick={() => saveDutySettings({
+                  ...dutySettings,
+                  overtimeCalculation: { ...(dutySettings.overtimeCalculation || {}), type: 'flat' }
+                })}
+                className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                  dutySettings.overtimeCalculation?.type === 'flat'
+                    ? 'bg-amber-600 text-white shadow-xs font-black'
+                    : 'text-on-surface-variant hover:text-on-surface'
+                }`}
+              >
+                Fixed Hourly Rate
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+            {/* Left Column: Multipliers / Rates Input */}
+            <div className="lg:col-span-7 space-y-5 text-xs">
+              {(dutySettings.overtimeCalculation?.type || 'formula') === 'formula' ? (
+                <>
+                  <div>
+                    <label className="text-[10px] font-black uppercase tracking-wider text-outline block mb-2">
+                      Standard Overtime Multiplier (Weekday)
+                    </label>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {[1.0, 1.25, 1.5, 2.0].map(mult => (
+                        <button
+                          key={mult}
+                          type="button"
+                          onClick={() => saveDutySettings({
+                            ...dutySettings,
+                            overtimeCalculation: { ...(dutySettings.overtimeCalculation || {}), rateMultiplier: mult }
+                          })}
+                          className={`px-4 py-2 rounded-xl font-black text-xs transition-all cursor-pointer ${
+                            Number(dutySettings.overtimeCalculation?.rateMultiplier || 1.5) === mult
+                              ? 'bg-amber-600 text-white shadow-sm scale-102'
+                              : 'bg-surface-container-low text-on-surface hover:bg-surface-container border border-outline-variant/15'
+                          }`}
+                        >
+                          {mult === 1.0 ? '1.0x (100% Rate)' : mult === 1.25 ? '1.25x (125%)' : mult === 1.5 ? '1.5x (Time & Half)' : '2.0x (Double)'}
+                        </button>
+                      ))}
+                      <div className="flex items-center gap-1.5 ml-1">
+                        <span className="text-[11px] text-slate-400 font-bold">Custom:</span>
+                        <input
+                          type="number"
+                          step="0.05"
+                          min="0.5"
+                          max="5.0"
+                          value={dutySettings.overtimeCalculation?.rateMultiplier || 1.5}
+                          onChange={(e) => saveDutySettings({
+                            ...dutySettings,
+                            overtimeCalculation: { ...(dutySettings.overtimeCalculation || {}), rateMultiplier: parseFloat(e.target.value) || 1.0 }
+                          })}
+                          className="w-20 bg-surface-container-low border border-outline-variant/30 rounded-xl px-2.5 py-1.5 font-bold text-on-surface text-center outline-none focus:ring-1 focus:ring-amber-500"
+                        />
+                        <span className="text-[11px] font-bold text-on-surface-variant">x</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-outline-variant/10">
+                    <div>
+                      <label className="text-[10px] font-black uppercase tracking-wider text-outline block mb-1.5">
+                        Weekend Overtime Multiplier
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          step="0.1"
+                          min="1.0"
+                          max="5.0"
+                          value={dutySettings.overtimeCalculation?.weekendMultiplier || 2.0}
+                          onChange={(e) => saveDutySettings({
+                            ...dutySettings,
+                            overtimeCalculation: { ...(dutySettings.overtimeCalculation || {}), weekendMultiplier: parseFloat(e.target.value) || 2.0 }
+                          })}
+                          className="w-24 bg-surface-container-low border border-outline-variant/30 rounded-xl px-3 py-1.5 font-bold text-on-surface outline-none"
+                        />
+                        <span className="text-on-surface-variant text-[11px] font-medium">x Hourly Rate</span>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] font-black uppercase tracking-wider text-outline block mb-1.5">
+                        Gazetted Holiday Multiplier
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          step="0.1"
+                          min="1.0"
+                          max="5.0"
+                          value={dutySettings.overtimeCalculation?.holidayMultiplier || 3.0}
+                          onChange={(e) => saveDutySettings({
+                            ...dutySettings,
+                            overtimeCalculation: { ...(dutySettings.overtimeCalculation || {}), holidayMultiplier: parseFloat(e.target.value) || 3.0 }
+                          })}
+                          className="w-24 bg-surface-container-low border border-outline-variant/30 rounded-xl px-3 py-1.5 font-bold text-on-surface outline-none"
+                        />
+                        <span className="text-on-surface-variant text-[11px] font-medium">x Hourly Rate</span>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div className="space-y-3">
+                  <label className="text-[10px] font-black uppercase tracking-wider text-outline block mb-1">
+                    Fixed Flat Rate per Overtime Hour
+                  </label>
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm font-bold text-primary">{currSym}</span>
+                    <input
+                      type="number"
+                      step="10"
+                      min="0"
+                      value={dutySettings.overtimeCalculation?.flatHourlyRate || 200}
+                      onChange={(e) => saveDutySettings({
+                        ...dutySettings,
+                        overtimeCalculation: { ...(dutySettings.overtimeCalculation || {}), flatHourlyRate: parseFloat(e.target.value) || 0 }
+                      })}
+                      className="w-36 bg-surface-container-low border border-outline-variant/30 rounded-xl px-3 py-2 font-black text-sm text-on-surface outline-none"
+                    />
+                    <span className="text-on-surface-variant font-medium text-xs">per approved overtime hour</span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Right Column: Live Calculation Example Preview */}
+            <div className="lg:col-span-5 bg-surface-container-low/70 border border-outline-variant/20 rounded-2xl p-4.5 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-black uppercase tracking-wider text-primary flex items-center gap-1">
+                  <span className="material-symbols-outlined text-[15px]">calculate</span>
+                  Live Calculation Preview
+                </span>
+                <span className="text-[9px] font-bold bg-primary/10 text-primary px-2 py-0.5 rounded-full">
+                  Sample: Rs. 30,000 / month
+                </span>
+              </div>
+
+              {(() => {
+                const sampleBase = 30000;
+                const sampleDays = 31;
+                const sampleDuty = Number(dutySettings.standardHours) || 8;
+                const sampleDayAmount = sampleBase / sampleDays;
+                const sampleHourAmount = sampleDayAmount / sampleDuty;
+                const mult = Number(dutySettings.overtimeCalculation?.rateMultiplier) || 1.5;
+                const otHourly = (dutySettings.overtimeCalculation?.type === 'flat')
+                  ? Number(dutySettings.overtimeCalculation?.flatHourlyRate || 200)
+                  : (sampleHourAmount * mult);
+                const sample5hOT = otHourly * 5;
+
+                return (
+                  <div className="space-y-2 text-xs font-mono">
+                    <div className="flex justify-between items-center text-on-surface-variant">
+                      <span>1. Day Rate:</span>
+                      <span className="font-bold text-on-surface">30,000 ÷ 31 d = Rs. {sampleDayAmount.toFixed(2)} / day</span>
+                    </div>
+                    <div className="flex justify-between items-center text-on-surface-variant">
+                      <span>2. Hour Rate:</span>
+                      <span className="font-bold text-on-surface">{sampleDayAmount.toFixed(2)} ÷ {sampleDuty} h = Rs. {sampleHourAmount.toFixed(2)} / hr</span>
+                    </div>
+                    <div className="flex justify-between items-center text-on-surface-variant">
+                      <span>3. OT Hourly Payout:</span>
+                      <span className="font-bold text-amber-600">
+                        {(dutySettings.overtimeCalculation?.type === 'flat')
+                          ? `Rs. ${otHourly.toFixed(2)} (Flat)`
+                          : `${sampleHourAmount.toFixed(2)} × ${mult}x = Rs. ${otHourly.toFixed(2)} / hr`}
+                      </span>
+                    </div>
+                    <div className="pt-2 border-t border-outline-variant/15 flex justify-between items-center">
+                      <span className="font-sans font-bold text-on-surface">5 Hours OT Total:</span>
+                      <span className="font-sans font-black text-sm text-primary">Rs. {sample5hOT.toFixed(2)}</span>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
+        </div>
+
         {/* Shift Timings Table */}
         <div className="bg-surface-container-lowest rounded-2xl border border-outline-variant/15 shadow-sm overflow-hidden">
           <div className="p-5 border-b border-outline-variant/15 flex justify-between items-center">
@@ -1919,6 +2139,33 @@ export default function HRSettings({ isMobile }) {
                 }`}
               >
                 {hrs}h
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Overtime Calculation (Mobile) */}
+        <div className="bg-surface-container-lowest p-4 rounded-2xl border border-outline-variant/15 flex flex-col gap-3">
+          <div className="flex justify-between items-center">
+            <span className="text-xs font-bold text-on-surface">Overtime Calculation</span>
+            <span className="text-[10px] font-bold text-primary font-mono">(Basic ÷ Days) ÷ Duty</span>
+          </div>
+          <div className="grid grid-cols-4 gap-1.5">
+            {[1.0, 1.25, 1.5, 2.0].map(mult => (
+              <button
+                key={mult}
+                type="button"
+                onClick={() => saveDutySettings({
+                  ...dutySettings,
+                  overtimeCalculation: { ...(dutySettings.overtimeCalculation || {}), rateMultiplier: mult }
+                })}
+                className={`py-1.5 rounded-lg text-[11px] font-black transition-all ${
+                  Number(dutySettings.overtimeCalculation?.rateMultiplier || 1.5) === mult
+                    ? 'bg-amber-600 text-white shadow-xs'
+                    : 'bg-surface-container text-on-surface'
+                }`}
+              >
+                {mult}x
               </button>
             ))}
           </div>
