@@ -1,3 +1,4 @@
+import { getEffectiveDutyHours } from '../../utils/hrDutyHours';
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { exportDocumentToPdf, exportDocumentToImage, exportDocumentToCsv } from '../../utils/printExportUtils';
@@ -295,10 +296,12 @@ export default function HRSalaryGeneration({ isMobile }) {
       if (savedConfig) salaryConfig = JSON.parse(savedConfig);
     } catch (e) {}
 
-    let dutySettings = null;
+    let dutySettings = state?.hr_duty_settings || null;
     try {
-      const savedDuty = localStorage.getItem('hr_duty_settings');
-      if (savedDuty) dutySettings = JSON.parse(savedDuty);
+      if (!dutySettings) {
+        const savedDuty = localStorage.getItem('hr_duty_settings');
+        if (savedDuty) dutySettings = JSON.parse(savedDuty);
+      }
     } catch (e) {}
 
     const [yearStr, monthStr] = period.split('-');
@@ -390,17 +393,9 @@ export default function HRSalaryGeneration({ isMobile }) {
       const oneDayAmount = currentMonthDays > 0 ? (baseSalary / currentMonthDays) : 0;
       const dailyRate = oneDayAmount;
 
-      // Duty Hours Resolution: Employee specific -> Shift duration -> Standard Hours -> 8h default
-      const shiftObj = (dutySettings?.shifts || []).find(s => 
-        String(s.name || '').trim().toLowerCase() === String(emp.shift || '').trim().toLowerCase()
-      );
-      const empDutyHours = safeNum(emp.dutyHours || emp.dailyHours) || 
-                           safeNum(dutySettings?.employeeDutyHours?.[emp.id]) ||
-                           safeNum(dutySettings?.departmentDutyHours?.[emp.department]) ||
-                           safeNum(dutySettings?.divisionDutyHours?.[emp.division || emp.section]) ||
-                           safeNum(shiftObj?.hours) || 
-                           safeNum(dutySettings?.standardHours) || 
-                           8;
+      // Duty Hours Resolution: HR Settings Employee Wise Custom Override -> Profile -> Dept -> Division -> Shift -> Standard
+      const dutyInfo = getEffectiveDutyHours(emp, dutySettings);
+      const empDutyHours = Number(dutyInfo?.hours) || 8;
 
       const oneHourAmount = empDutyHours > 0 ? (oneDayAmount / empDutyHours) : 0;
       const hourlyRate = oneHourAmount;

@@ -1,3 +1,4 @@
+import HRPayslipModal from './HRPayslipModal';
 import React, { useState, useMemo, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
 
@@ -162,6 +163,99 @@ export default function HRPayslip({ isMobile }) {
   const handlePrintSlip = () => {
     window.print();
   };
+
+  const formattedSlipData = useMemo(() => {
+    if (!selectedSlipForDetail) return null;
+    const r = selectedSlipForDetail;
+    const [yStr, mStr] = (selectedPeriod || '').split('-');
+    const y = parseInt(yStr) || 2026;
+    const m = parseInt(mStr) || 9;
+    const monthNames = ['JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY', 'JUNE', 'JULY', 'AUGUST', 'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER'];
+    const periodMonthYear = `${monthNames[m - 1] || 'SEPTEMBER'} ${y}`;
+    const currentMonthDays = r.currentMonthDays || new Date(y, m, 0).getDate();
+
+    const empIdStr = String(r.employeeId || '');
+    const empNameLower = String(r.employeeName || '').toLowerCase().trim();
+    const attendanceLogs = state.hr_uploaded_attendance || [];
+
+    const dailyRecords = [];
+    for (let d = 1; d <= currentMonthDays; d++) {
+      const dateStr = String(d).padStart(2, '0');
+      const fullDate = `${y}-${String(m).padStart(2, '0')}-${dateStr}`;
+
+      const log = attendanceLogs.find(l => 
+        (String(l.employeeId) === empIdStr || String(l.employeeName || '').toLowerCase().trim() === empNameLower) &&
+        (l.date === fullDate || String(l.date).endsWith(`-${dateStr}`))
+      );
+
+      let att = 'P';
+      let ot = '-';
+      let dt = '-';
+      let remarks = '-';
+
+      if (log) {
+        const s = String(log.status || '').toLowerCase();
+        if (s.includes('abs')) att = 'ABS';
+        else if (s.includes('leave') || s === 'l') att = 'L';
+        else if (s.includes('half')) att = 'HLD';
+        else att = 'P';
+
+        if (log.ot > 0) ot = `+${Number(log.ot).toFixed(1)}h`;
+        if (log.dt > 0 || log.lateHours > 0) dt = `-${Number(log.dt || log.lateHours).toFixed(1)}h`;
+        if (log.remarks) remarks = log.remarks;
+      } else {
+        const dayOfWeek = new Date(y, m - 1, d).getDay();
+        if (dayOfWeek === 0) {
+          att = 'L';
+        } else if (r.absentsCount > 0 && d <= r.absentsCount) {
+          att = 'ABS';
+        } else {
+          att = 'P';
+          if (r.otHours > 0 && (d % 2 === 1)) {
+            ot = `+${Math.min(4, r.otHours).toFixed(1)}h`;
+          }
+        }
+      }
+
+      dailyRecords.push({ dateStr, att, ot, dt, remarks });
+    }
+
+    const otPay = Number(r.overtime) || 0;
+    const allowances = Number(r.allowance) || 0;
+    const absentDeduction = Number(r.absents) || 0;
+    const dtDeduction = Number(r.lateDeduction) || 0;
+    const fines = Number(r.fine) || 0;
+    const advance = Number(r.advanceAmount) || 0;
+    const loanInstallment = Number(r.loan) || 0;
+    const netAdjustmentBalance = otPay + allowances - absentDeduction - dtDeduction - fines - advance - loanInstallment;
+
+    return {
+      employeeId: r.employeeId,
+      employeeName: r.employeeName,
+      designation: r.designation || 'WORKER',
+      department: r.department || 'Operations',
+      shiftSchedule: r.shift || 'Standard',
+      dutyHours: r.dutyHours || 8,
+      basicSalary: r.basicSalary || 0,
+      paidDays: r.payableDays || r.paidDays || 0,
+      presentDays: r.workedDays || r.presentDays || 0,
+      currentMonthDays: currentMonthDays,
+      periodMonthYear: periodMonthYear,
+      dailyRecords: dailyRecords,
+      otHours: r.otHours || 0,
+      otPay: otPay,
+      dtHours: r.lateComingHours || 0,
+      dtDeduction: dtDeduction,
+      absentDays: r.absentsCount || 0,
+      absentDeduction: absentDeduction,
+      fines: fines,
+      allowances: allowances,
+      advance: advance,
+      loanInstallment: loanInstallment,
+      netAdjustmentBalance: netAdjustmentBalance,
+      netSalary: r.netSalary || 0
+    };
+  }, [selectedSlipForDetail, selectedPeriod, state.hr_uploaded_attendance]);
 
   return (
     <div className="flex-1 flex flex-col p-4 sm:p-6 lg:p-8 space-y-6 max-w-full overflow-hidden font-body animate-fade-in select-none">
@@ -422,268 +516,12 @@ export default function HRPayslip({ isMobile }) {
         </div>
       )}
 
-      {/* Detailed Printable Payslip Voucher Modal */}
-      {selectedSlipForDetail && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[2000] flex items-center justify-center p-4 overflow-y-auto animate-fade-in">
-          <div className="bg-surface-container-lowest max-w-2xl w-full rounded-3xl border border-outline-variant/30 shadow-2xl overflow-hidden animate-scale-up text-on-surface my-8">
-            
-            {/* Modal Bar */}
-            <div className="p-4 border-b border-outline-variant/15 flex justify-between items-center bg-surface-container-low/40 no-print">
-              <span className="text-xs font-bold text-on-surface flex items-center gap-1.5">
-                <span className="material-symbols-outlined text-primary text-[18px]">verified</span>
-                Verified Monthly Salary Voucher
-              </span>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={handlePrintSlip}
-                  className="px-4 py-2 bg-primary hover:bg-primary/90 text-on-primary rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
-                >
-                  <span className="material-symbols-outlined text-[16px]">print</span>
-                  Print Payslip
-                </button>
-                <button
-                  onClick={() => setSelectedSlipForDetail(null)}
-                  className="w-8 h-8 rounded-full bg-surface-container flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high cursor-pointer"
-                >
-                  <span className="material-symbols-outlined text-[18px]">close</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Printable Voucher Paper */}
-            <div id="printable-payslip" className="p-8 space-y-6 bg-white text-slate-900 font-sans print:p-0">
-              
-              {/* Header Letterhead */}
-              <div className="border-b-2 border-slate-900 pb-4 flex justify-between items-start">
-                <div>
-                  <h2 className="text-2xl font-black tracking-tight text-slate-900 font-headline uppercase">
-                    FLASHVISION ENTERPRISE
-                  </h2>
-                  <p className="text-xs font-bold text-slate-600 mt-0.5">
-                    AJ Synthetic Operational Wing • Human Resources Division
-                  </p>
-                  <p className="text-[10px] text-slate-500 font-medium">
-                    Industrial Estate, Plot 14-B • Flashvision ERP Automated Ledger
-                  </p>
-                </div>
-                <div className="text-right">
-                  <span className="px-3 py-1 bg-slate-100 border border-slate-300 rounded text-[10px] font-black tracking-wider uppercase inline-block">
-                    CONFIDENTIAL PAYSLIP
-                  </span>
-                  <p className="text-xs font-bold text-slate-800 mt-2 font-mono">
-                    Period: {formatPeriodLabel(selectedPeriod)}
-                  </p>
-                  <p className="text-[10px] font-mono text-slate-500">
-                    Slip No: SLP-{selectedSlipForDetail.employeeId}-{selectedPeriod}
-                  </p>
-                </div>
-              </div>
-
-              {/* Employee Particulars Grid */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-50 p-4 rounded-xl border border-slate-200 text-xs">
-                <div>
-                  <span className="text-[10px] font-bold uppercase text-slate-500 block">Employee Code</span>
-                  <span className="font-mono font-bold text-slate-900">{selectedSlipForDetail.employeeId}</span>
-                </div>
-                <div>
-                  <span className="text-[10px] font-bold uppercase text-slate-500 block">Employee Name</span>
-                  <span className="font-bold text-slate-900">{selectedSlipForDetail.employeeName}</span>
-                </div>
-                <div>
-                  <span className="text-[10px] font-bold uppercase text-slate-500 block">Designation</span>
-                  <span className="font-semibold text-slate-800">{selectedSlipForDetail.designation || 'Staff'}</span>
-                </div>
-                <div>
-                  <span className="text-[10px] font-bold uppercase text-slate-500 block">Division</span>
-                  <span className="font-bold text-indigo-700">{selectedSlipForDetail.division || selectedSlipForDetail.section || 'AJ Synthetic'}</span>
-                </div>
-                <div>
-                  <span className="text-[10px] font-bold uppercase text-slate-500 block">Department</span>
-                  <span className="font-semibold text-slate-800">{selectedSlipForDetail.department || 'Operations'}</span>
-                </div>
-                <div>
-                  <span className="text-[10px] font-bold uppercase text-slate-500 block">Join Date</span>
-                  <span className="font-mono text-slate-700">{selectedSlipForDetail.doj || 'N/A'}</span>
-                </div>
-                <div>
-                  <span className="text-[10px] font-bold uppercase text-slate-500 block">Payment Mode</span>
-                  <span className="font-bold text-emerald-700">Bank Transfer</span>
-                </div>
-                <div>
-                  <span className="text-[10px] font-bold uppercase text-slate-500 block">Disbursal Status</span>
-                  <span className="font-bold text-emerald-700">Finalized & Approved</span>
-                </div>
-              </div>
-
-              {/* Attendance Log Particulars */}
-              <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 flex justify-around text-center text-xs">
-                <div>
-                  <span className="text-[9px] font-bold uppercase text-slate-500 block">Worked Days</span>
-                  <span className="font-mono font-bold text-emerald-700">{selectedSlipForDetail.workedDays || (26 - (Number(selectedSlipForDetail.absentsCount) || 0))} Days</span>
-                </div>
-                <div>
-                  <span className="text-[9px] font-bold uppercase text-slate-500 block">Absents</span>
-                  <span className="font-mono font-bold text-rose-700">{selectedSlipForDetail.absentsCount || 0} Days</span>
-                </div>
-                <div>
-                  <span className="text-[9px] font-bold uppercase text-slate-500 block">Overtime Hours</span>
-                  <span className="font-mono font-bold text-blue-700">{selectedSlipForDetail.otHours || 0} Hours</span>
-                </div>
-                <div>
-                  <span className="text-[9px] font-bold uppercase text-slate-500 block">Late Coming</span>
-                  <span className="font-mono font-bold text-purple-700">{selectedSlipForDetail.lateComingHours || 0} Hours</span>
-                </div>
-              </div>
-
-              {/* Financial Earnings vs Deductions Table */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                
-                {/* Earnings Column */}
-                <div className="border border-slate-200 rounded-xl overflow-hidden">
-                  <div className="bg-emerald-50 px-3.5 py-2 border-b border-slate-200 font-bold text-xs text-emerald-900 flex justify-between">
-                    <span>EARNING HEADS</span>
-                    <span>AMOUNT ({currSym})</span>
-                  </div>
-                  <div className="p-3.5 space-y-2 text-xs">
-                    <div className="flex justify-between">
-                      <span className="text-slate-600">Basic Monthly Salary</span>
-                      <span className="font-mono font-bold">{formatMoney(selectedSlipForDetail.basicSalary)}</span>
-                    </div>
-                    {Number(selectedSlipForDetail.overtime) > 0 && (
-                      <div className="flex justify-between text-emerald-700">
-                        <span>Overtime ({selectedSlipForDetail.otHours}h)</span>
-                        <span className="font-mono font-bold">+{formatMoney(selectedSlipForDetail.overtime)}</span>
-                      </div>
-                    )}
-                    {Number(selectedSlipForDetail.allowance) > 0 && (
-                      <div className="flex justify-between text-emerald-700">
-                        <span>Standard Allowance</span>
-                        <span className="font-mono font-bold">+{formatMoney(selectedSlipForDetail.allowance)}</span>
-                      </div>
-                    )}
-                  </div>
-                  <div className="bg-slate-50 px-3.5 py-2 border-t border-slate-200 font-bold text-xs flex justify-between">
-                    <span>Total Gross Earnings</span>
-                    <span className="font-mono text-emerald-800">
-                      {currSym} {formatMoney((Number(selectedSlipForDetail.basicSalary) || 0) + (Number(selectedSlipForDetail.overtime) || 0) + (Number(selectedSlipForDetail.allowance) || 0))}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Deductions Column */}
-                <div className="border border-slate-200 rounded-xl overflow-hidden">
-                  <div className="bg-rose-50 px-3.5 py-2 border-b border-slate-200 font-bold text-xs text-rose-900 flex justify-between">
-                    <span>DEDUCTION HEADS</span>
-                    <span>AMOUNT ({currSym})</span>
-                  </div>
-                  <div className="p-3.5 space-y-2 text-xs">
-                    {Number(selectedSlipForDetail.lateDeduction) > 0 ? (
-                      <div className="flex justify-between text-rose-700">
-                        <span>Late Deduction ({selectedSlipForDetail.lateComingHours}h)</span>
-                        <span className="font-mono font-bold">-{formatMoney(selectedSlipForDetail.lateDeduction)}</span>
-                      </div>
-                    ) : null}
-                    {Number(selectedSlipForDetail.absents) > 0 ? (
-                      <div className="flex justify-between text-rose-700">
-                        <span>Absent Penalty ({selectedSlipForDetail.absentsCount}d)</span>
-                        <span className="font-mono font-bold">-{formatMoney(selectedSlipForDetail.absents)}</span>
-                      </div>
-                    ) : null}
-                    {Number(selectedSlipForDetail.fine) > 0 ? (
-                      <div className="flex justify-between text-rose-700">
-                        <span>Late / Disciplinary Fine</span>
-                        <span className="font-mono font-bold">-{formatMoney(selectedSlipForDetail.fine)}</span>
-                      </div>
-                    ) : null}
-                    {Number(selectedSlipForDetail.loan) > 0 ? (
-                      <div className="flex justify-between text-purple-700">
-                        <span>Loan Installment Recovery</span>
-                        <span className="font-mono font-bold">-{formatMoney(selectedSlipForDetail.loan)}</span>
-                      </div>
-                    ) : null}
-                    {Number(selectedSlipForDetail.advanceAmount) > 0 ? (
-                      <div className="flex justify-between text-purple-700">
-                        <span>Salary Advance Recovery</span>
-                        <span className="font-mono font-bold">-{formatMoney(selectedSlipForDetail.advanceAmount)}</span>
-                      </div>
-                    ) : null}
-
-                    {!(Number(selectedSlipForDetail.lateDeduction) > 0 || Number(selectedSlipForDetail.absents) > 0 || Number(selectedSlipForDetail.fine) > 0 || Number(selectedSlipForDetail.loan) > 0 || Number(selectedSlipForDetail.advanceAmount) > 0) && (
-                      <div className="text-slate-400 italic text-center py-4">No deductions recorded</div>
-                    )}
-                  </div>
-                  <div className="bg-slate-50 px-3.5 py-2 border-t border-slate-200 font-bold text-xs flex justify-between">
-                    <span>Total Deductions</span>
-                    <span className="font-mono text-rose-700">
-                      -{currSym} {formatMoney((Number(selectedSlipForDetail.lateDeduction) || 0) + (Number(selectedSlipForDetail.absents) || 0) + (Number(selectedSlipForDetail.fine) || 0) + (Number(selectedSlipForDetail.loan) || 0) + (Number(selectedSlipForDetail.advanceAmount) || 0))}
-                    </span>
-                  </div>
-                </div>
-
-              </div>
-
-              {/* Net Payable Highlight Banner */}
-              <div className="p-4 bg-slate-900 text-white rounded-xl flex justify-between items-center">
-                <div>
-                  <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 block">NET PAYABLE AMOUNT</span>
-                  <p className="text-xs italic text-slate-300 mt-0.5 font-medium">
-                    {numberToWords(selectedSlipForDetail.netSalary)}
-                  </p>
-                </div>
-                <div className="text-right">
-                  <span className="text-2xl font-black font-mono tracking-tight text-emerald-400">
-                    {currSym} {formatMoney(selectedSlipForDetail.netSalary)}
-                  </span>
-                </div>
-              </div>
-
-              {/* Signatures Area */}
-              <div className="pt-8 grid grid-cols-3 gap-6 text-center text-[10px] font-bold text-slate-600 border-t border-slate-200">
-                <div>
-                  <div className="border-b border-slate-300 pb-1 mb-1 font-mono text-[9px] text-slate-400">System Verified</div>
-                  Prepared By (HR Department)
-                </div>
-                <div>
-                  <div className="border-b border-slate-300 pb-1 mb-1 font-mono text-[9px] text-slate-400">Accounts Audited</div>
-                  Checked By (Finance Lead)
-                </div>
-                <div>
-                  <div className="border-b border-slate-300 pb-1 mb-1">&nbsp;</div>
-                  Employee Acknowledgment Signature
-                </div>
-              </div>
-
-              {/* Computerized Watermark */}
-              <p className="text-[9px] text-center text-slate-400 font-mono pt-2">
-                This is a computer-generated salary voucher produced by Flashvision ERP. No physical stamp required.
-              </p>
-
-            </div>
-
-          </div>
-        </div>
-      )}
-
-      {/* Print Stylesheet */}
-      <style>{`
-        @media print {
-          body * {
-            visibility: hidden;
-          }
-          #printable-payslip, #printable-payslip * {
-            visibility: visible;
-          }
-          #printable-payslip {
-            position: absolute;
-            left: 0;
-            top: 0;
-            width: 100%;
-          }
-          .no-print {
-            display: none !important;
-          }
-        }
-      `}</style>
+      {/* Exactly 110% Formatted AJ Synthetic Payslip Modal */}
+      <HRPayslipModal
+        isOpen={Boolean(selectedSlipForDetail)}
+        onClose={() => setSelectedSlipForDetail(null)}
+        slip={formattedSlipData}
+      />
 
     </div>
   );

@@ -1,3 +1,5 @@
+import { getEffectiveDutyHours } from '../../utils/hrDutyHours';
+import HRPayslipModal from './HRPayslipModal';
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../utils/supabaseClient';
 import { useDialog } from '../../context/DialogContext';
@@ -288,6 +290,12 @@ export default function HRAttendance({ isMobile }) {
   };
 
   const [searchQuery, setSearchQuery] = useState(() => savedUserFilters?.searchQuery || '');
+  const [isLivePayslipOpen, setIsLivePayslipOpen] = useState(false);
+  const [livePayslipModalData, setLivePayslipModalData] = useState(null);
+  const [isCsvDropdownOpen, setIsCsvDropdownOpen] = useState(false);
+  const [isAlphaDropdownOpen, setIsAlphaDropdownOpen] = useState(false);
+  const [isStatusDropdownOpen, setIsStatusDropdownOpen] = useState(false);
+  const [selectedEmploymentStatuses, setSelectedEmploymentStatuses] = useState(['Active']);
   const [selectedAlphaLetter, setSelectedAlphaLetter] = useState('ALL');
   const [nameSortOrder, setNameSortOrder] = useState('asc'); // 'asc' | 'desc'
   const [activeComment, setActiveComment] = useState(null); // { empId, dayKey, field }
@@ -1083,6 +1091,155 @@ export default function HRAttendance({ isMobile }) {
     return ['ALL', ...Array.from(set).sort()];
   }, [localEmployees, departmentFilter]);
 
+
+  // Live Pay Slip Generation from current month attendance
+  const handleGenerateLivePayslip = (emp) => {
+    if (!emp) return;
+    const y = parseInt(selectedYear) || new Date().getFullYear();
+    const m = parseInt(selectedMonth) || (new Date().getMonth() + 1);
+    const monthNames = ['JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY', 'JUNE', 'JULY', 'AUGUST', 'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER'];
+    const periodMonthYear = `${monthNames[m - 1] || 'CURRENT'} ${y}`;
+    const currentMonthDays = new Date(y, m, 0).getDate();
+
+    let dutySettings = appState?.hr_duty_settings || null;
+    try {
+      if (!dutySettings) {
+        const saved = localStorage.getItem('hr_duty_settings');
+        if (saved) dutySettings = JSON.parse(saved);
+      }
+    } catch (e) {}
+
+    const dutyInfo = getEffectiveDutyHours(emp, dutySettings);
+    const empDutyHours = Number(dutyInfo?.hours) || 8;
+
+    const baseSalary = Number(emp.basicSalary || emp.salary || emp.baseSalary || 20000);
+    const oneDayAmount = currentMonthDays > 0 ? (baseSalary / currentMonthDays) : 0;
+    const oneHourAmount = empDutyHours > 0 ? (oneDayAmount / empDutyHours) : 0;
+
+    const otConfig = dutySettings?.overtimeCalculation || {};
+    const otMultiplier = Number(otConfig.rateMultiplier || dutySettings?.overtimeMultiplier || 1.5);
+    const otHourlyRate = (otConfig.type === 'flat' && Number(otConfig.flatHourlyRate) > 0)
+      ? Number(otConfig.flatHourlyRate)
+      : (oneHourAmount * otMultiplier);
+
+    const dailyRecords = [];
+    let presentDays = 0;
+    let paidDays = 0;
+    let absentDays = 0;
+    let totalOtHours = 0;
+    let totalDtHours = 0;
+
+    const empIdStr = String(emp.id || '');
+    const empCodeStr = String(emp.employeeCode || '');
+    const empNameLower = String(emp.name || '').trim().toLowerCase();
+
+    for (let d = 1; d <= currentMonthDays; d++) {
+      const dayDateStr = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      const dateDisplay = String(d).padStart(2, '0');
+
+      const attObj = emp.attendance || {};
+      const dayRecord = attObj[dayDateStr] || attObj[`${y}-${m}-${d}`] || attObj[d] || null;
+
+      const punch = (liveUploadedAttendance || uploadedAttendance || []).find(u => 
+        ((u.employeeId && (String(u.employeeId) === empIdStr || String(u.employeeId) === empCodeStr)) ||
+         (u.employeeName && String(u.employeeName).trim().toLowerCase() === empNameLower)) &&
+        (u.date === dayDateStr || normalizeDate(u.date) === normalizeDate(dayDateStr))
+      );
+
+      const otReq = (appState?.hr_overtime_requests || []).find(r => 
+        r.status === 'Approved' &&
+        ((r.employeeId && (String(r.employeeId) === empIdStr || String(r.employeeId) === empCodeStr)) ||
+         (r.employeeName && String(r.employeeName).trim().toLowerCase() === empNameLower)) &&
+        (r.date === dayDateStr || normalizeDate(r.date) === normalizeDate(dayDateStr))
+      );
+
+      let status = dayRecord?.status || punch?.status;
+      let ot = parseFloat(dayRecord?.ot || punch?.ot || otReq?.hours || 0) || 0;
+      let dt = parseFloat(dayRecord?.deductions || punch?.lateHours || 0) || 0;
+      let remarks = dayRecord?.remarks || punch?.remarks || '-';
+
+      const dayOfWeek = new Date(y, m - 1, d).getDay();
+      if (!status) {
+        if (dayOfWeek === 0) {
+          status = 'leave';
+        } else {
+          status = 'absent';
+        }
+      }
+
+      const statLower = String(status).toLowerCase();
+      let attCode = 'ABS';
+      if (statLower.includes('present') || statLower === 'p') {
+        attCode = 'P';
+        presentDays++;
+        paidDays += 1;
+      } else if (statLower.includes('leave') || statLower === 'l' || statLower === 'paid_leave') {
+        attCode = 'L';
+        paidDays += 1;
+      } else if (statLower.includes('half') || statLower === 'halfday') {
+        attCode = 'HLD';
+        presentDays += 0.5;
+        paidDays += 0.5;
+      } else {
+        attCode = 'ABS';
+        absentDays++;
+      }
+
+      totalOtHours += ot;
+      totalDtHours += dt;
+
+      dailyRecords.push({
+        dateStr: dateDisplay,
+        att: attCode,
+        ot: ot > 0 ? `+${ot.toFixed(1)}h` : '-',
+        dt: dt > 0 ? `-${dt.toFixed(1)}h` : '-',
+        remarks: remarks || '-'
+      });
+    }
+
+    const earnedBasicSalary = Math.round(oneDayAmount * paidDays * 100) / 100;
+    const absentDeduction = Math.round(oneDayAmount * absentDays * 100) / 100;
+    const otPay = Math.round(totalOtHours * otHourlyRate * 100) / 100;
+    const dtDeduction = Math.round(totalDtHours * oneHourAmount * 100) / 100;
+    const allowances = Number(emp.allowance || emp.allowances || 0);
+    const advance = Number(emp.advance || emp.advanceAmount || 0);
+    const loanInstallment = Number(emp.loan || emp.loanInstallment || 0);
+    const fines = Number(emp.fine || emp.fines || 0);
+
+    const netAdjustmentBalance = Math.round((otPay + allowances - absentDeduction - dtDeduction - fines - advance - loanInstallment) * 100) / 100;
+    const netSalary = Math.max(0, Math.round((earnedBasicSalary + otPay + allowances - dtDeduction - fines - advance - loanInstallment) * 100) / 100);
+
+    const slipData = {
+      employeeId: emp.employeeCode || emp.id || '-',
+      employeeName: emp.name || 'EMPLOYEE',
+      designation: emp.designation || emp.role || 'WORKER',
+      department: emp.department || 'Operations',
+      shiftSchedule: emp.shift || 'Standard',
+      dutyHours: empDutyHours,
+      basicSalary: baseSalary,
+      paidDays: paidDays,
+      presentDays: presentDays,
+      absentDays: absentDays,
+      currentMonthDays: currentMonthDays,
+      periodMonthYear: periodMonthYear,
+      otHours: totalOtHours,
+      otPay: otPay,
+      dtHours: totalDtHours,
+      dtDeduction: dtDeduction,
+      absentDeduction: absentDeduction,
+      fines: fines,
+      allowances: allowances,
+      advance: advance,
+      loanInstallment: loanInstallment,
+      netAdjustmentBalance: netAdjustmentBalance,
+      netSalary: netSalary,
+      dailyRecords: dailyRecords
+    };
+
+    setLivePayslipModalData(slipData);
+    setIsLivePayslipOpen(true);
+  };
+
   const filteredEmployees = localEmployees.filter(emp => {
     const q = searchQuery.toLowerCase().trim();
     const matchSearch = !q || 
@@ -1095,6 +1252,14 @@ export default function HRAttendance({ isMobile }) {
     const matchDiv = divisionFilter === 'ALL' || !divisionFilter || (emp.division === divisionFilter || emp.section === divisionFilter);
 
     if (!matchSearch || !matchDept || !matchDiv) return false;
+
+    // Employment Status Filter (Active / Inactive)
+    const empStatus = (emp.status || 'Active').toLowerCase();
+    const allowActive = selectedEmploymentStatuses.some(s => s.toLowerCase() === 'active');
+    const allowInactive = selectedEmploymentStatuses.some(s => s.toLowerCase() === 'inactive');
+    if (allowActive && !allowInactive && empStatus !== 'active') return false;
+    if (allowInactive && !allowActive && empStatus === 'active') return false;
+    if (!allowActive && !allowInactive) return false;
 
     // Alphabetical Letter Filter
     if (selectedAlphaLetter !== 'ALL') {
@@ -1362,8 +1527,20 @@ export default function HRAttendance({ isMobile }) {
                     <span className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-surface-container-lowest ${isPresent ? 'bg-emerald-500' : 'bg-outline-variant'}`}></span>
                   </div>
                   <div className="flex-1 min-w-0">
-                    <h4 className="font-headline font-bold text-sm text-on-surface truncate">{emp.name}</h4>
-                    <p className="font-body text-[10px] text-on-surface-variant leading-tight truncate">{emp.id} • {emp.role}</p>
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <h4 className="font-headline font-bold text-sm text-on-surface truncate">{emp.name}</h4>
+                        <p className="font-body text-[10px] text-on-surface-variant leading-tight truncate">{emp.id} • {emp.role}</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleGenerateLivePayslip(emp)}
+                        className="px-2.5 py-1 rounded-lg bg-primary/10 text-primary text-[10px] font-bold flex items-center gap-1 cursor-pointer border border-primary/20"
+                      >
+                        <span className="material-symbols-outlined text-[13px]">receipt_long</span>
+                        <span>Pay Slip</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
 
@@ -1780,1301 +1957,94 @@ export default function HRAttendance({ isMobile }) {
               Alpha:
             </span>
 
-            {/* A to Z Sort Toggle */}
-            <button
-              onClick={() => setNameSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')}
-              className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all flex items-center gap-1 cursor-pointer ${
-                nameSortOrder === 'asc'
-                  ? 'bg-primary/10 text-primary border-primary/20'
-                  : 'bg-secondary/10 text-secondary border-secondary/20'
-              }`}
-              title="Toggle Ascending / Descending Name Sorting"
-            >
-              <span>{nameSortOrder === 'asc' ? 'A → Z' : 'Z → A'}</span>
-              <span className="material-symbols-outlined text-[13px]">{nameSortOrder === 'asc' ? 'arrow_upward' : 'arrow_downward'}</span>
-            </button>
-
-            {/* All Pill */}
-            <button
-              onClick={() => { setSelectedAlphaLetter('ALL'); setCurrentPage(1); }}
-              className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
-                selectedAlphaLetter === 'ALL'
-                  ? 'bg-primary text-on-primary shadow-xs font-black'
-                  : 'bg-surface-container-low text-on-surface-variant hover:bg-surface-container-high'
-              }`}
-            >
-              All
-            </button>
-
-            {/* Individual Letter Pills A-Z */}
-            {['A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y','Z'].map(char => (
+                        {/* Single Organized A-Z Dropdown Button */}
+            <div className="relative inline-block text-left">
               <button
-                key={char}
-                onClick={() => {
-                  setSelectedAlphaLetter(selectedAlphaLetter === char ? 'ALL' : char);
-                  setCurrentPage(1);
-                }}
-                className={`w-6 h-6 rounded-md text-[11px] font-bold flex items-center justify-center transition-all cursor-pointer ${
-                  selectedAlphaLetter === char
-                    ? 'bg-primary text-on-primary shadow-xs font-black scale-105'
-                    : 'bg-surface-container-low text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface'
+                type="button"
+                onClick={() => setIsAlphaDropdownOpen(prev => !prev)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer border shadow-2xs ${
+                  selectedAlphaLetter !== 'ALL'
+                    ? 'bg-primary text-on-primary border-primary shadow-xs'
+                    : 'bg-surface-container-low hover:bg-surface-container text-on-surface border-outline-variant/15'
                 }`}
+                title="Alphabetical Filter"
               >
-                {char}
+                <span className="material-symbols-outlined text-[15px]">sort_by_alpha</span>
+                <span>A-Z {selectedAlphaLetter !== 'ALL' ? `(${selectedAlphaLetter})` : ''}</span>
+                <span className="material-symbols-outlined text-[14px]">arrow_drop_down</span>
               </button>
-            ))}
 
-            {selectedAlphaLetter !== 'ALL' && (
-              <span className="text-[11px] text-primary font-bold ml-2">
-                Showing "{selectedAlphaLetter}" ({filteredEmployees.length} employees)
-              </span>
-            )}
-          </div>
-        </div>
-
-        {/* Double-Column Table Layout */}
-        <div className="border border-outline-variant/15 rounded-2xl overflow-hidden bg-surface-container-lowest shadow-sm flex flex-col flex-1 w-full h-full min-h-0">
-          <div className="overflow-x-auto no-scrollbar relative flex-1 w-full h-full overflow-y-auto min-h-0">
-            <table className="w-full border-collapse">
-              <thead>
-                <tr className="bg-surface-container-low text-left sticky top-0 z-25 shadow-sm">
-                  <th rowSpan="2" className="px-6 py-4 border-b border-r border-outline-variant/20 min-w-[240px] sticky left-0 z-30 bg-surface-container-low shadow-[2px_0_5px_rgba(0,0,0,0.03)]">
-                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Employee Details</span>
-                  </th>
-                  {dates.map(day => (
-                    <th key={day.date} colSpan="2" className="px-4 py-2 border-b border-l border-outline-variant/20 text-center bg-surface-container-low font-headline min-w-[240px]">
-                      <div className="flex flex-col items-center">
-                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">{day.key}</span>
-                        <span className="text-sm font-black text-on-surface">{day.num} ({new Date(day.date).toLocaleDateString('en-US', { month: 'short' })})</span>
-                      </div>
-                    </th>
-                  ))}
-                </tr>
-                <tr className="bg-surface-container-low text-left sticky top-[52px] z-20 shadow-sm border-b border-outline-variant/20 text-[9px] uppercase tracking-widest text-slate-400 font-bold">
-                  {dates.map(day => (
-                    <React.Fragment key={day.date + '-sub'}>
-                      <th className="px-3 py-2 border-l border-outline-variant/10 text-center w-[120px] bg-surface-container-low">System</th>
-                      <th className="px-3 py-2 border-l border-outline-variant/10 text-center w-[120px] bg-surface-container-low">Uploaded</th>
-                    </React.Fragment>
-                  ))}
-                </tr>
-              </thead>
-              
-              <tbody className="divide-y divide-outline-variant/15">
-                {displayedEmployees.length === 0 ? (
-                  <tr>
-                    <td colSpan={dates.length * 2 + 1} className="text-center py-10 font-body text-xs text-on-surface-variant">
-                      No matching records found in this reconciliation period.
-                    </td>
-                  </tr>
-                ) : (
-                  displayedEmployees.map(emp => (
-                    <tr key={emp.id} className="hover:bg-surface-container-low/30 transition-colors group">
-                      {/* Pinned Employee Details Column */}
-                      <td className="px-6 py-4 sticky left-0 bg-white group-hover:bg-slate-50 border-r border-outline-variant/10 shadow-[2px_0_5px_rgba(0,0,0,0.03)] z-10 transition-colors">
-                        <div className="flex items-center gap-3">
-                          <img className="w-9 h-9 rounded-full object-cover border border-outline-variant/10 shadow-sm shrink-0" src={emp.avatar} alt={emp.name} />
-                          <div className="min-w-0">
-                            <h4 className="font-headline font-bold text-xs text-on-surface leading-tight truncate">{emp.name}</h4>
-                            <p className="text-[9px] font-bold text-primary mt-0.5 leading-none">{emp.id}</p>
-                          </div>
-                        </div>
-                      </td>
-
-                      {/* Date Cells */}
-                      {dates.map(day => {
-                        const systemRec = emp.attendance?.[day.date] || emp.attendance?.[day.key] || { status: 'absent', ot: 0, fines: 0, deductions: 0 };
-                        const uploadedRec = uploadedAttendance.find(u => u.employeeId === emp.id && normalizeDate(u.date) === normalizeDate(day.date));
-                        const isUploadedPresent = !!uploadedRec;
-                        
-                        const isMismatch = isUploadedPresent && (
-                          (systemRec.status || 'absent').toLowerCase() !== (uploadedRec.status || 'absent').toLowerCase() ||
-                          parseFloat(systemRec.ot || 0) !== parseFloat(uploadedRec.ot || 0) ||
-                          parseFloat(systemRec.fines || 0) !== parseFloat(uploadedRec.fines || 0) ||
-                          parseFloat(systemRec.deductions || 0) !== parseFloat(uploadedRec.deductions || 0)
-                        );
-
-                        return (
-                          <React.Fragment key={day.date + '-' + emp.id}>
-                            {/* System record cell */}
-                            <td className={`px-2 py-2 border-l border-outline-variant/10 text-center text-[10px] transition-colors ${
-                              isMismatch ? 'bg-red-500/10 text-red-700 font-bold border-red-500/30' : 'text-on-surface-variant'
-                            }`}>
-                              <div className="flex flex-col gap-1 items-center">
-                                <select
-                                  value={systemRec.status || 'absent'}
-                                  onChange={(e) => handleStatusChange(emp.id, day.date || day.key, e.target.value)}
-                                  className={`w-full max-w-[100px] bg-white border border-outline-variant/20 rounded px-1.5 py-0.5 text-[10px] font-bold outline-none cursor-pointer ${
-                                    systemRec.status === 'present' ? 'text-emerald-700 border-emerald-500/30 bg-emerald-500/5' :
-                                    systemRec.status === 'absent' ? 'text-red-700 border-red-500/30 bg-red-500/5' :
-                                    systemRec.status === 'leave' ? 'text-amber-700 border-amber-500/30 bg-amber-500/5' :
-                                    systemRec.status === 'holiday' ? 'text-blue-700 border-blue-500/30 bg-blue-500/5' :
-                                    'text-indigo-700 border-indigo-500/30 bg-indigo-500/5' // Off Day
-                                  }`}
-                                >
-                                  <option value="present">Present</option>
-                                  <option value="absent">Absent</option>
-                                  <option value="leave">Leave</option>
-                                  <option value="holiday">Holiday</option>
-                                  <option value="off day">Off Day</option>
-                                </select>
-                                {uploadedRec && uploadedRec.inTime && (
-                                  <div className="flex flex-col gap-0.5 text-[8px] font-mono mt-0.5 w-full bg-emerald-500/10 p-1 rounded border border-emerald-500/20">
-                                    <span className="text-emerald-700 dark:text-emerald-400 font-bold flex items-center justify-center gap-1">
-                                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                                      IN: {uploadedRec.inTime}
-                                    </span>
-                                    {uploadedRec.outTime && (
-                                      <span className="text-purple-700 dark:text-purple-400 font-bold flex items-center justify-center gap-1">
-                                        <span className="w-1.5 h-1.5 rounded-full bg-purple-500"></span>
-                                        OUT: {uploadedRec.outTime}
-                                      </span>
-                                    )}
-                                  </div>
-                                )}
-                                {(systemRec.ot > 0 || systemRec.fines > 0 || systemRec.deductions > 0) && (
-                                  <span className="text-[8px] text-slate-400 font-mono">
-                                    {systemRec.ot > 0 ? `OT:${systemRec.ot}h ` : ''}
-                                    {systemRec.fines > 0 ? `F:${systemRec.fines} ` : ''}
-                                    {systemRec.deductions > 0 ? `L:${systemRec.deductions}h` : ''}
-                                  </span>
-                                )}
-                              </div>
-                            </td>
-                            
-                            {/* Uploaded CSV record cell */}
-                            <td className={`px-3 py-2.5 border-l border-outline-variant/10 text-center text-[10px] transition-colors ${
-                              isMismatch ? 'bg-red-500/10 text-red-700 font-bold border-red-500/30 font-extrabold' : 'text-on-surface-variant'
-                            }`}>
-                              {isUploadedPresent ? (
-                                <div className="flex flex-col items-center gap-1">
-                                  <span className="font-extrabold uppercase text-[9px] text-primary">
-                                    {uploadedRec.status || 'absent'}
-                                  </span>
-                                  {(uploadedRec.ot > 0 || uploadedRec.fines > 0 || uploadedRec.deductions > 0) && (
-                                    <span className="text-[8px] text-slate-400 font-mono">
-                                      {uploadedRec.ot > 0 ? `OT:${uploadedRec.ot}h ` : ''}
-                                      {uploadedRec.fines > 0 ? `F:$${uploadedRec.fines} ` : ''}
-                                      {uploadedRec.deductions > 0 ? `L:${uploadedRec.deductions}h` : ''}
-                                    </span>
-                                  )}
-                                  {isMismatch && (
-                                    <button
-                                      type="button"
-                                      onClick={() => handleSyncCell(emp.id, day.date || day.key, uploadedRec)}
-                                      className="mt-1 px-1.5 py-0.5 bg-primary hover:bg-primary-container text-on-primary text-[8px] font-black rounded flex items-center gap-0.5 cursor-pointer shadow-sm active:scale-95 transition-all"
-                                      title="Sync System record to matches CSV record"
-                                    >
-                                      <span className="material-symbols-outlined text-[10px]">sync</span>
-                                      Sync
-                                    </button>
-                                  )}
-                                </div>
-                              ) : (
-                                <span className="text-slate-300 italic font-mono">-</span>
-                              )}
-                            </td>
-                          </React.Fragment>
-                        );
-                      })}
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Reconciliation Pagination & List-view control footer */}
-          <div className="bg-surface-container-low px-6 py-4 border-t border-outline-variant/20 flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-xs font-semibold text-on-surface-variant">
-            <div className="flex flex-wrap items-center gap-6">
-              <span>Showing <b>{displayedEmployees.length}</b> employees of <b>{filteredEmployees.length}</b> total</span>
-              <div className="flex items-center gap-2 select-none">
-                <span className="w-2.5 h-2.5 bg-red-500/25 border border-red-500/50 rounded-full"></span>
-                <span className="text-[9px] uppercase tracking-wider text-slate-400 font-bold">Mismatches Highlighted</span>
-              </div>
-            </div>
-            
-            <div className="flex items-center gap-4">
-              {/* Pagination Toggle */}
-              <div className="flex items-center gap-2 pr-4 border-r border-outline-variant/20 select-none">
-                <span className="text-[10px] text-on-surface-variant font-bold uppercase tracking-wider">Show All At Once</span>
-                <label className="erp-toggle">
-                  <input 
-                    type="checkbox"
-                    checked={showAllEmployees}
-                    onChange={() => setShowAllEmployees(!showAllEmployees)}
-                  />
-                  <span className="toggle-slider"></span>
-                </label>
-              </div>
-
-              {!showAllEmployees && (
-                <div className="flex items-center gap-3">
-                  <button 
-                    onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                    disabled={currentPage === 1}
-                    className="p-1.5 hover:bg-white rounded-lg border border-outline-variant/10 bg-surface-container-lowest transition-colors active:scale-95 cursor-pointer flex items-center justify-center disabled:opacity-50"
-                  >
-                    <span className="material-symbols-outlined text-[18px]">chevron_left</span>
-                  </button>
-                  <span>Page {currentPage} of {totalPages || 1}</span>
-                  <button 
-                    onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                    disabled={currentPage === totalPages}
-                    className="p-1.5 hover:bg-white rounded-lg border border-outline-variant/10 bg-surface-container-lowest transition-colors active:scale-95 cursor-pointer flex items-center justify-center disabled:opacity-50"
-                  >
-                    <span className="material-symbols-outlined text-[18px]">chevron_right</span>
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-  function FieldCommentButton({ empId, dayKey, field, value, reasonField, disabled }) {
-    const isSelected = activeComment?.empId === empId && activeComment?.dayKey === dayKey && activeComment?.field === reasonField;
-    const reasonText = value[reasonField] || '';
-    const hasReason = reasonText.trim().length > 0;
-
-    if (disabled) {
-      if (!hasReason) return null;
-      return (
-        <div className="relative flex items-center justify-center shrink-0 group">
-          <div
-            className="w-6 h-6 rounded-lg flex items-center justify-center transition-all bg-primary/10 text-primary cursor-default"
-            title={`Reason: ${reasonText}`}
-          >
-            <span className="material-symbols-outlined text-[15px]" style={{ fontVariationSettings: "'FILL' 1" }}>
-              chat_bubble
-            </span>
-          </div>
-          <div className="absolute bottom-full mb-1.5 left-1/2 -translate-x-1/2 hidden group-hover:block z-30 bg-slate-800 text-white text-[9px] font-bold py-1 px-2 rounded shadow-md whitespace-nowrap pointer-events-none">
-            {reasonText}
-          </div>
-        </div>
-      );
-    }
-    
-    return (
-      <div className="relative flex items-center justify-center shrink-0 group">
-        {/* Icon button */}
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            if (isSelected) {
-              saveComment();
-            } else {
-              openCommentPopup(empId, dayKey, reasonField, reasonText);
-            }
-          }}
-          className={`w-6 h-6 rounded-lg flex items-center justify-center transition-all cursor-pointer ${
-            hasReason 
-              ? 'bg-primary/10 text-primary hover:bg-primary/20' 
-              : 'text-slate-350 hover:bg-slate-100 hover:text-slate-600'
-          }`}
-          title={hasReason ? `Reason: ${reasonText}` : 'Add comment'}
-        >
-          <span className="material-symbols-outlined text-[15px]" style={{ fontVariationSettings: hasReason ? "'FILL' 1" : undefined }}>
-            {hasReason ? 'chat_bubble' : 'chat_bubble_outline'}
-          </span>
-        </button>
-
-        {/* Hover Tooltip (shows reason on cursor hover) */}
-        {hasReason && !isSelected && (
-          <div className="absolute bottom-full mb-1.5 left-1/2 -translate-x-1/2 hidden group-hover:block z-30 bg-slate-800 text-white text-[9px] font-bold py-1 px-2 rounded shadow-md whitespace-nowrap pointer-events-none">
-            {reasonText}
-          </div>
-        )}
-
-        {/* Click Popup Bubble */}
-        {isSelected && (
-          <div 
-            className="absolute z-50 bottom-full mb-2 left-1/2 -translate-x-1/2 bg-white border border-outline-variant/30 rounded-xl p-3 shadow-xl flex flex-col gap-2 min-w-[200px] text-left animate-in fade-in slide-in-from-bottom-1 duration-150"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <span className="text-[9px] uppercase tracking-wider font-bold text-primary font-sans">Reason / Remarks</span>
-            <textarea
-              autoFocus
-              rows={2}
-              value={commentText}
-              onChange={(e) => setCommentText(e.target.value)}
-              placeholder="Type reason here..."
-              className="w-full bg-[#f0f2f5] border border-outline-variant/15 rounded-lg p-1.5 text-[10px] outline-none focus:ring-1 focus:ring-primary text-on-surface resize-none font-medium"
-            />
-            <div className="flex justify-end gap-1.5 mt-0.5">
-              <button
-                type="button"
-                onClick={saveComment}
-                className="bg-primary text-on-primary text-[9px] font-bold px-2.5 py-1 rounded-lg shadow cursor-pointer"
-              >
-                Save
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveComment(null)}
-                className="border border-outline-variant text-[9px] font-bold px-2 py-1 rounded-lg hover:bg-slate-50 cursor-pointer"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  // ========================================================
-  // MOBILE CARD VIEW (Workforce Attendance Management Card View)
-  // ========================================================
-  function renderMobileCardView() {
-    return (
-      <div className="flex flex-col gap-6 animate-fade-in pb-12 select-none relative">
-        {/* Payroll Finalized Locked Notice Banner */}
-        {isCurrentMonthFinalized && (
-          <div className="bg-amber-500/10 border-2 border-amber-500/40 text-amber-950 dark:text-amber-100 p-4 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm animate-fade-in">
-            <div className="flex items-center gap-2.5">
-              <span className="material-symbols-outlined text-[22px] text-amber-700 shrink-0">lock</span>
-              <div>
-                <span className="font-headline font-black text-xs text-amber-900 uppercase block">Attendance Locked (Read-Only)</span>
-                <span className="text-[11px] text-amber-800/90 font-medium">Payroll finalized for this month. Attendance records are read-only. Delete the finalized payroll from history to edit.</span>
-              </div>
-            </div>
-            <span className="text-[10px] font-bold bg-amber-500/20 text-amber-900 px-2.5 py-1 rounded-lg shrink-0">Finalized</span>
-          </div>
-        )}
-
-        {/* Mobile Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-surface-container-lowest p-4 rounded-2xl border border-outline-variant/10 shadow-sm">
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="material-symbols-outlined text-primary text-xl">style</span>
-              <h1 className="font-headline text-xl font-black text-on-surface tracking-tight leading-tight">Workforce Attendance Management Card View</h1>
-            </div>
-            <p className="font-body text-xs text-on-surface-variant mt-1 font-medium">Review and reconcile attendance, overtime, and policy logs in card mode.</p>
-          </div>
-        </div>
-
-        {/* Dynamic Action Bar (respecting granular permissions) */}
-        <div className="flex flex-wrap items-center gap-2.5">
-          {canEditAttendance && (
-            <button 
-              onClick={handleSaveChanges}
-              className={`px-4 py-2 rounded-xl text-xs font-black flex items-center gap-2 transition-all active:scale-[0.97] cursor-pointer shadow-md ${
-                isDirty 
-                  ? 'bg-emerald-600 hover:bg-emerald-700 text-white animate-pulse' 
-                  : 'bg-emerald-500/10 text-emerald-600 border border-emerald-500/20 cursor-default opacity-85'
-              }`}
-            >
-              <span className="material-symbols-outlined text-[18px]">save</span>
-              Save Changes
-              {isDirty && (
-                <span className="w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white animate-bounce"></span>
-              )}
-            </button>
-          )}
-
-          {canAddEmployee && (
-            <button 
-              onClick={() => setIsAddModalOpen(true)}
-              className="px-3.5 py-2 bg-primary/10 border border-primary/20 text-primary hover:bg-primary/20 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all active:scale-[0.97] cursor-pointer"
-            >
-              <span className="material-symbols-outlined text-[18px]">person_add</span>
-              Add Employee
-            </button>
-          )}
-
-          {canUploadCSV && (
-            <>
-              <button 
-                onClick={handleCSVUpload}
-                className="px-3.5 py-2 bg-surface-container-low hover:bg-surface-container border border-outline-variant/15 rounded-xl text-xs font-bold text-secondary flex items-center gap-1.5 transition-all active:scale-[0.97] cursor-pointer"
-              >
-                <span className="material-symbols-outlined text-[18px]">upload_file</span>
-                Upload CSV
-              </button>
-              <button 
-                onClick={() => setIsDownloadModalOpen(true)}
-                className="text-xs font-bold text-primary hover:underline transition-all cursor-pointer px-2"
-              >
-                Template
-              </button>
-            </>
-          )}
-
-          {canReconcile && (
-            <button 
-              onClick={handleBulkReconcile}
-              className="px-4 py-2 primary-gradient rounded-xl text-xs font-black text-white flex items-center gap-1.5 transition-all active:scale-[0.97] cursor-pointer ml-auto"
-            >
-              <span className="material-symbols-outlined text-[18px]">verified_user</span>
-              Verify &amp; Reconcile
-            </button>
-          )}
-        </div>
-
-        {/* Search & Date Filters Bar */}
-        <div className="bg-surface-container-lowest p-4 rounded-2xl border border-outline-variant/10 shadow-sm flex flex-col gap-3">
-          <div className="flex flex-col sm:flex-row items-center gap-2.5 w-full">
-            <div className="relative flex-1 w-full">
-              <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[18px]">search</span>
-              <input 
-                type="text" 
-                value={searchQuery}
-                onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
-                placeholder="Quick search employees by name, code, dept..." 
-                className="w-full bg-surface-container-low border border-outline-variant/15 rounded-xl pl-9 pr-4 py-2 text-xs font-semibold text-on-surface placeholder:text-slate-400 focus:bg-surface-container-lowest focus:ring-1 focus:ring-primary focus:border-transparent transition-all outline-none"
-              />
-              {searchQuery && (
-                <button 
-                  onClick={() => setSearchQuery('')}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-on-surface text-[14px]"
-                >
-                  ✕
-                </button>
-              )}
-            </div>
-
-            {/* Division Filter Dropdown (Saved per user) */}
-            <div className="relative flex items-center bg-white border border-outline-variant/20 hover:border-primary/50 rounded-xl px-3 py-2 transition-all shadow-2xs group w-full sm:w-auto">
-              <span className="material-symbols-outlined text-[16px] text-primary mr-1.5 group-hover:scale-110 transition-transform">apartment</span>
-              <select
-                value={divisionFilter}
-                onChange={(e) => {
-                  setDivisionFilter(e.target.value);
-                  setDepartmentFilter('ALL');
-                  setCurrentPage(1);
-                }}
-                className="w-full sm:w-auto bg-transparent border-none text-xs font-bold text-on-surface cursor-pointer outline-none focus:ring-0 pr-5 appearance-none"
-                title="Filter by Division (Saved for your user profile)"
-              >
-                {divisionsList.map(div => (
-                  <option key={div} value={div} className="bg-white text-on-surface">
-                    {div === 'ALL' ? '🏬 All Divisions' : div}
-                  </option>
-                ))}
-              </select>
-              <span className="material-symbols-outlined text-[14px] text-outline absolute right-2 pointer-events-none">arrow_drop_down</span>
-            </div>
-
-            {/* Department Filter Dropdown (Saved per user, Cascaded) */}
-            <div className="relative flex items-center bg-white border border-outline-variant/20 hover:border-primary/50 rounded-xl px-3 py-2 transition-all shadow-2xs group w-full sm:w-auto">
-              <span className="material-symbols-outlined text-[16px] text-primary mr-1.5 group-hover:scale-110 transition-transform">domain</span>
-              <select
-                value={departmentFilter}
-                onChange={(e) => {
-                  setDepartmentFilter(e.target.value);
-                  setCurrentPage(1);
-                }}
-                className="w-full sm:w-auto bg-transparent border-none text-xs font-bold text-on-surface cursor-pointer outline-none focus:ring-0 pr-5 appearance-none"
-                title="Filter by Department (Saved for your user profile)"
-              >
-                {departmentsList.map(dept => (
-                  <option key={dept} value={dept} className="bg-white text-on-surface">
-                    {dept === 'ALL' ? '🏢 All Departments' : dept}
-                  </option>
-                ))}
-              </select>
-              <span className="material-symbols-outlined text-[14px] text-outline absolute right-2 pointer-events-none">arrow_drop_down</span>
-            </div>
-          </div>
-
-          {canUseDateFilter && (
-            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
-              <select 
-                value={selectedMonth} 
-                onChange={(e) => handleMonthChange(e.target.value)}
-                className="bg-white border border-outline-variant/20 rounded-xl px-2.5 py-1.5 text-xs font-bold text-on-surface cursor-pointer shadow-2xs"
-              >
-                {monthsList.map(m => (
-                  <option key={m.num} value={m.num}>{m.name}</option>
-                ))}
-              </select>
-              <select 
-                value={selectedYear} 
-                onChange={(e) => handleYearChange(e.target.value)}
-                className="bg-white border border-outline-variant/20 rounded-xl px-2.5 py-1.5 text-xs font-bold text-on-surface cursor-pointer shadow-2xs"
-              >
-                {yearsList.map(y => (
-                  <option key={y} value={y}>{y}</option>
-                ))}
-              </select>
-              <div className="relative">
-                <button
-                  type="button"
-                  onClick={() => setIsDatePickerOpen(!isDatePickerOpen)}
-                  className="bg-white border border-outline-variant/20 rounded-xl px-3 py-1.5 text-xs font-bold text-on-surface flex items-center gap-1.5 cursor-pointer shadow-2xs whitespace-nowrap"
-                >
-                  <span className="material-symbols-outlined text-[16px] text-primary">calendar_month</span>
-                  <span>{formatDateForDisplay(startDate)} - {formatDateForDisplay(endDate)}</span>
-                </button>
-
-                {isDatePickerOpen && (
-                  <div className="absolute left-0 mt-2 z-50 bg-white border border-outline-variant/30 rounded-2xl p-4 shadow-2xl flex flex-col gap-3 min-w-[260px] animate-in fade-in duration-150">
-                    <span className="text-[10px] font-black uppercase text-primary tracking-wider">Select Attendance Period</span>
-                    <div className="flex flex-col gap-2">
-                      <div className="flex flex-col gap-1">
-                        <span className="text-[9px] font-bold text-slate-400">Start Date</span>
-                        <input 
-                          type="date" 
-                          value={startDate} 
-                          onChange={(e) => handleStartDateChange(e.target.value)}
-                          className="border border-outline-variant/20 rounded-lg p-1.5 text-xs font-semibold text-on-surface outline-none focus:ring-1 focus:ring-primary"
-                        />
-                      </div>
-                      <div className="flex flex-col gap-1">
-                        <span className="text-[9px] font-bold text-slate-400">End Date</span>
-                        <input 
-                          type="date" 
-                          value={endDate} 
-                          onChange={(e) => handleEndDateChange(e.target.value)}
-                          className="border border-outline-variant/20 rounded-lg p-1.5 text-xs font-semibold text-on-surface outline-none focus:ring-1 focus:ring-primary"
-                        />
-                      </div>
+              {isAlphaDropdownOpen && (
+                <>
+                  <div className="fixed inset-0 z-30" onClick={() => setIsAlphaDropdownOpen(false)}></div>
+                  <div className="absolute left-0 mt-2 p-3 w-72 rounded-2xl bg-surface-container-lowest border border-outline-variant/20 shadow-xl z-40 animate-scale-up">
+                    <div className="flex justify-between items-center mb-2 pb-1.5 border-b border-outline-variant/10">
+                      <span className="text-[11px] font-bold text-on-surface">Alphabetical Filter</span>
+                      {selectedAlphaLetter !== 'ALL' && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedAlphaLetter('ALL');
+                            setIsAlphaDropdownOpen(false);
+                            setCurrentPage(1);
+                          }}
+                          className="text-[10px] font-bold text-primary hover:underline cursor-pointer"
+                        >
+                          Clear Filter
+                        </button>
+                      )}
                     </div>
-                    <div className="flex justify-end gap-2 pt-2 border-t border-outline-variant/10">
+                    <div className="grid grid-cols-7 gap-1.5">
                       <button
                         type="button"
-                        onClick={() => setIsDatePickerOpen(false)}
-                        className="px-3 py-1 bg-primary text-white text-[10px] font-bold rounded-lg cursor-pointer"
-                      >
-                        Apply Range
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {(canFilterAttendance || canFilterOvertime || canFilterFines || canFilterDeductions) && (
-            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pt-1 border-t border-outline-variant/10">
-              <span className="text-[9px] font-bold uppercase text-slate-400 shrink-0 mr-1">Active Filters:</span>
-              {canFilterAttendance && (
-                <button 
-                  onClick={() => setActiveConditions(prev => ({ ...prev, attendance: !prev.attendance }))}
-                  className={`px-2.5 py-1 rounded-lg text-[10px] font-black transition-all flex items-center gap-1 cursor-pointer shrink-0 ${
-                    activeConditions.attendance ? 'bg-primary text-on-primary shadow-2xs' : 'bg-surface-container text-on-surface-variant'
-                  }`}
-                >
-                  Attendance
-                </button>
-              )}
-              {canFilterOvertime && (
-                <button 
-                  onClick={() => setActiveConditions(prev => ({ ...prev, overtime: !prev.overtime }))}
-                  className={`px-2.5 py-1 rounded-lg text-[10px] font-black transition-all flex items-center gap-1 cursor-pointer shrink-0 ${
-                    activeConditions.overtime ? 'bg-primary text-on-primary shadow-2xs' : 'bg-surface-container text-on-surface-variant'
-                  }`}
-                >
-                  Overtime
-                </button>
-              )}
-              {canFilterFines && (
-                <button 
-                  onClick={() => setActiveConditions(prev => ({ ...prev, fines: !prev.fines }))}
-                  className={`px-2.5 py-1 rounded-lg text-[10px] font-black transition-all flex items-center gap-1 cursor-pointer shrink-0 ${
-                    activeConditions.fines ? 'bg-primary text-on-primary shadow-2xs' : 'bg-surface-container text-on-surface-variant'
-                  }`}
-                >
-                  Fines
-                </button>
-              )}
-              {canFilterDeductions && (
-                <button 
-                  onClick={() => setActiveConditions(prev => ({ ...prev, deductions: !prev.deductions }))}
-                  className={`px-2.5 py-1 rounded-lg text-[10px] font-black transition-all flex items-center gap-1 cursor-pointer shrink-0 ${
-                    activeConditions.deductions ? 'bg-primary text-on-primary shadow-2xs' : 'bg-surface-container text-on-surface-variant'
-                  }`}
-                >
-                  Late Coming
-                </button>
-              )}
-            </div>
-          )}
-
-          {/* ALPHABETICAL FILTER KEYS & SORTING PILLS (Mobile Card View) */}
-          <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-outline-variant/10 text-xs w-full">
-            <span className="text-[10px] font-black uppercase tracking-wider text-on-surface-variant mr-1 flex items-center gap-1">
-              <span className="material-symbols-outlined text-[14px] text-primary">sort_by_alpha</span>
-              Alpha:
-            </span>
-
-            <button
-              type="button"
-              onClick={() => setNameSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')}
-              className={`px-2 py-0.5 rounded-lg text-[10px] font-bold border transition-all flex items-center gap-1 cursor-pointer ${
-                nameSortOrder === 'asc' ? 'bg-primary/10 text-primary border-primary/20' : 'bg-secondary/10 text-secondary border-secondary/20'
-              }`}
-            >
-              <span>{nameSortOrder === 'asc' ? 'A → Z' : 'Z → A'}</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => { setSelectedAlphaLetter('ALL'); setCurrentPage(1); }}
-              className={`px-2 py-0.5 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
-                selectedAlphaLetter === 'ALL' ? 'bg-primary text-on-primary font-black' : 'bg-surface-container-low text-on-surface-variant'
-              }`}
-            >
-              All
-            </button>
-
-            {['A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y','Z'].map(char => (
-              <button
-                key={char}
-                type="button"
-                onClick={() => {
-                  setSelectedAlphaLetter(selectedAlphaLetter === char ? 'ALL' : char);
-                  setCurrentPage(1);
-                }}
-                className={`w-5 h-5 rounded text-[10px] font-bold flex items-center justify-center transition-all cursor-pointer ${
-                  selectedAlphaLetter === char ? 'bg-primary text-on-primary font-black scale-105' : 'bg-surface-container-low text-on-surface-variant hover:bg-surface-container-high'
-                }`}
-              >
-                {char}
-              </button>
-            ))}
-
-            <div className="ml-auto text-[10px] font-bold text-on-surface-variant">
-              Total: <strong className="text-on-surface">{filteredEmployees.length}</strong>
-            </div>
-          </div>
-        </div>
-
-        {/* Employee Cards Container */}
-        <div className="space-y-4">
-          {displayedEmployees.length === 0 ? (
-            <div className="bg-surface-container-lowest p-8 rounded-2xl border border-outline-variant/10 text-center text-xs font-semibold text-on-surface-variant">
-              No matching records found in this shift batch.
-            </div>
-          ) : (
-            displayedEmployees.map(emp => (
-              <article 
-                key={emp.id}
-                className="bg-surface-container-lowest border border-outline-variant/15 rounded-2xl p-4 shadow-sm space-y-3 transition-all hover:border-primary/30"
-              >
-                {/* Employee Card Header */}
-                <div className="flex items-center gap-3 border-b border-outline-variant/10 pb-3">
-                  <div className="relative">
-                    <img 
-                      className="w-12 h-12 rounded-full object-cover border border-outline-variant/10 shadow-sm shrink-0" 
-                      src={emp.avatar} 
-                      alt={emp.name} 
-                    />
-                    {emp.paidInternship && (
-                      <span className="absolute -top-1 -right-1 bg-tertiary text-white text-[7px] font-extrabold px-1 rounded-full border border-white">
-                        INT
-                      </span>
-                    )}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between gap-2">
-                      <h4 className="font-headline font-bold text-sm text-on-surface truncate">{emp.name}</h4>
-                      <span className="text-[10px] font-black text-primary bg-primary/10 px-2 py-0.5 rounded-md shrink-0">{emp.id}</span>
-                    </div>
-                    {emp.phone && <p className="text-[10px] text-slate-400 font-medium mt-0.5">{emp.phone}</p>}
-                    {(emp.department || emp.section) && (
-                      <p className="text-[9px] font-bold text-secondary mt-0.5 uppercase tracking-wider truncate">
-                        {emp.department}{emp.section ? ` • ${emp.section}` : ''}
-                      </p>
-                    )}
-                  </div>
-                </div>
-
-                {/* Horizontal Scrollable Dates Strip */}
-                <div className="flex overflow-x-auto no-scrollbar snap-x gap-3 p-1">
-                  {weekdays.map(day => {
-                    const colKey = day.key + '-' + day.num;
-                    const att = emp.attendance || {};
-                    let rec = att[day.date] || att[day.key] || { status: 'absent', ot: 0, fines: 0, deductions: 0 };
-
-                    const empNameLower = String(emp.name || '').trim().toLowerCase();
-                    const empIdStr = String(emp.id || '');
-
-                    const approvedOtReq = (appState?.hr_overtime_requests || []).find(r =>
-                      r.status === 'Approved' &&
-                      (
-                        (r.employeeId && (String(r.employeeId) === empIdStr || String(r.employeeId) === String(emp.employeeId))) ||
-                        (r.employeeName && String(r.employeeName).trim().toLowerCase() === empNameLower)
-                      ) &&
-                      (r.date === day.date || normalizeDate(r.date) === normalizeDate(day.date))
-                    );
-
-                    const uploadedRec = (liveUploadedAttendance || uploadedAttendance || []).find(u => 
-                      (
-                        (u.employeeId && (String(u.employeeId) === empIdStr || String(u.employeeId) === String(emp.employeeId) || String(u.employeeCode) === String(emp.employeeCode))) ||
-                        (u.employeeName && String(u.employeeName).trim().toLowerCase() === empNameLower)
-                      ) &&
-                      (u.date === day.date || normalizeDate(u.date) === normalizeDate(day.date))
-                    );
-
-                    // Auto-sync live punch from Flash AM into active cell status
-                    if (uploadedRec && uploadedRec.inTime) {
-                      rec = {
-                        ...rec,
-                        status: uploadedRec.status === 'Completed' ? 'present' : (uploadedRec.status?.toLowerCase() || 'present'),
-                        inTime: uploadedRec.inTime,
-                        outTime: uploadedRec.outTime,
-                        duration: uploadedRec.duration,
-                        explicitStatus: true
-                      };
-                    }
-
-                    if (approvedOtReq && parseFloat(approvedOtReq.hours || 0) > 0) {
-                      const otHrs = parseFloat(approvedOtReq.hours);
-                      if (parseFloat(rec.ot || 0) < otHrs) {
-                        rec = {
-                          ...rec,
-                          status: rec.status === 'absent' ? 'present' : (rec.status || 'present'),
-                          ot: otHrs,
-                          explicitStatus: true
-                        };
-                      }
-                    } else if (uploadedRec && parseFloat(uploadedRec.ot || 0) > 0) {
-                      const otHrs = parseFloat(uploadedRec.ot);
-                      if (parseFloat(rec.ot || 0) < otHrs) {
-                        rec = {
-                          ...rec,
-                          status: rec.status === 'absent' ? 'present' : (rec.status || 'present'),
-                          ot: otHrs,
-                          explicitStatus: true
-                        };
-                      }
-                    }
-                    
-                    if (rec.status === 'present' && !rec.explicitStatus && !rec.ot && !rec.fines && !rec.deductions && !rec.statusReason && !rec.otReason && !rec.finesReason && !rec.deductionsReason) {
-                      rec = { ...rec, status: 'absent' };
-                    }
-                    const isPresent = rec.status === 'present';
-
-                    return (
-                      <div 
-                        key={colKey}
-                        className={`flex-none w-[190px] border border-outline-variant/20 rounded-xl p-3 snap-center space-y-2.5 transition-all ${
-                          rec.status === 'present' ? 'bg-emerald-500/5 border-emerald-500/20' :
-                          rec.status === 'absent' ? 'bg-red-500/5 border-red-500/20' :
-                          rec.status === 'leave' ? 'bg-amber-500/5 border-amber-500/20' :
-                          rec.status === 'holiday' ? 'bg-blue-500/5 border-blue-500/20' :
-                          'bg-slate-500/5 border-slate-500/20'
+                        onClick={() => {
+                          setSelectedAlphaLetter('ALL');
+                          setIsAlphaDropdownOpen(false);
+                          setCurrentPage(1);
+                        }}
+                        className={`col-span-7 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                          selectedAlphaLetter === 'ALL'
+                            ? 'bg-primary text-on-primary font-black'
+                            : 'bg-surface-container-low text-on-surface hover:bg-surface-container-high'
                         }`}
                       >
-                        {/* Day & Date Header */}
-                        <div className="text-center border-b border-outline-variant/10 pb-1.5">
-                          <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block leading-none">{day.key}</span>
-                          <span className="text-sm font-black text-on-surface block leading-tight mt-0.5">{day.num}</span>
-                        </div>
-
-                        {/* Status Tap-to-Cycle Button (No Dropdown) */}
-                        {effectiveActiveConditions.attendance && (
-                          <div className="flex flex-col gap-1">
-                            <span className="text-[8px] font-bold uppercase tracking-wider text-slate-400">Status</span>
-                            <div className="flex gap-1.5 items-center">
-                              <button
-                                type="button"
-                                disabled={!canEditAttendance || isCurrentMonthFinalized || isDateFinalized(day.date || day.key)}
-                                onClick={() => canEditAttendance && !isCurrentMonthFinalized && !isDateFinalized(day.date || day.key) && handleCycleStatus(emp.id, day.date || day.key, rec.status)}
-                                className={`flex-1 rounded-xl px-2.5 py-1.5 text-xs font-black transition-all flex items-center justify-between shadow-2xs ${(!canEditAttendance || isCurrentMonthFinalized || isDateFinalized(day.date || day.key)) ? 'cursor-not-allowed opacity-75' : 'cursor-pointer active:scale-95'} ${
-                                  rec.status === 'present' ? 'text-emerald-700 bg-emerald-500/15 border border-emerald-500/30' :
-                                  rec.status === 'absent' ? 'text-red-700 bg-red-500/15 border border-red-500/30' :
-                                  rec.status === 'leave' ? 'text-amber-700 bg-amber-500/15 border border-amber-500/30' :
-                                  rec.status === 'holiday' ? 'text-blue-700 bg-blue-500/15 border border-blue-500/30' :
-                                  'text-indigo-700 bg-indigo-500/15 border border-indigo-500/30'
-                                }`}
-                                title={isCurrentMonthFinalized || isDateFinalized(day.date || day.key) ? "Locked by Finalized Payroll" : "Tap to cycle status"}
-                              >
-                                <span className="capitalize">{rec.status || 'absent'}</span>
-                                {canEditAttendance && !isCurrentMonthFinalized && !isDateFinalized(day.date || day.key) && <span className="material-symbols-outlined text-[13px] opacity-70">sync</span>}
-                              </button>
-                              {canEditAttendance && (
-                                <FieldCommentButton 
-                                  empId={emp.id} 
-                                  dayKey={day.date || day.key} 
-                                  field="statusReason" 
-                                  value={rec} 
-                                  reasonField="statusReason" 
-                                  disabled={!canEditAttendance || isCurrentMonthFinalized || isDateFinalized(day.date || day.key)}
-                                />
-                              )}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Overtime Input */}
-                        {effectiveActiveConditions.overtime && (
-                          <div className={`flex flex-col gap-1 ${(!isPresent || !canEditAttendance) ? 'opacity-40 pointer-events-none' : ''}`}>
-                            <span className="text-[8px] font-bold uppercase tracking-wider text-slate-400">Overtime</span>
-                            <div className="flex gap-1.5 items-center">
-                              <div className="relative flex-1 flex items-center">
-                                <span className="absolute left-2 text-[9px] font-bold text-slate-400 select-none">OT:</span>
-                                <input 
-                                  type="text"
-                                  value={isPresent ? `${rec.ot}h` : '-'}
-                                  disabled={!isPresent || !canEditAttendance}
-                                  onChange={(e) => {
-                                    if (!canEditAttendance) return;
-                                    const cleaned = e.target.value.replace(/[^0-9.]/g, '');
-                                    handleValueChange(emp.id, day.date || day.key, 'ot', parseFloat(cleaned) || 0);
-                                  }}
-                                  className="w-full bg-white border border-outline-variant/15 rounded px-2 pl-7 py-1 text-[11px] text-right font-black text-primary outline-none"
-                                />
-                              </div>
-                              {canEditAttendance && (
-                                <FieldCommentButton 
-                                  empId={emp.id} 
-                                  dayKey={day.date || day.key} 
-                                  field="otReason" 
-                                  value={rec} 
-                                  reasonField="otReason" 
-                                />
-                              )}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Fines Input */}
-                        {effectiveActiveConditions.fines && (
-                          <div className={`flex flex-col gap-1 ${!canEditAttendance ? 'opacity-60 pointer-events-none' : ''}`}>
-                            <span className="text-[8px] font-bold uppercase tracking-wider text-slate-400">Fine</span>
-                            <div className="flex gap-1.5 items-center">
-                              <div className="relative flex-1 flex items-center">
-                                <span className="absolute left-2 text-[8px] font-bold text-slate-400 select-none">FINE:</span>
-                                <input 
-                                  type="number"
-                                  value={rec.fines || ''}
-                                  disabled={!canEditAttendance}
-                                  onChange={(e) => canEditAttendance && handleValueChange(emp.id, day.date || day.key, 'fines', parseFloat(e.target.value) || 0)}
-                                  placeholder="0"
-                                  className="w-full bg-white border border-outline-variant/15 rounded px-2 pl-9 py-1 text-[11px] text-right font-semibold text-on-surface outline-none"
-                                />
-                              </div>
-                              {canEditAttendance && (
-                                <FieldCommentButton 
-                                  empId={emp.id} 
-                                  dayKey={day.date || day.key} 
-                                  field="finesReason" 
-                                  value={rec} 
-                                  reasonField="finesReason" 
-                                />
-                              )}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Late Coming Input */}
-                        {effectiveActiveConditions.deductions && (
-                          <div className={`flex flex-col gap-1 ${!canEditAttendance ? 'opacity-60 pointer-events-none' : ''}`}>
-                            <span className="text-[8px] font-bold uppercase tracking-wider text-slate-400">Late Coming</span>
-                            <div className="flex gap-1.5 items-center">
-                              <div className="relative flex-1 flex items-center">
-                                <span className="absolute left-2 text-[8px] font-bold text-slate-400 select-none">LATE:</span>
-                                <input 
-                                  type="text"
-                                  value={rec.deductions ? `${rec.deductions}h` : ''}
-                                  disabled={!canEditAttendance}
-                                  onChange={(e) => {
-                                    if (!canEditAttendance) return;
-                                    const cleaned = e.target.value.replace(/[^0-9.]/g, '');
-                                    handleValueChange(emp.id, day.date || day.key, 'deductions', parseFloat(cleaned) || 0);
-                                  }}
-                                  placeholder="hours"
-                                  className="w-full bg-white border border-outline-variant/15 rounded px-2 pl-9 py-1 text-[11px] text-right font-semibold text-on-surface outline-none"
-                                />
-                              </div>
-                              {canEditAttendance && (
-                                <FieldCommentButton 
-                                  empId={emp.id} 
-                                  dayKey={day.date || day.key} 
-                                  field="deductionsReason" 
-                                  value={rec} 
-                                  reasonField="deductionsReason" 
-                                />
-                              )}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </article>
-            ))
-          )}
-        </div>
-
-        {/* Footer Pagination */}
-        <div className="bg-surface-container-lowest p-4 rounded-2xl border border-outline-variant/10 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4 text-xs font-semibold text-on-surface-variant">
-          <span>Showing <b>{displayedEmployees.length}</b> employees of <b>{filteredEmployees.length}</b> total</span>
-          
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2 select-none">
-              <span className="text-[10px] text-on-surface-variant font-bold uppercase tracking-wider">Show All</span>
-              <label className="erp-toggle">
-                <input 
-                  type="checkbox"
-                  checked={showAllEmployees}
-                  onChange={() => setShowAllEmployees(!showAllEmployees)}
-                />
-                <span className="toggle-slider"></span>
-              </label>
-            </div>
-
-            {!showAllEmployees && (
-              <div className="flex items-center gap-3">
-                <button 
-                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                  disabled={currentPage === 1}
-                  className="p-1.5 hover:bg-white rounded-lg border border-outline-variant/10 bg-surface-container-lowest transition-colors active:scale-95 cursor-pointer flex items-center justify-center disabled:opacity-50"
-                >
-                  <span className="material-symbols-outlined text-[18px]">chevron_left</span>
-                </button>
-                <span>Page {currentPage} of {totalPages || 1}</span>
-                <button 
-                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                  disabled={currentPage === totalPages}
-                  className="p-1.5 hover:bg-white rounded-lg border border-outline-variant/10 bg-surface-container-lowest transition-colors active:scale-95 cursor-pointer flex items-center justify-center disabled:opacity-50"
-                >
-                  <span className="material-symbols-outlined text-[18px]">chevron_right</span>
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // ========================================================
-  // DESKTOP VIEW (Workforce Verification Grid)
-  // ========================================================
-  function renderDesktopView() {
-    return (
-      <div className="flex flex-col gap-8 animate-fade-in pb-12 select-none relative">
-        
-        {/* Payroll Finalized Locked Notice Banner */}
-        {isCurrentMonthFinalized && (
-          <div className="bg-amber-500/10 border-2 border-amber-500/40 text-amber-950 dark:text-amber-100 p-4 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-sm animate-fade-in">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-amber-500/20 flex items-center justify-center text-amber-700 dark:text-amber-400 shrink-0">
-                <span className="material-symbols-outlined text-[24px]">lock</span>
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="font-headline font-black text-sm text-amber-900 dark:text-amber-100 uppercase tracking-wide">
-                    Attendance Locked (Read-Only Mode)
-                  </span>
-                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-amber-500/25 text-amber-800 dark:text-amber-200 uppercase">
-                    Salary Finalized
-                  </span>
-                </div>
-                <p className="text-xs text-amber-800/90 dark:text-amber-300/90 font-medium mt-0.5">
-                  Payroll for <strong>{monthsList[selectedMonth]?.name} {selectedYear}</strong> has been finalized. Attendance is locked in read-only mode. To modify records, please delete the finalized payroll from Salary Generation History.
-                </p>
-              </div>
-            </div>
-            <div className="shrink-0 flex items-center gap-2">
-              <span className="text-[11px] font-bold text-amber-800 dark:text-amber-200 bg-amber-500/20 px-3.5 py-1.5 rounded-xl border border-amber-500/30 flex items-center gap-1.5 shadow-2xs">
-                <span className="material-symbols-outlined text-[15px]">lock_clock</span>
-                Locked by Payroll
-              </span>
-            </div>
-          </div>
-        )}
-        
-        {/* Dynamic Action Bar */}
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-          <div>
-            <h1 className="font-headline text-3xl font-black text-on-surface tracking-tight leading-tight">Workforce Verification Grid</h1>
-            <p className="font-body text-xs text-on-surface-variant mt-1.5 font-medium">Review and reconcile attendance, overtime, and policy logs for manufacturing squads.</p>
-          </div>
-          
-          <div className="flex items-center gap-3 shrink-0 flex-wrap">
-            {/* Pulsing Unsaved Changes Indicator Button */}
-            {canEditAttendance && (
-              <button 
-                onClick={handleSaveChanges}
-                disabled={isCurrentMonthFinalized}
-                title={isCurrentMonthFinalized ? "Locked: Salary finalized for this month" : "Save Changes"}
-                className={`px-5 py-2.5 rounded-xl text-xs font-black flex items-center gap-2 transition-all active:scale-[0.97] relative shadow-lg ${
-                  isCurrentMonthFinalized
-                    ? 'bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400 border border-slate-300 dark:border-slate-600 cursor-not-allowed opacity-75'
-                    : isDirty 
-                    ? 'bg-emerald-600 hover:bg-emerald-700 text-white animate-pulse cursor-pointer' 
-                    : 'bg-emerald-500/10 text-emerald-600 border border-emerald-500/20 cursor-default opacity-85'
-                }`}
-              >
-                <span className="material-symbols-outlined text-[18px]">
-                  {isCurrentMonthFinalized ? 'lock' : 'save'}
-                </span>
-                {isCurrentMonthFinalized ? 'Payroll Finalized (Locked)' : 'Save Changes'}
-                {isDirty && !isCurrentMonthFinalized && (
-                  <span className="absolute -top-1.5 -right-1.5 w-3 h-3 bg-red-500 rounded-full border-2 border-white animate-bounce"></span>
-                )}
-              </button>
-            )}
-
-            {/* Add New Employee Button */}
-            {canAddEmployee && (
-              <button 
-                onClick={() => setIsAddModalOpen(true)}
-                className="px-4 py-2.5 bg-primary/10 border border-primary/20 text-primary hover:bg-primary/20 rounded-xl text-xs font-bold flex items-center gap-2 transition-all active:scale-[0.97] cursor-pointer"
-              >
-                <span className="material-symbols-outlined text-[18px]">person_add</span>
-                Add New Employee
-              </button>
-            )}
-
-            {/* Upload CSV & Download Template Buttons */}
-            {canUploadCSV && (
-              <>
-                <button 
-                  onClick={handleCSVUpload}
-                  className="px-4 py-2.5 bg-surface-container-low hover:bg-surface-container border border-outline-variant/15 rounded-xl text-xs font-bold text-secondary flex items-center gap-2 transition-all active:scale-[0.97] cursor-pointer"
-                >
-                  <span className="material-symbols-outlined text-[18px]">upload_file</span>
-                  Upload CSV/Excel
-                </button>
-                <input 
-                  type="file" 
-                  ref={csvFileInputRef} 
-                  onChange={handleCSVFileChange} 
-                  accept=".csv" 
-                  className="hidden" 
-                />
-                <button 
-                  onClick={() => setIsDownloadModalOpen(true)}
-                  className="text-xs font-bold text-primary hover:underline hover:text-primary-container transition-all cursor-pointer"
-                >
-                  Download Template
-                </button>
-              </>
-            )}
-
-                        
-
-            {/* Verify & Reconcile Button */}
-            {canReconcile && (
-              <button 
-                onClick={handleBulkReconcile}
-                className="px-5 py-2.5 primary-gradient hover:shadow hover:shadow-primary/10 rounded-xl text-xs font-black text-white flex items-center gap-2 transition-all active:scale-[0.97] cursor-pointer"
-              >
-                <span className="material-symbols-outlined text-[18px]">verified_user</span>
-                Verify &amp; Reconcile
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* Global Controls & Date Search */}
-        <div className="bg-surface-container-lowest p-4 rounded-2xl border border-outline-variant/10 shadow-sm flex flex-col gap-3">
-          <div className="flex flex-col xl:flex-row gap-4 items-center justify-between">
-            <div className="flex items-center gap-3 w-full xl:w-auto flex-wrap">
-              {/* Quick search employees */}
-              <div className="relative flex-1 sm:flex-initial">
-                <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline-variant text-[16px]">search</span>
-                <input 
-                  type="text"
-                  value={searchQuery}
-                  onChange={e => { setSearchQuery(e.target.value); setCurrentPage(1); }}
-                  placeholder="Quick search employees..."
-                  className="w-full sm:w-56 bg-surface-container-low border border-outline-variant/15 rounded-xl pl-9 pr-4 py-2 text-xs text-on-surface font-semibold focus:bg-surface-container-lowest focus:border-primary/50 transition-all focus:ring-0 outline-none"
-                />
-              </div>
-
-              {/* MODERN UI DIVISION DROPDOWN - System UI Matched */}
-              <div className="relative group">
-                <div className="flex items-center bg-surface-container-low hover:bg-surface-container-high border border-outline-variant/20 hover:border-primary/50 rounded-xl px-3 py-1.5 transition-all shadow-xs">
-                  <span className="material-symbols-outlined text-[17px] text-primary mr-1.5">apartment</span>
-                  <select 
-                    value={divisionFilter}
-                    onChange={e => {
-                      setDivisionFilter(e.target.value);
-                      setDepartmentFilter('ALL');
-                      setCurrentPage(1);
-                    }}
-                    className="bg-transparent border-none text-xs font-bold text-on-surface cursor-pointer outline-none focus:ring-0 pr-6 appearance-none"
-                    title="Filter by Division"
-                  >
-                    {divisionsList.map(div => (
-                      <option key={div} value={div} className="bg-surface-container-lowest text-on-surface font-semibold">
-                        {div === 'ALL' ? '🏬 All Divisions' : div}
-                      </option>
-                    ))}
-                  </select>
-                  <span className="material-symbols-outlined text-[16px] text-outline absolute right-2 pointer-events-none group-hover:text-primary transition-colors">
-                    expand_more
-                  </span>
-                </div>
-              </div>
-              
-              {/* Month Select, Year Select & Date Picker */}
-              {canUseDateFilter && (
-                <>
-                  {/* Month Select */}
-                  <div className="relative group">
-                    <div className="flex items-center bg-surface-container-low hover:bg-surface-container-high border border-outline-variant/20 hover:border-primary/50 rounded-xl px-3 py-1.5 transition-all shadow-xs">
-                      <span className="material-symbols-outlined text-[16px] text-secondary mr-1">calendar_month</span>
-                      <select 
-                        value={selectedMonth}
-                        onChange={e => {
-                          const m = parseInt(e.target.value);
-                          setSelectedMonth(m);
-                          updateDateRangeFromMonthYear(m, selectedYear);
-                        }}
-                        className="bg-transparent border-none text-xs font-bold text-on-surface cursor-pointer outline-none focus:ring-0 pr-6 appearance-none"
-                      >
-                        {["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"].map((month, idx) => (
-                          <option key={month} value={idx} className="bg-surface-container-lowest text-on-surface font-semibold">{month}</option>
-                        ))}
-                      </select>
-                      <span className="material-symbols-outlined text-[16px] text-outline absolute right-2 pointer-events-none group-hover:text-secondary transition-colors">
-                        expand_more
-                      </span>
+                        All Personnel ({localEmployees.length})
+                      </button>
+                      {['A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y','Z'].map(char => {
+                        const count = localEmployees.filter(e => (e.name || '').trim().toUpperCase().startsWith(char)).length;
+                        return (
+                          <button
+                            key={char}
+                            type="button"
+                            onClick={() => {
+                              setSelectedAlphaLetter(char);
+                              setIsAlphaDropdownOpen(false);
+                              setCurrentPage(1);
+                            }}
+                            className={`h-7 rounded-lg text-xs font-bold flex items-center justify-center transition-all cursor-pointer ${
+                              selectedAlphaLetter === char
+                                ? 'bg-primary text-on-primary font-black shadow-sm'
+                                : count > 0
+                                  ? 'bg-surface-container-low text-on-surface hover:bg-surface-container-high'
+                                  : 'bg-surface-container-low/40 text-on-surface-variant/40 hover:text-on-surface-variant'
+                            }`}
+                            title={`${char}: ${count} personnel`}
+                          >
+                            {char}
+                          </button>
+                        );
+                      })}
                     </div>
-                  </div>
-
-                  {/* Year Select */}
-                  <div className="relative group">
-                    <div className="flex items-center bg-surface-container-low hover:bg-surface-container-high border border-outline-variant/20 hover:border-primary/50 rounded-xl px-3 py-1.5 transition-all shadow-xs">
-                      <select 
-                        value={selectedYear}
-                        onChange={e => {
-                          const y = parseInt(e.target.value);
-                          setSelectedYear(y);
-                          updateDateRangeFromMonthYear(selectedMonth, y);
-                        }}
-                        className="bg-transparent border-none text-xs font-bold text-on-surface cursor-pointer outline-none focus:ring-0 pr-6 appearance-none"
-                      >
-                        {[2022, 2023, 2024, 2025, 2026].map(year => (
-                          <option key={year} value={year} className="bg-surface-container-lowest text-on-surface font-semibold">{year}</option>
-                        ))}
-                      </select>
-                      <span className="material-symbols-outlined text-[16px] text-outline absolute right-2 pointer-events-none group-hover:text-primary transition-colors">
-                        expand_more
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Interactive Date Picker Button */}
-                  <div className="relative">
-                    <button 
-                      onClick={() => setIsDatePickerOpen(!isDatePickerOpen)}
-                      className="bg-surface-container-low hover:bg-surface-container-high px-3.5 py-1.5 rounded-xl border border-outline-variant/20 text-xs font-bold text-on-surface flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer shadow-xs"
-                    >
-                      <span className="material-symbols-outlined text-[16px] text-primary">calendar_month</span>
-                      {new Date(startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - {new Date(endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                      <span className="material-symbols-outlined text-[15px] text-outline">expand_more</span>
-                    </button>
-                    
-                    {isDatePickerOpen && (
-                      <div className="absolute left-0 mt-2 z-50 bg-surface-container-lowest border border-outline-variant/30 rounded-2xl p-4 shadow-xl flex flex-col gap-3 min-w-[280px] animate-in fade-in slide-in-from-top-2 duration-200">
-                        <div className="flex flex-col gap-1">
-                          <span className="text-[9px] uppercase tracking-wider font-bold text-primary">Start Date</span>
-                          <input 
-                            type="date"
-                            value={startDate}
-                            onChange={e => setStartDate(e.target.value)}
-                            className="bg-surface-container-low border border-outline-variant/30 rounded-xl px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary focus:border-transparent text-on-surface"
-                          />
-                        </div>
-                        <div className="flex flex-col gap-1">
-                          <span className="text-[9px] uppercase tracking-wider font-bold text-primary">End Date</span>
-                          <input 
-                            type="date"
-                            value={endDate}
-                            onChange={e => setEndDate(e.target.value)}
-                            className="bg-surface-container-low border border-outline-variant/30 rounded-xl px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary focus:border-transparent text-on-surface"
-                          />
-                        </div>
-                        <button 
-                          onClick={() => setIsDatePickerOpen(false)}
-                          className="w-full bg-primary hover:bg-primary-container text-on-primary text-xs font-bold py-2 rounded-xl transition-colors mt-1 cursor-pointer"
-                        >
-                          Apply Filter
-                        </button>
-                      </div>
-                    )}
                   </div>
                 </>
               )}
             </div>
 
-            {/* Condition selector chips */}
-            {(canFilterAttendance || canFilterOvertime || canFilterFines || canFilterDeductions) && (
-              <div className="flex items-center gap-2.5">
-                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Active Filters:</span>
-                <div className="flex gap-2">
-                  {canFilterAttendance && (
-                    <button
-                      onClick={() => handleToggleCondition('attendance')}
-                      className={`px-3 py-1.5 rounded-full text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer ${
-                        activeConditions.attendance 
-                          ? 'bg-primary-fixed text-on-primary-fixed shadow-2xs' 
-                          : 'bg-surface-container text-on-surface-variant hover:bg-surface-container-high'
-                      }`}
-                    >
-                      <span>Attendance</span>
-                      {activeConditions.attendance && <span className="material-symbols-outlined text-[10px]">close</span>}
-                    </button>
-                  )}
-                  {canFilterOvertime && (
-                    <button
-                      onClick={() => handleToggleCondition('overtime')}
-                      className={`px-3 py-1.5 rounded-full text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer ${
-                        activeConditions.overtime 
-                          ? 'bg-primary-fixed text-on-primary-fixed shadow-2xs' 
-                          : 'bg-surface-container text-on-surface-variant hover:bg-surface-container-high'
-                      }`}
-                    >
-                      <span>Overtime</span>
-                      {activeConditions.overtime && <span className="material-symbols-outlined text-[10px]">close</span>}
-                    </button>
-                  )}
-                  {canFilterFines && (
-                    <button
-                      onClick={() => handleToggleCondition('fines')}
-                      className={`px-3 py-1.5 rounded-full text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer ${
-                        activeConditions.fines 
-                          ? 'bg-primary-fixed text-on-primary-fixed shadow-2xs' 
-                          : 'bg-surface-container text-on-surface-variant hover:bg-surface-container-high'
-                      }`}
-                    >
-                      <span>Fines</span>
-                      {activeConditions.fines && <span className="material-symbols-outlined text-[10px]">close</span>}
-                    </button>
-                  )}
-                  {canFilterDeductions && (
-                    <button
-                      onClick={() => handleToggleCondition('deductions')}
-                      className={`px-3 py-1.5 rounded-full text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer ${
-                        activeConditions.deductions 
-                          ? 'bg-primary-fixed text-on-primary-fixed shadow-2xs' 
-                          : 'bg-surface-container text-on-surface-variant hover:bg-surface-container-high'
-                      }`}
-                    >
-                      <span>Late Coming</span>
-                      {activeConditions.deductions && <span className="material-symbols-outlined text-[10px]">close</span>}
-                    </button>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* ALPHABETICAL FILTER KEYS & SORTING PILLS */}
-          <div className="flex flex-wrap items-center gap-1.5 pt-3 border-t border-outline-variant/10 text-xs w-full">
-            <span className="text-[10px] font-black uppercase tracking-wider text-on-surface-variant mr-1 flex items-center gap-1">
-              <span className="material-symbols-outlined text-[15px] text-primary">sort_by_alpha</span>
-              Alpha:
-            </span>
-
             {/* A to Z Sort Toggle */}
             <button
               type="button"
               onClick={() => setNameSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')}
-              className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all flex items-center gap-1 cursor-pointer ${
+              className={`px-2.5 py-1.5 rounded-xl text-xs font-bold border transition-all flex items-center gap-1 cursor-pointer ${
                 nameSortOrder === 'asc'
                   ? 'bg-primary/10 text-primary border-primary/20'
                   : 'bg-secondary/10 text-secondary border-secondary/20'
@@ -3085,42 +2055,94 @@ export default function HRAttendance({ isMobile }) {
               <span className="material-symbols-outlined text-[13px]">{nameSortOrder === 'asc' ? 'arrow_upward' : 'arrow_downward'}</span>
             </button>
 
-            {/* All Pill */}
-            <button
-              type="button"
-              onClick={() => { setSelectedAlphaLetter('ALL'); setCurrentPage(1); }}
-              className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
-                selectedAlphaLetter === 'ALL'
-                  ? 'bg-primary text-on-primary shadow-xs font-black'
-                  : 'bg-surface-container-low text-on-surface-variant hover:bg-surface-container-high'
-              }`}
-            >
-              All
-            </button>
-
-            {/* Individual Letter Pills A-Z */}
-            {['A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y','Z'].map(char => (
+            {/* Advanced Personnel Status Dropdown with Checkboxes */}
+            <div className="relative inline-block text-left">
               <button
-                key={char}
                 type="button"
-                onClick={() => {
-                  setSelectedAlphaLetter(selectedAlphaLetter === char ? 'ALL' : char);
-                  setCurrentPage(1);
-                }}
-                className={`w-6 h-6 rounded-md text-[11px] font-bold flex items-center justify-center transition-all cursor-pointer ${
-                  selectedAlphaLetter === char
-                    ? 'bg-primary text-on-primary shadow-xs font-black scale-105'
-                    : 'bg-surface-container-low text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface'
-                }`}
+                onClick={() => setIsStatusDropdownOpen(prev => !prev)}
+                className="px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer border bg-surface-container-low hover:bg-surface-container text-on-surface border-outline-variant/15 shadow-2xs"
               >
-                {char}
+                <span className="material-symbols-outlined text-[15px] text-primary">tune</span>
+                <span>Status: {selectedEmploymentStatuses.length === 2 ? 'All' : (selectedEmploymentStatuses[0] || 'None')}</span>
+                <span className="material-symbols-outlined text-[14px] text-slate-400">arrow_drop_down</span>
               </button>
-            ))}
+
+              {isStatusDropdownOpen && (
+                <>
+                  <div className="fixed inset-0 z-30" onClick={() => setIsStatusDropdownOpen(false)}></div>
+                  <div className="absolute left-0 mt-2 p-3 w-60 rounded-2xl bg-surface-container-lowest border border-outline-variant/20 shadow-xl z-40 animate-scale-up space-y-2">
+                    <div className="flex justify-between items-center pb-2 border-b border-outline-variant/10">
+                      <span className="text-[11px] font-black uppercase tracking-wider text-on-surface">Personnel Status</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedEmploymentStatuses(['Active', 'Inactive']);
+                          setCurrentPage(1);
+                        }}
+                        className="text-[10px] font-bold text-primary hover:underline cursor-pointer"
+                      >
+                        Select All
+                      </button>
+                    </div>
+
+                    <label className="flex items-center gap-2.5 p-1.5 rounded-xl hover:bg-surface-container-low cursor-pointer transition-colors">
+                      <input
+                        type="checkbox"
+                        checked={selectedEmploymentStatuses.includes('Active')}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedEmploymentStatuses(prev => [...prev, 'Active']);
+                          } else {
+                            setSelectedEmploymentStatuses(prev => prev.filter(s => s !== 'Active'));
+                          }
+                          setCurrentPage(1);
+                        }}
+                        className="w-4 h-4 rounded text-primary focus:ring-0 cursor-pointer"
+                      />
+                      <span className="flex-1 text-xs font-bold text-on-surface flex items-center justify-between">
+                        <span>Active Personnel</span>
+                        <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                      </span>
+                    </label>
+
+                    <label className="flex items-center gap-2.5 p-1.5 rounded-xl hover:bg-surface-container-low cursor-pointer transition-colors">
+                      <input
+                        type="checkbox"
+                        checked={selectedEmploymentStatuses.includes('Inactive')}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedEmploymentStatuses(prev => [...prev, 'Inactive']);
+                          } else {
+                            setSelectedEmploymentStatuses(prev => prev.filter(s => s !== 'Inactive'));
+                          }
+                          setCurrentPage(1);
+                        }}
+                        className="w-4 h-4 rounded text-primary focus:ring-0 cursor-pointer"
+                      />
+                      <span className="flex-1 text-xs font-bold text-on-surface flex items-center justify-between">
+                        <span>Inactive Personnel</span>
+                        <span className="w-2 h-2 rounded-full bg-rose-500"></span>
+                      </span>
+                    </label>
+                  </div>
+                </>
+              )}
+            </div>
 
             {selectedAlphaLetter !== 'ALL' && (
-              <span className="text-[11px] text-primary font-bold ml-2">
-                Showing "{selectedAlphaLetter}" ({filteredEmployees.length} employees)
-              </span>
+              <div className="flex items-center gap-1.5 bg-primary/10 text-primary border border-primary/20 px-2.5 py-1 rounded-lg text-xs font-bold">
+                <span>Filtered by "{selectedAlphaLetter}"</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedAlphaLetter('ALL');
+                    setCurrentPage(1);
+                  }}
+                  className="hover:text-primary-container cursor-pointer flex items-center"
+                >
+                  <span className="material-symbols-outlined text-[14px]">close</span>
+                </button>
+              </div>
             )}
 
             {/* Total count badge */}
@@ -3276,6 +2298,18 @@ export default function HRAttendance({ isMobile }) {
                                 {emp.department}{emp.section ? ` • ${emp.section}` : ''}
                               </p>
                             )}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleGenerateLivePayslip(emp);
+                              }}
+                              className="mt-2 px-2 py-0.5 rounded-md bg-primary/10 hover:bg-primary/20 text-primary text-[9px] font-bold transition-all flex items-center gap-1 cursor-pointer w-fit border border-primary/20 hover:scale-105 active:scale-95"
+                              title="Generate / View Live Pay Slip from current attendance"
+                            >
+                              <span className="material-symbols-outlined text-[12px]">receipt_long</span>
+                              <span>Live Pay Slip</span>
+                            </button>
                           </div>
                         </div>
                       </td>
@@ -3835,6 +2869,13 @@ export default function HRAttendance({ isMobile }) {
         )}
 
         {/* Verify & Reconcile modal removed - loaded in full screen instead */}
+
+        {/* Exactly 110% Formatted Live AJ Synthetic Payslip Modal */}
+        <HRPayslipModal
+          isOpen={isLivePayslipOpen}
+          onClose={() => setIsLivePayslipOpen(false)}
+          slip={livePayslipModalData}
+        />
 
       </div>
     );

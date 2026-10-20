@@ -1,7 +1,10 @@
+import { getEffectiveDutyHours } from '../../utils/hrDutyHours';
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import PayrollAccountMapping from './PayrollAccountMapping';
 import SalaryAllowanceConfig from './SalaryAllowanceConfig';
+
+
 
 export default function HRSettings({ isMobile }) {
   const { state, setCollection } = useApp();
@@ -321,6 +324,10 @@ export default function HRSettings({ isMobile }) {
     } catch (e) {}
     return defaultDuty;
   });
+
+  function getEmpEffectiveDutyHours(emp) {
+    return getEffectiveDutyHours(emp, dutySettings);
+  }
 
   const saveDutySettings = (updated) => {
     setDutySettings(updated);
@@ -1729,27 +1736,7 @@ export default function HRSettings({ isMobile }) {
   // ==========================================
   // DUTY HOURS & SHIFTS RENDERERS (COMPREHENSIVE)
   // ==========================================
-  const getEmpEffectiveDutyHours = (emp) => {
-    if (!emp) return { hours: Number(dutySettings.standardHours) || 8, source: 'Global Standard', type: 'standard' };
-    if (dutySettings.employeeDutyHours?.[emp.id] && Number(dutySettings.employeeDutyHours[emp.id]) > 0) {
-      return { hours: Number(dutySettings.employeeDutyHours[emp.id]), source: 'Custom Employee Override', type: 'custom' };
-    }
-    if (emp.dutyHours && Number(emp.dutyHours) > 0) {
-      return { hours: Number(emp.dutyHours), source: 'Profile Duty Hours', type: 'custom' };
-    }
-    if (emp.department && dutySettings.departmentDutyHours?.[emp.department] && Number(dutySettings.departmentDutyHours[emp.department]) > 0) {
-      return { hours: Number(dutySettings.departmentDutyHours[emp.department]), source: `Dept Default (${emp.department})`, type: 'department' };
-    }
-    const div = emp.division || emp.section;
-    if (div && dutySettings.divisionDutyHours?.[div] && Number(dutySettings.divisionDutyHours[div]) > 0) {
-      return { hours: Number(dutySettings.divisionDutyHours[div]), source: `Division Default (${div})`, type: 'division' };
-    }
-    if (emp.shift) {
-      const sObj = (dutySettings.shifts || []).find(s => s.name?.toLowerCase() === emp.shift?.toLowerCase());
-      if (sObj?.hours) return { hours: Number(sObj.hours), source: `Shift (${sObj.name})`, type: 'shift' };
-    }
-    return { hours: Number(dutySettings.standardHours) || 8, source: 'Global Standard', type: 'standard' };
-  };
+  // getEmpEffectiveDutyHours defined at top of component
 
   const handleSetEmployeeDutyHours = (empId, hours) => {
     const updatedEmpHours = {

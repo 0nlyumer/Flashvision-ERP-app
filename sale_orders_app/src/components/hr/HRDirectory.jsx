@@ -33,6 +33,7 @@ export default function HRDirectory({ isMobile }) {
   const [divisionFilter, setDivisionFilter] = useState('ALL');
   const [statusFilter, setStatusFilter] = useState('ALL'); // 'ALL' | 'Active' | 'Inactive'
   const [alphabetFilter, setAlphabetFilter] = useState('ALL');
+  const [isAlphaDropdownOpen, setIsAlphaDropdownOpen] = useState(false);
   const ALPHABET_KEYS = ['ALL', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z'];
   const [isBulkMenuOpen, setIsBulkMenuOpen] = useState(false);
   const bulkMenuRef = useRef(null);
@@ -827,35 +828,110 @@ export default function HRDirectory({ isMobile }) {
 
         {/* Dynamic Data Table Container */}
         <div className="bg-surface-container-lowest rounded-2xl shadow-[0_20px_40px_rgba(0,28,56,0.04)] border border-outline-variant/10 flex-1 flex flex-col overflow-hidden relative">
-          {/* Header Action Bar */}
-          <div className="px-6 py-2.5 bg-surface-container-low/40 border-b border-surface-container/70 flex items-center gap-1.5 overflow-x-auto select-none shrink-0 custom-scrollbar">
-            <span className="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider mr-1.5 shrink-0 flex items-center gap-1">
-              <span className="material-symbols-outlined text-[15px] text-primary">sort_by_alpha</span>
-              A-Z Filter:
-            </span>
-            {ALPHABET_KEYS.map(letter => {
-              const isActive = alphabetFilter === letter;
-              const countForLetter = letter === 'ALL'
-                ? employees.length
-                : employees.filter(e => (e.name || '').trim().toUpperCase().startsWith(letter)).length;
-              return (
+          {/* Organized A-Z Alphabet Filter Dropdown */}
+          <div className="px-6 py-2 bg-surface-container-low/40 border-b border-surface-container/70 flex items-center justify-between gap-3 shrink-0 select-none">
+            <div className="flex items-center gap-3">
+              <div className="relative inline-block text-left">
                 <button
-                  key={letter}
                   type="button"
-                  onClick={() => { setAlphabetFilter(letter); setCurrentPage(1); }}
-                  className={`h-6 min-w-[28px] px-2 rounded-lg text-[10px] font-black transition-all cursor-pointer flex items-center justify-center shrink-0 ${
-                    isActive
-                      ? 'bg-primary text-on-primary shadow-xs scale-105'
-                      : countForLetter > 0
-                        ? 'bg-surface-container text-on-surface hover:bg-surface-container-high'
-                        : 'bg-transparent text-on-surface-variant/40 hover:text-on-surface-variant'
+                  onClick={() => setIsAlphaDropdownOpen(prev => !prev)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer border shadow-2xs ${
+                    alphabetFilter !== 'ALL'
+                      ? 'bg-primary text-on-primary border-primary shadow-xs'
+                      : 'bg-surface-container hover:bg-surface-container-high text-on-surface border-outline-variant/15'
                   }`}
-                  title={`${letter}: ${countForLetter} personnel`}
                 >
-                  {letter}
+                  <span className="material-symbols-outlined text-[15px]">sort_by_alpha</span>
+                  <span>A-Z Filter {alphabetFilter !== 'ALL' ? `(${alphabetFilter})` : ''}</span>
+                  <span className="material-symbols-outlined text-[14px]">arrow_drop_down</span>
                 </button>
-              );
-            })}
+
+                {isAlphaDropdownOpen && (
+                  <>
+                    <div className="fixed inset-0 z-30" onClick={() => setIsAlphaDropdownOpen(false)}></div>
+                    <div className="absolute left-0 mt-2 p-3 w-72 rounded-2xl bg-surface-container-lowest border border-outline-variant/20 shadow-xl z-40 animate-scale-up">
+                      <div className="flex justify-between items-center mb-2 pb-1.5 border-b border-outline-variant/10">
+                        <span className="text-[11px] font-bold text-on-surface">Alphabetical Filter</span>
+                        {alphabetFilter !== 'ALL' && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setAlphabetFilter('ALL');
+                              setIsAlphaDropdownOpen(false);
+                              setCurrentPage(1);
+                            }}
+                            className="text-[10px] font-bold text-primary hover:underline cursor-pointer"
+                          >
+                            Clear Filter
+                          </button>
+                        )}
+                      </div>
+                      <div className="grid grid-cols-7 gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAlphabetFilter('ALL');
+                            setIsAlphaDropdownOpen(false);
+                            setCurrentPage(1);
+                          }}
+                          className={`col-span-7 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                            alphabetFilter === 'ALL'
+                              ? 'bg-primary text-on-primary font-black'
+                              : 'bg-surface-container text-on-surface hover:bg-surface-container-high'
+                          }`}
+                        >
+                          All Personnel ({employees.length})
+                        </button>
+                        {ALPHABET_KEYS.filter(k => k !== 'ALL').map(letter => {
+                          const countForLetter = employees.filter(e => (e.name || '').trim().toUpperCase().startsWith(letter)).length;
+                          return (
+                            <button
+                              key={letter}
+                              type="button"
+                              onClick={() => {
+                                setAlphabetFilter(letter);
+                                setIsAlphaDropdownOpen(false);
+                                setCurrentPage(1);
+                              }}
+                              className={`h-7 rounded-lg text-xs font-bold flex items-center justify-center transition-all cursor-pointer ${
+                                alphabetFilter === letter
+                                  ? 'bg-primary text-on-primary font-black shadow-sm'
+                                  : countForLetter > 0
+                                    ? 'bg-surface-container text-on-surface hover:bg-surface-container-high'
+                                    : 'bg-surface-container/40 text-on-surface-variant/40 hover:text-on-surface-variant'
+                              }`}
+                              title={`${letter}: ${countForLetter} personnel`}
+                            >
+                              {letter}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {alphabetFilter !== 'ALL' && (
+                <div className="flex items-center gap-1.5 bg-primary/10 text-primary border border-primary/20 px-2.5 py-1 rounded-lg text-xs font-bold">
+                  <span>Filtered by "{alphabetFilter}"</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAlphabetFilter('ALL');
+                      setCurrentPage(1);
+                    }}
+                    className="hover:text-primary-container cursor-pointer flex items-center"
+                  >
+                    <span className="material-symbols-outlined text-[14px]">close</span>
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <div className="text-[11px] font-bold text-on-surface-variant">
+              Showing <span className="text-primary font-black">{filteredEmployees.length}</span> of {employees.length} personnel
+            </div>
           </div>
 
           <div className="px-6 py-3 flex justify-between items-center border-b border-surface-container bg-surface/30 shrink-0">
@@ -1231,23 +1307,56 @@ export default function HRDirectory({ isMobile }) {
           </button>
         </div>
 
-        {/* Mobile A-Z Alphabet Filter */}
-        <div className="flex items-center gap-1 overflow-x-auto px-2 py-1 shrink-0 select-none custom-scrollbar">
-          {ALPHABET_KEYS.map(letter => {
-            const isActive = alphabetFilter === letter;
-            return (
-              <button
-                key={letter}
-                type="button"
-                onClick={() => { setAlphabetFilter(letter); setCurrentPage(1); }}
-                className={`h-6 min-w-[26px] px-1.5 rounded-lg text-[10px] font-black transition-all ${
-                  isActive ? 'bg-primary text-on-primary shadow-xs' : 'bg-surface-container-lowest text-on-surface-variant'
-                }`}
-              >
-                {letter}
-              </button>
-            );
-          })}
+        {/* Mobile A-Z Dropdown Filter */}
+        <div className="flex items-center justify-between px-3 py-1.5 bg-surface-container-low/50 rounded-xl mx-2 shrink-0 select-none">
+          <div className="relative inline-block text-left">
+            <button
+              type="button"
+              onClick={() => setIsAlphaDropdownOpen(prev => !prev)}
+              className={`px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1.5 border ${
+                alphabetFilter !== 'ALL'
+                  ? 'bg-primary text-on-primary border-primary'
+                  : 'bg-surface-container-lowest text-on-surface border-outline-variant/15'
+              }`}
+            >
+              <span className="material-symbols-outlined text-[13px]">sort_by_alpha</span>
+              <span>A-Z {alphabetFilter !== 'ALL' ? `(${alphabetFilter})` : ''}</span>
+              <span className="material-symbols-outlined text-[12px]">arrow_drop_down</span>
+            </button>
+
+            {isAlphaDropdownOpen && (
+              <>
+                <div className="fixed inset-0 z-30" onClick={() => setIsAlphaDropdownOpen(false)}></div>
+                <div className="absolute left-0 mt-2 p-3 w-64 rounded-2xl bg-surface-container-lowest border border-outline-variant/20 shadow-xl z-40">
+                  <div className="grid grid-cols-7 gap-1">
+                    <button
+                      type="button"
+                      onClick={() => { setAlphabetFilter('ALL'); setIsAlphaDropdownOpen(false); setCurrentPage(1); }}
+                      className="col-span-7 py-1 text-[10px] font-bold bg-surface-container rounded-md"
+                    >
+                      All
+                    </button>
+                    {ALPHABET_KEYS.filter(k => k !== 'ALL').map(letter => (
+                      <button
+                        key={letter}
+                        type="button"
+                        onClick={() => { setAlphabetFilter(letter); setIsAlphaDropdownOpen(false); setCurrentPage(1); }}
+                        className={`h-6 rounded text-[10px] font-bold ${
+                          alphabetFilter === letter ? 'bg-primary text-on-primary' : 'bg-surface-container text-on-surface'
+                        }`}
+                      >
+                        {letter}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+
+          <span className="text-[10px] font-bold text-on-surface-variant">
+            {filteredEmployees.length} personnel
+          </span>
         </div>
 
         {/* Mobile Bulk Actions */}
