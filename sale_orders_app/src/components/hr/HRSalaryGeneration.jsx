@@ -402,11 +402,9 @@ export default function HRSalaryGeneration({ isMobile }) {
       const hourlyRate = oneHourAmount;
 
       // Overtime Multiplier & Hourly Rate from Duty Hours & Shifts Configuration
-      const otConfig = dutySettings?.overtimeCalculation || {};
+      // Overtime Multiplier & Hourly Rate strictly based on Hourly Rate
       const otMultiplier = getEffectiveOvertimeMultiplier(emp, dutySettings);
-      const otHourlyRate = (otConfig.type === 'flat' && safeNum(otConfig.flatHourlyRate) > 0)
-        ? safeNum(otConfig.flatHourlyRate)
-        : (hourlyRate * otMultiplier);
+      const otHourlyRate = hourlyRate * otMultiplier;
 
       // Paid Days = Actual worked days + paid leaves
       const payableDays = Math.min(currentMonthDays, Math.max(0, workedDays + leavesCount));
@@ -2067,177 +2065,14 @@ export default function HRSalaryGeneration({ isMobile }) {
       )}
 
       {/* ========================================================= */}
-      {/* DETAILED SALARY SLIP MODAL FOR SINGLE EMPLOYEE             */}
       {/* ========================================================= */}
-      {selectedRecordForDetail && (
-        <div className="fixed inset-0 bg-on-surface/40 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
-          <div className="bg-surface-container-lowest max-w-lg w-full rounded-2xl border border-outline-variant shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-            
-            <div className="p-5 border-b border-outline-variant/10 bg-primary/[0.02] flex justify-between items-center">
-              <div>
-                <h3 className="text-base font-bold text-on-surface font-headline">Salary Slip Details</h3>
-                <p className="text-[10px] text-on-surface-variant font-medium">{getPeriodLabel(payrollPeriod)} • ID: {selectedRecordForDetail.employeeId}</p>
-              </div>
-              <button 
-                onClick={() => setSelectedRecordForDetail(null)}
-                className="text-on-surface-variant hover:bg-surface-container-high p-1 rounded-lg transition-colors flex items-center justify-center cursor-pointer"
-              >
-                <span className="material-symbols-outlined text-[20px]">close</span>
-              </button>
-            </div>
-            
-            <div className="p-6 space-y-6 text-sm">
-              <div className="bg-surface-container-low p-4 rounded-xl flex justify-between items-center">
-                <div>
-                  <p className="font-bold text-base text-on-surface">{selectedRecordForDetail.employeeName}</p>
-                  <p className="text-xs font-semibold text-on-surface-variant">{selectedRecordForDetail.designation} • {selectedRecordForDetail.department} {selectedRecordForDetail.division ? '(' + selectedRecordForDetail.division + ')' : ''}</p>
-                </div>
-                <span className="px-3 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-primary/10 text-primary border border-primary/20">
-                  {selectedRecordForDetail.status}
-                </span>
-              </div>
-
-              {/* Attendance Management Live Summary */}
-              <div className="bg-surface-container-lowest p-3.5 rounded-xl border border-outline-variant/30 space-y-2">
-                <div className="flex items-center justify-between border-b border-outline-variant/10 pb-1.5">
-                  <span className="text-[11px] font-bold text-on-surface uppercase tracking-wider flex items-center gap-1.5">
-                    <span className="material-symbols-outlined text-[15px] text-primary">event_available</span>
-                    Attendance Log ({getPeriodLabel(payrollPeriod)})
-                  </span>
-                  <span className="text-[10px] font-mono text-emerald-700 bg-emerald-500/10 px-2 py-0.5 rounded font-bold">
-                    Paid Days: {selectedRecordForDetail.payableDays ?? selectedRecordForDetail.workedDays ?? 0} d
-                  </span>
-                </div>
-                <div className="grid grid-cols-4 gap-2 text-center pt-1">
-                  <div className="bg-emerald-500/10 border border-emerald-500/20 p-2 rounded-lg">
-                    <p className="text-[9px] font-bold text-emerald-700 uppercase">Present</p>
-                    <p className="text-sm font-black text-emerald-800">{safeNum(selectedRecordForDetail.workedDays)} d</p>
-                  </div>
-                  <div className="bg-red-500/10 border border-red-500/20 p-2 rounded-lg">
-                    <p className="text-[9px] font-bold text-red-700 uppercase">Absents</p>
-                    <p className="text-sm font-black text-red-800">{safeNum(selectedRecordForDetail.absentsCount)} d</p>
-                  </div>
-                  <div className="bg-amber-500/10 border border-amber-500/20 p-2 rounded-lg">
-                    <p className="text-[9px] font-bold text-amber-700 uppercase">Overtime</p>
-                    <p className="text-sm font-black text-amber-800">{safeNum(selectedRecordForDetail.otHours)} h</p>
-                  </div>
-                  <div className="bg-purple-500/10 border border-purple-500/20 p-2 rounded-lg">
-                    <p className="text-[9px] font-bold text-purple-700 uppercase">Late Deduct</p>
-                    <p className="text-sm font-black text-purple-800">{safeNum(selectedRecordForDetail.lateComingHours)} h</p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Rate & Formula Breakdown */}
-              <div className="bg-surface-container-low/60 rounded-xl p-3 border border-outline-variant/15 text-[11px] font-mono space-y-1.5">
-                <div className="flex justify-between items-center text-on-surface-variant">
-                  <span>Month Days & Duty:</span>
-                  <span className="font-bold text-on-surface">{selectedRecordForDetail.currentMonthDays || 31} Days • {selectedRecordForDetail.dutyHours || 8} Hours/Day</span>
-                </div>
-                <div className="flex justify-between items-center text-on-surface-variant">
-                  <span>1 Day Rate (Basic ÷ Days):</span>
-                  <span className="font-bold text-primary">{currSym} {safeMoney(selectedRecordForDetail.dailyRate)} / day</span>
-                </div>
-                <div className="flex justify-between items-center text-on-surface-variant">
-                  <span>1 Hour Rate (1d ÷ Duty Hrs):</span>
-                  <span className="font-bold text-primary">{currSym} {safeMoney(selectedRecordForDetail.hourlyRate)} / hr</span>
-                </div>
-                {safeNum(selectedRecordForDetail.otHours) > 0 && (
-                  <div className="flex justify-between items-center text-secondary">
-                    <span>Overtime Hourly Rate:</span>
-                    <span className="font-bold">{currSym} {safeMoney(selectedRecordForDetail.otHourlyRate)} / hr ({selectedRecordForDetail.otMultiplier || 1.0}x)</span>
-                  </div>
-                )}
-              </div>
-
-              {/* Earnings Breakdown */}
-              <div className="space-y-2">
-                <p className="text-xs font-bold text-on-surface-variant uppercase tracking-wider border-b border-outline-variant/10 pb-1">Earnings</p>
-                <div className="flex justify-between items-center">
-                  <span className="text-on-surface-variant">Base Salary (Full Month)</span>
-                  <span className="font-bold text-on-surface">{currSym} {safeMoney(selectedRecordForDetail.basicSalary)}</span>
-                </div>
-                <div className="flex justify-between items-center text-xs">
-                  <span className="text-emerald-700 dark:text-emerald-400 font-semibold">Earned Basic ({safeNum(selectedRecordForDetail.payableDays)} Paid Days)</span>
-                  <span className="font-bold text-emerald-700 dark:text-emerald-400">{currSym} {safeMoney(selectedRecordForDetail.earnedBasicSalary || (selectedRecordForDetail.dailyRate * selectedRecordForDetail.payableDays))}</span>
-                </div>
-                {safeNum(selectedRecordForDetail.overtime) > 0 && (
-                  <div className="flex justify-between items-center">
-                    <span className="text-on-surface-variant">Overtime ({safeNum(selectedRecordForDetail.otHours)} hours)</span>
-                    <span className="font-bold text-secondary">+{currSym} {safeMoney(selectedRecordForDetail.overtime)}</span>
-                  </div>
-                )}
-                {safeNum(selectedRecordForDetail.allowance) > 0 && (
-                  <div className="flex justify-between items-center">
-                    <span className="text-on-surface-variant">Allowances</span>
-                    <span className="font-bold text-green-600">+{currSym} {safeMoney(selectedRecordForDetail.allowance)}</span>
-                  </div>
-                )}
-              </div>
-
-              {/* Deductions Breakdown */}
-              <div className="space-y-2">
-                <p className="text-xs font-bold text-on-surface-variant uppercase tracking-wider border-b border-outline-variant/10 pb-1">Deductions</p>
-                {safeNum(selectedRecordForDetail.lateDeduction) > 0 && (
-                  <div className="flex justify-between items-center">
-                    <span className="text-on-surface-variant">Late Coming ({safeNum(selectedRecordForDetail.lateComingHours)} hours)</span>
-                    <span className="font-bold text-error">-{currSym} {safeMoney(selectedRecordForDetail.lateDeduction)}</span>
-                  </div>
-                )}
-                {safeNum(selectedRecordForDetail.absents) > 0 && (
-                  <div className="flex justify-between items-center">
-                    <span className="text-on-surface-variant">Absents ({safeNum(selectedRecordForDetail.absentsCount)} days)</span>
-                    <span className="font-bold text-error">-{currSym} {safeMoney(selectedRecordForDetail.absents)}</span>
-                  </div>
-                )}
-                {safeNum(selectedRecordForDetail.fine) > 0 && (
-                  <div className="flex justify-between items-center">
-                    <span className="text-on-surface-variant">Late Fines Penalty</span>
-                    <span className="font-bold text-error">-{currSym} {safeMoney(selectedRecordForDetail.fine)}</span>
-                  </div>
-                )}
-                {safeNum(selectedRecordForDetail.loan) > 0 && (
-                  <div className="flex justify-between items-center">
-                    <span className="text-on-surface-variant">Loan Installment Deduction</span>
-                    <span className="font-bold text-purple-600">-{currSym} {safeMoney(selectedRecordForDetail.loan)}</span>
-                  </div>
-                )}
-                {safeNum(selectedRecordForDetail.advanceAmount) > 0 && (
-                  <div className="flex justify-between items-center">
-                    <span className="text-on-surface-variant">Salary Advance Return</span>
-                    <span className="font-bold text-purple-600">-{currSym} {safeMoney(selectedRecordForDetail.advanceAmount)}</span>
-                  </div>
-                )}
-              </div>
-
-              {/* Net Payout Details */}
-              <div className="pt-4 border-t border-outline-variant/20 flex justify-between items-center">
-                <span className="text-base font-bold text-on-surface">Net Payout Salary</span>
-                <span className="text-xl font-black text-primary font-headline">
-                  {currSym} {safeMoney(selectedRecordForDetail.netSalary)}
-                </span>
-              </div>
-            </div>
-
-            <div className="p-4 bg-surface-container-low/50 border-t border-outline-variant/10 flex justify-end gap-2">
-              <button 
-                onClick={() => window.print()}
-                className="flex items-center gap-1.5 border border-outline-variant text-on-surface px-4 py-2 rounded-xl text-xs font-bold hover:bg-surface-container-high transition-all cursor-pointer"
-              >
-                <span className="material-symbols-outlined text-[16px]">print</span>
-                Print Slip
-              </button>
-              <button 
-                onClick={() => setSelectedRecordForDetail(null)}
-                className="bg-primary text-on-primary px-5 py-2 rounded-xl text-xs font-bold hover:bg-primary-container transition-all cursor-pointer"
-              >
-                Close Details
-              </button>
-            </div>
-
-          </div>
-        </div>
-      )}
+      {/* OFFICIAL 31-DAY PAYSLIP MODAL (Screenshot 4 Required Template) */}
+      {/* ========================================================= */}
+      <HRPayslipModal
+        isOpen={Boolean(selectedRecordForDetail)}
+        onClose={() => setSelectedRecordForDetail(null)}
+        slip={formattedDetailSlip}
+      />
 
       {/* ========================================================= */}
       {/* HIDDEN PRINT / PDF / IMAGE STATEMENT EXPORT TEMPLATE       */}

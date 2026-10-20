@@ -300,12 +300,12 @@ export default function HRSettings({ isMobile }) {
       departmentDutyHours: {},
       employeeDutyHours: {},
       overtimeCalculation: {
-        rateMultiplier: 1.5,
-        weekendMultiplier: 2.0,
-        holidayMultiplier: 3.0,
-        type: 'formula', // 'formula' | 'flat'
-        flatHourlyRate: 200
+        rateMultiplier: 1.0,
+        weekendMultiplier: 1.0,
+        holidayMultiplier: 1.0,
+        type: 'formula'
       },
+      employeeOvertimeMultipliers: {},
       shifts: [
         { id: 1, name: 'GENERAL SHIFT', startTime: '09:00', endTime: '17:00', hours: 8, status: 'Active' },
         { id: 2, name: 'MORNING SHIFT', startTime: '06:00', endTime: '14:00', hours: 8, status: 'Active' },
@@ -329,6 +329,119 @@ export default function HRSettings({ isMobile }) {
   function getEmpEffectiveDutyHours(emp) {
     return getEffectiveDutyHours(emp, dutySettings);
   }
+
+  function getEmpEffectiveOvertimeMultiplier(emp) {
+    return getEffectiveOvertimeMultiplier(emp, dutySettings);
+  }
+
+  const handleSetEmployeeOvertimeMultiplier = (emp, multiplier) => {
+    const empId = typeof emp === 'object' ? (emp.id || emp.employeeCode || emp.employeeId) : emp;
+    const empCode = typeof emp === 'object' ? (emp.employeeCode || emp.employeeId || emp.id) : emp;
+    const multVal = Number(multiplier) || 1.0;
+
+    const updatedEmpMults = {
+      ...(dutySettings.employeeOvertimeMultipliers || {}),
+      [empId]: multVal
+    };
+    if (empCode && empCode !== empId) {
+      updatedEmpMults[empCode] = multVal;
+    }
+    const updatedSettings = {
+      ...dutySettings,
+      employeeOvertimeMultipliers: updatedEmpMults
+    };
+    saveDutySettings(updatedSettings);
+
+    const targetIdStr = String(empId).trim();
+    const targetCodeStr = String(empCode).trim();
+    const updatedList = (state?.hr_employees_list || employees || []).map(e => {
+      const eId = String(e.id || '').trim();
+      const eCode = String(e.employeeCode || e.employeeId || '').trim();
+      if ((targetIdStr && eId === targetIdStr) || (targetCodeStr && eCode === targetCodeStr)) {
+        return { ...e, overtimeMultiplier: multVal };
+      }
+      return e;
+    });
+
+    if (setCollection) {
+      setCollection('hr_employees_list', updatedList);
+    }
+    try {
+      localStorage.setItem('hr_employees_list', JSON.stringify(updatedList));
+    } catch (e) {}
+  };
+
+  const handleResetEmployeeOvertimeMultiplier = (emp) => {
+    const empId = typeof emp === 'object' ? (emp.id || emp.employeeCode || emp.employeeId) : emp;
+    const empCode = typeof emp === 'object' ? (emp.employeeCode || emp.employeeId || emp.id) : emp;
+
+    const updatedEmpMults = { ...(dutySettings.employeeOvertimeMultipliers || {}) };
+    if (empId) delete updatedEmpMults[empId];
+    if (empCode) delete updatedEmpMults[empCode];
+
+    const updatedSettings = {
+      ...dutySettings,
+      employeeOvertimeMultipliers: updatedEmpMults
+    };
+    saveDutySettings(updatedSettings);
+
+    const targetIdStr = String(empId).trim();
+    const targetCodeStr = String(empCode).trim();
+    const updatedList = (state?.hr_employees_list || employees || []).map(e => {
+      const eId = String(e.id || '').trim();
+      const eCode = String(e.employeeCode || e.employeeId || '').trim();
+      if ((targetIdStr && eId === targetIdStr) || (targetCodeStr && eCode === targetCodeStr)) {
+        const copy = { ...e };
+        delete copy.overtimeMultiplier;
+        return copy;
+      }
+      return e;
+    });
+
+    if (setCollection) {
+      setCollection('hr_employees_list', updatedList);
+    }
+    try {
+      localStorage.setItem('hr_employees_list', JSON.stringify(updatedList));
+    } catch (e) {}
+  };
+
+  const handleBatchApplyOvertimeMultiplier = (filteredList, targetMult) => {
+    if (!filteredList || filteredList.length === 0) return;
+    const multVal = Number(targetMult) || 1.0;
+    const updatedEmpMults = { ...(dutySettings.employeeOvertimeMultipliers || {}) };
+    const empIdsToUpdate = new Set();
+    filteredList.forEach(emp => {
+      if (emp.id) {
+        updatedEmpMults[emp.id] = multVal;
+        empIdsToUpdate.add(emp.id);
+      }
+      if (emp.employeeCode) {
+        updatedEmpMults[emp.employeeCode] = multVal;
+        empIdsToUpdate.add(emp.employeeCode);
+      }
+    });
+
+    const updatedSettings = {
+      ...dutySettings,
+      employeeOvertimeMultipliers: updatedEmpMults
+    };
+    saveDutySettings(updatedSettings);
+
+    const updatedList = (state?.hr_employees_list || employees || []).map(e => {
+      if (empIdsToUpdate.has(e.id) || empIdsToUpdate.has(e.employeeCode)) {
+        return { ...e, overtimeMultiplier: multVal };
+      }
+      return e;
+    });
+
+    if (setCollection) {
+      setCollection('hr_employees_list', updatedList);
+    }
+    try {
+      localStorage.setItem('hr_employees_list', JSON.stringify(updatedList));
+    } catch (e) {}
+  };
 
   const saveDutySettings = (updated) => {
     setDutySettings(updated);

@@ -1115,11 +1115,8 @@ export default function HRAttendance({ isMobile }) {
     const oneDayAmount = currentMonthDays > 0 ? (baseSalary / currentMonthDays) : 0;
     const oneHourAmount = empDutyHours > 0 ? (oneDayAmount / empDutyHours) : 0;
 
-    const otConfig = dutySettings?.overtimeCalculation || {};
     const otMultiplier = getEffectiveOvertimeMultiplier(emp, dutySettings);
-    const otHourlyRate = (otConfig.type === 'flat' && Number(otConfig.flatHourlyRate) > 0)
-      ? Number(otConfig.flatHourlyRate)
-      : (oneHourAmount * otMultiplier);
+    const otHourlyRate = oneHourAmount * otMultiplier;
 
     const dailyRecords = [];
     let presentDays = 0;
