@@ -1,4 +1,4 @@
-import { getEffectiveDutyHours } from '../../utils/hrDutyHours';
+import { getEffectiveDutyHours, getEffectiveOvertimeMultiplier } from '../../utils/hrDutyHours';
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import PayrollAccountMapping from './PayrollAccountMapping';
@@ -288,6 +288,7 @@ export default function HRSettings({ isMobile }) {
   const [empDutyDeptFilter, setEmpDutyDeptFilter] = useState('ALL');
   const [empDutyAlphaFilter, setEmpDutyAlphaFilter] = useState('ALL');
   const [batchDutyHours, setBatchDutyHours] = useState(8);
+  const [batchOtMultiplier, setBatchOtMultiplier] = useState(1.0);
 
   const [dutySettings, setDutySettings] = useState(() => {
     const defaultDuty = {
@@ -2200,7 +2201,7 @@ export default function HRSettings({ isMobile }) {
                 <div className="bg-surface-container-low/50 p-4 rounded-2xl border border-outline-variant/15">
                   <div className="flex justify-between items-center mb-2">
                     <span className="text-xs font-bold text-on-surface">Regular Day Overtime Multiplier</span>
-                    <span className="text-xs font-mono font-black text-amber-600">{dutySettings.overtimeCalculation?.rateMultiplier || 1.5}x</span>
+                    <span className="text-xs font-mono font-black text-amber-600">{dutySettings.overtimeCalculation?.rateMultiplier || 1.0}x</span>
                   </div>
                   <div className="grid grid-cols-4 gap-1.5">
                     {[1.0, 1.25, 1.5, 2.0].map(mult => (
@@ -2212,7 +2213,7 @@ export default function HRSettings({ isMobile }) {
                           overtimeCalculation: { ...(dutySettings.overtimeCalculation || {}), rateMultiplier: mult }
                         })}
                         className={`py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
-                          Number(dutySettings.overtimeCalculation?.rateMultiplier || 1.5) === mult
+                          Number(dutySettings.overtimeCalculation?.rateMultiplier || 1.0) === mult
                             ? 'bg-amber-600 text-white shadow-xs'
                             : 'bg-surface-container text-on-surface hover:bg-surface-container-high'
                         }`}
@@ -2637,18 +2638,19 @@ export default function HRSettings({ isMobile }) {
                 <table className="w-full text-left border-collapse text-xs">
                   <thead className="bg-surface-container-low/50 text-[10px] uppercase font-bold text-on-surface-variant border-b border-outline-variant/10">
                     <tr>
-                      <th className="px-6 py-3.5">Emp Code</th>
-                      <th className="px-6 py-3.5">Personnel Name</th>
-                      <th className="px-6 py-3.5">Division & Department</th>
-                      <th className="px-6 py-3.5">Effective Duty Rule</th>
-                      <th className="px-6 py-3.5 text-center">Duty Hours</th>
-                      <th className="px-6 py-3.5 text-right">Customize Hours</th>
+                      <th className="px-4 py-3.5">Emp Code</th>
+                      <th className="px-4 py-3.5">Personnel Name</th>
+                      <th className="px-4 py-3.5">Division & Department</th>
+                      <th className="px-4 py-3.5">Effective Duty Rule</th>
+                      <th className="px-4 py-3.5 text-center">Duty Hours</th>
+                      <th className="px-4 py-3.5 text-center">Customize Hours</th>
+                      <th className="px-4 py-3.5 text-right">OT Multiplier (1x Def)</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-outline-variant/10 font-medium">
                     {filteredEmpDutyList.length === 0 ? (
                       <tr>
-                        <td colSpan="6" className="text-center py-12 text-on-surface-variant">
+                        <td colSpan="7" className="text-center py-12 text-on-surface-variant">
                           No personnel found matching the current search / filters.
                         </td>
                       </tr>
@@ -2656,11 +2658,16 @@ export default function HRSettings({ isMobile }) {
                       filteredEmpDutyList.map(emp => {
                         const eff = getEmpEffectiveDutyHours(emp);
                         const isCustom = eff.type === 'custom';
+                        const effOt = getEmpEffectiveOvertimeMultiplier(emp);
+                        const hasCustomOt = Boolean(
+                          (dutySettings.employeeOvertimeMultipliers && (dutySettings.employeeOvertimeMultipliers[emp.id] !== undefined || dutySettings.employeeOvertimeMultipliers[emp.employeeCode] !== undefined)) ||
+                          (emp.overtimeMultiplier !== undefined && emp.overtimeMultiplier !== null)
+                        );
 
                         return (
                           <tr key={emp.id} className="hover:bg-surface-container-low/30 transition-colors">
-                            <td className="px-6 py-4 font-mono font-bold text-secondary text-[11px]">{emp.id}</td>
-                            <td className="px-6 py-4">
+                            <td className="px-4 py-4 font-mono font-bold text-secondary text-[11px]">{emp.id}</td>
+                            <td className="px-4 py-4">
                               <div className="flex items-center gap-2.5">
                                 <div className="w-7 h-7 rounded-full bg-secondary-container text-on-secondary-container flex items-center justify-center font-bold text-[10px]">
                                   {(emp.name || 'E').substring(0, 2).toUpperCase()}
@@ -2671,11 +2678,11 @@ export default function HRSettings({ isMobile }) {
                                 </div>
                               </div>
                             </td>
-                            <td className="px-6 py-4">
+                            <td className="px-4 py-4">
                               <div className="text-xs font-bold text-on-surface">{emp.department || 'General'}</div>
                               <div className="text-[10px] text-on-surface-variant">{emp.division || emp.section || 'AJ Synthetic'}</div>
                             </td>
-                            <td className="px-6 py-4">
+                            <td className="px-4 py-4">
                               <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
                                 isCustom
                                   ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/30'
@@ -2685,15 +2692,15 @@ export default function HRSettings({ isMobile }) {
                                 {eff.source}
                               </span>
                             </td>
-                            <td className="px-6 py-4 text-center">
+                            <td className="px-4 py-4 text-center">
                               <span className={`font-mono text-sm font-black px-2.5 py-1 rounded-xl ${
                                 isCustom ? 'bg-amber-600 text-white shadow-xs' : 'bg-surface-container text-on-surface'
                               }`}>
                                 {eff.hours} Hours
                               </span>
                             </td>
-                            <td className="px-6 py-4 text-right">
-                              <div className="flex items-center justify-end gap-1.5">
+                            <td className="px-4 py-4 text-center">
+                              <div className="flex items-center justify-center gap-1">
                                 {[8, 9, 10, 12].map(hrs => (
                                   <button
                                     key={hrs}
@@ -2718,6 +2725,35 @@ export default function HRSettings({ isMobile }) {
                                   >
                                     <span className="material-symbols-outlined text-[14px]">restart_alt</span>
                                     Reset
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                            <td className="px-4 py-4 text-right">
+                              <div className="flex items-center justify-end gap-1">
+                                {[1.0, 1.25, 1.5, 2.0].map(mult => (
+                                  <button
+                                    key={mult}
+                                    type="button"
+                                    onClick={() => handleSetEmployeeOvertimeMultiplier(emp, mult)}
+                                    className={`h-7 px-2 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                                      effOt === mult
+                                        ? (mult === 1.0 ? 'bg-teal-600 text-white shadow-xs' : 'bg-amber-600 text-white shadow-xs')
+                                        : 'bg-surface-container text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high'
+                                    }`}
+                                    title={`Set ${mult}x Overtime for ${emp.name} ${mult === 1.0 ? '(Default 1x)' : ''}`}
+                                  >
+                                    {mult === 1.0 ? '1.0x (Def)' : `${mult}x`}
+                                  </button>
+                                ))}
+                                {hasCustomOt && effOt !== 1.0 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleResetEmployeeOvertimeMultiplier(emp)}
+                                    className="h-7 px-1.5 rounded-lg bg-surface-container hover:bg-rose-500/10 hover:text-rose-600 text-on-surface-variant text-[10px] font-bold transition-colors cursor-pointer flex items-center"
+                                    title="Reset to Default 1.0x Multiplier"
+                                  >
+                                    <span className="material-symbols-outlined text-[14px]">restart_alt</span>
                                   </button>
                                 )}
                               </div>
@@ -2933,6 +2969,7 @@ export default function HRSettings({ isMobile }) {
             />
             {employees.filter(e => !empDutySearch || e.name?.toLowerCase().includes(empDutySearch.toLowerCase())).slice(0, 30).map(emp => {
               const eff = getEmpEffectiveDutyHours(emp);
+              const effOt = getEmpEffectiveOvertimeMultiplier(emp);
               return (
                 <div key={emp.id} className="bg-surface-container-lowest p-3.5 rounded-2xl border border-outline-variant/15 space-y-2">
                   <div className="flex justify-between items-start">
@@ -2940,7 +2977,10 @@ export default function HRSettings({ isMobile }) {
                       <div className="font-bold text-xs text-on-surface">{emp.name}</div>
                       <div className="text-[10px] text-on-surface-variant font-mono">{emp.id} • {emp.department || 'General'}</div>
                     </div>
-                    <span className="font-mono font-black text-amber-600 text-xs">{eff.hours}h</span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-mono font-black text-amber-600 text-xs">{eff.hours}h</span>
+                      <span className="font-mono font-black text-teal-600 text-xs">{effOt}x OT</span>
+                    </div>
                   </div>
                   <div className="grid grid-cols-4 gap-1">
                     {[8, 9, 10, 12].map(hrs => (
@@ -2953,6 +2993,21 @@ export default function HRSettings({ isMobile }) {
                         {hrs}h
                       </button>
                     ))}
+                  </div>
+                  <div className="pt-1.5 border-t border-outline-variant/10 flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-on-surface-variant">OT Multiplier:</span>
+                    <div className="grid grid-cols-4 gap-1 w-2/3">
+                      {[1.0, 1.25, 1.5, 2.0].map(mult => (
+                        <button
+                          key={mult}
+                          type="button"
+                          onClick={() => handleSetEmployeeOvertimeMultiplier(emp, mult)}
+                          className={`py-0.5 rounded-lg text-[10px] font-black ${effOt === mult ? 'bg-teal-600 text-white' : 'bg-surface-container text-on-surface'}`}
+                        >
+                          {mult === 1.0 ? '1.0x' : mult + 'x'}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
               );

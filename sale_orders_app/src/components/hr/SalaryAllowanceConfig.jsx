@@ -24,7 +24,7 @@ export default function SalaryAllowanceConfig({ isMobile, onBack }) {
         applicableFilters: ['Global (All Employees)']
       },
       overtimeMultipliers: {
-        weekday: 1.5,
+        weekday: 1.0,
         weekend: 2.0,
         holiday: 3.0
       },

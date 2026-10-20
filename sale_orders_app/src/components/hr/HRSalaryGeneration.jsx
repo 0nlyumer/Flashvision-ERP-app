@@ -1,5 +1,5 @@
 import HRPayslipModal from './HRPayslipModal';
-import { getEffectiveDutyHours } from '../../utils/hrDutyHours';
+import { getEffectiveDutyHours, getEffectiveOvertimeMultiplier } from '../../utils/hrDutyHours';
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { exportDocumentToPdf, exportDocumentToImage, exportDocumentToCsv } from '../../utils/printExportUtils';
@@ -403,7 +403,7 @@ export default function HRSalaryGeneration({ isMobile }) {
 
       // Overtime Multiplier & Hourly Rate from Duty Hours & Shifts Configuration
       const otConfig = dutySettings?.overtimeCalculation || {};
-      const otMultiplier = safeNum(otConfig.rateMultiplier || dutySettings?.overtimeMultiplier || salaryConfig?.overtimeMultipliers?.weekday || 1.5);
+      const otMultiplier = getEffectiveOvertimeMultiplier(emp, dutySettings);
       const otHourlyRate = (otConfig.type === 'flat' && safeNum(otConfig.flatHourlyRate) > 0)
         ? safeNum(otConfig.flatHourlyRate)
         : (hourlyRate * otMultiplier);
@@ -2145,7 +2145,7 @@ export default function HRSalaryGeneration({ isMobile }) {
                 {safeNum(selectedRecordForDetail.otHours) > 0 && (
                   <div className="flex justify-between items-center text-secondary">
                     <span>Overtime Hourly Rate:</span>
-                    <span className="font-bold">{currSym} {safeMoney(selectedRecordForDetail.otHourlyRate)} / hr ({selectedRecordForDetail.otMultiplier || 1.5}x)</span>
+                    <span className="font-bold">{currSym} {safeMoney(selectedRecordForDetail.otHourlyRate)} / hr ({selectedRecordForDetail.otMultiplier || 1.0}x)</span>
                   </div>
                 )}
               </div>

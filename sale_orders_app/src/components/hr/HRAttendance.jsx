@@ -1,4 +1,4 @@
-import { getEffectiveDutyHours } from '../../utils/hrDutyHours';
+import { getEffectiveDutyHours, getEffectiveOvertimeMultiplier } from '../../utils/hrDutyHours';
 import HRPayslipModal from './HRPayslipModal';
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../utils/supabaseClient';
@@ -1116,7 +1116,7 @@ export default function HRAttendance({ isMobile }) {
     const oneHourAmount = empDutyHours > 0 ? (oneDayAmount / empDutyHours) : 0;
 
     const otConfig = dutySettings?.overtimeCalculation || {};
-    const otMultiplier = Number(otConfig.rateMultiplier || dutySettings?.overtimeMultiplier || 1.5);
+    const otMultiplier = getEffectiveOvertimeMultiplier(emp, dutySettings);
     const otHourlyRate = (otConfig.type === 'flat' && Number(otConfig.flatHourlyRate) > 0)
       ? Number(otConfig.flatHourlyRate)
       : (oneHourAmount * otMultiplier);
