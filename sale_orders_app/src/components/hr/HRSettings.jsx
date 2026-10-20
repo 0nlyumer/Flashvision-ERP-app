@@ -306,6 +306,14 @@ export default function HRSettings({ isMobile }) {
         type: 'formula'
       },
       employeeOvertimeMultipliers: {},
+      attendanceStatusRules: {
+        present: { label: 'Present', urduLabel: 'حاضر', isPaid: true, code: 'P', color: 'emerald', description: 'Standard duty attended by staff (100% Paid)' },
+        absent: { label: 'Absent', urduLabel: 'غیر حاضر', isPaid: false, code: 'ABS', color: 'rose', description: 'Unapproved absence without pay (Deducted from salary)' },
+        leave: { label: 'Leave', urduLabel: 'رخصت', isPaid: true, code: 'L', color: 'amber', description: 'Approved employee leave request (Paid / Unpaid)' },
+        holiday: { label: 'Holiday', urduLabel: 'تعطیل', isPaid: true, code: 'HOL', color: 'purple', description: 'Gazetted public holiday (Paid by default)' },
+        offday: { label: 'Off Day', urduLabel: 'ہفتہ وار چھٹی (Sunday)', isPaid: true, code: 'OFF', color: 'indigo', description: 'Sunday & scheduled weekly off days (Paid by default)' },
+        halfday: { label: 'Half Day', urduLabel: 'نصف دن', isPaid: true, paidRatio: 0.5, code: 'HLD', color: 'cyan', description: 'Half working day (50% pay ratio)' }
+      },
       shifts: [
         { id: 1, name: 'GENERAL SHIFT', startTime: '09:00', endTime: '17:00', hours: 8, status: 'Active' },
         { id: 2, name: 'MORNING SHIFT', startTime: '06:00', endTime: '14:00', hours: 8, status: 'Active' },
@@ -319,6 +327,14 @@ export default function HRSettings({ isMobile }) {
         const parsed = JSON.parse(saved);
         if (!parsed.overtimeCalculation) {
           parsed.overtimeCalculation = defaultDuty.overtimeCalculation;
+        }
+        if (!parsed.attendanceStatusRules) {
+          parsed.attendanceStatusRules = defaultDuty.attendanceStatusRules;
+        } else {
+          parsed.attendanceStatusRules = {
+            ...defaultDuty.attendanceStatusRules,
+            ...parsed.attendanceStatusRules
+          };
         }
         return parsed;
       }
@@ -441,6 +457,28 @@ export default function HRSettings({ isMobile }) {
     try {
       localStorage.setItem('hr_employees_list', JSON.stringify(updatedList));
     } catch (e) {}
+  };
+
+  const handleToggleStatusPaid = (statusKey, isPaid) => {
+    const currentRules = dutySettings.attendanceStatusRules || {
+      present: { label: 'Present', urduLabel: 'حاضر', isPaid: true, code: 'P', color: 'emerald' },
+      absent: { label: 'Absent', urduLabel: 'غیر حاضر', isPaid: false, code: 'ABS', color: 'rose' },
+      leave: { label: 'Leave', urduLabel: 'رخصت', isPaid: true, code: 'L', color: 'amber' },
+      holiday: { label: 'Holiday', urduLabel: 'تعطیل', isPaid: true, code: 'HOL', color: 'purple' },
+      offday: { label: 'Off Day', urduLabel: 'ہفتہ وار چھٹی (Sunday)', isPaid: true, code: 'OFF', color: 'indigo' },
+      halfday: { label: 'Half Day', urduLabel: 'نصف دن', isPaid: true, paidRatio: 0.5, code: 'HLD', color: 'cyan' }
+    };
+    const updated = {
+      ...dutySettings,
+      attendanceStatusRules: {
+        ...currentRules,
+        [statusKey]: {
+          ...(currentRules[statusKey] || {}),
+          isPaid: isPaid
+        }
+      }
+    };
+    saveDutySettings(updated);
   };
 
   const saveDutySettings = (updated) => {
@@ -2150,6 +2188,19 @@ export default function HRSettings({ isMobile }) {
             <span className="material-symbols-outlined text-[18px]">badge</span>
             Employee-Wise Custom Hours ({employees.length})
           </button>
+
+          <button
+            type="button"
+            onClick={() => setDutySubTab('status_rules')}
+            className={`px-4 py-2.5 rounded-xl font-headline font-bold text-xs flex items-center gap-2 transition-all cursor-pointer ${
+              dutySubTab === 'status_rules'
+                ? 'bg-amber-600 text-white shadow-md'
+                : 'bg-surface-container-low text-on-surface-variant hover:bg-surface-container hover:text-on-surface'
+            }`}
+          >
+            <span className="material-symbols-outlined text-[18px]">verified_user</span>
+            Attendance Status Rules (Paid / Unpaid)
+          </button>
         </div>
 
         {/* TAB 1: GLOBAL STANDARD & OVERTIME */}
@@ -2881,6 +2932,200 @@ export default function HRSettings({ isMobile }) {
             </div>
           </div>
         )}
+
+        {/* TAB 5: ATTENDANCE STATUS RULES (PAID / UNPAID) */}
+        {dutySubTab === 'status_rules' && (
+          <div className="space-y-6 animate-fade-in">
+            <div className="bg-surface-container-lowest p-6 rounded-3xl border border-outline-variant/15 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="flex items-start gap-4">
+                <div className="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-600 flex items-center justify-center shrink-0">
+                  <span className="material-symbols-outlined text-[28px]">verified_user</span>
+                </div>
+                <div>
+                  <h4 className="font-headline text-base font-bold text-on-surface">Attendance Status Configuration (Paid / Unpaid)</h4>
+                  <p className="text-xs text-on-surface-variant mt-1 leading-relaxed max-w-2xl">
+                    Configure whether each attendance status (Present, Absent, Leave, Holiday, Off Day) is calculated as <strong>Paid</strong> (included in salary) or <strong>Unpaid</strong> (deducted from salary). 
+                    Sundays are automatically assigned the <strong>Off Day</strong> status. When Off Day is set to Paid, weekly Sundays will not be deducted from employees' pay.
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const defaultRules = {
+                    present: { label: 'Present', urduLabel: 'حاضر', isPaid: true, code: 'P', color: 'emerald', description: 'Regular duty attended by staff (100% Paid)' },
+                    absent: { label: 'Absent', urduLabel: 'غیر حاضر', isPaid: false, code: 'ABS', color: 'rose', description: 'Unapproved absence without pay (Deducted from salary)' },
+                    leave: { label: 'Leave', urduLabel: 'رخصت', isPaid: true, code: 'L', color: 'amber', description: 'Approved employee leave request (Paid)' },
+                    holiday: { label: 'Holiday', urduLabel: 'تعطیل', isPaid: true, code: 'HOL', color: 'purple', description: 'Gazetted public holiday (Paid)' },
+                    offday: { label: 'Off Day', urduLabel: 'ہفتہ وار چھٹی (Sunday)', isPaid: true, code: 'OFF', color: 'indigo', description: 'Sunday & scheduled weekly off days (Paid)' },
+                    halfday: { label: 'Half Day', urduLabel: 'نصف دن', isPaid: true, paidRatio: 0.5, code: 'HLD', color: 'cyan', description: 'Half working day (50% pay ratio)' }
+                  };
+                  saveDutySettings({ ...dutySettings, attendanceStatusRules: defaultRules });
+                }}
+                className="px-4 py-2 bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/20 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0 flex items-center gap-1.5"
+              >
+                <span className="material-symbols-outlined text-[16px]">restart_alt</span>
+                Reset Recommended Defaults
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+              {[
+                { key: 'present', label: 'Present', urdu: 'حاضر', code: 'P', color: 'emerald', defaultPaid: true, desc: 'Normal duty attended by employee. 100% full wage calculated.' },
+                { key: 'absent', label: 'Absent', urdu: 'غیر حاضر', code: 'ABS', color: 'rose', defaultPaid: false, desc: 'Missed work without approval. 1 day salary deducted per absent day.' },
+                { key: 'leave', label: 'Leave', urdu: 'رخصت / چھٹی', code: 'L', color: 'amber', defaultPaid: true, desc: 'Approved employee leave request. Set to Paid or Unpaid leave deduction.' },
+                { key: 'holiday', label: 'Holiday', urdu: 'سرکاری تعطیل', code: 'HOL', color: 'purple', defaultPaid: true, desc: 'Official gazetted or company public holiday. No pay deduction.' },
+                { key: 'offday', label: 'Off Day (Sunday)', urdu: 'ہفتہ وار چھٹی / اتوار', code: 'OFF', color: 'indigo', defaultPaid: true, desc: 'Every Sunday is automatically an Off Day. Paid means full monthly salary without Sunday penalties.' },
+                { key: 'halfday', label: 'Half Day', urdu: 'نصف دن', code: 'HLD', color: 'cyan', defaultPaid: true, desc: 'Partial duty working hours. Configured with 50% salary calculation.' }
+              ].map(st => {
+                const rule = dutySettings.attendanceStatusRules?.[st.key] || { isPaid: st.defaultPaid };
+                const isPaid = rule.isPaid !== undefined ? rule.isPaid : st.defaultPaid;
+
+                return (
+                  <div
+                    key={st.key}
+                    className={`p-5 rounded-3xl border transition-all duration-200 flex flex-col justify-between ${
+                      isPaid
+                        ? 'bg-surface-container-lowest border-emerald-500/30 shadow-sm'
+                        : 'bg-surface-container-lowest border-rose-500/30 shadow-sm'
+                    }`}
+                  >
+                    <div>
+                      <div className="flex items-center justify-between gap-3 mb-3">
+                        <div className="flex items-center gap-2.5">
+                          <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-black text-xs ${
+                            st.color === 'emerald' ? 'bg-emerald-500/10 text-emerald-600 border border-emerald-500/20' :
+                            st.color === 'rose' ? 'bg-rose-500/10 text-rose-600 border border-rose-500/20' :
+                            st.color === 'amber' ? 'bg-amber-500/10 text-amber-600 border border-amber-500/20' :
+                            st.color === 'purple' ? 'bg-purple-500/10 text-purple-600 border border-purple-500/20' :
+                            st.color === 'indigo' ? 'bg-indigo-500/10 text-indigo-600 border border-indigo-500/20' :
+                            'bg-cyan-500/10 text-cyan-600 border border-cyan-500/20'
+                          }`}>
+                            {st.code}
+                          </div>
+                          <div>
+                            <h5 className="font-headline font-bold text-sm text-on-surface leading-tight">
+                              {st.label}
+                            </h5>
+                            <span className="text-[10px] text-on-surface-variant font-medium">
+                              {st.urdu}
+                            </span>
+                          </div>
+                        </div>
+
+                        <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border ${
+                          isPaid
+                            ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/30'
+                            : 'bg-rose-500/10 text-rose-600 border-rose-500/30'
+                        }`}>
+                          {isPaid ? 'PAID' : 'UNPAID'}
+                        </span>
+                      </div>
+
+                      <p className="text-xs text-on-surface-variant leading-relaxed mb-4">
+                        {st.desc}
+                      </p>
+                    </div>
+
+                    <div className="pt-3 border-t border-outline-variant/10 flex items-center justify-between gap-2">
+                      <span className="text-xs font-bold text-on-surface">Pay Calculation:</span>
+                      <div className="flex items-center bg-surface-container-low rounded-xl p-1 gap-1 border border-outline-variant/20">
+                        <button
+                          type="button"
+                          onClick={() => handleToggleStatusPaid(st.key, true)}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                            isPaid
+                              ? 'bg-emerald-600 text-white shadow-sm'
+                              : 'text-on-surface-variant hover:text-on-surface'
+                          }`}
+                        >
+                          <span className="material-symbols-outlined text-[14px]">check</span>
+                          Paid
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleToggleStatusPaid(st.key, false)}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                            !isPaid
+                              ? 'bg-rose-600 text-white shadow-sm'
+                              : 'text-on-surface-variant hover:text-on-surface'
+                          }`}
+                        >
+                          <span className="material-symbols-outlined text-[14px]">close</span>
+                          Unpaid
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="p-4 rounded-2xl bg-indigo-500/5 border border-indigo-500/20 flex items-center gap-3 text-xs text-indigo-900 dark:text-indigo-200">
+              <span className="material-symbols-outlined text-indigo-600 text-[22px] shrink-0">info</span>
+              <span>
+                <strong>Sunday / Weekly Off Rule:</strong> All Sundays are automatically registered as <strong>Off Day (OFF)</strong>.
+                When "Off Day" is configured as Paid (Recommended), staff members will receive 100% pay for Sundays and it will appear as <em>OFF (Weekly Off)</em> in Payslips.
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* Mobile Status Rules Tab */}
+        {dutySubTab === 'status_rules' && (
+          <div className="space-y-4">
+            <div className="p-4 rounded-2xl bg-surface-container-lowest border border-outline-variant/15 flex flex-col gap-2">
+              <h4 className="font-headline text-sm font-bold text-on-surface">Attendance Status Rules</h4>
+              <p className="text-[11px] text-on-surface-variant leading-relaxed">
+                Select whether each status is Paid or Unpaid. Sundays are automatically Off Day.
+              </p>
+            </div>
+
+            <div className="space-y-3">
+              {[
+                { key: 'present', label: 'Present', urdu: 'حاضر', code: 'P', color: 'emerald', defaultPaid: true },
+                { key: 'absent', label: 'Absent', urdu: 'غیر حاضر', code: 'ABS', color: 'rose', defaultPaid: false },
+                { key: 'leave', label: 'Leave', urdu: 'رخصت', code: 'L', color: 'amber', defaultPaid: true },
+                { key: 'holiday', label: 'Holiday', urdu: 'تعطیل', code: 'HOL', color: 'purple', defaultPaid: true },
+                { key: 'offday', label: 'Off Day (Sunday)', urdu: 'اتوار / چھٹی', code: 'OFF', color: 'indigo', defaultPaid: true },
+                { key: 'halfday', label: 'Half Day', urdu: 'نصف دن', code: 'HLD', color: 'cyan', defaultPaid: true }
+              ].map(st => {
+                const rule = dutySettings.attendanceStatusRules?.[st.key] || { isPaid: st.defaultPaid };
+                const isPaid = rule.isPaid !== undefined ? rule.isPaid : st.defaultPaid;
+
+                return (
+                  <div key={st.key} className="p-3.5 rounded-2xl bg-surface-container-lowest border border-outline-variant/15 flex items-center justify-between gap-3">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono font-bold text-xs px-1.5 py-0.5 rounded bg-surface-container text-on-surface">{st.code}</span>
+                        <span className="font-bold text-xs text-on-surface">{st.label}</span>
+                      </div>
+                      <span className="text-[10px] text-on-surface-variant">{st.urdu}</span>
+                    </div>
+
+                    <div className="flex items-center bg-surface-container-low rounded-xl p-1 gap-1 border border-outline-variant/20">
+                      <button
+                        type="button"
+                        onClick={() => handleToggleStatusPaid(st.key, true)}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${isPaid ? 'bg-emerald-600 text-white' : 'text-on-surface-variant'}`}
+                      >
+                        Paid
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleToggleStatusPaid(st.key, false)}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${!isPaid ? 'bg-rose-600 text-white' : 'text-on-surface-variant'}`}
+                      >
+                        Unpaid
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -2944,6 +3189,13 @@ export default function HRSettings({ isMobile }) {
             className={`px-3 py-1.5 rounded-xl text-xs font-bold shrink-0 ${dutySubTab === 'employees' ? 'bg-amber-600 text-white shadow-xs' : 'bg-surface-container-lowest text-on-surface-variant'}`}
           >
             Employees
+          </button>
+          <button
+            type="button"
+            onClick={() => setDutySubTab('status_rules')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold shrink-0 ${dutySubTab === 'status_rules' ? 'bg-amber-600 text-white shadow-xs' : 'bg-surface-container-lowest text-on-surface-variant'}`}
+          >
+            Status Rules (Paid/Unpaid)
           </button>
         </div>
 

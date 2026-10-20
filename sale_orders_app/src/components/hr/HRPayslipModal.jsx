@@ -181,9 +181,12 @@ export default function HRPayslipModal({ isOpen, onClose, slip }) {
                       <td className="py-1 px-1.5 font-bold text-slate-700 border-r border-slate-200">{item.dateStr}</td>
                       <td className="py-1 px-1.5 font-black border-r border-slate-200">
                         <span className={
-                          item.att === 'P' ? 'text-teal-600' :
-                          item.att === 'ABS' ? 'text-rose-600' :
-                          item.att === 'L' ? 'text-blue-600' : 'text-slate-500'
+                          item.att === 'P' ? 'text-teal-600 font-bold' :
+                          item.att === 'ABS' ? 'text-rose-600 font-bold' :
+                          item.att === 'L' ? 'text-blue-600 font-bold' :
+                          item.att === 'OFF' ? 'text-indigo-600 font-black' :
+                          item.att === 'HOL' ? 'text-purple-600 font-bold' :
+                          item.att === 'HLD' ? 'text-cyan-600 font-bold' : 'text-slate-500'
                         }>
                           {item.att || '-'}
                         </span>
@@ -215,9 +218,12 @@ export default function HRPayslipModal({ isOpen, onClose, slip }) {
                       <td className="py-1 px-1.5 font-bold text-slate-700 border-r border-slate-200">{item.dateStr}</td>
                       <td className="py-1 px-1.5 font-black border-r border-slate-200">
                         <span className={
-                          item.att === 'P' ? 'text-teal-600' :
-                          item.att === 'ABS' ? 'text-rose-600' :
-                          item.att === 'L' ? 'text-blue-600' : 'text-slate-500'
+                          item.att === 'P' ? 'text-teal-600 font-bold' :
+                          item.att === 'ABS' ? 'text-rose-600 font-bold' :
+                          item.att === 'L' ? 'text-blue-600 font-bold' :
+                          item.att === 'OFF' ? 'text-indigo-600 font-black' :
+                          item.att === 'HOL' ? 'text-purple-600 font-bold' :
+                          item.att === 'HLD' ? 'text-cyan-600 font-bold' : 'text-slate-500'
                         }>
                           {item.att || '-'}
                         </span>

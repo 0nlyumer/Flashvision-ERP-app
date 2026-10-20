@@ -506,9 +506,27 @@ export default function HRSalaryGeneration({ isMobile }) {
           workedDays += 1;
         } else if (st.includes('half')) {
           workedDays += 0.5;
-          leavesCount += 0.5;
-        } else if (st.includes('leave') || st === 'l' || st === 'holiday' || st === 'offday' || st === 'paid_leave') {
-          leavesCount += 1;
+          if (dutySettings?.attendanceStatusRules?.halfday?.isPaid !== false) {
+            leavesCount += 0.5;
+          }
+        } else if (st.includes('offday') || st.includes('off day') || st === 'off') {
+          if (dutySettings?.attendanceStatusRules?.offday?.isPaid !== false) {
+            leavesCount += 1;
+          } else {
+            absentsCount += 1;
+          }
+        } else if (st.includes('holiday')) {
+          if (dutySettings?.attendanceStatusRules?.holiday?.isPaid !== false) {
+            leavesCount += 1;
+          } else {
+            absentsCount += 1;
+          }
+        } else if (st.includes('leave') || st === 'l' || st === 'paid_leave') {
+          if (dutySettings?.attendanceStatusRules?.leave?.isPaid !== false) {
+            leavesCount += 1;
+          } else {
+            absentsCount += 1;
+          }
         } else if (st.includes('abs')) {
           absentsCount += 1;
         } else {
@@ -855,7 +873,7 @@ export default function HRSalaryGeneration({ isMobile }) {
       const dayOfWeek = new Date(y, m - 1, d).getDay();
       if (!status) {
         if (dayOfWeek === 0) {
-          status = 'leave';
+          status = 'off day';
         } else {
           status = 'absent';
         }
@@ -864,7 +882,9 @@ export default function HRSalaryGeneration({ isMobile }) {
       let att = 'ABS';
       const s = String(status || '').toLowerCase();
       if (s.includes('present') || s === 'p') att = 'P';
-      else if (s.includes('leave') || s === 'l' || s === 'paid_leave' || s === 'holiday' || s === 'offday') att = 'L';
+      else if (s.includes('offday') || s.includes('off day') || s === 'off') att = 'OFF';
+      else if (s.includes('holiday')) att = 'HOL';
+      else if (s.includes('leave') || s === 'l' || s === 'paid_leave') att = 'L';
       else if (s.includes('half')) att = 'HLD';
       else att = 'ABS';
 
@@ -877,7 +897,7 @@ export default function HRSalaryGeneration({ isMobile }) {
       let dtVal = parseFloat(dayRecord?.deductions || log?.dt || log?.lateHours || 0) || 0;
       const dt = dtVal > 0 ? `-${dtVal.toFixed(1)}h` : '-';
 
-      const remarks = dayRecord?.remarks || log?.remarks || (att === 'L' && dayOfWeek === 0 ? 'Weekly Off' : '-');
+      const remarks = dayRecord?.remarks || log?.remarks || (att === 'OFF' || dayOfWeek === 0 ? 'Weekly Off' : (att === 'HOL' ? 'Public Holiday' : '-'));
 
       dailyRecords.push({ dateStr, att, ot, dt, remarks });
     }

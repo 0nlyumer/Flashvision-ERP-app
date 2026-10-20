@@ -1159,7 +1159,7 @@ export default function HRAttendance({ isMobile }) {
       const dayOfWeek = new Date(y, m - 1, d).getDay();
       if (!status) {
         if (dayOfWeek === 0) {
-          status = 'leave';
+          status = 'off day';
         } else {
           status = 'absent';
         }
@@ -1170,17 +1170,31 @@ export default function HRAttendance({ isMobile }) {
       if (statLower.includes('present') || statLower === 'p') {
         attCode = 'P';
         presentDays++;
-        paidDays += 1;
+        if (dutySettings?.attendanceStatusRules?.present?.isPaid !== false) paidDays += 1;
+        else absentDays += 1;
+      } else if (statLower.includes('offday') || statLower.includes('off day') || statLower === 'off') {
+        attCode = 'OFF';
+        if (dutySettings?.attendanceStatusRules?.offday?.isPaid !== false) paidDays += 1;
+        else absentDays += 1;
+        if (remarks === '-' || !remarks) remarks = 'Weekly Off';
+      } else if (statLower.includes('holiday')) {
+        attCode = 'HOL';
+        if (dutySettings?.attendanceStatusRules?.holiday?.isPaid !== false) paidDays += 1;
+        else absentDays += 1;
+        if (remarks === '-' || !remarks) remarks = 'Public Holiday';
       } else if (statLower.includes('leave') || statLower === 'l' || statLower === 'paid_leave') {
         attCode = 'L';
-        paidDays += 1;
+        if (dutySettings?.attendanceStatusRules?.leave?.isPaid !== false) paidDays += 1;
+        else absentDays += 1;
       } else if (statLower.includes('half') || statLower === 'halfday') {
         attCode = 'HLD';
         presentDays += 0.5;
-        paidDays += 0.5;
+        if (dutySettings?.attendanceStatusRules?.halfday?.isPaid !== false) paidDays += 0.5;
+        else absentDays += 0.5;
       } else {
         attCode = 'ABS';
-        absentDays++;
+        if (dutySettings?.attendanceStatusRules?.absent?.isPaid === true) paidDays += 1;
+        else absentDays++;
       }
 
       totalOtHours += ot;
@@ -3495,9 +3509,14 @@ export default function HRAttendance({ isMobile }) {
                           }
                         }
                         
-                        // Force clean default 'present' records without punches to show as 'absent'
-                        if (rec.status === 'present' && !rec.explicitStatus && !rec.inTime && !rec.outTime && !rec.ot && !rec.fines && !rec.deductions && !rec.statusReason && !rec.otReason && !rec.finesReason && !rec.deductionsReason) {
-                          rec = { ...rec, status: 'absent' };
+                        // Force clean default 'present' records without punches to show as 'absent' (or 'off day' for Sunday)
+                        const isSunday = (day.key === 'Sun') || (day.date && new Date(day.date).getDay() === 0);
+                        if (!rec.explicitStatus && !rec.inTime && !rec.outTime && !rec.ot && !rec.fines && !rec.deductions && !rec.statusReason && !rec.otReason && !rec.finesReason && !rec.deductionsReason) {
+                          if (isSunday) {
+                            rec = { ...rec, status: 'off day' };
+                          } else if (rec.status === 'present') {
+                            rec = { ...rec, status: 'absent' };
+                          }
                         }
                         const isPresent = rec.status === 'present';
                         const isDayLocked = isCurrentMonthFinalized || isDateFinalized(day.date || day.key);

@@ -189,8 +189,19 @@ export default function FlashAM() {
     return d.toISOString().split('T')[0];
   });
   const [searchQuery, setSearchQuery] = useState('');
+  const [divisionFilter, setDivisionFilter] = useState('ALL');
   const [deptFilter, setDeptFilter] = useState('ALL');
   const [statusFilter, setStatusFilter] = useState('ALL'); // 'ALL' | 'PRESENT' | 'ABSENT' | 'COMPLETED'
+  const [manualModal, setManualModal] = useState({
+    isOpen: false,
+    employee: null,
+    record: null,
+    date: '',
+    inTime: '',
+    outTime: '',
+    status: 'Present',
+    remarks: ''
+  });
   const [toastMessage, setToastMessage] = useState(null);
 
   // 5. Department Reports State (Date Range, Department Selection, Export Modals)
@@ -882,16 +893,127 @@ export default function FlashAM() {
     }
   };
 
+  // Open Manual Time Modal
+  const openManualTimeModal = (emp, rec) => {
+    setManualModal({
+      isOpen: true,
+      employee: emp,
+      record: rec,
+      date: selectedDate,
+      inTime: rec?.inTime || '09:00 AM',
+      outTime: rec?.outTime || '',
+      status: rec?.status || 'Present',
+      remarks: rec?.remarks || ''
+    });
+  };
+
+  // Save Manual Attendance Time & Status
+  const handleSaveManualTime = async () => {
+    if (!manualModal.employee) return;
+    const emp = manualModal.employee;
+    const dateStr = manualModal.date || selectedDate;
+    const inT = manualModal.inTime ? manualModal.inTime.trim() : null;
+    const outT = manualModal.outTime ? manualModal.outTime.trim() : null;
+    const duration = (inT && outT) ? calculateDuration(inT, outT) : null;
+    const status = manualModal.status || (inT ? 'Present' : 'Absent');
+
+    let found = false;
+    let updatedRecord = null;
+    const updatedList = dbAttendance.map((r) => {
+      const match = (r.employeeId === emp.id || r.employeeCode === emp.employeeCode) && r.date === dateStr;
+      if (match) {
+        found = true;
+        updatedRecord = {
+          ...r,
+          inTime: inT,
+          outTime: outT,
+          duration: duration,
+          status: status,
+          remarks: manualModal.remarks || 'Manual punch entry',
+          source: 'FlashAM_Manual'
+        };
+        return updatedRecord;
+      }
+      return r;
+    });
+
+    if (!found) {
+      updatedRecord = {
+        id: `ATT-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+        employeeId: emp.id,
+        employeeCode: emp.employeeCode || emp.code || `EMP-${emp.id}`,
+        employeeName: emp.name,
+        department: emp.department || 'General',
+        division: emp.division || emp.section || 'AJ Synthetic',
+        date: dateStr,
+        inTime: inT,
+        outTime: outT,
+        duration: duration,
+        status: status,
+        remarks: manualModal.remarks || 'Manual punch entry',
+        source: 'FlashAM_Manual'
+      };
+      updatedList.push(updatedRecord);
+    }
+
+    setDbAttendance(updatedList);
+    localStorage.setItem('flasham_cached_attendance', JSON.stringify(updatedList));
+    setManualModal(prev => ({ ...prev, isOpen: false }));
+    showToast(`Manual attendance saved for ${emp.name}`, 'success');
+
+    broadcastPunchEvent('MANUAL_ENTRY', updatedRecord, emp.id, emp.employeeCode, dateStr);
+
+    if (navigator.onLine) {
+      await saveAttendanceToSupabase(updatedList);
+    }
+  };
+
+  // Delete / Clear Specific Day Punch
+  const handleDeletePunch = async () => {
+    if (!manualModal.employee) return;
+    const emp = manualModal.employee;
+    const dateStr = manualModal.date || selectedDate;
+
+    const updatedList = dbAttendance.filter(r => 
+      !((r.employeeId === emp.id || r.employeeCode === emp.employeeCode) && r.date === dateStr)
+    );
+
+    setDbAttendance(updatedList);
+    localStorage.setItem('flasham_cached_attendance', JSON.stringify(updatedList));
+    setManualModal(prev => ({ ...prev, isOpen: false }));
+    showToast(`Attendance cleared for ${emp.name}`, 'info');
+
+    broadcastPunchEvent('PUNCH_DELETED', null, emp.id, emp.employeeCode, dateStr);
+
+    if (navigator.onLine) {
+      await saveAttendanceToSupabase(updatedList);
+    }
+  };
+
   // ---------------------------------------------------------------------------
   // FILTERING & AGGREGATIONS
   // ---------------------------------------------------------------------------
-  const departments = useMemo(() => {
+  const divisions = useMemo(() => {
     const set = new Set();
     dbEmployees.forEach((emp) => {
-      if (emp.department) set.add(emp.department);
+      const div = emp.division || emp.section;
+      if (div && typeof div === 'string' && div.trim()) {
+        set.add(div.trim());
+      }
     });
     return ['ALL', ...Array.from(set).sort()];
   }, [dbEmployees]);
+
+  const departments = useMemo(() => {
+    const set = new Set();
+    dbEmployees.forEach((emp) => {
+      const div = emp.division || emp.section;
+      if (divisionFilter === 'ALL' || !divisionFilter || div === divisionFilter) {
+        if (emp.department) set.add(emp.department);
+      }
+    });
+    return ['ALL', ...Array.from(set).sort()];
+  }, [dbEmployees, divisionFilter]);
 
   const filteredEmployees = useMemo(() => {
     return dbEmployees.filter((emp) => {
@@ -900,11 +1022,14 @@ export default function FlashAM() {
         (emp.name && emp.name.toLowerCase().includes(searchQuery.toLowerCase())) ||
         (emp.employeeCode && emp.employeeCode.toLowerCase().includes(searchQuery.toLowerCase())) ||
         (emp.department && emp.department.toLowerCase().includes(searchQuery.toLowerCase())) ||
-        (emp.designation && emp.designation.toLowerCase().includes(searchQuery.toLowerCase()));
+        (emp.designation && emp.designation.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        (emp.division && emp.division.toLowerCase().includes(searchQuery.toLowerCase()));
 
-      const matchDept = deptFilter === 'ALL' || emp.department === deptFilter;
+      const div = emp.division || emp.section;
+      const matchDiv = divisionFilter === 'ALL' || !divisionFilter || div === divisionFilter;
+      const matchDept = deptFilter === 'ALL' || !deptFilter || emp.department === deptFilter;
 
-      if (!matchQuery || !matchDept) return false;
+      if (!matchQuery || !matchDiv || !matchDept) return false;
 
       if (statusFilter === 'ALL') return true;
 
@@ -920,7 +1045,7 @@ export default function FlashAM() {
       }
       return true;
     });
-  }, [dbEmployees, searchQuery, deptFilter, statusFilter, selectedDate, dbAttendance]);
+  }, [dbEmployees, searchQuery, divisionFilter, deptFilter, statusFilter, selectedDate, dbAttendance]);
 
   // Statistics for today's selectedDate
   const stats = useMemo(() => {
@@ -1799,7 +1924,7 @@ export default function FlashAM() {
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
                 <div className="relative flex-1">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 material-symbols-outlined text-slate-400 text-[18px]">
                     search
@@ -1825,21 +1950,44 @@ export default function FlashAM() {
                   )}
                 </div>
 
-                {departments.length > 1 && (
-                  <select
-                    value={deptFilter}
-                    onChange={(e) => setDeptFilter(e.target.value)}
-                    className={`px-3 py-2 rounded-xl border text-xs font-bold transition-all focus:outline-none focus:ring-1 focus:ring-cyan-500 ${
-                      isDark ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200 text-slate-800'
-                    }`}
-                  >
-                    {departments.map((d) => (
-                      <option key={d} value={d}>
-                        {d === 'ALL' ? '🏢 All Depts' : d}
-                      </option>
-                    ))}
-                  </select>
-                )}
+                <div className="flex items-center gap-2">
+                  {/* Division Dropdown */}
+                  {divisions.length > 1 && (
+                    <select
+                      value={divisionFilter}
+                      onChange={(e) => {
+                        setDivisionFilter(e.target.value);
+                        setDeptFilter('ALL');
+                      }}
+                      className={`px-3 py-2 rounded-xl border text-xs font-bold transition-all focus:outline-none focus:ring-1 focus:ring-cyan-500 max-w-[170px] truncate cursor-pointer ${
+                        isDark ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200 text-slate-800'
+                      }`}
+                    >
+                      {divisions.map((d) => (
+                        <option key={d} value={d}>
+                          {d === 'ALL' ? '🏢 All Divisions' : d}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+
+                  {/* Department Dropdown */}
+                  {departments.length > 1 && (
+                    <select
+                      value={deptFilter}
+                      onChange={(e) => setDeptFilter(e.target.value)}
+                      className={`px-3 py-2 rounded-xl border text-xs font-bold transition-all focus:outline-none focus:ring-1 focus:ring-cyan-500 max-w-[170px] truncate cursor-pointer ${
+                        isDark ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200 text-slate-800'
+                      }`}
+                    >
+                      {departments.map((d) => (
+                        <option key={d} value={d}>
+                          {d === 'ALL' ? '📁 All Depts' : d}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -1868,29 +2016,46 @@ export default function FlashAM() {
                   return (
                     <div
                       key={emp.id || emp.employeeCode}
-                      className={`p-3.5 sm:p-4 rounded-2xl border transition-all duration-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                      className={`p-3 sm:p-3.5 rounded-2xl border transition-all duration-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
                         isDark
                           ? 'bg-[#121927]/90 hover:bg-[#151e30] border-slate-800'
                           : 'bg-white hover:bg-slate-50/80 border-slate-200 shadow-sm'
                       }`}
                     >
                       <div className="flex items-center gap-3 min-w-0">
-                        <div className="w-11 h-11 rounded-xl bg-gradient-to-tr from-slate-700 to-slate-900 border border-slate-700/50 flex items-center justify-center text-white font-bold text-xs shrink-0 shadow-sm">
-                          {emp.name
-                            ? emp.name
-                                .split(' ')
-                                .map((n) => n[0])
-                                .slice(0, 2)
-                                .join('')
-                                .toUpperCase()
-                            : 'EM'}
-                        </div>
+                        {emp.avatar ? (
+                          <img
+                            src={emp.avatar}
+                            alt={emp.name}
+                            className="w-10 h-10 rounded-xl object-cover border border-slate-200 dark:border-slate-700 shadow-sm shrink-0"
+                          />
+                        ) : (
+                          <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-xs shrink-0 shadow-sm transition-all border border-white/20 ${
+                            isDark
+                              ? 'bg-gradient-to-br from-indigo-600 via-blue-600 to-cyan-500 text-white'
+                              : 'bg-gradient-to-br from-indigo-500 via-blue-600 to-cyan-500 text-white shadow-indigo-500/20'
+                          }`}>
+                            {emp.name
+                              ? emp.name
+                                  .split(' ')
+                                  .map((n) => n[0])
+                                  .slice(0, 2)
+                                  .join('')
+                                  .toUpperCase()
+                              : 'EM'}
+                          </div>
+                        )}
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2">
                             <h4 className="font-bold text-sm font-manrope truncate">{emp.name}</h4>
                             <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-slate-500/15 text-slate-400 border border-slate-500/20 shrink-0">
                               {emp.employeeCode || `#${emp.id}`}
                             </span>
+                            {emp.division && (
+                              <span className="hidden sm:inline-block text-[9px] font-bold px-1.5 py-0.2 rounded bg-cyan-500/10 text-cyan-500 border border-cyan-500/20 shrink-0">
+                                {emp.division}
+                              </span>
+                            )}
                           </div>
                           <div className="flex items-center gap-2 text-xs text-slate-400 mt-0.5 truncate">
                             <span className="truncate">{emp.department || 'Staff'}</span>
@@ -1901,7 +2066,7 @@ export default function FlashAM() {
                               </>
                             )}
                           </div>
-                          <div className="flex items-center gap-2 mt-1.5">
+                          <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
                             {hasIn ? (
                               <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
                                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
@@ -1920,43 +2085,71 @@ export default function FlashAM() {
                                 {rec.duration && <span>({rec.duration})</span>}
                               </span>
                             )}
+
+                            {rec && rec.status && rec.status !== 'Present' && rec.status !== 'Completed' && (
+                              <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-500 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20">
+                                {rec.status}
+                              </span>
+                            )}
                           </div>
                         </div>
                       </div>
 
                       <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                        {/* PUNCH IN BUTTON - Guarantees 100% Crisp White Text in Light & Dark Mode */}
                         <button
+                          type="button"
                           onClick={() => handlePunchIn(emp)}
                           title={hasIn ? 'Already Clocked IN. Click to UNDO clock-in' : 'Clock IN'}
-                          className={`px-4 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider flex items-center gap-1.5 transition-all active:scale-95 shadow-md ${
+                          className={`px-3.5 py-2.5 rounded-xl font-black text-xs uppercase tracking-wider flex items-center gap-1.5 transition-all active:scale-95 shadow-md cursor-pointer !text-white text-white ${
                             hasIn
-                              ? 'bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/40'
-                              : 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-emerald-600/25'
+                              ? 'bg-emerald-600 hover:bg-emerald-700 !text-white text-white shadow-emerald-600/30 border border-emerald-400/40'
+                              : 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 !text-white text-white shadow-emerald-600/25'
                           }`}
                         >
-                          <span className="material-symbols-outlined text-[17px]">
+                          <span className="material-symbols-outlined text-[17px] !text-white text-white font-bold">
                             {hasIn ? 'undo' : 'login'}
                           </span>
-                          <span>{hasIn ? `IN ${rec.inTime.split(':')[0]}:${rec.inTime.split(':')[1]}` : 'PUNCH IN'}</span>
+                          <span className="!text-white text-white font-black tracking-wide">
+                            {hasIn ? `IN ${rec.inTime.split(':')[0]}:${rec.inTime.split(':')[1]}` : 'PUNCH IN'}
+                          </span>
                         </button>
 
+                        {/* PUNCH OUT BUTTON - Guarantees 100% Crisp White Text in Light & Dark Mode */}
                         <button
+                          type="button"
                           onClick={() => handlePunchOut(emp)}
                           title={hasOut ? 'Already Clocked OUT. Click to UNDO clock-out' : 'Clock OUT'}
-                          className={`px-4 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider flex items-center gap-1.5 transition-all active:scale-95 shadow-md ${
+                          className={`px-3.5 py-2.5 rounded-xl font-black text-xs uppercase tracking-wider flex items-center gap-1.5 transition-all active:scale-95 shadow-md cursor-pointer ${
                             hasOut
-                              ? 'bg-purple-600/20 hover:bg-purple-600/30 text-purple-400 border border-purple-500/40'
+                              ? 'bg-purple-600 hover:bg-purple-700 !text-white text-white shadow-purple-600/30 border border-purple-400/40'
                               : hasIn
-                              ? 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white shadow-purple-600/25'
+                              ? 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 !text-white text-white shadow-purple-600/25'
                               : isDark
-                              ? 'bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed opacity-60'
-                              : 'bg-slate-200 text-slate-400 border border-slate-300 cursor-not-allowed opacity-60'
+                              ? 'bg-slate-800/80 !text-slate-400 border border-slate-700 cursor-not-allowed opacity-60'
+                              : 'bg-slate-200 !text-slate-400 border border-slate-300 cursor-not-allowed opacity-60'
                           }`}
                         >
-                          <span className="material-symbols-outlined text-[17px]">
+                          <span className={`material-symbols-outlined text-[17px] font-bold ${hasOut || hasIn ? '!text-white text-white' : '!text-slate-400'}`}>
                             {hasOut ? 'undo' : 'logout'}
                           </span>
-                          <span>{hasOut ? `OUT ${rec.outTime.split(':')[0]}:${rec.outTime.split(':')[1]}` : 'PUNCH OUT'}</span>
+                          <span className={`font-black tracking-wide ${hasOut || hasIn ? '!text-white text-white' : '!text-slate-400'}`}>
+                            {hasOut ? `OUT ${rec.outTime.split(':')[0]}:${rec.outTime.split(':')[1]}` : 'PUNCH OUT'}
+                          </span>
+                        </button>
+
+                        {/* MANUAL TIME LOG BUTTON */}
+                        <button
+                          type="button"
+                          onClick={() => openManualTimeModal(emp, rec)}
+                          title="Manual Time In / Out & Attendance Edit"
+                          className={`p-2.5 rounded-xl border flex items-center justify-center transition-all cursor-pointer active:scale-95 shadow-sm ${
+                            isDark
+                              ? 'bg-slate-800/90 hover:bg-slate-700 text-cyan-400 border-slate-700'
+                              : 'bg-slate-100 hover:bg-slate-200 text-cyan-700 border-slate-300'
+                          }`}
+                        >
+                          <span className="material-symbols-outlined text-[18px]">edit_calendar</span>
                         </button>
                       </div>
                     </div>
@@ -2466,6 +2659,218 @@ export default function FlashAM() {
               >
                 <span className="material-symbols-outlined text-[16px]">undo</span>
                 <span>Confirm Undo</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: MANUAL TIME IN / OUT ENTRY */}
+      {manualModal.isOpen && manualModal.employee && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-in fade-in duration-200">
+          <div
+            className={`w-full max-w-md p-6 rounded-3xl border shadow-2xl transition-all ${
+              isDark ? 'bg-[#121927] border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-900'
+            }`}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3 mb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-cyan-500/15 text-cyan-500 border border-cyan-500/30 flex items-center justify-center shrink-0">
+                  <span className="material-symbols-outlined text-[22px]">schedule</span>
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold font-manrope">Manual Time & Attendance Log</h3>
+                  <p className="text-[11px] text-slate-400">
+                    {manualModal.employee.name} • {manualModal.employee.employeeCode || `#${manualModal.employee.id}`}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setManualModal(prev => ({ ...prev, isOpen: false }))}
+                className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Form Fields */}
+            <div className="space-y-3.5 text-xs">
+              {/* Date & Status */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
+                    Date
+                  </label>
+                  <input
+                    type="date"
+                    value={manualModal.date}
+                    onChange={(e) => setManualModal(prev => ({ ...prev, date: e.target.value }))}
+                    className={`w-full px-3 py-2 rounded-xl border font-bold text-xs ${
+                      isDark ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200 text-slate-900'
+                    }`}
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
+                    Status
+                  </label>
+                  <select
+                    value={manualModal.status}
+                    onChange={(e) => setManualModal(prev => ({ ...prev, status: e.target.value }))}
+                    className={`w-full px-3 py-2 rounded-xl border font-bold text-xs ${
+                      isDark ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200 text-slate-900'
+                    }`}
+                  >
+                    <option value="Present">Present (حاضر)</option>
+                    <option value="Absent">Absent (غیر حاضر)</option>
+                    <option value="Leave">Leave (رخصت)</option>
+                    <option value="Holiday">Holiday (تعطیل)</option>
+                    <option value="Off Day">Off Day (چھٹی)</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Time IN */}
+              <div>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-emerald-500">
+                    Time IN (Clock-in)
+                  </label>
+                  <div className="flex items-center gap-1">
+                    {['08:00 AM', '09:00 AM', 'Now'].map(chip => (
+                      <button
+                        key={chip}
+                        type="button"
+                        onClick={() => {
+                          const val = chip === 'Now' ? getFormattedTime() : chip;
+                          setManualModal(prev => ({ ...prev, inTime: val }));
+                        }}
+                        className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20 cursor-pointer"
+                      >
+                        {chip}
+                      </button>
+                    ))}
+                    {manualModal.inTime && (
+                      <button
+                        type="button"
+                        onClick={() => setManualModal(prev => ({ ...prev, inTime: '' }))}
+                        className="text-[9px] text-rose-500 hover:underline px-1 cursor-pointer"
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <input
+                  type="text"
+                  placeholder="e.g. 09:00 AM"
+                  value={manualModal.inTime}
+                  onChange={(e) => setManualModal(prev => ({ ...prev, inTime: e.target.value }))}
+                  className={`w-full px-3 py-2 rounded-xl border font-mono font-bold text-xs ${
+                    isDark ? 'bg-slate-900 border-slate-700 text-emerald-400' : 'bg-slate-50 border-slate-200 text-emerald-700'
+                  }`}
+                />
+              </div>
+
+              {/* Time OUT */}
+              <div>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-purple-500">
+                    Time OUT (Clock-out)
+                  </label>
+                  <div className="flex items-center gap-1">
+                    {['05:00 PM', '06:00 PM', 'Now'].map(chip => (
+                      <button
+                        key={chip}
+                        type="button"
+                        onClick={() => {
+                          const val = chip === 'Now' ? getFormattedTime() : chip;
+                          setManualModal(prev => ({ ...prev, outTime: val }));
+                        }}
+                        className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-purple-500/10 text-purple-600 hover:bg-purple-500/20 cursor-pointer"
+                      >
+                        {chip}
+                      </button>
+                    ))}
+                    {manualModal.outTime && (
+                      <button
+                        type="button"
+                        onClick={() => setManualModal(prev => ({ ...prev, outTime: '' }))}
+                        className="text-[9px] text-rose-500 hover:underline px-1 cursor-pointer"
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <input
+                  type="text"
+                  placeholder="e.g. 05:00 PM"
+                  value={manualModal.outTime}
+                  onChange={(e) => setManualModal(prev => ({ ...prev, outTime: e.target.value }))}
+                  className={`w-full px-3 py-2 rounded-xl border font-mono font-bold text-xs ${
+                    isDark ? 'bg-slate-900 border-slate-700 text-purple-400' : 'bg-slate-50 border-slate-200 text-purple-700'
+                  }`}
+                />
+              </div>
+
+              {/* Remarks */}
+              <div>
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
+                  Reason / Remarks (Optional)
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Card forgotten, manager approved"
+                  value={manualModal.remarks}
+                  onChange={(e) => setManualModal(prev => ({ ...prev, remarks: e.target.value }))}
+                  className={`w-full px-3 py-2 rounded-xl border text-xs ${
+                    isDark ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200 text-slate-900'
+                  }`}
+                />
+              </div>
+
+              {/* Duration Preview */}
+              {manualModal.inTime && manualModal.outTime && (
+                <div className="p-2.5 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-between text-xs">
+                  <span className="text-slate-400 font-bold">Estimated Shift Duration:</span>
+                  <span className="font-mono font-black text-cyan-500">
+                    {calculateDuration(manualModal.inTime, manualModal.outTime) || 'Calculating...'}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex items-center gap-2 mt-5 pt-3 border-t border-slate-200 dark:border-slate-800">
+              {manualModal.record && (manualModal.record.inTime || manualModal.record.outTime) && (
+                <button
+                  type="button"
+                  onClick={handleDeletePunch}
+                  className="py-2.5 px-3 rounded-xl font-bold text-xs bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 border border-rose-500/20 transition-all cursor-pointer flex items-center gap-1"
+                >
+                  <span className="material-symbols-outlined text-[16px]">delete</span>
+                  Clear
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setManualModal(prev => ({ ...prev, isOpen: false }))}
+                className={`flex-1 py-2.5 rounded-xl font-bold text-xs border transition-all cursor-pointer ${
+                  isDark ? 'border-slate-700 bg-slate-800 text-slate-300' : 'border-slate-200 bg-slate-100 text-slate-700'
+                }`}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveManualTime}
+                className="flex-1 py-2.5 rounded-xl font-bold text-xs bg-emerald-600 hover:bg-emerald-500 !text-white text-white shadow-lg shadow-emerald-600/30 transition-all cursor-pointer flex items-center justify-center gap-1.5"
+              >
+                <span className="material-symbols-outlined text-[16px] !text-white text-white">save</span>
+                <span className="!text-white text-white font-bold">Save Attendance</span>
               </button>
             </div>
           </div>
