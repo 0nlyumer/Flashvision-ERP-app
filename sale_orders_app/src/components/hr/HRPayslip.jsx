@@ -56,6 +56,11 @@ export default function HRPayslip({ isMobile }) {
         const parsed = JSON.parse(savedUploaded);
         if (Array.isArray(parsed)) uploadedLogs = [...uploadedLogs, ...parsed];
       }
+      const flashAmCached = localStorage.getItem('flasham_cached_attendance');
+      if (flashAmCached) {
+        const parsed = JSON.parse(flashAmCached);
+        if (Array.isArray(parsed)) uploadedLogs = [...uploadedLogs, ...parsed];
+      }
     } catch (e) {}
 
     uploadedLogs.forEach(log => {
@@ -179,12 +184,17 @@ export default function HRPayslip({ isMobile }) {
       }
     } catch (e) {}
 
-    // C. Uploaded/punch attendance logs
+    // C. Uploaded/punch attendance logs (including Flash AM mobile app cache)
     let uploadedLogs = state.hr_uploaded_attendance || [];
     try {
       const savedUploaded = localStorage.getItem('hr_uploaded_attendance');
       if (savedUploaded) {
         const parsed = JSON.parse(savedUploaded);
+        if (Array.isArray(parsed)) uploadedLogs = [...uploadedLogs, ...parsed];
+      }
+      const flashAmCached = localStorage.getItem('flasham_cached_attendance');
+      if (flashAmCached) {
+        const parsed = JSON.parse(flashAmCached);
         if (Array.isArray(parsed)) uploadedLogs = [...uploadedLogs, ...parsed];
       }
     } catch (e) {}
@@ -266,7 +276,7 @@ export default function HRPayslip({ isMobile }) {
         const hasExplicitLog = dayRecord?.userEdited || punch?.inTime || punch?.status || ot > 0 || dt > 0 || fines > 0;
         const sLower = String(status || '').toLowerCase();
 
-        if (hasExplicitLog || sLower === 'present' || sLower === 'p' || sLower === 'half' || sLower === 'halfday' || sLower === 'leave' || sLower === 'holiday') {
+        if (hasExplicitLog || sLower.includes('present') || sLower === 'completed' || sLower === 'p' || sLower.includes('half') || sLower.includes('leave') || sLower.includes('holiday')) {
           hasAnyAttendance = true;
         }
 
@@ -506,6 +516,11 @@ export default function HRPayslip({ isMobile }) {
       const savedUploaded = localStorage.getItem('hr_uploaded_attendance');
       if (savedUploaded) {
         const parsed = JSON.parse(savedUploaded);
+        if (Array.isArray(parsed)) uploadedLogs = [...uploadedLogs, ...parsed];
+      }
+      const flashAmCached = localStorage.getItem('flasham_cached_attendance');
+      if (flashAmCached) {
+        const parsed = JSON.parse(flashAmCached);
         if (Array.isArray(parsed)) uploadedLogs = [...uploadedLogs, ...parsed];
       }
     } catch (e) {}

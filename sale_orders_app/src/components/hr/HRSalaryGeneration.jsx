@@ -16,6 +16,29 @@ const safeMoney = (val, decimals = 2) => {
   return n.toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
 };
 
+// Safe date normalizer (converts DD/MM/YYYY, MM/DD/YYYY, YYYY-MM-DD into standard YYYY-MM-DD)
+const normalizeDate = (dateStr) => {
+  if (!dateStr) return '';
+  const str = String(dateStr).trim();
+  const parts = str.split(/[-/]/);
+  if (parts.length === 3) {
+    let year, month, day;
+    if (parts[0].length === 4) {
+      year = parts[0];
+      month = parts[1].padStart(2, '0');
+      day = parts[2].padStart(2, '0');
+    } else if (parts[2].length === 4) {
+      year = parts[2];
+      month = parts[0].padStart(2, '0');
+      day = parts[1].padStart(2, '0');
+    } else {
+      return str;
+    }
+    return `${year}-${month}-${day}`;
+  }
+  return str;
+};
+
 export default function HRSalaryGeneration({ isMobile }) {
   const { state, setCollection, currencySymbol } = useApp();
   const currSym = currencySymbol || 'Rs.';
@@ -27,7 +50,7 @@ export default function HRSalaryGeneration({ isMobile }) {
   const [payrollPeriod, setPayrollPeriod] = useState('');
 
   // Selected division filter state: by default NO division is selected (har dafa select kerna pare)
-  const [selectedDivision, setSelectedDivision] = useState('');
+  const [selectedDivision, setSelectedDivision] = useState('ALL');
 
   // Search & Filter Keys for Payroll Detail View
   const [searchQuery, setSearchQuery] = useState('');
@@ -167,35 +190,70 @@ export default function HRSalaryGeneration({ isMobile }) {
     const monthSet = new Set();
     const MONTH_REGEX = /^\d{4}-(0[1-9]|1[0-2])/;
 
-    const activeEmps = (state.hr_employees_list || []).filter(e => (e.status || 'Active').toLowerCase() === 'active');
-    const activeIds = new Set(activeEmps.map(e => String(e.id || '').trim()));
-    const activeNames = new Set(activeEmps.map(e => String(e.name || '').toLowerCase().trim()));
+    let allEmployees = (state.hr_employees_list || []).filter(e => (e.status || 'Active').toLowerCase() === 'active');
+    if (allEmployees.length === 0) {
+      try {
+        const savedEmps = localStorage.getItem('hr_employees_list');
+        if (savedEmps) {
+          const parsed = JSON.parse(savedEmps);
+          if (Array.isArray(parsed)) allEmployees = parsed.filter(e => (e.status || 'Active').toLowerCase() === 'active');
+        }
+      } catch (e) {}
+    }
 
-    // 1. Uploaded attendance logs (strictly active employees with positive attendance)
-    const uploaded = state.hr_uploaded_attendance || [];
+    const activeIds = new Set();
+    const activeCodes = new Set();
+    const activeNames = new Set();
+    allEmployees.forEach(e => {
+      if (e.id) activeIds.add(String(e.id).trim());
+      if (e.employeeCode) activeCodes.add(String(e.employeeCode).trim());
+      if (e.name) activeNames.add(String(e.name).toLowerCase().trim());
+    });
+
+    // 1. Uploaded & Flash AM mobile punch attendance logs
+    let uploaded = state.hr_uploaded_attendance || [];
+    try {
+      const savedUploaded = localStorage.getItem('hr_uploaded_attendance');
+      if (savedUploaded) {
+        const parsed = JSON.parse(savedUploaded);
+        if (Array.isArray(parsed)) uploaded = [...uploaded, ...parsed];
+      }
+      const flashAmCached = localStorage.getItem('flasham_cached_attendance');
+      if (flashAmCached) {
+        const parsed = JSON.parse(flashAmCached);
+        if (Array.isArray(parsed)) uploaded = [...uploaded, ...parsed];
+      }
+    } catch (e) {}
+
     uploaded.forEach(log => {
-      const logEmpId = log.employeeId ? String(log.employeeId).trim() : (log.id && String(log.id).startsWith('EMP-') ? String(log.id).trim() : '');
-      const logName = log.employeeName ? String(log.employeeName).toLowerCase().trim() : '';
-      const isActEmp = (logEmpId && activeIds.has(logEmpId)) || (logName && activeNames.has(logName));
+      const logEmpId = String(log.employeeId || log.id || '').trim();
+      const logEmpCode = String(log.employeeCode || log.code || '').trim();
+      const logName = String(log.employeeName || log.name || '').toLowerCase().trim();
+
+      const isActEmp = (logEmpId && (activeIds.has(logEmpId) || activeCodes.has(logEmpId))) ||
+                       (logEmpCode && (activeCodes.has(logEmpCode) || activeIds.has(logEmpCode))) ||
+                       (logName && (activeNames.has(logName) || Array.from(activeNames).some(n => n.includes(logName) || logName.includes(n))));
       if (!isActEmp) return;
 
-      const dt = log?.date || log?.logDate || log?.punchDate;
+      const rawDt = log?.date || log?.logDate || log?.punchDate;
+      const dt = normalizeDate(rawDt);
       const st = String(log?.status || '').toLowerCase();
       // Must have actual attendance (present, completed, leave, or punch in/out)
-      if (dt && typeof dt === 'string' && MONTH_REGEX.test(dt) && (st === 'present' || st === 'completed' || st === 'leave' || log.inTime)) {
+      if (dt && typeof dt === 'string' && MONTH_REGEX.test(dt) && (st.includes('present') || st === 'completed' || st.includes('leave') || log.inTime || log.outTime)) {
         monthSet.add(dt.substring(0, 7));
       }
     });
 
     // 2. Embedded employee attendance logs for active employees
-    activeEmps.forEach(emp => {
+    allEmployees.forEach(emp => {
       if (emp && emp.attendance && typeof emp.attendance === 'object') {
         Object.entries(emp.attendance).forEach(([dayKey, dayVal]) => {
-          if (typeof dayKey === 'string' && MONTH_REGEX.test(dayKey) && dayVal) {
+          const normKey = normalizeDate(dayKey);
+          if (typeof normKey === 'string' && MONTH_REGEX.test(normKey) && dayVal) {
             const st = String(dayVal.status || '').toLowerCase();
-            // Must have actual positive attendance mark (present, leave, or valid punch)
-            if (st === 'present' || st === 'leave' || dayVal.inTime || (dayVal.userEdited && st !== 'absent')) {
-              monthSet.add(dayKey.substring(0, 7));
+            // Must have actual positive attendance mark (present, completed, leave, or valid punch)
+            if (st.includes('present') || st === 'completed' || st.includes('leave') || dayVal.inTime || (dayVal.userEdited && st !== 'absent')) {
+              monthSet.add(normKey.substring(0, 7));
             }
           }
         });
@@ -258,10 +316,19 @@ export default function HRSalaryGeneration({ isMobile }) {
     }
   }, [monthsList, payrollPeriod]);
 
-  // Dynamic Divisions for Dropdown: ONLY active employees, NO default 'ALL'
+  // Dynamic Divisions for Dropdown: Includes 'ALL' for whole company
   const availableDivisions = useMemo(() => {
     const set = new Set();
-    (state.hr_employees_list || []).forEach(emp => {
+    let emps = state.hr_employees_list || [];
+    try {
+      const savedEmps = localStorage.getItem('hr_employees_list');
+      if (savedEmps) {
+        const parsed = JSON.parse(savedEmps);
+        if (Array.isArray(parsed) && parsed.length > 0) emps = parsed;
+      }
+    } catch (e) {}
+
+    emps.forEach(emp => {
       const isAct = (emp.status || 'Active').toLowerCase() === 'active';
       if (isAct) {
         const div = emp.division || emp.section;
@@ -271,22 +338,56 @@ export default function HRSalaryGeneration({ isMobile }) {
     if (set.size === 0) {
       ['AAA', 'AJ Synthetic', 'Operations'].forEach(d => set.add(d));
     }
-    return Array.from(set).sort();
+    return ['ALL', ...Array.from(set).sort()];
   }, [state.hr_employees_list]);
 
   // Comprehensive Realtime Payroll Calculation Engine
-  // RULE: Strictly filter only active employees belonging to selectedDivision AND with >= 1 day attendance in that month!
+  // RULE: Calculates for all active employees with >= 1 day attendance in that month (Supports All Divisions & App Punches)
   const computePayrollForPeriod = (period, divisionToUse) => {
-    if (!period || !divisionToUse) return [];
+    if (!period) return [];
+    const divFilter = (divisionToUse || 'ALL').trim().toLowerCase();
 
-    const allEmployees = (state.hr_employees_list || []).filter(emp => {
+    let allEmployees = (state.hr_employees_list || []).filter(emp => {
       const isAct = (emp.status || 'Active').toLowerCase() === 'active';
       if (!isAct) return false;
-      const empDiv = (emp.division || emp.section || '').trim();
-      return empDiv === divisionToUse;
+      if (divFilter === 'all') return true;
+      const empDiv = (emp.division || emp.section || '').trim().toLowerCase();
+      return empDiv === divFilter;
     });
 
-    const attendanceLogs = state.hr_uploaded_attendance || [];
+    if (allEmployees.length === 0) {
+      try {
+        const savedEmps = localStorage.getItem('hr_employees_list');
+        if (savedEmps) {
+          const parsed = JSON.parse(savedEmps);
+          if (Array.isArray(parsed)) {
+            allEmployees = parsed.filter(emp => {
+              const isAct = (emp.status || 'Active').toLowerCase() === 'active';
+              if (!isAct) return false;
+              if (divFilter === 'all') return true;
+              const empDiv = (emp.division || emp.section || '').trim().toLowerCase();
+              return empDiv === divFilter;
+            });
+          }
+        }
+      } catch (e) {}
+    }
+
+    // Load multi-source uploaded attendance logs (State + LocalStorage + Flash AM mobile app cache)
+    let attendanceLogs = state.hr_uploaded_attendance || [];
+    try {
+      const savedUploaded = localStorage.getItem('hr_uploaded_attendance');
+      if (savedUploaded) {
+        const parsed = JSON.parse(savedUploaded);
+        if (Array.isArray(parsed)) attendanceLogs = [...attendanceLogs, ...parsed];
+      }
+      const flashAmCached = localStorage.getItem('flasham_cached_attendance');
+      if (flashAmCached) {
+        const parsed = JSON.parse(flashAmCached);
+        if (Array.isArray(parsed)) attendanceLogs = [...attendanceLogs, ...parsed];
+      }
+    } catch (e) {}
+
     const overtimeRequests = state.hr_overtime_requests || [];
     const loanRequests = state.hr_loan_requests || [];
     const loanLedger = state.hr_loan_ledger || [];
@@ -308,7 +409,7 @@ export default function HRSalaryGeneration({ isMobile }) {
     const [yearStr, monthStr] = period.split('-');
     const currentMonthDays = new Date(parseInt(yearStr), parseInt(monthStr), 0).getDate();
     const daysInMonth = currentMonthDays;
-    const totalWorkingDays = currentMonthDays; // Precise days of current payroll month
+    const totalWorkingDays = currentMonthDays;
 
     const results = allEmployees.map(emp => {
       const baseSalary = safeNum(emp.basicSalary || emp.salary || emp.baseSalary || 35000);
@@ -316,7 +417,7 @@ export default function HRSalaryGeneration({ isMobile }) {
       const designation = emp.designation || emp.jobTitle || emp.role || 'Associate';
       const department = emp.department || 'Global Logistics';
       const section = emp.section || emp.subSection || emp.division || 'Operations';
-      const division = emp.division || emp.section || divisionToUse;
+      const division = emp.division || emp.section || (divisionToUse === 'ALL' ? 'General' : divisionToUse);
 
       let workedDays = 0;
       let absentsCount = 0;
@@ -326,15 +427,22 @@ export default function HRSalaryGeneration({ isMobile }) {
       let otHours = 0;
 
       const empIdStr = String(emp.id || '').trim();
+      const empCodeStr = String(emp.employeeCode || emp.code || '').trim();
       const empNameLower = String(emp.name || '').trim().toLowerCase();
 
-      // Attendance logs from uploaded / biometric punches
+      // Attendance logs from uploaded / biometric punches / Flash AM mobile app
       const matchedLogs = attendanceLogs.filter(a => {
-        const aEmpId = a.employeeId ? String(a.employeeId).trim() : (a.id && String(a.id).startsWith('EMP-') ? String(a.id).trim() : '');
-        const aName = a.employeeName ? String(a.employeeName).trim().toLowerCase() : '';
-        const idMatches = aEmpId && empIdStr && aEmpId === empIdStr;
-        const nameMatches = (!aEmpId) && aName && empNameLower && aName === empNameLower;
-        const dateMatches = a.date && a.date.startsWith(period);
+        const aEmpId = String(a.employeeId || (a.id && String(a.id).startsWith('EMP-') ? a.id : '')).trim();
+        const aEmpCode = String(a.employeeCode || a.code || '').trim();
+        const aName = String(a.employeeName || a.name || '').trim().toLowerCase();
+
+        const idMatches = (aEmpId && (aEmpId === empIdStr || aEmpId === empCodeStr)) ||
+                          (aEmpCode && (aEmpCode === empIdStr || aEmpCode === empCodeStr));
+        const nameMatches = aName && empNameLower && (aName === empNameLower || aName.includes(empNameLower) || empNameLower.includes(aName));
+
+        const aNormDate = normalizeDate(a.date || a.logDate || a.punchDate);
+        const dateMatches = aNormDate && aNormDate.startsWith(period);
+
         return (idMatches || nameMatches) && dateMatches;
       });
 
@@ -342,55 +450,77 @@ export default function HRSalaryGeneration({ isMobile }) {
       const dailyMap = {};
       if (emp.attendance && typeof emp.attendance === 'object') {
         Object.entries(emp.attendance).forEach(([dayKey, rec]) => {
-          if (dayKey && dayKey.startsWith(period) && rec) {
-            dailyMap[dayKey] = { ...rec };
+          const normKey = normalizeDate(dayKey);
+          if (normKey && normKey.startsWith(period) && rec) {
+            dailyMap[normKey] = { ...rec };
           }
         });
       }
 
+      // Merge matched uploaded / Flash AM punches
       matchedLogs.forEach(log => {
-        if (!dailyMap[log.date] || !dailyMap[log.date].userEdited) {
-          dailyMap[log.date] = {
-            status: log.status || 'present',
-            ot: parseFloat(log.ot || log.overtimeHours || 0) || 0,
-            fines: parseFloat(log.fines || log.fine || 0) || 0,
-            deductions: parseFloat(log.deductions || log.lateHours || 0) || 0
-          };
+        const logDate = normalizeDate(log.date || log.logDate || log.punchDate);
+        if (logDate && logDate.startsWith(period)) {
+          if (!dailyMap[logDate] || !dailyMap[logDate].userEdited) {
+            dailyMap[logDate] = {
+              ...(dailyMap[logDate] || {}),
+              status: log.status || 'present',
+              inTime: log.inTime || dailyMap[logDate]?.inTime,
+              outTime: log.outTime || dailyMap[logDate]?.outTime,
+              ot: parseFloat(log.ot || log.overtimeHours || dailyMap[logDate]?.ot || 0) || 0,
+              fines: parseFloat(log.fines || log.fine || dailyMap[logDate]?.fines || 0) || 0,
+              deductions: parseFloat(log.deductions || log.lateHours || dailyMap[logDate]?.deductions || 0) || 0
+            };
+          }
         }
-      });
-
-      // RULE: If employee has 0 attendance records for this month, EXCLUDE!
-      if (Object.keys(dailyMap).length === 0) {
-        return null; // Skip employee with 0 attendance
-      }
-
-      // Aggregate mapped attendance
-      Object.values(dailyMap).forEach(rec => {
-        const st = String(rec.status || '').toLowerCase();
-        if (st === 'present') workedDays++;
-        else if (st === 'absent') absentsCount++;
-        else if (st === 'leave') leavesCount++;
-        otHours += safeNum(rec.ot);
-        lateComingHours += safeNum(rec.deductions);
-        totalFines += safeNum(rec.fines);
       });
 
       // Approved Overtime Requests
       const empOtReqs = overtimeRequests.filter(req => {
-        const reqEmpId = req.employeeId ? String(req.employeeId).trim() : '';
-        const reqName = req.employeeName ? String(req.employeeName).trim().toLowerCase() : '';
-        const idMatches = reqEmpId && empIdStr && reqEmpId === empIdStr;
-        const nameMatches = (!reqEmpId) && reqName && empNameLower && reqName === empNameLower;
-        return (idMatches || nameMatches) && req.status === 'Approved' && req.date && req.date.startsWith(period);
+        const reqEmpId = String(req.employeeId || '').trim();
+        const reqEmpCode = String(req.employeeCode || '').trim();
+        const reqName = String(req.employeeName || '').trim().toLowerCase();
+
+        const idMatches = (reqEmpId && (reqEmpId === empIdStr || reqEmpId === empCodeStr)) ||
+                          (reqEmpCode && (reqEmpCode === empIdStr || reqEmpCode === empCodeStr));
+        const nameMatches = reqName && empNameLower && (reqName === empNameLower || reqName.includes(empNameLower) || empNameLower.includes(reqName));
+
+        const reqDate = normalizeDate(req.date);
+        return (idMatches || nameMatches) && req.status === 'Approved' && reqDate && reqDate.startsWith(period);
       });
       empOtReqs.forEach(r => {
         otHours += safeNum(r.hours);
       });
 
-      // ========================================================
-      // PRECISE FORMULA:
+      // RULE: If employee has 0 attendance records for this month AND 0 approved OT, EXCLUDE!
+      if (Object.keys(dailyMap).length === 0 && otHours === 0) {
+        return null; // Skip employee with 0 attendance
+      }
+
+      // Aggregate mapped attendance (supports Flash AM 'Completed', 'Present', 'inTime', etc.)
+      Object.values(dailyMap).forEach(rec => {
+        const st = String(rec.status || '').toLowerCase().trim();
+        const hasPunch = Boolean(rec.inTime || rec.outTime);
+
+        if (st.includes('present') || st === 'completed' || st === 'p' || hasPunch) {
+          workedDays += 1;
+        } else if (st.includes('half')) {
+          workedDays += 0.5;
+          leavesCount += 0.5;
+        } else if (st.includes('leave') || st === 'l' || st === 'holiday' || st === 'offday' || st === 'paid_leave') {
+          leavesCount += 1;
+        } else if (st.includes('abs')) {
+          absentsCount += 1;
+        } else {
+          workedDays += 1; // Default any positive activity as worked
+        }
+
+        otHours += safeNum(rec.ot);
+        lateComingHours += safeNum(rec.deductions);
+        totalFines += safeNum(rec.fines);
+      });
+
       // (basic salary / current month days = 1 day amount / duty hours = 1 hours amount)
-      // ========================================================
       const oneDayAmount = currentMonthDays > 0 ? (baseSalary / currentMonthDays) : 0;
       const dailyRate = oneDayAmount;
 
@@ -401,7 +531,6 @@ export default function HRSalaryGeneration({ isMobile }) {
       const oneHourAmount = empDutyHours > 0 ? (oneDayAmount / empDutyHours) : 0;
       const hourlyRate = oneHourAmount;
 
-      // Overtime Multiplier & Hourly Rate from Duty Hours & Shifts Configuration
       // Overtime Multiplier & Hourly Rate strictly based on Hourly Rate
       const otMultiplier = getEffectiveOvertimeMultiplier(emp, dutySettings);
       const otHourlyRate = hourlyRate * otMultiplier;
@@ -409,12 +538,12 @@ export default function HRSalaryGeneration({ isMobile }) {
       // Paid Days = Actual worked days + paid leaves
       const payableDays = Math.min(currentMonthDays, Math.max(0, workedDays + leavesCount));
 
-      // STRICT RULE: If employee has 0 paid days (all absences or no positive attendance), EXCLUDE COMPLETELY!
-      if (payableDays === 0) {
+      // If employee has 0 paid days and 0 worked days and 0 OT, exclude:
+      if (payableDays === 0 && otHours === 0 && workedDays === 0) {
         return null;
       }
 
-      // Absents Count = Remaining unworked days in the current month (e.g. 31 - 1 = 30 absents)
+      // Absents Count = Remaining unworked days in the current month
       absentsCount = Math.max(0, currentMonthDays - payableDays);
 
       const earnedBasicSalary = Math.round(dailyRate * payableDays * 100) / 100;
@@ -425,7 +554,7 @@ export default function HRSalaryGeneration({ isMobile }) {
       // Loans & Advances
       let loanAmount = safeNum(emp.loan || emp.loanAmount);
       const activeLedgerItem = loanLedger.find(l => 
-        (String(l.employeeId) === empIdStr || String(l.employeeName || '').toLowerCase() === empNameLower) && 
+        (String(l.employeeId) === empIdStr || String(l.employeeCode || '') === empCodeStr || String(l.employeeName || '').toLowerCase() === empNameLower) && 
         l.status === 'Active' && 
         safeNum(l.remainingBalance) > 0
       );
@@ -433,7 +562,7 @@ export default function HRSalaryGeneration({ isMobile }) {
         loanAmount = Math.min(safeNum(activeLedgerItem.monthlyInstallment), safeNum(activeLedgerItem.remainingBalance));
       } else {
         const activeLoanReq = loanRequests.find(r => 
-          (String(r.employeeId) === empIdStr || String(r.employeeName || '').toLowerCase() === empNameLower) && r.status === 'Approved'
+          (String(r.employeeId) === empIdStr || String(r.employeeCode || '') === empCodeStr || String(r.employeeName || '').toLowerCase() === empNameLower) && r.status === 'Approved'
         );
         if (activeLoanReq && activeLoanReq.monthlyInstallment) {
           loanAmount = safeNum(activeLoanReq.monthlyInstallment);
@@ -457,8 +586,6 @@ export default function HRSalaryGeneration({ isMobile }) {
       } catch (e) {}
 
       // Attendance allowance rule: ZERO ABSENCES REQUIRED
-      // Employee MUST have worked the full month (payableDays >= totalWorkingDays) and have 0 absences!
-      // If employee only worked 1 day (or less than full month), absentsCount > 0, so NO allowance is given!
       let allowanceAmount = 0;
       const isZeroAbsencesEnforced = salaryConfig?.attendanceAllowance?.zeroAbsences !== false; // Default true
       const isZeroLateEnforced = salaryConfig?.attendanceAllowance?.zeroLate === true;
@@ -485,7 +612,7 @@ export default function HRSalaryGeneration({ isMobile }) {
       const netSalary = Math.max(0, earnedBasicSalary + totalAdditions - totalDeductions);
 
       return {
-        employeeId: empIdStr || `EMP-${Date.now()}`,
+        employeeId: emp.employeeCode || empIdStr || `EMP-${Date.now()}`,
         doj: doj,
         designation: designation,
         department: department,
@@ -518,7 +645,7 @@ export default function HRSalaryGeneration({ isMobile }) {
         netSalary: parseFloat(netSalary.toFixed(2)),
         status: 'Calculated'
       };
-    }).filter(Boolean); // Filter out skipped employees with 0 attendance
+    }).filter(Boolean);
 
     return results;
   };
@@ -532,29 +659,27 @@ export default function HRSalaryGeneration({ isMobile }) {
   };
 
   // RULE: Fetch Data & Calculate Handler with mandatory division validation
-  const runCalculationEngine = () => {
-    if (!selectedDivision) {
-      triggerToast('⚠️ Please select a Division first before fetching data!');
-      return;
-    }
+    const runCalculationEngine = () => {
+    const divToUse = selectedDivision || 'ALL';
     if (!payrollPeriod) {
-      triggerToast('⚠️ Please select a valid pending Payroll Period!');
+      triggerToast('Please select a valid pending Payroll Period!');
       return;
     }
 
     setIsProcessing(true);
-    setProcessingMessage(`Fetching Attendance Management records for Division "${selectedDivision}" in ${getPeriodLabel(payrollPeriod)}...`);
+    const divLabel = divToUse === 'ALL' ? 'All Divisions' : `Division "${divToUse}"`;
+    setProcessingMessage(`Fetching Attendance Management & App records for ${divLabel} in ${getPeriodLabel(payrollPeriod)}...`);
 
     setTimeout(() => {
-      const computed = computePayrollForPeriod(payrollPeriod, selectedDivision);
+      const computed = computePayrollForPeriod(payrollPeriod, divToUse);
       setLocalPayrollList(computed);
       setPayrollStatus('calculated');
       setIsProcessing(false);
 
       if (computed.length === 0) {
-        triggerToast(`Notice: No active employees in "${selectedDivision}" have attendance recorded for ${getPeriodLabel(payrollPeriod)}.`);
+        triggerToast(`Notice: No active employees ${divToUse !== 'ALL' ? `in "${divToUse}"` : ''} have attendance recorded for ${getPeriodLabel(payrollPeriod)}.`);
       } else {
-        triggerToast(`Calculated payroll for ${computed.length} employees with verified attendance in "${selectedDivision}"!`);
+        triggerToast(`Calculated payroll for ${computed.length} employees with verified attendance (${divLabel})!`);
       }
     }, 900);
   };
@@ -633,7 +758,7 @@ export default function HRSalaryGeneration({ isMobile }) {
 
   // Filter & Search & Sort List for "Payroll Detail View"
   const filteredList = useMemo(() => {
-    if (!selectedDivision || localPayrollList.length === 0) return [];
+    if (localPayrollList.length === 0) return [];
 
     let list = [...localPayrollList];
 
@@ -1113,12 +1238,10 @@ export default function HRSalaryGeneration({ isMobile }) {
                       setSelectedDivision(e.target.value);
                       setLocalPayrollList([]); // Reset until fetched
                     }}
-                    className={`w-full h-11 pl-4 pr-10 text-sm border rounded-xl bg-surface-container-lowest transition-colors focus:ring-4 focus:ring-primary/10 appearance-none cursor-pointer font-medium text-on-surface ${
-                      !selectedDivision ? 'border-primary/50 text-on-surface-variant' : 'border-outline-variant hover:border-primary focus:border-primary'
-                    }`}
+                    className="w-full h-11 pl-4 pr-10 text-sm border rounded-xl bg-surface-container-lowest transition-colors focus:ring-4 focus:ring-primary/10 appearance-none cursor-pointer font-medium text-on-surface border-outline-variant hover:border-primary focus:border-primary"
                   >
-                    <option value="" disabled>-- Select Division (Required) --</option>
-                    {availableDivisions.map(div => (
+                    <option value="ALL">🏢 All Divisions (Whole Company)</option>
+                    {availableDivisions.filter(d => d !== 'ALL').map(div => (
                       <option key={div} value={div}>{div}</option>
                     ))}
                   </select>
@@ -1131,7 +1254,7 @@ export default function HRSalaryGeneration({ isMobile }) {
             <div className="flex flex-wrap gap-3 w-full lg:w-auto">
               <button 
                 onClick={runCalculationEngine}
-                disabled={!selectedDivision || isProcessing || !payrollPeriod}
+                disabled={isProcessing || !payrollPeriod}
                 title={!selectedDivision ? 'Please select a Division first' : 'Fetch Attendance & Calculate Salary'}
                 className={`flex-1 lg:flex-none flex items-center justify-center gap-2 px-6 h-11 rounded-xl shadow-sm text-xs font-bold transition-all ${
                   !selectedDivision || !payrollPeriod
@@ -1145,12 +1268,12 @@ export default function HRSalaryGeneration({ isMobile }) {
             </div>
           </section>
 
-          {/* Informative Banner when Division is not yet selected */}
-          {!selectedDivision && (
+          {/* Informative Banner when no period is selected */}
+          {!payrollPeriod && (
             <div className="bg-primary/5 border border-primary/20 rounded-xl p-4 flex items-center gap-3 text-xs text-on-surface font-medium">
               <span className="material-symbols-outlined text-primary text-[22px]">info</span>
               <span>
-                Please select a <strong>Division Filter</strong> above to fetch attendance records and calculate monthly salaries for active staff.
+                Please select a <strong>Payroll Period</strong> above and click <strong>Fetch Data & Calculate</strong> to calculate monthly salaries for active staff.
               </span>
             </div>
           )}
@@ -1182,7 +1305,7 @@ export default function HRSalaryGeneration({ isMobile }) {
                 {summaryTotals.headcount}
               </p>
               <p className="text-[10px] text-on-surface-variant mt-1.5">
-                {selectedDivision ? `Active with attendance in ${selectedDivision}` : 'Select division first'}
+                {selectedDivision === 'ALL' ? 'Active with attendance across all divisions' : `Active with attendance in ${selectedDivision}`}
               </p>
             </div>
 
@@ -1227,7 +1350,7 @@ export default function HRSalaryGeneration({ isMobile }) {
                     </span>
                   </div>
                   <p className="text-xs text-on-surface-variant">
-                    {selectedDivision ? `Showing active employees for Division: ${selectedDivision} in ${getPeriodLabel(payrollPeriod)}` : 'Please select division to view payroll records.'}
+                    {`Showing active employees for ${selectedDivision === 'ALL' ? 'All Divisions' : `Division: ${selectedDivision}`} in ${getPeriodLabel(payrollPeriod)}`}
                   </p>
                 </div>
 
@@ -1464,13 +1587,13 @@ export default function HRSalaryGeneration({ isMobile }) {
                 </thead>
 
                 <tbody className="divide-y divide-outline-variant/10">
-                  {!selectedDivision ? (
+                  {localPayrollList.length === 0 ? (
                     <tr>
                       <td colSpan={visibleColumns.length + 1} className="text-center py-16 text-sm text-on-surface-variant font-medium">
                         <div className="flex flex-col items-center justify-center gap-2">
-                          <span className="material-symbols-outlined text-[36px] text-primary/40">apartment</span>
-                          <p className="font-bold text-on-surface">Please select a Division Filter above.</p>
-                          <p className="text-xs text-on-surface-variant">Then click "Fetch Data & Calculate" to load employees with attendance.</p>
+                          <span className="material-symbols-outlined text-[36px] text-primary/40">sync_alt</span>
+                          <p className="font-bold text-on-surface">Click &quot;Fetch Data &amp; Calculate&quot; above to calculate salaries for this period.</p>
+                          <p className="text-xs text-on-surface-variant">All employees with attendance recorded in Flash AM app or Attendance Management will be processed.</p>
                         </div>
                       </td>
                     </tr>
