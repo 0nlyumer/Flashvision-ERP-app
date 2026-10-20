@@ -395,6 +395,9 @@ export default function HRSalaryGeneration({ isMobile }) {
         String(s.name || '').trim().toLowerCase() === String(emp.shift || '').trim().toLowerCase()
       );
       const empDutyHours = safeNum(emp.dutyHours || emp.dailyHours) || 
+                           safeNum(dutySettings?.employeeDutyHours?.[emp.id]) ||
+                           safeNum(dutySettings?.departmentDutyHours?.[emp.department]) ||
+                           safeNum(dutySettings?.divisionDutyHours?.[emp.division || emp.section]) ||
                            safeNum(shiftObj?.hours) || 
                            safeNum(dutySettings?.standardHours) || 
                            8;

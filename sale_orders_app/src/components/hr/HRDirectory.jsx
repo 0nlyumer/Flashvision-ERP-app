@@ -32,6 +32,8 @@ export default function HRDirectory({ isMobile }) {
   const [departmentFilter, setDepartmentFilter] = useState('ALL');
   const [divisionFilter, setDivisionFilter] = useState('ALL');
   const [statusFilter, setStatusFilter] = useState('ALL'); // 'ALL' | 'Active' | 'Inactive'
+  const [alphabetFilter, setAlphabetFilter] = useState('ALL');
+  const ALPHABET_KEYS = ['ALL', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z'];
   const [isBulkMenuOpen, setIsBulkMenuOpen] = useState(false);
   const bulkMenuRef = useRef(null);
   
@@ -184,21 +186,34 @@ export default function HRDirectory({ isMobile }) {
 
   // Filtered employees
   const filteredEmployees = employees.filter(emp => {
-    const query = searchQuery.toLowerCase();
+    const query = searchQuery.trim().toLowerCase();
     const matchesSearch = !query || (
       (emp.name || '').toLowerCase().includes(query) ||
       (emp.id || '').toLowerCase().includes(query) ||
       (emp.designation || '').toLowerCase().includes(query) ||
       (emp.department || '').toLowerCase().includes(query) ||
       (emp.email || '').toLowerCase().includes(query) ||
-      (emp.phone || '').toLowerCase().includes(query)
+      (emp.phone || '').toLowerCase().includes(query) ||
+      (emp.cnic || '').toLowerCase().includes(query)
     );
     const matchesDept = departmentFilter === 'ALL' || !departmentFilter || emp.department === departmentFilter;
-    const matchesDiv = divisionFilter === 'ALL' || !divisionFilter || (emp.division === divisionFilter || emp.section === divisionFilter);
-    const isAct = (emp.status || 'Active').toLowerCase() === 'active';
-    const matchesStatus = statusFilter === 'ALL' || (statusFilter === 'Active' ? isAct : !isAct);
-    return matchesSearch && matchesDept && matchesDiv && matchesStatus;
-  });
+    const divVal = emp.division || emp.section;
+    const matchesDiv = divisionFilter === 'ALL' || !divisionFilter || (divVal === divisionFilter);
+    const rawStatus = (emp.status || 'Active').trim().toLowerCase();
+    const isAct = rawStatus === 'active';
+    const matchesStatus = statusFilter === 'ALL' 
+      ? true 
+      : (statusFilter === 'Active' ? isAct : !isAct);
+      
+    const empName = (emp.name || '').trim().toUpperCase();
+    const matchesAlphabet = alphabetFilter === 'ALL' || !alphabetFilter || empName.startsWith(alphabetFilter.toUpperCase());
+
+    return matchesSearch && matchesDept && matchesDiv && matchesStatus && matchesAlphabet;
+  }).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+
+  const totalEmployeesCount = employees.length;
+  const activeEmployeesCount = employees.filter(e => (e.status || 'Active').trim().toLowerCase() === 'active').length;
+  const inactiveEmployeesCount = employees.filter(e => (e.status || 'Active').trim().toLowerCase() !== 'active').length;
 
   // Padded consecutive sequential ID Generator
   const generateNextId = () => {
@@ -533,7 +548,8 @@ export default function HRDirectory({ isMobile }) {
   const handleStatusToggle = (empId) => {
     setEmployees(prev => prev.map(emp => {
       if (emp.id === empId) {
-        return { ...emp, status: emp.status === 'Active' ? 'Inactive' : 'Active' };
+        const isCurrentActive = (emp.status || 'Active').trim().toLowerCase() === 'active';
+        return { ...emp, status: isCurrentActive ? 'Inactive' : 'Active' };
       }
       return emp;
     }));
@@ -722,7 +738,7 @@ export default function HRDirectory({ isMobile }) {
                     : 'text-on-surface-variant hover:text-on-surface'
                 }`}
               >
-                All ({employees.length})
+                All ({totalEmployeesCount})
               </button>
               <button
                 type="button"
@@ -734,7 +750,7 @@ export default function HRDirectory({ isMobile }) {
                 }`}
               >
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-                Active ({employees.filter(e => (e.status || 'Active').toLowerCase() === 'active').length})
+                Active ({activeEmployeesCount})
               </button>
               <button
                 type="button"
@@ -746,7 +762,7 @@ export default function HRDirectory({ isMobile }) {
                 }`}
               >
                 <span className="w-1.5 h-1.5 rounded-full bg-rose-400"></span>
-                Inactive ({employees.filter(e => (e.status || '').toLowerCase() === 'inactive').length})
+                Inactive ({inactiveEmployeesCount})
               </button>
             </div>
 
@@ -812,6 +828,36 @@ export default function HRDirectory({ isMobile }) {
         {/* Dynamic Data Table Container */}
         <div className="bg-surface-container-lowest rounded-2xl shadow-[0_20px_40px_rgba(0,28,56,0.04)] border border-outline-variant/10 flex-1 flex flex-col overflow-hidden relative">
           {/* Header Action Bar */}
+          <div className="px-6 py-2.5 bg-surface-container-low/40 border-b border-surface-container/70 flex items-center gap-1.5 overflow-x-auto select-none shrink-0 custom-scrollbar">
+            <span className="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider mr-1.5 shrink-0 flex items-center gap-1">
+              <span className="material-symbols-outlined text-[15px] text-primary">sort_by_alpha</span>
+              A-Z Filter:
+            </span>
+            {ALPHABET_KEYS.map(letter => {
+              const isActive = alphabetFilter === letter;
+              const countForLetter = letter === 'ALL'
+                ? employees.length
+                : employees.filter(e => (e.name || '').trim().toUpperCase().startsWith(letter)).length;
+              return (
+                <button
+                  key={letter}
+                  type="button"
+                  onClick={() => { setAlphabetFilter(letter); setCurrentPage(1); }}
+                  className={`h-6 min-w-[28px] px-2 rounded-lg text-[10px] font-black transition-all cursor-pointer flex items-center justify-center shrink-0 ${
+                    isActive
+                      ? 'bg-primary text-on-primary shadow-xs scale-105'
+                      : countForLetter > 0
+                        ? 'bg-surface-container text-on-surface hover:bg-surface-container-high'
+                        : 'bg-transparent text-on-surface-variant/40 hover:text-on-surface-variant'
+                  }`}
+                  title={`${letter}: ${countForLetter} personnel`}
+                >
+                  {letter}
+                </button>
+              );
+            })}
+          </div>
+
           <div className="px-6 py-3 flex justify-between items-center border-b border-surface-container bg-surface/30 shrink-0">
             <div className="flex items-center gap-2">
               <span className="font-headline font-extrabold text-on-surface text-xs tracking-tight">All Personnel</span>
@@ -952,16 +998,20 @@ export default function HRDirectory({ isMobile }) {
                               </div>
                             );
                           } else if (colId === 'status') {
+                            const isAct = (emp.status || 'Active').trim().toLowerCase() === 'active';
                             content = (
                               <button 
+                                type="button"
                                 onClick={() => handleStatusToggle(emp.id)}
-                                className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[9px] font-bold border transition-colors cursor-pointer ${
-                                  emp.status === 'Active' 
-                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
-                                    : 'bg-surface-container-high text-on-surface-variant border-outline-variant/20'
+                                className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold border transition-all cursor-pointer shadow-2xs hover:scale-105 active:scale-95 ${
+                                  isAct 
+                                    ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/30' 
+                                    : 'bg-rose-500/10 text-rose-700 dark:text-rose-300 border-rose-500/30'
                                 }`}
+                                title="Click to toggle status (Active / Inactive)"
                               >
-                                {emp.status}
+                                <span className={`w-1.5 h-1.5 rounded-full ${isAct ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`}></span>
+                                {isAct ? 'Active' : 'Inactive'}
                               </button>
                             );
                           } else if (colId === 'division') {
@@ -1104,7 +1154,7 @@ export default function HRDirectory({ isMobile }) {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search directory..."
+              placeholder="Search personnel..."
               className="w-full bg-surface-container-lowest border border-outline-variant/15 rounded-xl py-2 pl-9 pr-4 text-xs text-on-surface outline-none focus:border-primary/50 transition-all font-body"
             />
           </div>
@@ -1114,6 +1164,90 @@ export default function HRDirectory({ isMobile }) {
           >
             <span className="material-symbols-outlined text-[18px]">add</span>
           </button>
+        </div>
+
+        {/* Mobile Dropdowns (Division & Department) */}
+        <div className="grid grid-cols-2 gap-2 px-2 shrink-0">
+          <select
+            value={divisionFilter}
+            onChange={(e) => {
+              setDivisionFilter(e.target.value);
+              setDepartmentFilter('ALL');
+              setCurrentPage(1);
+            }}
+            className="w-full bg-surface-container-lowest border border-outline-variant/20 rounded-xl px-2.5 py-1.5 text-xs font-bold text-on-surface outline-none"
+          >
+            {divisionsList.map(div => (
+              <option key={div} value={div}>
+                {div === 'ALL' ? '🏬 All Divisions' : div}
+              </option>
+            ))}
+          </select>
+
+          <select
+            value={departmentFilter}
+            onChange={(e) => {
+              setDepartmentFilter(e.target.value);
+              setCurrentPage(1);
+            }}
+            className="w-full bg-surface-container-lowest border border-outline-variant/20 rounded-xl px-2.5 py-1.5 text-xs font-bold text-on-surface outline-none"
+          >
+            {departmentsList.map(dept => (
+              <option key={dept} value={dept}>
+                {dept === 'ALL' ? '🏢 All Departments' : dept}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Mobile Status Filter Buttons */}
+        <div className="flex items-center gap-1.5 px-2 shrink-0">
+          <button
+            type="button"
+            onClick={() => { setStatusFilter('ALL'); setCurrentPage(1); }}
+            className={`flex-1 py-1.5 rounded-xl text-[11px] font-bold transition-all text-center ${
+              statusFilter === 'ALL' ? 'bg-primary text-on-primary shadow-xs' : 'bg-surface-container-lowest text-on-surface-variant'
+            }`}
+          >
+            All ({totalEmployeesCount})
+          </button>
+          <button
+            type="button"
+            onClick={() => { setStatusFilter('Active'); setCurrentPage(1); }}
+            className={`flex-1 py-1.5 rounded-xl text-[11px] font-bold transition-all text-center ${
+              statusFilter === 'Active' ? 'bg-emerald-600 text-white shadow-xs' : 'bg-surface-container-lowest text-emerald-700'
+            }`}
+          >
+            Active ({activeEmployeesCount})
+          </button>
+          <button
+            type="button"
+            onClick={() => { setStatusFilter('Inactive'); setCurrentPage(1); }}
+            className={`flex-1 py-1.5 rounded-xl text-[11px] font-bold transition-all text-center ${
+              statusFilter === 'Inactive' ? 'bg-rose-600 text-white shadow-xs' : 'bg-surface-container-lowest text-rose-600'
+            }`}
+          >
+            Inactive ({inactiveEmployeesCount})
+          </button>
+        </div>
+
+        {/* Mobile A-Z Alphabet Filter */}
+        <div className="flex items-center gap-1 overflow-x-auto px-2 py-1 shrink-0 select-none custom-scrollbar">
+          {ALPHABET_KEYS.map(letter => {
+            const isActive = alphabetFilter === letter;
+            return (
+              <button
+                key={letter}
+                type="button"
+                onClick={() => { setAlphabetFilter(letter); setCurrentPage(1); }}
+                className={`h-6 min-w-[26px] px-1.5 rounded-lg text-[10px] font-black transition-all ${
+                  isActive ? 'bg-primary text-on-primary shadow-xs' : 'bg-surface-container-lowest text-on-surface-variant'
+                }`}
+              >
+                {letter}
+              </button>
+            );
+          })}
         </div>
 
         {/* Mobile Bulk Actions */}

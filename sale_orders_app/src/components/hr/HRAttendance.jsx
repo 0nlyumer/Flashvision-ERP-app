@@ -620,7 +620,7 @@ export default function HRAttendance({ isMobile }) {
   }, [appState?.hr_generated_salaries]);
 
   const alertSalaryFinalizedLocked = () => {
-    appAlert(`Is month (${monthsList[selectedMonth]?.name || activeMonthKey} ${selectedYear}) ki salary Salary Generation screen per finalize ho chuki hai. Attendance sirf read-only hai aur edit nahi ki ja sakti. Agar edit karni hai to pehle Salary Generation History se is month ki finalized salary delete karein.`);
+    appAlert(`Attendance for ${monthsList[selectedMonth]?.name || activeMonthKey} ${selectedYear} is locked because payroll has been finalized. Attendance is read-only. To make changes, delete the finalized payroll from Salary Generation History.`);
   };
 
   useEffect(() => {
@@ -1285,7 +1285,7 @@ export default function HRAttendance({ isMobile }) {
               <span className="material-symbols-outlined text-[20px] text-amber-700">lock</span>
               <span className="font-headline font-black text-xs text-amber-900 uppercase">Attendance Locked (Read-Only)</span>
             </div>
-            <p className="text-[11px] text-amber-800/90 font-medium">Is month ki salary finalize ho chuki hai. Record edit karne ke liye pehle finalized salary delete karein.</p>
+            <p className="text-[11px] text-amber-800/90 font-medium">Payroll finalized for this month. Attendance records are read-only. Delete the finalized payroll from history to edit.</p>
           </div>
         )}
 
@@ -2139,7 +2139,7 @@ export default function HRAttendance({ isMobile }) {
               <span className="material-symbols-outlined text-[22px] text-amber-700 shrink-0">lock</span>
               <div>
                 <span className="font-headline font-black text-xs text-amber-900 uppercase block">Attendance Locked (Read-Only)</span>
-                <span className="text-[11px] text-amber-800/90 font-medium">Is month ki salary finalize ho chuki hai. Record edit karne ke liye pehle finalized salary delete karein.</span>
+                <span className="text-[11px] text-amber-800/90 font-medium">Payroll finalized for this month. Attendance records are read-only. Delete the finalized payroll from history to edit.</span>
               </div>
             </div>
             <span className="text-[10px] font-bold bg-amber-500/20 text-amber-900 px-2.5 py-1 rounded-lg shrink-0">Finalized</span>
@@ -2770,7 +2770,7 @@ export default function HRAttendance({ isMobile }) {
                   </span>
                 </div>
                 <p className="text-xs text-amber-800/90 dark:text-amber-300/90 font-medium mt-0.5">
-                  <strong>{monthsList[selectedMonth]?.name} {selectedYear}</strong> ki salary Salary Generation screen per finalize ho chuki hai. Is month ki attendance edit nahi ki ja sakti (sirf readable / view-only). Agar attendance edit karni hai to pehle Salary Generation History se is month ki finalized salary delete karein.
+                  Payroll for <strong>{monthsList[selectedMonth]?.name} {selectedYear}</strong> has been finalized. Attendance is locked in read-only mode. To modify records, please delete the finalized payroll from Salary Generation History.
                 </p>
               </div>
             </div>

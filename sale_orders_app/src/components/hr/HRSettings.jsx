@@ -279,12 +279,22 @@ export default function HRSettings({ isMobile }) {
   // ==========================================
   // DUTY SETTINGS & SHIFTS STATE & HANDLERS
   // ==========================================
+  const [dutySubTab, setDutySubTab] = useState('global'); // 'global' | 'divisions' | 'departments' | 'employees'
+  const [empDutySearch, setEmpDutySearch] = useState('');
+  const [empDutyDivFilter, setEmpDutyDivFilter] = useState('ALL');
+  const [empDutyDeptFilter, setEmpDutyDeptFilter] = useState('ALL');
+  const [empDutyAlphaFilter, setEmpDutyAlphaFilter] = useState('ALL');
+  const [batchDutyHours, setBatchDutyHours] = useState(8);
+
   const [dutySettings, setDutySettings] = useState(() => {
     const defaultDuty = {
       standardHours: 8,
       gracePeriodMinutes: 15,
       halfDayThresholdHours: 4,
       dutyHoursAdjustable: true,
+      divisionDutyHours: {},
+      departmentDutyHours: {},
+      employeeDutyHours: {},
       overtimeCalculation: {
         rateMultiplier: 1.5,
         weekendMultiplier: 2.0,
@@ -421,6 +431,8 @@ export default function HRSettings({ isMobile }) {
   // Category list
   const categories = [
     { id: 'departments', label: 'Departments', icon: 'domain' },
+    { id: 'duty_hours', label: 'Duty Hours & Shifts', icon: 'schedule' },
+    { id: 'divisions', label: 'Divisions Management', icon: 'apartment' },
     { id: 'payroll_mapping', label: 'Payroll Account Mapping', icon: 'account_balance' },
     { id: 'salary_allowance_config', label: 'Salary & Allowance Configuration', icon: 'payments' },
     { id: 'subsections', label: 'Sub-sections', icon: 'account_tree' },
@@ -749,6 +761,8 @@ export default function HRSettings({ isMobile }) {
             {/* Canvas Scroll Area */}
             <div className={`flex-1 flex flex-col h-full min-h-0 overflow-y-auto ${activeCategory === 'payroll_mapping' ? 'p-4' : 'p-8'} custom-scrollbar w-full`}>
               {activeCategory === 'departments' && renderDesktopDepartments()}
+              {activeCategory === 'duty_hours' && renderDesktopDutyHours()}
+              {activeCategory === 'divisions' && renderDesktopDivisions()}
               {activeCategory === 'payroll_mapping' && <PayrollAccountMapping isMobile={isMobile} onBack={() => setViewMode('grid')} />}
               {activeCategory === 'salary_allowance_config' && <SalaryAllowanceConfig isMobile={isMobile} onBack={() => setViewMode('grid')} />}
               {activeCategory === 'subsections' && renderDesktopSubsections()}
@@ -1346,6 +1360,12 @@ export default function HRSettings({ isMobile }) {
     if (activeCategory === 'salary_allowance_config') {
       return <SalaryAllowanceConfig isMobile={true} onBack={() => setActiveCategory('departments')} />;
     }
+    if (activeCategory === 'duty_hours') {
+      return renderMobileDutyHours();
+    }
+    if (activeCategory === 'divisions') {
+      return renderMobileDivisions();
+    }
 
     return (
       <div className="flex flex-col gap-6 animate-fade-in pb-20 select-none">
@@ -1707,402 +1727,948 @@ export default function HRSettings({ isMobile }) {
   }
 
   // ==========================================
-  // DUTY HOURS & SHIFTS RENDERERS
+  // DUTY HOURS & SHIFTS RENDERERS (COMPREHENSIVE)
   // ==========================================
+  const getEmpEffectiveDutyHours = (emp) => {
+    if (!emp) return { hours: Number(dutySettings.standardHours) || 8, source: 'Global Standard', type: 'standard' };
+    if (dutySettings.employeeDutyHours?.[emp.id] && Number(dutySettings.employeeDutyHours[emp.id]) > 0) {
+      return { hours: Number(dutySettings.employeeDutyHours[emp.id]), source: 'Custom Employee Override', type: 'custom' };
+    }
+    if (emp.dutyHours && Number(emp.dutyHours) > 0) {
+      return { hours: Number(emp.dutyHours), source: 'Profile Duty Hours', type: 'custom' };
+    }
+    if (emp.department && dutySettings.departmentDutyHours?.[emp.department] && Number(dutySettings.departmentDutyHours[emp.department]) > 0) {
+      return { hours: Number(dutySettings.departmentDutyHours[emp.department]), source: `Dept Default (${emp.department})`, type: 'department' };
+    }
+    const div = emp.division || emp.section;
+    if (div && dutySettings.divisionDutyHours?.[div] && Number(dutySettings.divisionDutyHours[div]) > 0) {
+      return { hours: Number(dutySettings.divisionDutyHours[div]), source: `Division Default (${div})`, type: 'division' };
+    }
+    if (emp.shift) {
+      const sObj = (dutySettings.shifts || []).find(s => s.name?.toLowerCase() === emp.shift?.toLowerCase());
+      if (sObj?.hours) return { hours: Number(sObj.hours), source: `Shift (${sObj.name})`, type: 'shift' };
+    }
+    return { hours: Number(dutySettings.standardHours) || 8, source: 'Global Standard', type: 'standard' };
+  };
+
+  const handleSetEmployeeDutyHours = (empId, hours) => {
+    const updatedEmpHours = {
+      ...(dutySettings.employeeDutyHours || {}),
+      [empId]: Number(hours)
+    };
+    const updatedSettings = {
+      ...dutySettings,
+      employeeDutyHours: updatedEmpHours
+    };
+    saveDutySettings(updatedSettings);
+
+    if (setCollection) {
+      const updatedList = employees.map(e => e.id === empId ? { ...e, dutyHours: Number(hours), dailyHours: Number(hours) } : e);
+      setCollection('hr_employees_list', updatedList);
+    }
+  };
+
+  const handleResetEmployeeDutyHours = (empId) => {
+    const updatedEmpHours = { ...(dutySettings.employeeDutyHours || {}) };
+    delete updatedEmpHours[empId];
+    const updatedSettings = {
+      ...dutySettings,
+      employeeDutyHours: updatedEmpHours
+    };
+    saveDutySettings(updatedSettings);
+
+    if (setCollection) {
+      const updatedList = employees.map(e => {
+        if (e.id === empId) {
+          const copy = { ...e };
+          delete copy.dutyHours;
+          delete copy.dailyHours;
+          return copy;
+        }
+        return e;
+      });
+      setCollection('hr_employees_list', updatedList);
+    }
+  };
+
+  const handleSetDivisionDutyHours = (divName, hours) => {
+    const updated = {
+      ...dutySettings,
+      divisionDutyHours: {
+        ...(dutySettings.divisionDutyHours || {}),
+        [divName]: Number(hours)
+      }
+    };
+    saveDutySettings(updated);
+  };
+
+  const handleResetDivisionDutyHours = (divName) => {
+    const updatedDiv = { ...(dutySettings.divisionDutyHours || {}) };
+    delete updatedDiv[divName];
+    const updated = {
+      ...dutySettings,
+      divisionDutyHours: updatedDiv
+    };
+    saveDutySettings(updated);
+  };
+
+  const handleSetDepartmentDutyHours = (deptName, hours) => {
+    const updated = {
+      ...dutySettings,
+      departmentDutyHours: {
+        ...(dutySettings.departmentDutyHours || {}),
+        [deptName]: Number(hours)
+      }
+    };
+    saveDutySettings(updated);
+  };
+
+  const handleResetDepartmentDutyHours = (deptName) => {
+    const updatedDept = { ...(dutySettings.departmentDutyHours || {}) };
+    delete updatedDept[deptName];
+    const updated = {
+      ...dutySettings,
+      departmentDutyHours: updatedDept
+    };
+    saveDutySettings(updated);
+  };
+
+  const handleBatchApplyDutyHours = (filteredList, targetHours) => {
+    if (!filteredList || filteredList.length === 0) return;
+    const hrs = Number(targetHours) || 8;
+    if (confirm(`Apply ${hrs} duty hours to ${filteredList.length} filtered personnel?`)) {
+      const newEmpHours = { ...(dutySettings.employeeDutyHours || {}) };
+      filteredList.forEach(emp => {
+        newEmpHours[emp.id] = hrs;
+      });
+      const updatedSettings = {
+        ...dutySettings,
+        employeeDutyHours: newEmpHours
+      };
+      saveDutySettings(updatedSettings);
+
+      if (setCollection) {
+        const idSet = new Set(filteredList.map(e => e.id));
+        const updatedList = employees.map(e => idSet.has(e.id) ? { ...e, dutyHours: hrs, dailyHours: hrs } : e);
+        setCollection('hr_employees_list', updatedList);
+      }
+    }
+  };
+
   function renderDesktopDutyHours() {
+    const ALPHABET_KEYS = ['ALL', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z'];
+    
+    // Distinct divisions list
+    const divNamesList = Array.from(new Set([
+      ...divisions.map(d => d.name),
+      ...employees.map(e => e.division || e.section).filter(Boolean)
+    ])).sort();
+
+    // Distinct departments list
+    const deptNamesList = departments.map(d => d.name);
+
+    // Filtered employees for employee-wise tab
+    const filteredEmpDutyList = employees.filter(emp => {
+      const query = empDutySearch.trim().toLowerCase();
+      const matchesSearch = !query || (
+        (emp.name || '').toLowerCase().includes(query) ||
+        (emp.id || '').toLowerCase().includes(query) ||
+        (emp.designation || '').toLowerCase().includes(query) ||
+        (emp.phone || '').toLowerCase().includes(query)
+      );
+      const matchesDiv = empDutyDivFilter === 'ALL' || (emp.division === empDutyDivFilter || emp.section === empDutyDivFilter);
+      const matchesDept = empDutyDeptFilter === 'ALL' || emp.department === empDutyDeptFilter;
+      const matchesAlpha = empDutyAlphaFilter === 'ALL' || (emp.name || '').trim().toUpperCase().startsWith(empDutyAlphaFilter);
+      return matchesSearch && matchesDiv && matchesDept && matchesAlpha;
+    }).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+
+    const customOverrideCount = employees.filter(e => 
+      (dutySettings.employeeDutyHours?.[e.id] && Number(dutySettings.employeeDutyHours[e.id]) > 0) ||
+      (e.dutyHours && Number(e.dutyHours) > 0)
+    ).length;
+
     return (
-      <div className="space-y-6 animate-fade-in pb-12">
-        {/* Top Configuration Bento Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="space-y-6 animate-fade-in pb-12 select-none">
+        {/* Top Header Card */}
+        <div className="bg-surface-container-lowest p-6 rounded-3xl border border-outline-variant/15 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+          <div>
+            <div className="flex items-center gap-2.5">
+              <span className="material-symbols-outlined text-amber-600 text-[26px]">schedule</span>
+              <h3 className="font-headline text-lg font-black text-on-surface">Duty Hours & Shifts Configuration</h3>
+            </div>
+            <p className="text-xs text-on-surface-variant mt-1">
+              Configure baseline shift hours, division defaults, department rules, and individual employee duty hours.
+            </p>
+          </div>
           
-          {/* Card 1: Standard Duty Hours */}
-          <div className="bg-surface-container-lowest p-6 rounded-2xl border border-outline-variant/15 shadow-sm flex flex-col justify-between">
-            <div>
-              <div className="flex items-center gap-2.5 text-amber-600 mb-3">
-                <span className="material-symbols-outlined text-[24px]">timer</span>
-                <h4 className="font-headline text-sm font-bold text-on-surface">Standard Duty Hours</h4>
+          <div className="flex items-center gap-2 bg-surface-container-low p-1.5 rounded-2xl border border-outline-variant/20 shadow-xs">
+            <span className="text-[10px] font-bold text-on-surface-variant px-2 uppercase">Formula:</span>
+            <span className="px-2.5 py-1 bg-amber-500/10 text-amber-700 dark:text-amber-300 rounded-xl text-xs font-mono font-bold border border-amber-500/20">
+              Basic Salary ÷ Days ÷ Duty Hours = Hourly Rate
+            </span>
+          </div>
+        </div>
+
+        {/* Sub-Tab Navigation Bar */}
+        <div className="flex items-center gap-2 border-b border-outline-variant/15 pb-2 overflow-x-auto">
+          <button
+            type="button"
+            onClick={() => setDutySubTab('global')}
+            className={`px-4 py-2.5 rounded-xl font-headline font-bold text-xs flex items-center gap-2 transition-all cursor-pointer ${
+              dutySubTab === 'global'
+                ? 'bg-amber-600 text-white shadow-md'
+                : 'bg-surface-container-low text-on-surface-variant hover:bg-surface-container hover:text-on-surface'
+            }`}
+          >
+            <span className="material-symbols-outlined text-[18px]">tune</span>
+            Standard Shift & Overtime Rules
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setDutySubTab('divisions')}
+            className={`px-4 py-2.5 rounded-xl font-headline font-bold text-xs flex items-center gap-2 transition-all cursor-pointer ${
+              dutySubTab === 'divisions'
+                ? 'bg-amber-600 text-white shadow-md'
+                : 'bg-surface-container-low text-on-surface-variant hover:bg-surface-container hover:text-on-surface'
+            }`}
+          >
+            <span className="material-symbols-outlined text-[18px]">apartment</span>
+            Division-Wise Duty Hours ({divNamesList.length})
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setDutySubTab('departments')}
+            className={`px-4 py-2.5 rounded-xl font-headline font-bold text-xs flex items-center gap-2 transition-all cursor-pointer ${
+              dutySubTab === 'departments'
+                ? 'bg-amber-600 text-white shadow-md'
+                : 'bg-surface-container-low text-on-surface-variant hover:bg-surface-container hover:text-on-surface'
+            }`}
+          >
+            <span className="material-symbols-outlined text-[18px]">domain</span>
+            Department-Wise Duty Hours ({departments.length})
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setDutySubTab('employees')}
+            className={`px-4 py-2.5 rounded-xl font-headline font-bold text-xs flex items-center gap-2 transition-all cursor-pointer ${
+              dutySubTab === 'employees'
+                ? 'bg-amber-600 text-white shadow-md'
+                : 'bg-surface-container-low text-on-surface-variant hover:bg-surface-container hover:text-on-surface'
+            }`}
+          >
+            <span className="material-symbols-outlined text-[18px]">badge</span>
+            Employee-Wise Custom Hours ({employees.length})
+          </button>
+        </div>
+
+        {/* TAB 1: GLOBAL STANDARD & OVERTIME */}
+        {dutySubTab === 'global' && (
+          <div className="space-y-6 animate-fade-in">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {/* Card 1: Standard Duty Hours */}
+              <div className="bg-surface-container-lowest p-6 rounded-3xl border border-outline-variant/15 shadow-sm flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center gap-2.5 text-amber-600 mb-3">
+                    <span className="material-symbols-outlined text-[24px]">timer</span>
+                    <h4 className="font-headline text-sm font-bold text-on-surface">Standard Duty Hours</h4>
+                  </div>
+                  <p className="text-xs text-on-surface-variant mb-4">
+                    Global default working hours per day for standard salary & overtime calculation.
+                  </p>
+                  <div className="grid grid-cols-4 gap-2">
+                    {[8, 9, 10, 12].map(hrs => (
+                      <button
+                        key={hrs}
+                        type="button"
+                        onClick={() => saveDutySettings({ ...dutySettings, standardHours: hrs })}
+                        className={`py-2 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                          dutySettings.standardHours === hrs
+                            ? 'bg-amber-600 text-white shadow-md scale-102'
+                            : 'bg-surface-container-low text-on-surface hover:bg-surface-container'
+                        }`}
+                      >
+                        {hrs}h
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleSyncStandardHoursToAllEmployees}
+                  className="mt-5 w-full py-2.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/20 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                >
+                  <span className="material-symbols-outlined text-[16px]">sync</span>
+                  Apply Baseline to All Personnel
+                </button>
               </div>
-              <p className="text-xs text-on-surface-variant mb-4">
-                Baseline full-day working hours for standard salary calculation.
-              </p>
-              <div className="flex items-center gap-2">
-                {[8, 9, 10, 12].map(hrs => (
+
+              {/* Card 2: Grace & Penalty Rules */}
+              <div className="bg-surface-container-lowest p-6 rounded-3xl border border-outline-variant/15 shadow-sm space-y-4">
+                <div className="flex items-center gap-2.5 text-blue-600">
+                  <span className="material-symbols-outlined text-[24px]">timelapse</span>
+                  <h4 className="font-headline text-sm font-bold text-on-surface">Grace & Penalty Rules</h4>
+                </div>
+
+                <div>
+                  <div className="flex justify-between items-center text-xs mb-1.5">
+                    <span className="font-bold text-on-surface">Grace Period for Late Arrival</span>
+                    <span className="font-mono font-bold text-blue-600">{dutySettings.gracePeriodMinutes || 15} Mins</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max="60"
+                    step="5"
+                    value={dutySettings.gracePeriodMinutes || 15}
+                    onChange={(e) => saveDutySettings({ ...dutySettings, gracePeriodMinutes: Number(e.target.value) || 0 })}
+                    className="w-full accent-blue-600 cursor-pointer"
+                  />
+                </div>
+
+                <div>
+                  <div className="flex justify-between items-center text-xs mb-1.5">
+                    <span className="font-bold text-on-surface">Half-Day Threshold Hours</span>
+                    <span className="font-mono font-bold text-blue-600">{dutySettings.halfDayThresholdHours || 4} Hours</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="2"
+                    max="8"
+                    step="0.5"
+                    value={dutySettings.halfDayThresholdHours || 4}
+                    onChange={(e) => saveDutySettings({ ...dutySettings, halfDayThresholdHours: Number(e.target.value) || 0 })}
+                    className="w-full accent-blue-600 cursor-pointer"
+                  />
+                </div>
+              </div>
+
+              {/* Card 3: Shift Customization Access */}
+              <div className="bg-surface-container-lowest p-6 rounded-3xl border border-outline-variant/15 shadow-sm flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center gap-2.5 text-emerald-600 mb-3">
+                    <span className="material-symbols-outlined text-[24px]">shield_person</span>
+                    <h4 className="font-headline text-sm font-bold text-on-surface">Flexible Duty Customization</h4>
+                  </div>
+                  <p className="text-xs text-on-surface-variant leading-relaxed">
+                    Allows managers to set custom duty hours per division, department, or individual employee.
+                  </p>
+                </div>
+
+                <div className="mt-4 pt-4 border-t border-outline-variant/10 flex items-center justify-between">
+                  <span className="text-xs font-bold text-on-surface">Custom Duty Hours Active</span>
                   <button
-                    key={hrs}
-                    onClick={() => saveDutySettings({ ...dutySettings, standardHours: hrs })}
-                    className={`flex-1 py-2 rounded-xl text-xs font-black transition-all cursor-pointer ${
-                      dutySettings.standardHours === hrs
-                        ? 'bg-amber-600 text-white shadow-md'
-                        : 'bg-surface-container-low text-on-surface hover:bg-surface-container'
+                    type="button"
+                    onClick={() => saveDutySettings({ ...dutySettings, dutyHoursAdjustable: !dutySettings.dutyHoursAdjustable })}
+                    className={`w-12 h-6 rounded-full transition-colors relative cursor-pointer ${
+                      dutySettings.dutyHoursAdjustable ? 'bg-emerald-600' : 'bg-surface-container-highest border border-outline-variant/30'
                     }`}
                   >
-                    {hrs} Hours
+                    <div className={`w-4 h-4 rounded-full bg-white transition-transform absolute top-1 ${
+                      dutySettings.dutyHoursAdjustable ? 'left-7' : 'left-1'
+                    }`}></div>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Overtime Calculation & Rates */}
+            <div className="bg-surface-container-lowest p-6 rounded-3xl border border-outline-variant/15 shadow-sm space-y-5">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 pb-3 border-b border-outline-variant/10">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-amber-500/10 flex items-center justify-center text-amber-600">
+                    <span className="material-symbols-outlined text-[22px]">calculate</span>
+                  </div>
+                  <div>
+                    <h4 className="font-headline text-sm font-black text-on-surface">Overtime Calculation & Shift Overtime Rates</h4>
+                    <p className="text-xs text-on-surface-variant">Configure how overtime hourly pay is computed from basic salary and duty hours.</p>
+                  </div>
+                </div>
+
+                {/* Calculation Type Toggle */}
+                <div className="flex items-center gap-1 bg-surface-container-low p-1 rounded-2xl border border-outline-variant/20 shadow-xs">
+                  <button
+                    type="button"
+                    onClick={() => saveDutySettings({
+                      ...dutySettings,
+                      overtimeCalculation: { ...(dutySettings.overtimeCalculation || {}), type: 'formula' }
+                    })}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                      (dutySettings.overtimeCalculation?.type || 'formula') === 'formula'
+                        ? 'bg-amber-600 text-white shadow-xs'
+                        : 'text-on-surface-variant hover:text-on-surface'
+                    }`}
+                  >
+                    Standard Formula
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => saveDutySettings({
+                      ...dutySettings,
+                      overtimeCalculation: { ...(dutySettings.overtimeCalculation || {}), type: 'flat' }
+                    })}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                      dutySettings.overtimeCalculation?.type === 'flat'
+                        ? 'bg-amber-600 text-white shadow-xs'
+                        : 'text-on-surface-variant hover:text-on-surface'
+                    }`}
+                  >
+                    Flat Hourly Rate
+                  </button>
+                </div>
+              </div>
+
+              {/* Multipliers Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                <div className="bg-surface-container-low/50 p-4 rounded-2xl border border-outline-variant/15">
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-xs font-bold text-on-surface">Regular Day Overtime Multiplier</span>
+                    <span className="text-xs font-mono font-black text-amber-600">{dutySettings.overtimeCalculation?.rateMultiplier || 1.5}x</span>
+                  </div>
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {[1.0, 1.25, 1.5, 2.0].map(mult => (
+                      <button
+                        key={mult}
+                        type="button"
+                        onClick={() => saveDutySettings({
+                          ...dutySettings,
+                          overtimeCalculation: { ...(dutySettings.overtimeCalculation || {}), rateMultiplier: mult }
+                        })}
+                        className={`py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                          Number(dutySettings.overtimeCalculation?.rateMultiplier || 1.5) === mult
+                            ? 'bg-amber-600 text-white shadow-xs'
+                            : 'bg-surface-container text-on-surface hover:bg-surface-container-high'
+                        }`}
+                      >
+                        {mult}x
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="bg-surface-container-low/50 p-4 rounded-2xl border border-outline-variant/15">
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-xs font-bold text-on-surface">Weekend / Off-Day Multiplier</span>
+                    <span className="text-xs font-mono font-black text-blue-600">{dutySettings.overtimeCalculation?.weekendMultiplier || 2.0}x</span>
+                  </div>
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {[1.5, 2.0, 2.5, 3.0].map(mult => (
+                      <button
+                        key={mult}
+                        type="button"
+                        onClick={() => saveDutySettings({
+                          ...dutySettings,
+                          overtimeCalculation: { ...(dutySettings.overtimeCalculation || {}), weekendMultiplier: mult }
+                        })}
+                        className={`py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                          Number(dutySettings.overtimeCalculation?.weekendMultiplier || 2.0) === mult
+                            ? 'bg-blue-600 text-white shadow-xs'
+                            : 'bg-surface-container text-on-surface hover:bg-surface-container-high'
+                        }`}
+                      >
+                        {mult}x
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="bg-surface-container-low/50 p-4 rounded-2xl border border-outline-variant/15">
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-xs font-bold text-on-surface">Public Holiday Multiplier</span>
+                    <span className="text-xs font-mono font-black text-purple-600">{dutySettings.overtimeCalculation?.holidayMultiplier || 3.0}x</span>
+                  </div>
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {[2.0, 2.5, 3.0, 3.5].map(mult => (
+                      <button
+                        key={mult}
+                        type="button"
+                        onClick={() => saveDutySettings({
+                          ...dutySettings,
+                          overtimeCalculation: { ...(dutySettings.overtimeCalculation || {}), holidayMultiplier: mult }
+                        })}
+                        className={`py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                          Number(dutySettings.overtimeCalculation?.holidayMultiplier || 3.0) === mult
+                            ? 'bg-purple-600 text-white shadow-xs'
+                            : 'bg-surface-container text-on-surface hover:bg-surface-container-high'
+                        }`}
+                      >
+                        {mult}x
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Live Preview Box */}
+              <div className="bg-surface-container-low/60 rounded-2xl p-4 border border-outline-variant/15">
+                <div className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                  <span className="material-symbols-outlined text-[15px] text-amber-600">visibility</span>
+                  Live Formula Breakdown (Example for Rs. 30,000 Basic Salary, 31-day month, 8h Duty):
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 font-mono text-xs">
+                  <div className="p-3 bg-surface-container-lowest rounded-xl border border-outline-variant/10">
+                    <div className="text-[10px] text-on-surface-variant font-bold">1 DAY AMOUNT</div>
+                    <div className="text-sm font-bold text-on-surface mt-1">Rs. 967.74</div>
+                    <div className="text-[9px] text-on-surface-variant mt-0.5">Rs. 30,000 ÷ 31 Days</div>
+                  </div>
+                  <div className="p-3 bg-surface-container-lowest rounded-xl border border-outline-variant/10">
+                    <div className="text-[10px] text-on-surface-variant font-bold">1 HOUR AMOUNT</div>
+                    <div className="text-sm font-bold text-on-surface mt-1">Rs. 120.97</div>
+                    <div className="text-[9px] text-on-surface-variant mt-0.5">Rs. 967.74 ÷ 8 Hours</div>
+                  </div>
+                  <div className="p-3 bg-amber-500/10 rounded-xl border border-amber-500/20">
+                    <div className="text-[10px] text-amber-700 dark:text-amber-300 font-bold">OT HOURLY RATE (1.5x)</div>
+                    <div className="text-sm font-black text-amber-600 dark:text-amber-400 mt-1">Rs. 181.45</div>
+                    <div className="text-[9px] text-amber-700/80 mt-0.5">Rs. 120.97 × 1.5 Multiplier</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Shift List Master */}
+            <div className="bg-surface-container-lowest rounded-3xl border border-outline-variant/15 shadow-sm overflow-hidden">
+              <div className="p-6 border-b border-outline-variant/10 flex justify-between items-center">
+                <div className="flex items-center gap-3">
+                  <span className="material-symbols-outlined text-amber-600 text-[24px]">view_timeline</span>
+                  <div>
+                    <h4 className="font-headline text-sm font-black text-on-surface">Configured Work Shifts</h4>
+                    <p className="text-xs text-on-surface-variant">Default shift start, end, and duration templates.</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleOpenAddShift}
+                  className="flex items-center gap-1.5 px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-bold text-xs shadow-md transition-all cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-[16px]">add</span>
+                  Add Shift
+                </button>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead className="bg-surface-container-low/50 text-[10px] uppercase font-bold text-on-surface-variant border-b border-outline-variant/10">
+                    <tr>
+                      <th className="px-6 py-3.5">Shift Name</th>
+                      <th className="px-6 py-3.5">Timing</th>
+                      <th className="px-6 py-3.5 text-center">Duty Duration</th>
+                      <th className="px-6 py-3.5 text-center">Status</th>
+                      <th className="px-6 py-3.5 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-outline-variant/10 font-medium">
+                    {(dutySettings.shifts || []).map(shift => (
+                      <tr key={shift.id} className="hover:bg-surface-container-low/30 transition-colors">
+                        <td className="px-6 py-4 font-bold text-on-surface">{shift.name}</td>
+                        <td className="px-6 py-4 font-mono text-on-surface-variant">{shift.startTime} — {shift.endTime}</td>
+                        <td className="px-6 py-4 text-center">
+                          <span className="px-2.5 py-1 rounded-lg bg-amber-500/10 text-amber-700 dark:text-amber-300 font-mono font-bold text-xs">
+                            {shift.hours} Hours
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 text-center">
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-700 border border-emerald-500/20">
+                            {shift.status || 'Active'}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 text-right">
+                          <div className="flex justify-end gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleOpenEditShift(shift)}
+                              className="w-7 h-7 rounded-lg bg-surface-container hover:bg-amber-500/10 hover:text-amber-600 flex items-center justify-center text-on-surface-variant transition-colors"
+                            >
+                              <span className="material-symbols-outlined text-[15px]">edit</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteShift(shift.id)}
+                              className="w-7 h-7 rounded-lg bg-surface-container hover:bg-rose-500/10 hover:text-rose-600 flex items-center justify-center text-on-surface-variant transition-colors"
+                            >
+                              <span className="material-symbols-outlined text-[15px]">delete</span>
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* TAB 2: DIVISION-WISE DUTY HOURS */}
+        {dutySubTab === 'divisions' && (
+          <div className="space-y-6 animate-fade-in">
+            <div className="bg-surface-container-lowest p-6 rounded-3xl border border-outline-variant/15 shadow-sm flex justify-between items-center">
+              <div>
+                <h4 className="font-headline text-base font-bold text-on-surface">Division-Wise Duty Hours Configuration</h4>
+                <p className="text-xs text-on-surface-variant mt-1">
+                  Set baseline duty hours for entire operational divisions (e.g. Factory vs Head Office). Employees in this division will inherit these hours unless overridden by department or employee profile.
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {divNamesList.map(divName => {
+                const divEmps = employees.filter(e => (e.division === divName || e.section === divName));
+                const customHours = dutySettings.divisionDutyHours?.[divName];
+                const effectiveHours = customHours || dutySettings.standardHours || 8;
+
+                return (
+                  <div key={divName} className="bg-surface-container-lowest p-6 rounded-3xl border border-outline-variant/15 shadow-sm flex flex-col justify-between space-y-4">
+                    <div>
+                      <div className="flex justify-between items-start mb-2">
+                        <div className="flex items-center gap-2">
+                          <span className="material-symbols-outlined text-indigo-600 text-[22px]">apartment</span>
+                          <h5 className="font-headline text-sm font-bold text-on-surface">{divName}</h5>
+                        </div>
+                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-indigo-500/10 text-indigo-600">
+                          {divEmps.length} Employees
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-on-surface-variant mb-4">
+                        {customHours ? `Custom division duty hours: ${customHours}h` : `Inheriting global standard (${dutySettings.standardHours || 8}h)`}
+                      </p>
+
+                      <div className="grid grid-cols-4 gap-1.5">
+                        {[8, 9, 10, 12].map(hrs => (
+                          <button
+                            key={hrs}
+                            type="button"
+                            onClick={() => handleSetDivisionDutyHours(divName, hrs)}
+                            className={`py-2 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                              effectiveHours === hrs
+                                ? 'bg-indigo-600 text-white shadow-md'
+                                : 'bg-surface-container text-on-surface hover:bg-surface-container-high'
+                            }`}
+                          >
+                            {hrs}h
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="pt-3 border-t border-outline-variant/10 flex justify-between items-center text-xs">
+                      {customHours ? (
+                        <button
+                          type="button"
+                          onClick={() => handleResetDivisionDutyHours(divName)}
+                          className="text-[11px] text-rose-600 hover:underline font-bold flex items-center gap-1 cursor-pointer"
+                        >
+                          <span className="material-symbols-outlined text-[14px]">restart_alt</span>
+                          Revert to Standard ({dutySettings.standardHours || 8}h)
+                        </button>
+                      ) : (
+                        <span className="text-[10px] text-on-surface-variant italic">Using Global Standard</span>
+                      )}
+                      <span className="font-mono font-bold text-indigo-600">{effectiveHours}h / Day</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* TAB 3: DEPARTMENT-WISE DUTY HOURS */}
+        {dutySubTab === 'departments' && (
+          <div className="space-y-6 animate-fade-in">
+            <div className="bg-surface-container-lowest p-6 rounded-3xl border border-outline-variant/15 shadow-sm flex justify-between items-center">
+              <div>
+                <h4 className="font-headline text-base font-bold text-on-surface">Department-Wise Duty Hours Configuration</h4>
+                <p className="text-xs text-on-surface-variant mt-1">
+                  Customize shift durations by department (e.g. Security: 12h, Weaving: 9h, Accounts: 8h). Takes precedence over division defaults.
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {departments.map(dept => {
+                const deptEmps = employees.filter(e => e.department === dept.name);
+                const customHours = dutySettings.departmentDutyHours?.[dept.name];
+                const divDefault = (dept.division && dutySettings.divisionDutyHours?.[dept.division]) || dutySettings.standardHours || 8;
+                const effectiveHours = customHours || divDefault;
+
+                return (
+                  <div key={dept.id || dept.name} className="bg-surface-container-lowest p-6 rounded-3xl border border-outline-variant/15 shadow-sm flex flex-col justify-between space-y-4">
+                    <div>
+                      <div className="flex justify-between items-start mb-2">
+                        <div className="flex items-center gap-2">
+                          <span className="material-symbols-outlined text-amber-600 text-[22px]">domain</span>
+                          <h5 className="font-headline text-sm font-bold text-on-surface">{dept.name}</h5>
+                        </div>
+                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/10 text-amber-700 dark:text-amber-300">
+                          {deptEmps.length} Employees
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-on-surface-variant mb-4">
+                        {customHours 
+                          ? `Custom Department Rule: ${customHours}h / day`
+                          : `Inheriting division/standard (${divDefault}h)`}
+                      </p>
+
+                      <div className="grid grid-cols-4 gap-1.5">
+                        {[8, 9, 10, 12].map(hrs => (
+                          <button
+                            key={hrs}
+                            type="button"
+                            onClick={() => handleSetDepartmentDutyHours(dept.name, hrs)}
+                            className={`py-2 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                              effectiveHours === hrs
+                                ? 'bg-amber-600 text-white shadow-md'
+                                : 'bg-surface-container text-on-surface hover:bg-surface-container-high'
+                            }`}
+                          >
+                            {hrs}h
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="pt-3 border-t border-outline-variant/10 flex justify-between items-center text-xs">
+                      {customHours ? (
+                        <button
+                          type="button"
+                          onClick={() => handleResetDepartmentDutyHours(dept.name)}
+                          className="text-[11px] text-rose-600 hover:underline font-bold flex items-center gap-1 cursor-pointer"
+                        >
+                          <span className="material-symbols-outlined text-[14px]">restart_alt</span>
+                          Revert to Division Default ({divDefault}h)
+                        </button>
+                      ) : (
+                        <span className="text-[10px] text-on-surface-variant italic">Defaulting to {divDefault}h</span>
+                      )}
+                      <span className="font-mono font-bold text-amber-600">{effectiveHours}h / Day</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* TAB 4: EMPLOYEE-WISE DUTY HOURS (EVERY EMPLOYEE CUSTOMIZABLE) */}
+        {dutySubTab === 'employees' && (
+          <div className="space-y-5 animate-fade-in">
+            {/* KPI Summary Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="bg-surface-container-lowest p-5 rounded-2xl border border-outline-variant/15 shadow-sm">
+                <div className="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Total Personnel</div>
+                <div className="text-xl font-headline font-black text-on-surface mt-1">{employees.length} Employees</div>
+                <div className="text-[10px] text-on-surface-variant mt-0.5">Active across all operational wings</div>
+              </div>
+
+              <div className="bg-surface-container-lowest p-5 rounded-2xl border border-outline-variant/15 shadow-sm">
+                <div className="text-[10px] font-bold text-amber-600 uppercase tracking-wider">Custom Employee Duty Hours</div>
+                <div className="text-xl font-headline font-black text-amber-600 mt-1">{customOverrideCount} Employees</div>
+                <div className="text-[10px] text-on-surface-variant mt-0.5">Individually tailored duty hours</div>
+              </div>
+
+              <div className="bg-surface-container-lowest p-5 rounded-2xl border border-outline-variant/15 shadow-sm">
+                <div className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider">Dept / Division Inherited</div>
+                <div className="text-xl font-headline font-black text-indigo-600 mt-1">{employees.length - customOverrideCount} Employees</div>
+                <div className="text-[10px] text-on-surface-variant mt-0.5">Automatically following group shift rules</div>
+              </div>
+            </div>
+
+            {/* Filter and Action Bar */}
+            <div className="bg-surface-container-lowest p-4 rounded-2xl border border-outline-variant/15 shadow-sm space-y-3">
+              <div className="flex flex-col md:flex-row justify-between items-stretch md:items-center gap-3">
+                <div className="flex flex-wrap items-center gap-2 flex-1">
+                  {/* Search */}
+                  <div className="relative min-w-[200px] flex-1 sm:flex-initial">
+                    <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline-variant text-[15px]">search</span>
+                    <input
+                      type="text"
+                      value={empDutySearch}
+                      onChange={(e) => setEmpDutySearch(e.target.value)}
+                      placeholder="Search by name, code..."
+                      className="w-full bg-surface-container-low border border-outline-variant/20 rounded-xl pl-8 pr-3 py-1.5 text-xs text-on-surface outline-none focus:border-amber-500/50"
+                    />
+                  </div>
+
+                  {/* Division Filter */}
+                  <select
+                    value={empDutyDivFilter}
+                    onChange={(e) => setEmpDutyDivFilter(e.target.value)}
+                    className="bg-surface-container-low border border-outline-variant/20 rounded-xl px-2.5 py-1.5 text-xs font-bold text-on-surface outline-none"
+                  >
+                    <option value="ALL">🏬 All Divisions</option>
+                    {divNamesList.map(div => <option key={div} value={div}>{div}</option>)}
+                  </select>
+
+                  {/* Department Filter */}
+                  <select
+                    value={empDutyDeptFilter}
+                    onChange={(e) => setEmpDutyDeptFilter(e.target.value)}
+                    className="bg-surface-container-low border border-outline-variant/20 rounded-xl px-2.5 py-1.5 text-xs font-bold text-on-surface outline-none"
+                  >
+                    <option value="ALL">🏢 All Departments</option>
+                    {deptNamesList.map(dept => <option key={dept} value={dept}>{dept}</option>)}
+                  </select>
+                </div>
+
+                {/* Batch Action Tool */}
+                <div className="flex items-center gap-2 shrink-0 pt-2 md:pt-0 border-t md:border-t-0 border-outline-variant/10">
+                  <span className="text-[11px] font-bold text-on-surface-variant">Batch Set:</span>
+                  <select
+                    value={batchDutyHours}
+                    onChange={(e) => setBatchDutyHours(Number(e.target.value))}
+                    className="bg-surface-container-low border border-outline-variant/20 rounded-xl px-2 py-1 text-xs font-mono font-bold text-on-surface outline-none"
+                  >
+                    <option value={8}>8 Hours</option>
+                    <option value={9}>9 Hours</option>
+                    <option value={10}>10 Hours</option>
+                    <option value={12}>12 Hours</option>
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => handleBatchApplyDutyHours(filteredEmpDutyList, batchDutyHours)}
+                    className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer flex items-center gap-1"
+                  >
+                    <span className="material-symbols-outlined text-[15px]">done_all</span>
+                    Apply to Filtered ({filteredEmpDutyList.length})
+                  </button>
+                </div>
+              </div>
+
+              {/* Alphabet A-Z bar */}
+              <div className="flex items-center gap-1 overflow-x-auto py-1 custom-scrollbar">
+                <span className="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider mr-1 shrink-0">A-Z:</span>
+                {ALPHABET_KEYS.map(letter => (
+                  <button
+                    key={letter}
+                    type="button"
+                    onClick={() => setEmpDutyAlphaFilter(letter)}
+                    className={`h-6 min-w-[26px] px-1.5 rounded-lg text-[10px] font-black transition-all cursor-pointer ${
+                      empDutyAlphaFilter === letter
+                        ? 'bg-amber-600 text-white shadow-xs'
+                        : 'bg-surface-container text-on-surface-variant hover:text-on-surface'
+                    }`}
+                  >
+                    {letter}
                   </button>
                 ))}
               </div>
             </div>
 
-            <button
-              onClick={handleSyncStandardHoursToAllEmployees}
-              className="mt-5 w-full py-2 bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 border border-amber-500/20 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5"
-            >
-              <span className="material-symbols-outlined text-[16px]">sync</span>
-              Apply to All Employees
-            </button>
-          </div>
-
-          {/* Card 2: Grace & Overtime Rules */}
-          <div className="bg-surface-container-lowest p-6 rounded-2xl border border-outline-variant/15 shadow-sm space-y-4">
-            <div className="flex items-center gap-2.5 text-blue-600">
-              <span className="material-symbols-outlined text-[24px]">timelapse</span>
-              <h4 className="font-headline text-sm font-bold text-on-surface">Grace & Penalty Rules</h4>
-            </div>
-
-            <div className="space-y-3 text-xs">
-              <div>
-                <label className="text-[10px] uppercase font-bold text-outline block mb-1">Check-in Grace Time</label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="number"
-                    value={dutySettings.gracePeriodMinutes || 15}
-                    onChange={(e) => saveDutySettings({ ...dutySettings, gracePeriodMinutes: Number(e.target.value) || 0 })}
-                    className="w-24 bg-surface-container-low border border-outline-variant/30 rounded-xl px-3 py-1.5 font-bold text-on-surface outline-none"
-                  />
-                  <span className="text-on-surface-variant font-medium">Minutes late permitted</span>
-                </div>
-              </div>
-
-              <div>
-                <label className="text-[10px] uppercase font-bold text-outline block mb-1">Half-Day Threshold</label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="number"
-                    step="0.5"
-                    value={dutySettings.halfDayThresholdHours || 4}
-                    onChange={(e) => saveDutySettings({ ...dutySettings, halfDayThresholdHours: Number(e.target.value) || 0 })}
-                    className="w-24 bg-surface-container-low border border-outline-variant/30 rounded-xl px-3 py-1.5 font-bold text-on-surface outline-none"
-                  />
-                  <span className="text-on-surface-variant font-medium">Hours minimum</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Card 3: Customization Toggle */}
-          <div className="bg-surface-container-lowest p-6 rounded-2xl border border-outline-variant/15 shadow-sm flex flex-col justify-between">
-            <div>
-              <div className="flex items-center gap-2.5 text-emerald-600 mb-3">
-                <span className="material-symbols-outlined text-[24px]">tune</span>
-                <h4 className="font-headline text-sm font-bold text-on-surface">Employee Adjustability</h4>
-              </div>
-              <p className="text-xs text-on-surface-variant leading-relaxed">
-                Allow HR managers to set individual duty hours for specific workers in directory and onboarding.
-              </p>
-            </div>
-
-            <div className="flex items-center justify-between p-3 bg-surface-container-low rounded-xl border border-outline-variant/10 mt-4">
-              <span className="text-xs font-bold text-on-surface">Duty Hours Adjustable</span>
-              <button
-                onClick={() => saveDutySettings({ ...dutySettings, dutyHoursAdjustable: !dutySettings.dutyHoursAdjustable })}
-                className={`w-11 h-6 rounded-full transition-colors relative duration-200 cursor-pointer ${
-                  dutySettings.dutyHoursAdjustable ? 'bg-emerald-600' : 'bg-surface-container-highest border border-outline-variant/50'
-                }`}
-              >
-                <div className={`w-4 h-4 rounded-full bg-white absolute top-1 transition-all duration-200 ${
-                  dutySettings.dutyHoursAdjustable ? 'left-6' : 'left-1'
-                }`}></div>
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Overtime Calculation & Rates Configuration (Duty Hours & Shifts Section) */}
-        <div className="bg-surface-container-lowest p-6 rounded-2xl border border-outline-variant/15 shadow-sm space-y-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-outline-variant/10 pb-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-600 flex items-center justify-center shrink-0">
-                <span className="material-symbols-outlined text-[24px]">more_time</span>
-              </div>
-              <div>
-                <h4 className="font-headline text-base font-black text-on-surface">Overtime Calculation Configuration</h4>
-                <p className="text-xs text-on-surface-variant font-medium mt-0.5">
-                  Formula: <span className="font-mono text-primary font-bold">(Basic Salary ÷ Current Month Days = 1 Day Rate) ÷ Duty Hours = 1 Hour Rate × OT Multiplier</span>
-                </p>
-              </div>
-            </div>
-
-            {/* Method Toggle: Formula vs Flat */}
-            <div className="flex items-center bg-surface-container-low p-1 rounded-xl border border-outline-variant/15 text-xs font-bold">
-              <button
-                type="button"
-                onClick={() => saveDutySettings({
-                  ...dutySettings,
-                  overtimeCalculation: { ...(dutySettings.overtimeCalculation || {}), type: 'formula' }
-                })}
-                className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
-                  (dutySettings.overtimeCalculation?.type || 'formula') === 'formula'
-                    ? 'bg-amber-600 text-white shadow-xs font-black'
-                    : 'text-on-surface-variant hover:text-on-surface'
-                }`}
-              >
-                Formula-Based
-              </button>
-              <button
-                type="button"
-                onClick={() => saveDutySettings({
-                  ...dutySettings,
-                  overtimeCalculation: { ...(dutySettings.overtimeCalculation || {}), type: 'flat' }
-                })}
-                className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
-                  dutySettings.overtimeCalculation?.type === 'flat'
-                    ? 'bg-amber-600 text-white shadow-xs font-black'
-                    : 'text-on-surface-variant hover:text-on-surface'
-                }`}
-              >
-                Fixed Hourly Rate
-              </button>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-            {/* Left Column: Multipliers / Rates Input */}
-            <div className="lg:col-span-7 space-y-5 text-xs">
-              {(dutySettings.overtimeCalculation?.type || 'formula') === 'formula' ? (
-                <>
-                  <div>
-                    <label className="text-[10px] font-black uppercase tracking-wider text-outline block mb-2">
-                      Standard Overtime Multiplier (Weekday)
-                    </label>
-                    <div className="flex items-center gap-2 flex-wrap">
-                      {[1.0, 1.25, 1.5, 2.0].map(mult => (
-                        <button
-                          key={mult}
-                          type="button"
-                          onClick={() => saveDutySettings({
-                            ...dutySettings,
-                            overtimeCalculation: { ...(dutySettings.overtimeCalculation || {}), rateMultiplier: mult }
-                          })}
-                          className={`px-4 py-2 rounded-xl font-black text-xs transition-all cursor-pointer ${
-                            Number(dutySettings.overtimeCalculation?.rateMultiplier || 1.5) === mult
-                              ? 'bg-amber-600 text-white shadow-sm scale-102'
-                              : 'bg-surface-container-low text-on-surface hover:bg-surface-container border border-outline-variant/15'
-                          }`}
-                        >
-                          {mult === 1.0 ? '1.0x (100% Rate)' : mult === 1.25 ? '1.25x (125%)' : mult === 1.5 ? '1.5x (Time & Half)' : '2.0x (Double)'}
-                        </button>
-                      ))}
-                      <div className="flex items-center gap-1.5 ml-1">
-                        <span className="text-[11px] text-slate-400 font-bold">Custom:</span>
-                        <input
-                          type="number"
-                          step="0.05"
-                          min="0.5"
-                          max="5.0"
-                          value={dutySettings.overtimeCalculation?.rateMultiplier || 1.5}
-                          onChange={(e) => saveDutySettings({
-                            ...dutySettings,
-                            overtimeCalculation: { ...(dutySettings.overtimeCalculation || {}), rateMultiplier: parseFloat(e.target.value) || 1.0 }
-                          })}
-                          className="w-20 bg-surface-container-low border border-outline-variant/30 rounded-xl px-2.5 py-1.5 font-bold text-on-surface text-center outline-none focus:ring-1 focus:ring-amber-500"
-                        />
-                        <span className="text-[11px] font-bold text-on-surface-variant">x</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-outline-variant/10">
-                    <div>
-                      <label className="text-[10px] font-black uppercase tracking-wider text-outline block mb-1.5">
-                        Weekend Overtime Multiplier
-                      </label>
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="number"
-                          step="0.1"
-                          min="1.0"
-                          max="5.0"
-                          value={dutySettings.overtimeCalculation?.weekendMultiplier || 2.0}
-                          onChange={(e) => saveDutySettings({
-                            ...dutySettings,
-                            overtimeCalculation: { ...(dutySettings.overtimeCalculation || {}), weekendMultiplier: parseFloat(e.target.value) || 2.0 }
-                          })}
-                          className="w-24 bg-surface-container-low border border-outline-variant/30 rounded-xl px-3 py-1.5 font-bold text-on-surface outline-none"
-                        />
-                        <span className="text-on-surface-variant text-[11px] font-medium">x Hourly Rate</span>
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="text-[10px] font-black uppercase tracking-wider text-outline block mb-1.5">
-                        Gazetted Holiday Multiplier
-                      </label>
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="number"
-                          step="0.1"
-                          min="1.0"
-                          max="5.0"
-                          value={dutySettings.overtimeCalculation?.holidayMultiplier || 3.0}
-                          onChange={(e) => saveDutySettings({
-                            ...dutySettings,
-                            overtimeCalculation: { ...(dutySettings.overtimeCalculation || {}), holidayMultiplier: parseFloat(e.target.value) || 3.0 }
-                          })}
-                          className="w-24 bg-surface-container-low border border-outline-variant/30 rounded-xl px-3 py-1.5 font-bold text-on-surface outline-none"
-                        />
-                        <span className="text-on-surface-variant text-[11px] font-medium">x Hourly Rate</span>
-                      </div>
-                    </div>
-                  </div>
-                </>
-              ) : (
-                <div className="space-y-3">
-                  <label className="text-[10px] font-black uppercase tracking-wider text-outline block mb-1">
-                    Fixed Flat Rate per Overtime Hour
-                  </label>
-                  <div className="flex items-center gap-3">
-                    <span className="text-sm font-bold text-primary">{currSym}</span>
-                    <input
-                      type="number"
-                      step="10"
-                      min="0"
-                      value={dutySettings.overtimeCalculation?.flatHourlyRate || 200}
-                      onChange={(e) => saveDutySettings({
-                        ...dutySettings,
-                        overtimeCalculation: { ...(dutySettings.overtimeCalculation || {}), flatHourlyRate: parseFloat(e.target.value) || 0 }
-                      })}
-                      className="w-36 bg-surface-container-low border border-outline-variant/30 rounded-xl px-3 py-2 font-black text-sm text-on-surface outline-none"
-                    />
-                    <span className="text-on-surface-variant font-medium text-xs">per approved overtime hour</span>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Right Column: Live Calculation Example Preview */}
-            <div className="lg:col-span-5 bg-surface-container-low/70 border border-outline-variant/20 rounded-2xl p-4.5 space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-black uppercase tracking-wider text-primary flex items-center gap-1">
-                  <span className="material-symbols-outlined text-[15px]">calculate</span>
-                  Live Calculation Preview
-                </span>
-                <span className="text-[9px] font-bold bg-primary/10 text-primary px-2 py-0.5 rounded-full">
-                  Sample: Rs. 30,000 / month
-                </span>
-              </div>
-
-              {(() => {
-                const sampleBase = 30000;
-                const sampleDays = 31;
-                const sampleDuty = Number(dutySettings.standardHours) || 8;
-                const sampleDayAmount = sampleBase / sampleDays;
-                const sampleHourAmount = sampleDayAmount / sampleDuty;
-                const mult = Number(dutySettings.overtimeCalculation?.rateMultiplier) || 1.5;
-                const otHourly = (dutySettings.overtimeCalculation?.type === 'flat')
-                  ? Number(dutySettings.overtimeCalculation?.flatHourlyRate || 200)
-                  : (sampleHourAmount * mult);
-                const sample5hOT = otHourly * 5;
-
-                return (
-                  <div className="space-y-2 text-xs font-mono">
-                    <div className="flex justify-between items-center text-on-surface-variant">
-                      <span>1. Day Rate:</span>
-                      <span className="font-bold text-on-surface">30,000 ÷ 31 d = Rs. {sampleDayAmount.toFixed(2)} / day</span>
-                    </div>
-                    <div className="flex justify-between items-center text-on-surface-variant">
-                      <span>2. Hour Rate:</span>
-                      <span className="font-bold text-on-surface">{sampleDayAmount.toFixed(2)} ÷ {sampleDuty} h = Rs. {sampleHourAmount.toFixed(2)} / hr</span>
-                    </div>
-                    <div className="flex justify-between items-center text-on-surface-variant">
-                      <span>3. OT Hourly Payout:</span>
-                      <span className="font-bold text-amber-600">
-                        {(dutySettings.overtimeCalculation?.type === 'flat')
-                          ? `Rs. ${otHourly.toFixed(2)} (Flat)`
-                          : `${sampleHourAmount.toFixed(2)} × ${mult}x = Rs. ${otHourly.toFixed(2)} / hr`}
-                      </span>
-                    </div>
-                    <div className="pt-2 border-t border-outline-variant/15 flex justify-between items-center">
-                      <span className="font-sans font-bold text-on-surface">5 Hours OT Total:</span>
-                      <span className="font-sans font-black text-sm text-primary">Rs. {sample5hOT.toFixed(2)}</span>
-                    </div>
-                  </div>
-                );
-              })()}
-            </div>
-          </div>
-        </div>
-
-        {/* Shift Timings Table */}
-        <div className="bg-surface-container-lowest rounded-2xl border border-outline-variant/15 shadow-sm overflow-hidden">
-          <div className="p-5 border-b border-outline-variant/15 flex justify-between items-center">
-            <div>
-              <h4 className="font-headline text-sm font-black text-on-surface">Configured Shifts</h4>
-              <p className="text-xs text-on-surface-variant mt-0.5">Define shift work hours and assigned duty durations.</p>
-            </div>
-            <button
-              onClick={handleOpenAddShift}
-              className="flex items-center gap-1.5 px-3.5 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold transition-all cursor-pointer"
-            >
-              <span className="material-symbols-outlined text-[16px]">add</span>
-              Add Shift
-            </button>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse text-xs">
-              <thead>
-                <tr className="border-b border-outline-variant/10 bg-surface-container-low/40 text-[10px] font-bold uppercase tracking-wider text-outline">
-                  <th className="p-4">Shift Name</th>
-                  <th className="p-4">Start Time</th>
-                  <th className="p-4">End Time</th>
-                  <th className="p-4">Duration</th>
-                  <th className="p-4">Assigned Staff</th>
-                  <th className="p-4">Status</th>
-                  <th className="p-4 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-outline-variant/10">
-                {(dutySettings.shifts || []).map(shift => {
-                  const assignedCount = employees.filter(e => (e.shift || '').toLowerCase() === shift.name.toLowerCase()).length;
-                  return (
-                    <tr key={shift.id} className="hover:bg-surface-container-low/30 transition-colors">
-                      <td className="p-4 font-bold text-on-surface">{shift.name}</td>
-                      <td className="p-4 font-mono font-semibold">{shift.startTime}</td>
-                      <td className="p-4 font-mono font-semibold">{shift.endTime}</td>
-                      <td className="p-4 font-bold text-amber-600">{shift.hours} Hours</td>
-                      <td className="p-4 font-semibold text-on-surface-variant">{assignedCount} Employees</td>
-                      <td className="p-4">
-                        <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                          {shift.status || 'Active'}
-                        </span>
-                      </td>
-                      <td className="p-4 text-right">
-                        <div className="flex justify-end gap-1.5">
-                          <button
-                            onClick={() => handleOpenEditShift(shift)}
-                            className="w-7 h-7 rounded-lg bg-surface-container flex items-center justify-center text-on-surface-variant hover:text-amber-600 transition-colors cursor-pointer"
-                          >
-                            <span className="material-symbols-outlined text-[14px]">edit</span>
-                          </button>
-                          <button
-                            onClick={() => handleDeleteShift(shift.id)}
-                            className="w-7 h-7 rounded-lg bg-surface-container flex items-center justify-center text-on-surface-variant hover:text-error transition-colors cursor-pointer"
-                          >
-                            <span className="material-symbols-outlined text-[14px]">delete</span>
-                          </button>
-                        </div>
-                      </td>
+            {/* Personnel Duty Hours Table */}
+            <div className="bg-surface-container-lowest rounded-3xl border border-outline-variant/15 shadow-sm overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead className="bg-surface-container-low/50 text-[10px] uppercase font-bold text-on-surface-variant border-b border-outline-variant/10">
+                    <tr>
+                      <th className="px-6 py-3.5">Emp Code</th>
+                      <th className="px-6 py-3.5">Personnel Name</th>
+                      <th className="px-6 py-3.5">Division & Department</th>
+                      <th className="px-6 py-3.5">Effective Duty Rule</th>
+                      <th className="px-6 py-3.5 text-center">Duty Hours</th>
+                      <th className="px-6 py-3.5 text-right">Customize Hours</th>
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                  </thead>
+                  <tbody className="divide-y divide-outline-variant/10 font-medium">
+                    {filteredEmpDutyList.length === 0 ? (
+                      <tr>
+                        <td colSpan="6" className="text-center py-12 text-on-surface-variant">
+                          No personnel found matching the current search / filters.
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredEmpDutyList.map(emp => {
+                        const eff = getEmpEffectiveDutyHours(emp);
+                        const isCustom = eff.type === 'custom';
+
+                        return (
+                          <tr key={emp.id} className="hover:bg-surface-container-low/30 transition-colors">
+                            <td className="px-6 py-4 font-mono font-bold text-secondary text-[11px]">{emp.id}</td>
+                            <td className="px-6 py-4">
+                              <div className="flex items-center gap-2.5">
+                                <div className="w-7 h-7 rounded-full bg-secondary-container text-on-secondary-container flex items-center justify-center font-bold text-[10px]">
+                                  {(emp.name || 'E').substring(0, 2).toUpperCase()}
+                                </div>
+                                <div>
+                                  <div className="font-bold text-on-surface">{emp.name}</div>
+                                  <div className="text-[10px] text-on-surface-variant">{emp.designation || 'Staff'}</div>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-6 py-4">
+                              <div className="text-xs font-bold text-on-surface">{emp.department || 'General'}</div>
+                              <div className="text-[10px] text-on-surface-variant">{emp.division || emp.section || 'AJ Synthetic'}</div>
+                            </td>
+                            <td className="px-6 py-4">
+                              <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
+                                isCustom
+                                  ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/30'
+                                  : 'bg-surface-container text-on-surface-variant border-outline-variant/15'
+                              }`}>
+                                <span className={`w-1.5 h-1.5 rounded-full ${isCustom ? 'bg-amber-500' : 'bg-slate-400'}`}></span>
+                                {eff.source}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 text-center">
+                              <span className={`font-mono text-sm font-black px-2.5 py-1 rounded-xl ${
+                                isCustom ? 'bg-amber-600 text-white shadow-xs' : 'bg-surface-container text-on-surface'
+                              }`}>
+                                {eff.hours} Hours
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 text-right">
+                              <div className="flex items-center justify-end gap-1.5">
+                                {[8, 9, 10, 12].map(hrs => (
+                                  <button
+                                    key={hrs}
+                                    type="button"
+                                    onClick={() => handleSetEmployeeDutyHours(emp.id, hrs)}
+                                    className={`h-7 px-2.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                                      eff.hours === hrs
+                                        ? 'bg-amber-600 text-white shadow-xs'
+                                        : 'bg-surface-container text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high'
+                                    }`}
+                                    title={`Set ${hrs}h for ${emp.name}`}
+                                  >
+                                    {hrs}h
+                                  </button>
+                                ))}
+                                {isCustom && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleResetEmployeeDutyHours(emp.id)}
+                                    className="h-7 px-2 rounded-lg bg-surface-container hover:bg-rose-500/10 hover:text-rose-600 text-on-surface-variant text-[10px] font-bold transition-colors cursor-pointer flex items-center gap-1"
+                                    title="Reset to Department/Division Default"
+                                  >
+                                    <span className="material-symbols-outlined text-[14px]">restart_alt</span>
+                                    Reset
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
-        </div>
+        )}
       </div>
     );
   }
 
   function renderMobileDutyHours() {
+    const ALPHABET_KEYS = ['ALL', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z'];
+    const divNamesList = Array.from(new Set([
+      ...divisions.map(d => d.name),
+      ...employees.map(e => e.division || e.section).filter(Boolean)
+    ])).sort();
+
     return (
       <div className="flex flex-col gap-5 pb-20 animate-fade-in select-none">
         <header className="flex items-center justify-between">
@@ -2115,84 +2681,214 @@ export default function HRSettings({ isMobile }) {
             </button>
             <div>
               <h2 className="font-headline text-lg font-black text-on-surface leading-tight">Duty Hours & Shifts</h2>
-              <p className="text-[10px] text-on-surface-variant">Standard Shift Timings</p>
+              <p className="text-[10px] text-on-surface-variant">Customizable Shift Timings</p>
             </div>
           </div>
           <button
             onClick={handleOpenAddShift}
             className="px-3 py-1.5 bg-amber-600 text-white rounded-xl text-xs font-bold"
           >
-            + Add
+            + Add Shift
           </button>
         </header>
 
-        {/* Standard hours selection */}
-        <div className="bg-surface-container-lowest p-4 rounded-2xl border border-outline-variant/15 flex flex-col gap-3">
-          <span className="text-xs font-bold text-on-surface">Standard Working Hours</span>
-          <div className="grid grid-cols-4 gap-2">
-            {[8, 9, 10, 12].map(hrs => (
-              <button
-                key={hrs}
-                onClick={() => saveDutySettings({ ...dutySettings, standardHours: hrs })}
-                className={`py-2 rounded-xl text-xs font-black transition-all ${
-                  dutySettings.standardHours === hrs ? 'bg-amber-600 text-white' : 'bg-surface-container text-on-surface'
-                }`}
-              >
-                {hrs}h
-              </button>
-            ))}
-          </div>
+        {/* Mobile Sub-Tab Bar */}
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 custom-scrollbar">
+          <button
+            type="button"
+            onClick={() => setDutySubTab('global')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold shrink-0 ${dutySubTab === 'global' ? 'bg-amber-600 text-white shadow-xs' : 'bg-surface-container-lowest text-on-surface-variant'}`}
+          >
+            Global Rules
+          </button>
+          <button
+            type="button"
+            onClick={() => setDutySubTab('divisions')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold shrink-0 ${dutySubTab === 'divisions' ? 'bg-amber-600 text-white shadow-xs' : 'bg-surface-container-lowest text-on-surface-variant'}`}
+          >
+            Divisions
+          </button>
+          <button
+            type="button"
+            onClick={() => setDutySubTab('departments')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold shrink-0 ${dutySubTab === 'departments' ? 'bg-amber-600 text-white shadow-xs' : 'bg-surface-container-lowest text-on-surface-variant'}`}
+          >
+            Departments
+          </button>
+          <button
+            type="button"
+            onClick={() => setDutySubTab('employees')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold shrink-0 ${dutySubTab === 'employees' ? 'bg-amber-600 text-white shadow-xs' : 'bg-surface-container-lowest text-on-surface-variant'}`}
+          >
+            Employees
+          </button>
         </div>
 
-        {/* Overtime Calculation (Mobile) */}
-        <div className="bg-surface-container-lowest p-4 rounded-2xl border border-outline-variant/15 flex flex-col gap-3">
-          <div className="flex justify-between items-center">
-            <span className="text-xs font-bold text-on-surface">Overtime Calculation</span>
-            <span className="text-[10px] font-bold text-primary font-mono">(Basic ÷ Days) ÷ Duty</span>
-          </div>
-          <div className="grid grid-cols-4 gap-1.5">
-            {[1.0, 1.25, 1.5, 2.0].map(mult => (
-              <button
-                key={mult}
-                type="button"
-                onClick={() => saveDutySettings({
-                  ...dutySettings,
-                  overtimeCalculation: { ...(dutySettings.overtimeCalculation || {}), rateMultiplier: mult }
-                })}
-                className={`py-1.5 rounded-lg text-[11px] font-black transition-all ${
-                  Number(dutySettings.overtimeCalculation?.rateMultiplier || 1.5) === mult
-                    ? 'bg-amber-600 text-white shadow-xs'
-                    : 'bg-surface-container text-on-surface'
-                }`}
-              >
-                {mult}x
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Shifts */}
-        <div className="space-y-3">
-          {(dutySettings.shifts || []).map(shift => (
-            <div key={shift.id} className="bg-surface-container-lowest p-4 rounded-2xl border border-outline-variant/15 flex justify-between items-center shadow-sm">
-              <div>
-                <h4 className="font-headline font-black text-sm text-on-surface">{shift.name}</h4>
-                <p className="text-xs font-mono text-on-surface-variant mt-0.5">{shift.startTime} - {shift.endTime} ({shift.hours}h)</p>
+        {/* Global tab in Mobile */}
+        {dutySubTab === 'global' && (
+          <div className="space-y-4">
+            <div className="bg-surface-container-lowest p-4 rounded-2xl border border-outline-variant/15 flex flex-col gap-3">
+              <span className="text-xs font-bold text-on-surface">Standard Working Hours</span>
+              <div className="grid grid-cols-4 gap-2">
+                {[8, 9, 10, 12].map(hrs => (
+                  <button
+                    key={hrs}
+                    onClick={() => saveDutySettings({ ...dutySettings, standardHours: hrs })}
+                    className={`py-2 rounded-xl text-xs font-black transition-all ${
+                      dutySettings.standardHours === hrs ? 'bg-amber-600 text-white' : 'bg-surface-container text-on-surface'
+                    }`}
+                  >
+                    {hrs}h
+                  </button>
+                ))}
               </div>
-              <button
-                onClick={() => handleOpenEditShift(shift)}
-                className="w-7 h-7 rounded-lg bg-surface-container flex items-center justify-center text-on-surface-variant"
-              >
-                <span className="material-symbols-outlined text-[14px]">edit</span>
-              </button>
             </div>
-          ))}
-        </div>
+
+            <div className="bg-surface-container-lowest p-4 rounded-2xl border border-outline-variant/15 flex flex-col gap-3">
+              <div className="flex justify-between items-center">
+                <span className="text-xs font-bold text-on-surface">Overtime Calculation</span>
+                <span className="text-[10px] font-bold text-primary font-mono">(Basic ÷ Days) ÷ Duty</span>
+              </div>
+              <div className="grid grid-cols-4 gap-1.5">
+                {[1.0, 1.25, 1.5, 2.0].map(mult => (
+                  <button
+                    key={mult}
+                    type="button"
+                    onClick={() => saveDutySettings({
+                      ...dutySettings,
+                      overtimeCalculation: { ...(dutySettings.overtimeCalculation || {}), rateMultiplier: mult }
+                    })}
+                    className={`py-1.5 rounded-lg text-[11px] font-black transition-all ${
+                      Number(dutySettings.overtimeCalculation?.rateMultiplier || 1.5) === mult
+                        ? 'bg-amber-600 text-white shadow-xs'
+                        : 'bg-surface-container text-on-surface'
+                    }`}
+                  >
+                    {mult}x
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              {(dutySettings.shifts || []).map(shift => (
+                <div key={shift.id} className="bg-surface-container-lowest p-4 rounded-2xl border border-outline-variant/15 flex justify-between items-center shadow-sm">
+                  <div>
+                    <h4 className="font-headline font-black text-sm text-on-surface">{shift.name}</h4>
+                    <p className="text-xs font-mono text-on-surface-variant mt-0.5">{shift.startTime} - {shift.endTime} ({shift.hours}h)</p>
+                  </div>
+                  <button
+                    onClick={() => handleOpenEditShift(shift)}
+                    className="w-7 h-7 rounded-lg bg-surface-container flex items-center justify-center text-on-surface-variant"
+                  >
+                    <span className="material-symbols-outlined text-[14px]">edit</span>
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Divisions in Mobile */}
+        {dutySubTab === 'divisions' && (
+          <div className="space-y-3">
+            {divNamesList.map(divName => {
+              const currentH = dutySettings.divisionDutyHours?.[divName] || dutySettings.standardHours || 8;
+              return (
+                <div key={divName} className="bg-surface-container-lowest p-4 rounded-2xl border border-outline-variant/15 space-y-3">
+                  <div className="flex justify-between items-center">
+                    <span className="font-bold text-sm text-on-surface">{divName}</span>
+                    <span className="font-mono font-bold text-indigo-600 text-xs">{currentH}h / day</span>
+                  </div>
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {[8, 9, 10, 12].map(hrs => (
+                      <button
+                        key={hrs}
+                        type="button"
+                        onClick={() => handleSetDivisionDutyHours(divName, hrs)}
+                        className={`py-1.5 rounded-xl text-xs font-black ${currentH === hrs ? 'bg-indigo-600 text-white' : 'bg-surface-container text-on-surface'}`}
+                      >
+                        {hrs}h
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Departments in Mobile */}
+        {dutySubTab === 'departments' && (
+          <div className="space-y-3">
+            {departments.map(dept => {
+              const currentH = dutySettings.departmentDutyHours?.[dept.name] || dutySettings.standardHours || 8;
+              return (
+                <div key={dept.name} className="bg-surface-container-lowest p-4 rounded-2xl border border-outline-variant/15 space-y-3">
+                  <div className="flex justify-between items-center">
+                    <span className="font-bold text-sm text-on-surface">{dept.name}</span>
+                    <span className="font-mono font-bold text-amber-600 text-xs">{currentH}h / day</span>
+                  </div>
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {[8, 9, 10, 12].map(hrs => (
+                      <button
+                        key={hrs}
+                        type="button"
+                        onClick={() => handleSetDepartmentDutyHours(dept.name, hrs)}
+                        className={`py-1.5 rounded-xl text-xs font-black ${currentH === hrs ? 'bg-amber-600 text-white' : 'bg-surface-container text-on-surface'}`}
+                      >
+                        {hrs}h
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Employees in Mobile */}
+        {dutySubTab === 'employees' && (
+          <div className="space-y-3">
+            <input
+              type="text"
+              value={empDutySearch}
+              onChange={(e) => setEmpDutySearch(e.target.value)}
+              placeholder="Search personnel..."
+              className="w-full bg-surface-container-lowest border border-outline-variant/15 rounded-xl py-2 px-3 text-xs text-on-surface outline-none"
+            />
+            {employees.filter(e => !empDutySearch || e.name?.toLowerCase().includes(empDutySearch.toLowerCase())).slice(0, 30).map(emp => {
+              const eff = getEmpEffectiveDutyHours(emp);
+              return (
+                <div key={emp.id} className="bg-surface-container-lowest p-3.5 rounded-2xl border border-outline-variant/15 space-y-2">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <div className="font-bold text-xs text-on-surface">{emp.name}</div>
+                      <div className="text-[10px] text-on-surface-variant font-mono">{emp.id} • {emp.department || 'General'}</div>
+                    </div>
+                    <span className="font-mono font-black text-amber-600 text-xs">{eff.hours}h</span>
+                  </div>
+                  <div className="grid grid-cols-4 gap-1">
+                    {[8, 9, 10, 12].map(hrs => (
+                      <button
+                        key={hrs}
+                        type="button"
+                        onClick={() => handleSetEmployeeDutyHours(emp.id, hrs)}
+                        className={`py-1 rounded-lg text-[10px] font-black ${eff.hours === hrs ? 'bg-amber-600 text-white' : 'bg-surface-container text-on-surface'}`}
+                      >
+                        {hrs}h
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     );
   }
-
-  function renderFormModal() {
+function renderFormModal() {
     // Helper to render custom multi-select selector with search
     function EmployeeMultiSelect({ label, selectedIds, onChange, placeholder }) {
       const [isOpen, setIsOpen] = useState(false);
