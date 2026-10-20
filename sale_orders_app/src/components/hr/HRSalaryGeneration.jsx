@@ -696,46 +696,63 @@ export default function HRSalaryGeneration({ isMobile }) {
 
     const [yStr, mStr] = (payrollPeriod || '').split('-');
     const y = parseInt(yStr) || 2026;
-    const m = parseInt(mStr) || 9;
+    const m = parseInt(mStr) || (new Date().getMonth() + 1);
+
+    const allEmployees = state.hr_employees_list || [];
+    const empObj = allEmployees.find(e => 
+      (e.id && String(e.id).trim() === empIdStr) ||
+      (e.employeeCode && String(e.employeeCode).trim() === empIdStr) ||
+      (e.name && String(e.name).toLowerCase().trim() === empNameLower)
+    );
+    const empAttendance = empObj?.attendance || {};
+    const overtimeRequests = state.hr_overtime_requests || [];
 
     const dailyRecords = [];
     for (let d = 1; d <= currentMonthDays; d++) {
       const dateStr = String(d).padStart(2, '0');
       const fullDate = `${y}-${String(m).padStart(2, '0')}-${dateStr}`;
 
+      const dayRecord = empAttendance[fullDate] || empAttendance[`${y}-${m}-${d}`] || empAttendance[d] || null;
+
       const log = attendanceLogs.find(l => 
-        (String(l.employeeId) === empIdStr || String(l.employeeName || '').toLowerCase().trim() === empNameLower) &&
-        (l.date === fullDate || String(l.date).endsWith(`-${dateStr}`))
+        (String(l.employeeId) === empIdStr || String(l.employeeCode || '') === empIdStr || String(l.employeeName || '').toLowerCase().trim() === empNameLower) &&
+        (l.date === fullDate || (typeof normalizeDate === 'function' ? normalizeDate(l.date) === fullDate : l.date === fullDate))
       );
 
-      let att = 'P';
-      let ot = '-';
-      let dt = '-';
-      let remarks = '-';
+      const otReq = overtimeRequests.find(req => 
+        req.status === 'Approved' &&
+        (String(req.employeeId) === empIdStr || String(req.employeeCode || '') === empIdStr || String(req.employeeName || '').toLowerCase().trim() === empNameLower) &&
+        (req.date === fullDate || (typeof normalizeDate === 'function' ? normalizeDate(req.date) === fullDate : req.date === fullDate))
+      );
 
-      if (log) {
-        const s = String(log.status || '').toLowerCase();
-        if (s.includes('abs')) att = 'ABS';
-        else if (s.includes('leave') || s === 'l') att = 'L';
-        else if (s.includes('half')) att = 'HLD';
-        else att = 'P';
-
-        if (log.ot > 0) ot = `+${Number(log.ot).toFixed(1)}h`;
-        if (log.dt > 0 || log.lateHours > 0) dt = `-${Number(log.dt || log.lateHours).toFixed(1)}h`;
-        if (log.remarks) remarks = log.remarks;
-      } else {
-        const dayOfWeek = new Date(y, m - 1, d).getDay();
+      let status = dayRecord?.status || log?.status;
+      if (!status && log?.inTime) status = 'present';
+      const dayOfWeek = new Date(y, m - 1, d).getDay();
+      if (!status) {
         if (dayOfWeek === 0) {
-          att = 'L';
-        } else if (r.absentsCount > 0 && d <= r.absentsCount) {
-          att = 'ABS';
+          status = 'leave';
         } else {
-          att = 'P';
-          if (r.otHours > 0 && (d % 2 === 1)) {
-            ot = `+${Math.min(4, r.otHours).toFixed(1)}h`;
-          }
+          status = 'absent';
         }
       }
+
+      let att = 'ABS';
+      const s = String(status || '').toLowerCase();
+      if (s.includes('present') || s === 'p') att = 'P';
+      else if (s.includes('leave') || s === 'l' || s === 'paid_leave' || s === 'holiday' || s === 'offday') att = 'L';
+      else if (s.includes('half')) att = 'HLD';
+      else att = 'ABS';
+
+      let otVal = parseFloat(dayRecord?.ot || log?.ot || log?.overtimeHours || otReq?.hours || 0) || 0;
+      if (otReq && parseFloat(otReq.hours || 0) > 0) {
+        otVal = Math.max(otVal, parseFloat(otReq.hours || 0));
+      }
+      const ot = otVal > 0 ? `+${otVal.toFixed(1)}h` : '-';
+
+      let dtVal = parseFloat(dayRecord?.deductions || log?.dt || log?.lateHours || 0) || 0;
+      const dt = dtVal > 0 ? `-${dtVal.toFixed(1)}h` : '-';
+
+      const remarks = dayRecord?.remarks || log?.remarks || (att === 'L' && dayOfWeek === 0 ? 'Weekly Off' : '-');
 
       dailyRecords.push({ dateStr, att, ot, dt, remarks });
     }

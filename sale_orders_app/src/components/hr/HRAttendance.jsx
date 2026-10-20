@@ -1095,7 +1095,9 @@ export default function HRAttendance({ isMobile }) {
   const handleGenerateLivePayslip = (emp) => {
     if (!emp) return;
     const y = parseInt(selectedYear) || new Date().getFullYear();
-    const m = parseInt(selectedMonth) || (new Date().getMonth() + 1);
+    const m = (selectedMonth !== undefined && selectedMonth !== null && !isNaN(parseInt(selectedMonth)))
+      ? (parseInt(selectedMonth) + 1)
+      : (new Date().getMonth() + 1);
     const monthNames = ['JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY', 'JUNE', 'JULY', 'AUGUST', 'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER'];
     const periodMonthYear = `${monthNames[m - 1] || 'CURRENT'} ${y}`;
     const currentMonthDays = new Date(y, m, 0).getDate();
