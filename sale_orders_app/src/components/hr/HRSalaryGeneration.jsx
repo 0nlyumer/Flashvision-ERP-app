@@ -1,3 +1,4 @@
+import HRPayslipModal from './HRPayslipModal';
 import { getEffectiveDutyHours } from '../../utils/hrDutyHours';
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
@@ -685,6 +686,99 @@ export default function HRSalaryGeneration({ isMobile }) {
   }, [localPayrollList, selectedDivision, searchQuery, quickFilter, statusFilter, sortKey]);
 
   // Summary Totals for Header Cards strictly from filteredList
+  // Exact 110% Formatted Salary Slip Data for HRPayslipModal
+  const formattedDetailSlip = useMemo(() => {
+    if (!selectedRecordForDetail) return null;
+    const r = selectedRecordForDetail;
+    const currentMonthDays = r.currentMonthDays || 30;
+
+    const empIdStr = String(r.employeeId || '');
+    const empNameLower = String(r.employeeName || '').toLowerCase().trim();
+    const attendanceLogs = state.hr_uploaded_attendance || [];
+
+    const [yStr, mStr] = (payrollPeriod || '').split('-');
+    const y = parseInt(yStr) || 2026;
+    const m = parseInt(mStr) || 9;
+
+    const dailyRecords = [];
+    for (let d = 1; d <= currentMonthDays; d++) {
+      const dateStr = String(d).padStart(2, '0');
+      const fullDate = `${y}-${String(m).padStart(2, '0')}-${dateStr}`;
+
+      const log = attendanceLogs.find(l => 
+        (String(l.employeeId) === empIdStr || String(l.employeeName || '').toLowerCase().trim() === empNameLower) &&
+        (l.date === fullDate || String(l.date).endsWith(`-${dateStr}`))
+      );
+
+      let att = 'P';
+      let ot = '-';
+      let dt = '-';
+      let remarks = '-';
+
+      if (log) {
+        const s = String(log.status || '').toLowerCase();
+        if (s.includes('abs')) att = 'ABS';
+        else if (s.includes('leave') || s === 'l') att = 'L';
+        else if (s.includes('half')) att = 'HLD';
+        else att = 'P';
+
+        if (log.ot > 0) ot = `+${Number(log.ot).toFixed(1)}h`;
+        if (log.dt > 0 || log.lateHours > 0) dt = `-${Number(log.dt || log.lateHours).toFixed(1)}h`;
+        if (log.remarks) remarks = log.remarks;
+      } else {
+        const dayOfWeek = new Date(y, m - 1, d).getDay();
+        if (dayOfWeek === 0) {
+          att = 'L';
+        } else if (r.absentsCount > 0 && d <= r.absentsCount) {
+          att = 'ABS';
+        } else {
+          att = 'P';
+          if (r.otHours > 0 && (d % 2 === 1)) {
+            ot = `+${Math.min(4, r.otHours).toFixed(1)}h`;
+          }
+        }
+      }
+
+      dailyRecords.push({ dateStr, att, ot, dt, remarks });
+    }
+
+    const otPay = safeNum(r.overtime);
+    const allowances = safeNum(r.allowance);
+    const absentDeduction = safeNum(r.absents);
+    const dtDeduction = safeNum(r.lateDeduction);
+    const fines = safeNum(r.fine);
+    const advance = safeNum(r.advanceAmount);
+    const loanInstallment = safeNum(r.loan);
+    const netAdjustmentBalance = otPay + allowances - absentDeduction - dtDeduction - fines - advance - loanInstallment;
+
+    return {
+      employeeId: r.employeeId,
+      employeeName: r.employeeName,
+      designation: r.designation || 'WORKER',
+      department: r.department || 'Operations',
+      shiftSchedule: r.shift || 'Standard',
+      dutyHours: r.dutyHours || 8,
+      basicSalary: r.basicSalary || 0,
+      paidDays: r.payableDays || r.workedDays || 0,
+      presentDays: r.workedDays || 0,
+      currentMonthDays: currentMonthDays,
+      periodMonthYear: getPeriodLabel(payrollPeriod).toUpperCase(),
+      dailyRecords: dailyRecords,
+      otHours: r.otHours || 0,
+      otPay: otPay,
+      dtHours: r.lateComingHours || 0,
+      dtDeduction: dtDeduction,
+      absentDays: r.absentsCount || 0,
+      absentDeduction: absentDeduction,
+      fines: fines,
+      allowances: allowances,
+      advance: advance,
+      loanInstallment: loanInstallment,
+      netAdjustmentBalance: netAdjustmentBalance,
+      netSalary: r.netSalary || 0
+    };
+  }, [selectedRecordForDetail, payrollPeriod, state.hr_uploaded_attendance]);
+
   const summaryTotals = useMemo(() => {
     return filteredList.reduce((acc, cur) => {
       acc.netPayout += safeNum(cur.netSalary);

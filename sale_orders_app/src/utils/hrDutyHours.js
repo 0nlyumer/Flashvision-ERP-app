@@ -8,11 +8,16 @@ export function getEffectiveDutyHours(emp, dutySettings = {}) {
   if (!emp) return { hours: Number(dutySettings?.standardHours) || 8, source: 'Global Standard', type: 'standard' };
 
   // 1. Employee-specific custom override from HR Settings
-  if (dutySettings?.employeeDutyHours && emp.id && Number(dutySettings.employeeDutyHours[emp.id]) > 0) {
-    return { hours: Number(dutySettings.employeeDutyHours[emp.id]), source: 'Custom Employee Override', type: 'custom' };
-  }
-  if (dutySettings?.employeeDutyHours && emp.employeeId && Number(dutySettings.employeeDutyHours[emp.employeeId]) > 0) {
-    return { hours: Number(dutySettings.employeeDutyHours[emp.employeeId]), source: 'Custom Employee Override', type: 'custom' };
+  if (dutySettings?.employeeDutyHours) {
+    if (emp.id && Number(dutySettings.employeeDutyHours[emp.id]) > 0) {
+      return { hours: Number(dutySettings.employeeDutyHours[emp.id]), source: 'Custom Employee Override', type: 'custom' };
+    }
+    if (emp.employeeCode && Number(dutySettings.employeeDutyHours[emp.employeeCode]) > 0) {
+      return { hours: Number(dutySettings.employeeDutyHours[emp.employeeCode]), source: 'Custom Employee Override', type: 'custom' };
+    }
+    if (emp.employeeId && Number(dutySettings.employeeDutyHours[emp.employeeId]) > 0) {
+      return { hours: Number(dutySettings.employeeDutyHours[emp.employeeId]), source: 'Custom Employee Override', type: 'custom' };
+    }
   }
 
   // 2. Direct employee profile duty hours

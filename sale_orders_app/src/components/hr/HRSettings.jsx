@@ -340,6 +340,197 @@ export default function HRSettings({ isMobile }) {
     } catch (e) {}
   };
 
+  const handleSetEmployeeDutyHours = (emp, hours) => {
+    const empId = typeof emp === 'object' ? (emp.id || emp.employeeCode || emp.employeeId) : emp;
+    const empCode = typeof emp === 'object' ? (emp.employeeCode || emp.employeeId || emp.id) : emp;
+    
+    const updatedEmpHours = {
+      ...(dutySettings.employeeDutyHours || {}),
+      [empId]: Number(hours)
+    };
+    if (empCode && empCode !== empId) {
+      updatedEmpHours[empCode] = Number(hours);
+    }
+    const updatedSettings = {
+      ...dutySettings,
+      employeeDutyHours: updatedEmpHours
+    };
+    saveDutySettings(updatedSettings);
+
+    const targetIdStr = String(empId).trim();
+    const targetCodeStr = String(empCode).trim();
+    const updatedList = (state?.hr_employees_list || employees || []).map(e => {
+      const eId = String(e.id || '').trim();
+      const eCode = String(e.employeeCode || e.employeeId || '').trim();
+      if ((targetIdStr && eId === targetIdStr) || (targetCodeStr && eCode === targetCodeStr)) {
+        return { ...e, dutyHours: Number(hours), dailyHours: Number(hours) };
+      }
+      return e;
+    });
+
+    if (setCollection) {
+      setCollection('hr_employees_list', updatedList);
+    }
+    try {
+      localStorage.setItem('hr_employees_list', JSON.stringify(updatedList));
+    } catch (e) {}
+  };
+
+  const handleResetEmployeeDutyHours = (emp) => {
+    const empId = typeof emp === 'object' ? (emp.id || emp.employeeCode || emp.employeeId) : emp;
+    const empCode = typeof emp === 'object' ? (emp.employeeCode || emp.employeeId || emp.id) : emp;
+
+    const updatedEmpHours = { ...(dutySettings.employeeDutyHours || {}) };
+    if (empId) delete updatedEmpHours[empId];
+    if (empCode) delete updatedEmpHours[empCode];
+
+    const updatedSettings = {
+      ...dutySettings,
+      employeeDutyHours: updatedEmpHours
+    };
+    saveDutySettings(updatedSettings);
+
+    const targetIdStr = String(empId).trim();
+    const targetCodeStr = String(empCode).trim();
+    const updatedList = (state?.hr_employees_list || employees || []).map(e => {
+      const eId = String(e.id || '').trim();
+      const eCode = String(e.employeeCode || e.employeeId || '').trim();
+      if ((targetIdStr && eId === targetIdStr) || (targetCodeStr && eCode === targetCodeStr)) {
+        const copy = { ...e };
+        delete copy.dutyHours;
+        delete copy.dailyHours;
+        return copy;
+      }
+      return e;
+    });
+
+    if (setCollection) {
+      setCollection('hr_employees_list', updatedList);
+    }
+    try {
+      localStorage.setItem('hr_employees_list', JSON.stringify(updatedList));
+    } catch (e) {}
+  };
+
+  const handleSetDivisionDutyHours = (divName, hours) => {
+    const updated = {
+      ...dutySettings,
+      divisionDutyHours: {
+        ...(dutySettings.divisionDutyHours || {}),
+        [divName]: Number(hours)
+      }
+    };
+    saveDutySettings(updated);
+  };
+
+  const handleResetDivisionDutyHours = (divName) => {
+    const updatedDiv = { ...(dutySettings.divisionDutyHours || {}) };
+    delete updatedDiv[divName];
+    const updated = {
+      ...dutySettings,
+      divisionDutyHours: updatedDiv
+    };
+    saveDutySettings(updated);
+  };
+
+  const handleSetDepartmentDutyHours = (deptName, hours) => {
+    const updated = {
+      ...dutySettings,
+      departmentDutyHours: {
+        ...(dutySettings.departmentDutyHours || {}),
+        [deptName]: Number(hours)
+      }
+    };
+    saveDutySettings(updated);
+  };
+
+  const handleResetDepartmentDutyHours = (deptName) => {
+    const updatedDept = { ...(dutySettings.departmentDutyHours || {}) };
+    delete updatedDept[deptName];
+    const updated = {
+      ...dutySettings,
+      departmentDutyHours: updatedDept
+    };
+    saveDutySettings(updated);
+  };
+
+  const handleBatchApplyDutyHours = (filteredList, targetHours) => {
+    if (!filteredList || filteredList.length === 0) return;
+    const hrs = Number(targetHours) || 8;
+    const updatedEmpHours = { ...(dutySettings.employeeDutyHours || {}) };
+    const empIdsToUpdate = new Set();
+    filteredList.forEach(emp => {
+      if (emp.id) {
+        updatedEmpHours[emp.id] = hrs;
+        empIdsToUpdate.add(emp.id);
+      }
+      if (emp.employeeCode) {
+        updatedEmpHours[emp.employeeCode] = hrs;
+        empIdsToUpdate.add(emp.employeeCode);
+      }
+    });
+
+    const updatedSettings = {
+      ...dutySettings,
+      employeeDutyHours: updatedEmpHours
+    };
+    saveDutySettings(updatedSettings);
+
+    const updatedList = (state?.hr_employees_list || employees || []).map(e => {
+      if (empIdsToUpdate.has(e.id) || empIdsToUpdate.has(e.employeeCode)) {
+        return { ...e, dutyHours: hrs, dailyHours: hrs };
+      }
+      return e;
+    });
+
+    if (setCollection) {
+      setCollection('hr_employees_list', updatedList);
+    }
+    try {
+      localStorage.setItem('hr_employees_list', JSON.stringify(updatedList));
+    } catch (e) {}
+  };
+
+  const handleBatchResetDutyHours = (filteredList) => {
+    if (!filteredList || filteredList.length === 0) return;
+    const updatedEmpHours = { ...(dutySettings.employeeDutyHours || {}) };
+    const empIdsToReset = new Set();
+    filteredList.forEach(emp => {
+      if (emp.id) {
+        delete updatedEmpHours[emp.id];
+        empIdsToReset.add(emp.id);
+      }
+      if (emp.employeeCode) {
+        delete updatedEmpHours[emp.employeeCode];
+        empIdsToReset.add(emp.employeeCode);
+      }
+    });
+
+    const updatedSettings = {
+      ...dutySettings,
+      employeeDutyHours: updatedEmpHours
+    };
+    saveDutySettings(updatedSettings);
+
+    const updatedList = (state?.hr_employees_list || employees || []).map(e => {
+      if (empIdsToReset.has(e.id) || empIdsToReset.has(e.employeeCode)) {
+        const copy = { ...e };
+        delete copy.dutyHours;
+        delete copy.dailyHours;
+        return copy;
+      }
+      return e;
+    });
+
+    if (setCollection) {
+      setCollection('hr_employees_list', updatedList);
+    }
+    try {
+      localStorage.setItem('hr_employees_list', JSON.stringify(updatedList));
+    } catch (e) {}
+  };
+
+
   const handleSyncStandardHoursToAllEmployees = () => {
     const hrs = dutySettings.standardHours || 8;
     if (confirm(`Do you want to update standard duty hours to ${hrs}h for all active employees?`)) {
@@ -1736,113 +1927,9 @@ export default function HRSettings({ isMobile }) {
   // ==========================================
   // DUTY HOURS & SHIFTS RENDERERS (COMPREHENSIVE)
   // ==========================================
-  // getEmpEffectiveDutyHours defined at top of component
+// Duty handlers hoisted above render
 
-  const handleSetEmployeeDutyHours = (empId, hours) => {
-    const updatedEmpHours = {
-      ...(dutySettings.employeeDutyHours || {}),
-      [empId]: Number(hours)
-    };
-    const updatedSettings = {
-      ...dutySettings,
-      employeeDutyHours: updatedEmpHours
-    };
-    saveDutySettings(updatedSettings);
-
-    if (setCollection) {
-      const updatedList = employees.map(e => e.id === empId ? { ...e, dutyHours: Number(hours), dailyHours: Number(hours) } : e);
-      setCollection('hr_employees_list', updatedList);
-    }
-  };
-
-  const handleResetEmployeeDutyHours = (empId) => {
-    const updatedEmpHours = { ...(dutySettings.employeeDutyHours || {}) };
-    delete updatedEmpHours[empId];
-    const updatedSettings = {
-      ...dutySettings,
-      employeeDutyHours: updatedEmpHours
-    };
-    saveDutySettings(updatedSettings);
-
-    if (setCollection) {
-      const updatedList = employees.map(e => {
-        if (e.id === empId) {
-          const copy = { ...e };
-          delete copy.dutyHours;
-          delete copy.dailyHours;
-          return copy;
-        }
-        return e;
-      });
-      setCollection('hr_employees_list', updatedList);
-    }
-  };
-
-  const handleSetDivisionDutyHours = (divName, hours) => {
-    const updated = {
-      ...dutySettings,
-      divisionDutyHours: {
-        ...(dutySettings.divisionDutyHours || {}),
-        [divName]: Number(hours)
-      }
-    };
-    saveDutySettings(updated);
-  };
-
-  const handleResetDivisionDutyHours = (divName) => {
-    const updatedDiv = { ...(dutySettings.divisionDutyHours || {}) };
-    delete updatedDiv[divName];
-    const updated = {
-      ...dutySettings,
-      divisionDutyHours: updatedDiv
-    };
-    saveDutySettings(updated);
-  };
-
-  const handleSetDepartmentDutyHours = (deptName, hours) => {
-    const updated = {
-      ...dutySettings,
-      departmentDutyHours: {
-        ...(dutySettings.departmentDutyHours || {}),
-        [deptName]: Number(hours)
-      }
-    };
-    saveDutySettings(updated);
-  };
-
-  const handleResetDepartmentDutyHours = (deptName) => {
-    const updatedDept = { ...(dutySettings.departmentDutyHours || {}) };
-    delete updatedDept[deptName];
-    const updated = {
-      ...dutySettings,
-      departmentDutyHours: updatedDept
-    };
-    saveDutySettings(updated);
-  };
-
-  const handleBatchApplyDutyHours = (filteredList, targetHours) => {
-    if (!filteredList || filteredList.length === 0) return;
-    const hrs = Number(targetHours) || 8;
-    if (confirm(`Apply ${hrs} duty hours to ${filteredList.length} filtered personnel?`)) {
-      const newEmpHours = { ...(dutySettings.employeeDutyHours || {}) };
-      filteredList.forEach(emp => {
-        newEmpHours[emp.id] = hrs;
-      });
-      const updatedSettings = {
-        ...dutySettings,
-        employeeDutyHours: newEmpHours
-      };
-      saveDutySettings(updatedSettings);
-
-      if (setCollection) {
-        const idSet = new Set(filteredList.map(e => e.id));
-        const updatedList = employees.map(e => idSet.has(e.id) ? { ...e, dutyHours: hrs, dailyHours: hrs } : e);
-        setCollection('hr_employees_list', updatedList);
-      }
-    }
-  };
-
-  function renderDesktopDutyHours() {
+    function renderDesktopDutyHours() {
     const ALPHABET_KEYS = ['ALL', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z'];
     
     // Distinct divisions list
@@ -2611,7 +2698,7 @@ export default function HRSettings({ isMobile }) {
                                   <button
                                     key={hrs}
                                     type="button"
-                                    onClick={() => handleSetEmployeeDutyHours(emp.id, hrs)}
+                                    onClick={() => handleSetEmployeeDutyHours(emp, hrs)}
                                     className={`h-7 px-2.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
                                       eff.hours === hrs
                                         ? 'bg-amber-600 text-white shadow-xs'
@@ -2625,7 +2712,7 @@ export default function HRSettings({ isMobile }) {
                                 {isCustom && (
                                   <button
                                     type="button"
-                                    onClick={() => handleResetEmployeeDutyHours(emp.id)}
+                                    onClick={() => handleResetEmployeeDutyHours(emp)}
                                     className="h-7 px-2 rounded-lg bg-surface-container hover:bg-rose-500/10 hover:text-rose-600 text-on-surface-variant text-[10px] font-bold transition-colors cursor-pointer flex items-center gap-1"
                                     title="Reset to Department/Division Default"
                                   >
