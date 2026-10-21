@@ -2272,7 +2272,7 @@ export const AppProvider = ({ children }) => {
     }
     isUserSettingsLoaded.current = false; // Reset loaded flag on user change
     const username = state.currentUser.username;
-    const isMobileApp = window.Capacitor || window.cordova || window.innerWidth < 768;
+    const isMobileApp = window.Capacitor || window.cordova || /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || window.screen.width < 768;
     const platformKey = isMobileApp ? 'mobile' : 'web';
     
     // Load local cache first for instant UI response
@@ -2445,7 +2445,7 @@ export const AppProvider = ({ children }) => {
     if (!isUserSettingsLoaded.current) return; // Prevent writing settings until we have finished loading them from remote database!
     
     const username = state.currentUser.username;
-    const isMobileApp = window.Capacitor || window.cordova || window.innerWidth < 768;
+    const isMobileApp = window.Capacitor || window.cordova || /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || window.screen.width < 768;
     const platformKey = isMobileApp ? 'mobile' : 'web';
     
     const userSettings = {
@@ -2504,7 +2504,11 @@ export const AppProvider = ({ children }) => {
   // Apply display scaling globally based on device/viewport and preferences
   useEffect(() => {
     const applyScaling = () => {
-      const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || window.innerWidth < 768;
+      // Device class must come from a stable signal (UA / physical screen),
+      // never from window.innerWidth: body zoom + viewport-meta changes can
+      // move innerWidth across the 768 threshold and flip the scale (and the
+      // whole layout/theme) back and forth on the same device.
+      const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || window.screen.width < 768;
       const display = state.displaySettings || { webScale: 75, mobileScale: 100 };
       
       const isChatPage = window.location.pathname === '/chat';

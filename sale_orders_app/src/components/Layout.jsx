@@ -117,7 +117,13 @@ export default function Layout({ children, hideSidebar = false, subNavigation = 
 
     if (isMobileView) {
       viewportMeta.setAttribute('content', 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no');
-    } else if (isRealMobile || isInsideSimFrame || isMobileSim) {
+    } else if (isInsideSimFrame || isMobileSim) {
+      // Desktop-width simulation is ONLY for the built-in simulator frame.
+      // It must never be applied to a real mobile device: setting width=1280
+      // makes window.innerWidth become 1280, which flips isRealMobile off,
+      // which restores device-width, which flips it back on — an endless
+      // layout oscillation (the app flickers between desktop/mobile views
+      // and themed colors pulse between shades).
       viewportMeta.setAttribute('content', 'width=1280, initial-scale=0.3, maximum-scale=1.0, user-scalable=yes');
     } else {
       viewportMeta.setAttribute('content', 'width=device-width, initial-scale=1.0');
