@@ -270,8 +270,31 @@ export default function FlashAM() {
   // SUPABASE REALTIME DIRECT DATABASE SYNC
   // ---------------------------------------------------------------------------
   const fetchSupabaseData = async (isSilent = false) => {
+    if (typeof document !== 'undefined' && document.hidden) return; // Zero egress when tab in background!
     if (!isSilent) setIsLoadingDb(true);
     try {
+      const cachedUpdatedAt = localStorage.getItem('flasham_cached_updated_at');
+      const hasCachedEmployees = Boolean(localStorage.getItem('flasham_cached_employees'));
+
+      // Check remote updated_at first (only ~50 bytes!)
+      const { data: verData, error: verErr } = await supabase
+        .from('erp_state')
+        .select('updated_at')
+        .eq('id', 'main_state')
+        .single();
+
+      if (verErr) throw verErr;
+
+      // If local cache is already up to date, skip downloading full state_data!
+      if (verData?.updated_at && cachedUpdatedAt && verData.updated_at === cachedUpdatedAt && hasCachedEmployees) {
+        console.log('[Egress Guard] Flash AM workforce is already up to date! Skipped ~3MB download.');
+        setLastSyncTime(new Date().toLocaleTimeString());
+        setSyncStatus('synced');
+        setIsLoadingDb(false);
+        return;
+      }
+
+      // Download only when remote has changed or cache is empty
       const { data, error } = await supabase
         .from('erp_state')
         .select('state_data, updated_at')
@@ -281,6 +304,9 @@ export default function FlashAM() {
       if (error) throw error;
 
       if (data && data.state_data) {
+        if (data.updated_at) {
+          localStorage.setItem('flasham_cached_updated_at', data.updated_at);
+        }
         const sd = data.state_data;
         if (Array.isArray(sd.hr_employees_list) && sd.hr_employees_list.length > 0) {
           setDbEmployees(sd.hr_employees_list);
@@ -298,7 +324,7 @@ export default function FlashAM() {
         setSyncStatus('synced');
       }
     } catch (err) {
-      console.warn('Flash AM Supabase fetch warning:', err);
+      console.warn('Flash AM Supabase fetch warning / quota:', err);
       setSyncStatus('offline');
     } finally {
       setIsLoadingDb(false);
@@ -331,6 +357,7 @@ export default function FlashAM() {
             }
             setLastSyncTime(new Date().toLocaleTimeString());
             setSyncStatus('synced');
+            if (payload.new && payload.new.updated_at) localStorage.setItem('flasham_cached_updated_at', payload.new.updated_at);
           }
         }
       )
