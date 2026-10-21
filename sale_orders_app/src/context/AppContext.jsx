@@ -554,6 +554,24 @@ export const reconcileHRApprovalsAndLedgers = (stateObj) => {
   return stateObj;
 };
 
+const getSanitizedSyncState = (stateObj) => {
+  if (!stateObj) return {};
+  const cleanState = { ...stateObj };
+  delete cleanState.themeSettings;
+  delete cleanState.displaySettings;
+  delete cleanState.dashboardLayout;
+  delete cleanState.dashboardBackground;
+  // Retain documentWarehouseBinders in cloud state so documents are never lost across devices/logins!
+  delete cleanState.currentUser;
+  if (cleanState.users) {
+    cleanState.users = cleanState.users.map(u => {
+      const { lastActive, ...rest } = u;
+      return rest;
+    });
+  }
+  return cleanState;
+};
+
 export const AppProvider = ({ children }) => {
   const connectionId = useRef(
     sessionStorage.getItem('connectionId') || 
@@ -588,6 +606,7 @@ export const AppProvider = ({ children }) => {
   const lastSyncedStateRef = useRef('');
   const lastSyncedUpdatedAtRef = useRef('');
   const standaloneTablesSupportedRef = useRef(false);
+  const lsDebounceRef = useRef({ hr_employees_list: null, hr_uploaded_attendance: null });
 
   const safeLocalStorageSet = (key, value) => {
     try {
@@ -777,6 +796,11 @@ export const AppProvider = ({ children }) => {
   });
 
   const [isDirty, setDirty] = useState(false);
+
+  // Initialize lastSyncedStateRef baseline so clean boots do not trigger false sync writes
+  if (!lastSyncedStateRef.current && state) {
+    lastSyncedStateRef.current = JSON.stringify(getSanitizedSyncState(state));
+  }
 
   // Keep currentUserRef continuously synchronized
   useEffect(() => {
@@ -1104,24 +1128,6 @@ export const AppProvider = ({ children }) => {
     return merged;
   };
 
-  const getSanitizedSyncState = (stateObj) => {
-    if (!stateObj) return {};
-    const cleanState = { ...stateObj };
-    delete cleanState.themeSettings;
-    delete cleanState.displaySettings;
-    delete cleanState.dashboardLayout;
-    delete cleanState.dashboardBackground;
-    // Retain documentWarehouseBinders in cloud state so documents are never lost across devices/logins!
-    delete cleanState.currentUser;
-    if (cleanState.users) {
-      cleanState.users = cleanState.users.map(u => {
-        const { lastActive, ...rest } = u;
-        return rest;
-      });
-    }
-    return cleanState;
-  };
-
   const updateMatchedCurrentUser = (prevCurrentUser, usersList) => {
     if (!prevCurrentUser || !Array.isArray(usersList)) return prevCurrentUser;
     const matched = usersList.find(u => 
@@ -1192,6 +1198,7 @@ export const AppProvider = ({ children }) => {
 
         if (verErr) {
           console.warn("Supabase initial load error / quota check:", verErr);
+          lastSyncedStateRef.current = JSON.stringify(getSanitizedSyncState(state));
           isFirstRemoteSyncCompleted.current = true;
           setIsInitialLoadCompleted(true);
           return;
@@ -1201,6 +1208,7 @@ export const AppProvider = ({ children }) => {
         if (verData?.updated_at && localCachedUpdatedAt && verData.updated_at === localCachedUpdatedAt && hasLocalSavedState) {
           console.log("[Egress Guard] Local state is 100% up to date! Skipped full state download. Egress saved: ~3MB!");
           lastSyncedUpdatedAtRef.current = verData.updated_at;
+          lastSyncedStateRef.current = JSON.stringify(getSanitizedSyncState(state));
           isFirstRemoteSyncCompleted.current = true;
           setIsInitialLoadCompleted(true);
           return;
@@ -1215,6 +1223,7 @@ export const AppProvider = ({ children }) => {
 
         if (error) {
           console.warn("Supabase initial state_data fetch error:", error);
+          lastSyncedStateRef.current = JSON.stringify(getSanitizedSyncState(state));
           isFirstRemoteSyncCompleted.current = true;
           setIsInitialLoadCompleted(true);
           return;
@@ -1365,7 +1374,6 @@ export const AppProvider = ({ children }) => {
             if (isLocalUpsertInFlight.current) {
               return;
             }
-            isRemoteSyncing.current = true;
             const toArray = (val) => Array.isArray(val) ? val : (val ? Object.values(val) : []);
             const depts = toArray(erpData.departments || []);
             const cleanDepts = depts.map((d, index) => {
@@ -1411,13 +1419,31 @@ export const AppProvider = ({ children }) => {
               chartOfAccounts: toArray(erpData.chartOfAccounts),
               hr_employees_list: toArray(erpData.hr_employees_list),
               hr_uploaded_attendance: toArray(erpData.hr_uploaded_attendance),
+              hr_loan_requests: toArray(erpData.hr_loan_requests),
+              hr_loan_ledger: toArray(erpData.hr_loan_ledger),
               boms: toArray(erpData.boms),
               rawMaterialPhases: toArray(erpData.rawMaterialPhases),
               finishedGoodPhases: toArray(erpData.finishedGoodPhases)
             };
             
             const syncStateCopy = getSanitizedSyncState(sanitized);
-            lastSyncedStateRef.current = JSON.stringify(syncStateCopy);
+            const copyStr = JSON.stringify(syncStateCopy);
+
+            // Guard: If remote content is identical to last synced state, do NOT setState!
+            if (copyStr === lastSyncedStateRef.current) {
+              if (payload.new?.updated_at) {
+                lastSyncedUpdatedAtRef.current = payload.new.updated_at;
+                localStorage.setItem('fv_last_synced_updated_at', payload.new.updated_at);
+              }
+              return;
+            }
+
+            isRemoteSyncing.current = true;
+            lastSyncedStateRef.current = copyStr;
+            if (payload.new?.updated_at) {
+              lastSyncedUpdatedAtRef.current = payload.new.updated_at;
+              localStorage.setItem('fv_last_synced_updated_at', payload.new.updated_at);
+            }
 
             setState(prev => {
               const mergedState = smartUnionMerge(prev, sanitized);
@@ -1464,8 +1490,22 @@ export const AppProvider = ({ children }) => {
 
             setState(prev => {
               const currentUsers = Array.isArray(prev.users) ? prev.users : [];
-              const exists = currentUsers.some(u => String(u.id) === String(mappedUser.id) || (u.username && mappedUser.username && u.username.toLowerCase() === mappedUser.username.toLowerCase()));
-              const nextUsers = exists
+              const existingUser = currentUsers.find(u => String(u.id) === String(mappedUser.id) || (u.username && mappedUser.username && u.username.toLowerCase() === mappedUser.username.toLowerCase()));
+              if (existingUser) {
+                const isIdentical =
+                  (existingUser.name || '') === (mappedUser.name || '') &&
+                  (existingUser.role || '') === (mappedUser.role || '') &&
+                  (existingUser.email || '') === (mappedUser.email || '') &&
+                  (existingUser.phone || '') === (mappedUser.phone || '') &&
+                  (existingUser.status || '') === (mappedUser.status || '') &&
+                  JSON.stringify(existingUser.permissions || []) === JSON.stringify(mappedUser.permissions || []) &&
+                  JSON.stringify(existingUser.granularPermissions || {}) === JSON.stringify(mappedUser.granularPermissions || {});
+                if (isIdentical) {
+                  return prev;
+                }
+              }
+
+              const nextUsers = existingUser
                 ? currentUsers.map(u => String(u.id) === String(mappedUser.id) || (u.username && mappedUser.username && u.username.toLowerCase() === mappedUser.username.toLowerCase()) ? { ...u, ...mappedUser } : u)
                 : [...currentUsers, mappedUser];
 
@@ -1633,6 +1673,11 @@ export const AppProvider = ({ children }) => {
           setTimeout(() => {
             isRemoteSyncing.current = false;
           }, 100);
+        } else {
+          lastSyncedUpdatedAtRef.current = fullData.updated_at;
+          if (fullData?.updated_at) {
+            localStorage.setItem('fv_last_synced_updated_at', fullData.updated_at);
+          }
         }
       } catch (err) {
         console.warn("Sync poll check error:", err);
@@ -1677,38 +1722,32 @@ export const AppProvider = ({ children }) => {
     localStorage.setItem = function(key, value) {
       originalSetItem.apply(this, arguments);
       
-      if (isLocalStorageWriting.current) return;
+      if (isLocalStorageWriting.current || isRemoteSyncing.current || isLocalUpsertInFlight.current) return;
+      if (key !== 'hr_employees_list' && key !== 'hr_uploaded_attendance') return;
 
-      if (key === 'hr_employees_list') {
+      if (lsDebounceRef.current[key]) {
+        clearTimeout(lsDebounceRef.current[key]);
+      }
+
+      lsDebounceRef.current[key] = setTimeout(() => {
         try {
           const list = JSON.parse(value);
           setState(prev => {
-            if (JSON.stringify(prev.hr_employees_list) !== JSON.stringify(list)) {
-              return { ...prev, hr_employees_list: list };
+            if (JSON.stringify(prev[key] || []) !== JSON.stringify(list || [])) {
+              return { ...prev, [key]: list };
             }
             return prev;
           });
         } catch (e) {
-          console.warn("Error parsing hr_employees_list setItem:", e);
+          console.warn(`Error parsing ${key} setItem:`, e);
         }
-      }
-      if (key === 'hr_uploaded_attendance') {
-        try {
-          const list = JSON.parse(value);
-          setState(prev => {
-            if (JSON.stringify(prev.hr_uploaded_attendance) !== JSON.stringify(list)) {
-              return { ...prev, hr_uploaded_attendance: list };
-            }
-            return prev;
-          });
-        } catch (e) {
-          console.warn("Error parsing hr_uploaded_attendance setItem:", e);
-        }
-      }
+      }, 150);
     };
 
     return () => {
       localStorage.setItem = originalSetItem;
+      if (lsDebounceRef.current.hr_employees_list) clearTimeout(lsDebounceRef.current.hr_employees_list);
+      if (lsDebounceRef.current.hr_uploaded_attendance) clearTimeout(lsDebounceRef.current.hr_uploaded_attendance);
     };
   }, []);
 
@@ -1750,7 +1789,11 @@ export const AppProvider = ({ children }) => {
               const remote = data.state_data;
               
               const syncStateCopy = getSanitizedSyncState(remote);
-              lastSyncedStateRef.current = JSON.stringify(syncStateCopy);
+              const copyStr = JSON.stringify(syncStateCopy);
+              if (copyStr === lastSyncedStateRef.current) {
+                return;
+              }
+              lastSyncedStateRef.current = copyStr;
 
               setState(prev => {
                   const merged = { ...prev };
@@ -2011,6 +2054,10 @@ export const AppProvider = ({ children }) => {
       
       const syncState = getSanitizedSyncState(state);
       const currentSyncStateStr = JSON.stringify(syncState);
+      if (currentSyncStateStr === lastSyncedStateRef.current) {
+        setSyncStatus('idle');
+        return;
+      }
       syncState.buildVersion = BUILD_VERSION;
       syncState.lastUpdatedBy = clientId.current;
       const sanitizedSyncState = JSON.parse(JSON.stringify(syncState));
@@ -2048,76 +2095,79 @@ export const AppProvider = ({ children }) => {
   }, [isOnline, syncStatus]);
 
   useEffect(() => {
-    safeLocalStorageSet('aj_synthetic_erp', JSON.stringify(state));
-    if (state.currentUser) {
-      safeLocalStorageSet('aj_current_user', JSON.stringify(state.currentUser));
-    }
-    
-    // Write key items to separate localStorage keys for backwards compatibility/sync!
     isLocalStorageWriting.current = true;
-    if (state.hr_employees_list) {
-      safeLocalStorageSet('hr_employees_list', JSON.stringify(state.hr_employees_list));
-      // Dispatch storage event to trigger updates in the same window context
-      window.dispatchEvent(new StorageEvent('storage', {
-        key: 'hr_employees_list',
-        newValue: JSON.stringify(state.hr_employees_list),
-        storageArea: localStorage
-      }));
+    try {
+      safeLocalStorageSet('aj_synthetic_erp', JSON.stringify(state));
+      if (state.currentUser) {
+        safeLocalStorageSet('aj_current_user', JSON.stringify(state.currentUser));
+      }
+      
+      // Write key items to separate localStorage keys for backwards compatibility/sync!
+      if (state.hr_employees_list) {
+        safeLocalStorageSet('hr_employees_list', JSON.stringify(state.hr_employees_list));
+        // Dispatch storage event to trigger updates in the same window context
+        window.dispatchEvent(new StorageEvent('storage', {
+          key: 'hr_employees_list',
+          newValue: JSON.stringify(state.hr_employees_list),
+          storageArea: localStorage
+        }));
+      }
+      if (state.hr_uploaded_attendance) {
+        safeLocalStorageSet('hr_uploaded_attendance', JSON.stringify(state.hr_uploaded_attendance));
+        window.dispatchEvent(new StorageEvent('storage', {
+          key: 'hr_uploaded_attendance',
+          newValue: JSON.stringify(state.hr_uploaded_attendance),
+          storageArea: localStorage
+        }));
+      }
+      if (state.hr_overtime_requests) {
+        safeLocalStorageSet('hr_overtime_requests', JSON.stringify(state.hr_overtime_requests));
+        window.dispatchEvent(new StorageEvent('storage', {
+          key: 'hr_overtime_requests',
+          newValue: JSON.stringify(state.hr_overtime_requests),
+          storageArea: localStorage
+        }));
+      }
+      if (state.hr_leave_requests) {
+        safeLocalStorageSet('hr_leave_requests', JSON.stringify(state.hr_leave_requests));
+        window.dispatchEvent(new StorageEvent('storage', {
+          key: 'hr_leave_requests',
+          newValue: JSON.stringify(state.hr_leave_requests),
+          storageArea: localStorage
+        }));
+      }
+      if (state.hr_generated_salaries) {
+        safeLocalStorageSet('hr_generated_salaries', JSON.stringify(state.hr_generated_salaries));
+        window.dispatchEvent(new StorageEvent('storage', {
+          key: 'hr_generated_salaries',
+          newValue: JSON.stringify(state.hr_generated_salaries),
+          storageArea: localStorage
+        }));
+      }
+      if (state.users) {
+        safeLocalStorageSet('fv_users_list', JSON.stringify(state.users));
+      }
+      if (state.hr_loan_requests) {
+        safeLocalStorageSet('hr_loan_requests', JSON.stringify(state.hr_loan_requests));
+      }
+      if (state.hr_loan_ledger) {
+        safeLocalStorageSet('hr_loan_ledger', JSON.stringify(state.hr_loan_ledger));
+      }
+      if (state.hr_advance_requests) {
+        safeLocalStorageSet('hr_advance_requests', JSON.stringify(state.hr_advance_requests));
+      }
+      if (state.routingRules) {
+        safeLocalStorageSet('hr_routing_rules_config', JSON.stringify(state.routingRules));
+      }
+      if (state.routingTasks) {
+        safeLocalStorageSet('routingTasks', JSON.stringify(state.routingTasks));
+      }
+      if (state.approvals) {
+        safeLocalStorageSet('approvals', JSON.stringify(state.approvals));
+      }
+    } finally {
+      isLocalStorageWriting.current = false;
     }
-    if (state.hr_uploaded_attendance) {
-      safeLocalStorageSet('hr_uploaded_attendance', JSON.stringify(state.hr_uploaded_attendance));
-      window.dispatchEvent(new StorageEvent('storage', {
-        key: 'hr_uploaded_attendance',
-        newValue: JSON.stringify(state.hr_uploaded_attendance),
-        storageArea: localStorage
-      }));
-    }
-    if (state.hr_overtime_requests) {
-      safeLocalStorageSet('hr_overtime_requests', JSON.stringify(state.hr_overtime_requests));
-      window.dispatchEvent(new StorageEvent('storage', {
-        key: 'hr_overtime_requests',
-        newValue: JSON.stringify(state.hr_overtime_requests),
-        storageArea: localStorage
-      }));
-    }
-    if (state.hr_leave_requests) {
-      safeLocalStorageSet('hr_leave_requests', JSON.stringify(state.hr_leave_requests));
-      window.dispatchEvent(new StorageEvent('storage', {
-        key: 'hr_leave_requests',
-        newValue: JSON.stringify(state.hr_leave_requests),
-        storageArea: localStorage
-      }));
-    }
-    if (state.hr_generated_salaries) {
-      safeLocalStorageSet('hr_generated_salaries', JSON.stringify(state.hr_generated_salaries));
-      window.dispatchEvent(new StorageEvent('storage', {
-        key: 'hr_generated_salaries',
-        newValue: JSON.stringify(state.hr_generated_salaries),
-        storageArea: localStorage
-      }));
-    }
-    if (state.users) {
-      safeLocalStorageSet('fv_users_list', JSON.stringify(state.users));
-    }
-    if (state.hr_loan_requests) {
-      safeLocalStorageSet('hr_loan_requests', JSON.stringify(state.hr_loan_requests));
-    }
-    if (state.hr_loan_ledger) {
-      safeLocalStorageSet('hr_loan_ledger', JSON.stringify(state.hr_loan_ledger));
-    }
-    if (state.hr_advance_requests) {
-      safeLocalStorageSet('hr_advance_requests', JSON.stringify(state.hr_advance_requests));
-    }
-    if (state.routingRules) {
-      safeLocalStorageSet('hr_routing_rules_config', JSON.stringify(state.routingRules));
-    }
-    if (state.routingTasks) {
-      safeLocalStorageSet('routingTasks', JSON.stringify(state.routingTasks));
-    }
-    if (state.approvals) {
-      safeLocalStorageSet('approvals', JSON.stringify(state.approvals));
-    }
-    isLocalStorageWriting.current = false;
 
     // Do not sync back to Supabase if the change was triggered by a remote sync!
     if (isRemoteSyncing.current) {
