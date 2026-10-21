@@ -40,10 +40,17 @@ export default function HRDashboard({ isMobile, onNavigateTab }) {
   const [divisionFilter, setDivisionFilter] = useState('ALL');
 
   const { state, setCollection } = useApp();
-  const configuredDepartments = state.departments || [];
+  // state.departments entries are { label, value } objects — they have NO
+  // `name` field. Normalize the display name from label/value (falling back
+  // to `name` for forward compatibility) and drop entries that still have
+  // no usable name, so the .trim()/.length calls below can never crash the
+  // whole HR view ("Cannot read properties of undefined (reading 'trim')").
+  const configuredDepartments = (state.departments || [])
+    .map(d => ({ ...d, name: (d && (d.name || d.label || d.value)) || '' }))
+    .filter(d => typeof d.name === 'string' && d.name.trim() !== '');
 
   const [activePopupTab, setActivePopupTab] = useState(() => {
-    return state.departments?.[0]?.name || '';
+    return configuredDepartments[0]?.name || '';
   });
 
   // Update popup default tab on configured departments reload
@@ -218,7 +225,7 @@ export default function HRDashboard({ isMobile, onNavigateTab }) {
 
   // Helper matching to check if employee belongs to configured settings departments strictly
   const isEmpInConfiguredDept = (e, deptName) => {
-    return (e.department || '').trim().toLowerCase() === deptName.trim().toLowerCase();
+    return (e.department || '').trim().toLowerCase() === (deptName || '').trim().toLowerCase();
   };
 
   const getDeptSpreadData = () => {
