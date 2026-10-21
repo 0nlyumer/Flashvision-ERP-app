@@ -1,4 +1,12 @@
+let lastAppliedKey = null;
+
 export const applyTheme = (settings = {}) => {
+  const key = JSON.stringify(settings);
+  if (key === lastAppliedKey) {
+    return;
+  }
+  lastAppliedKey = key;
+
   const root = document.documentElement;
 
   // 1. Color Mode (Obsidian Ultra Glass Dark / Pure Frosted Pearl Light)

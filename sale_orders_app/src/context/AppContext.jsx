@@ -2344,29 +2344,40 @@ export const AppProvider = ({ children }) => {
 
         if (data && data.settings_data) {
           const sData = data.settings_data;
-          setState(prev => ({
-            ...prev,
-            themeSettings: sData.themeSettings || {
+          setState(prev => {
+            // Content-equality guard: only apply fields that actually differ.
+            // Re-applying identical settings (new object identity) re-triggers
+            // applyTheme and makes themed colors flicker between shades.
+            const next = { ...prev };
+            let changed = false;
+            const assignIfDiff = (key, value) => {
+              if (JSON.stringify(prev[key]) !== JSON.stringify(value)) {
+                next[key] = value;
+                changed = true;
+              }
+            };
+            assignIfDiff('themeSettings', sData.themeSettings || {
               colorMode: 'light',
               primaryColor: 'indigo',
               fontStyle: 'inter',
               borderRadius: 'rounded'
-            },
-            displaySettings: sData.displaySettings || {
+            });
+            assignIfDiff('displaySettings', sData.displaySettings || {
               webScale: 75,
               mobileScale: 100,
               sidebarPosition: 'left',
               subMenuPosition: 'left'
-            },
-            dashboardLayout: sData.dashboardLayout || [
+            });
+            assignIfDiff('dashboardLayout', sData.dashboardLayout || [
               { i: 'delivery_kpi', x: 0, y: 0, w: 12, h: 4, type: 'delivery_kpi', static: false },
               { i: 'shortcuts', x: 0, y: 4, w: 4, h: 4, type: 'shortcuts', static: false },
               { i: 'todo_list', x: 4, y: 4, w: 4, h: 6, type: 'todo_list', static: false },
               { i: 'calendar', x: 8, y: 4, w: 4, h: 6, type: 'calendar', static: false }
-            ],
-            dashboardBackground: sData.dashboardBackground !== undefined ? sData.dashboardBackground : null,
-            documentWarehouseBinders: sData.documentWarehouseBinders || null
-          }));
+            ]);
+            assignIfDiff('dashboardBackground', sData.dashboardBackground !== undefined ? sData.dashboardBackground : null);
+            assignIfDiff('documentWarehouseBinders', sData.documentWarehouseBinders || null);
+            return changed ? next : prev;
+          });
         }
       } catch (err) {
         console.warn("Supabase user settings load failed:", err);
@@ -2394,14 +2405,26 @@ export const AppProvider = ({ children }) => {
             if (sData.lastUpdatedBy === clientId.current) {
               return;
             }
-            setState(prev => ({
-              ...prev,
-              themeSettings: sData.themeSettings || prev.themeSettings,
-              displaySettings: sData.displaySettings || prev.displaySettings,
-              dashboardLayout: sData.dashboardLayout || prev.dashboardLayout,
-              dashboardBackground: sData.dashboardBackground !== undefined ? sData.dashboardBackground : prev.dashboardBackground,
-              documentWarehouseBinders: sData.documentWarehouseBinders || prev.documentWarehouseBinders
-            }));
+            setState(prev => {
+              // Content-equality guard: apply only fields that actually
+              // differ, and skip setState entirely when nothing changed.
+              // Without this, two clients of the same user keep re-applying
+              // each other's theme and the colors flicker dark/light.
+              const next = { ...prev };
+              let changed = false;
+              const assignIfDiff = (key, value) => {
+                if (JSON.stringify(prev[key]) !== JSON.stringify(value)) {
+                  next[key] = value;
+                  changed = true;
+                }
+              };
+              assignIfDiff('themeSettings', sData.themeSettings || prev.themeSettings);
+              assignIfDiff('displaySettings', sData.displaySettings || prev.displaySettings);
+              assignIfDiff('dashboardLayout', sData.dashboardLayout || prev.dashboardLayout);
+              assignIfDiff('dashboardBackground', sData.dashboardBackground !== undefined ? sData.dashboardBackground : prev.dashboardBackground);
+              assignIfDiff('documentWarehouseBinders', sData.documentWarehouseBinders || prev.documentWarehouseBinders);
+              return changed ? next : prev;
+            });
           }
         }
       )
@@ -2411,6 +2434,10 @@ export const AppProvider = ({ children }) => {
       supabase.removeChannel(settingsChannel);
     };
   }, [state.currentUser?.username]);
+
+  // Holds the JSON of the last settings snapshot this client saved, so the
+  // save effect below can skip no-op writes (see the guard inside it).
+  const lastSavedSettingsRef = useRef(null);
 
   // Sync user-specific and platform-specific settings back to Supabase
   useEffect(() => {
@@ -2430,6 +2457,19 @@ export const AppProvider = ({ children }) => {
       lastUpdatedBy: clientId.current
     };
     
+    // Skip no-op saves: if the settings content is identical to the last
+    // saved snapshot, writing again would only emit realtime events to this
+    // user's other clients and make their theme re-apply (color flicker).
+    const settingsSnapshot = JSON.stringify({
+      themeSettings: userSettings.themeSettings,
+      displaySettings: userSettings.displaySettings,
+      dashboardLayout: userSettings.dashboardLayout,
+      dashboardBackground: userSettings.dashboardBackground,
+      documentWarehouseBinders: userSettings.documentWarehouseBinders
+    });
+    if (lastSavedSettingsRef.current === settingsSnapshot) return;
+    lastSavedSettingsRef.current = settingsSnapshot;
+
     // Save locally with fallback to null to prevent storing "undefined"
     localStorage.setItem(`themeSettings_${username}_${platformKey}`, JSON.stringify(state.themeSettings || null));
     localStorage.setItem(`displaySettings_${username}_${platformKey}`, JSON.stringify(state.displaySettings || null));
