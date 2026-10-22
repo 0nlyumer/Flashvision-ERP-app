@@ -3753,10 +3753,11 @@ export const AppProvider = ({ children }) => {
                           nextItem.stock = Math.max(0, (item.stock || 0) - qty);
                       }
                       
-                      if (oldDept) {
+                      const outDept = out.department || oldDept;
+                      if (outDept && !isWastage) {
                           nextItem.stockByDepartment = {
                               ...currentStockByDept,
-                              [oldDept]: Math.max(0, (currentStockByDept[oldDept] || 0) - qty)
+                              [outDept]: Math.max(0, (currentStockByDept[outDept] || 0) - qty)
                           };
                       }
                       return nextItem;
@@ -3788,7 +3789,7 @@ export const AppProvider = ({ children }) => {
                           nextItem.stock = (item.stock || 0) + qty;
                       }
                       
-                      if (department) {
+                      if (department && !isWastage) {
                           nextItem.stockByDepartment = {
                               ...currentStockByDept,
                               [department]: (currentStockByDept[department] || 0) + qty
@@ -3800,6 +3801,8 @@ export const AppProvider = ({ children }) => {
               });
           });
 
+          const stampedOutputs = outputs.map(o => ({ ...o, department: o.department || department }));
+
           // 4. Update the production plan
           const updatedPlans = (prev.productionPlans || []).map(plan => {
               if (plan.id === planId) {
@@ -3807,7 +3810,7 @@ export const AppProvider = ({ children }) => {
                       if (pi.itemCode === itemCode) {
                           return {
                               ...pi,
-                              outputs: outputs
+                              outputs: stampedOutputs
                           };
                       }
                       return pi;
@@ -3935,10 +3938,11 @@ export const AppProvider = ({ children }) => {
                               nextItem.stock = Math.max(0, (item.stock || 0) - qty);
                           }
                           
-                          if (oldDept) {
+                          const outDept = out.department || oldDept;
+                          if (outDept && !isWastage) {
                               nextItem.stockByDepartment = {
                                   ...currentStockByDept,
-                                  [oldDept]: Math.max(0, (currentStockByDept[oldDept] || 0) - qty)
+                                  [outDept]: Math.max(0, (currentStockByDept[outDept] || 0) - qty)
                               };
                           }
                           return nextItem;

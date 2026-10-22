@@ -8,6 +8,7 @@ export default function DelCreation({ onGenerateChallan }) {
   const { state } = useApp();
   const [viewMode, setViewMode] = useState('Order-wise');
   const [dcMode, setDcMode] = useState('Sale Orders'); // 'Sale Orders' | 'Default Godown'
+  const [selectedDept, setSelectedDept] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedOutputTypes, setSelectedOutputTypes] = useState([]);
 
@@ -36,6 +37,19 @@ export default function DelCreation({ onGenerateChallan }) {
       });
       return Array.from(depts);
   }, [state?.items]);
+
+  const departmentOptions = useMemo(() => {
+      const depts = new Set();
+      (state?.departments || []).forEach(d => {
+          const v = typeof d === 'string' ? d : (d.value || d.label || d.name);
+          if (v) depts.add(v);
+      });
+      (state?.productionPlans || []).forEach(plan => {
+          if (plan.department) depts.add(plan.department);
+          plan.items?.forEach(pi => pi.outputs?.forEach(out => { if (out.department) depts.add(out.department); }));
+      });
+      return Array.from(depts);
+  }, [state?.departments, state?.productionPlans]);
 
   // 1. Compute eligible orders
   const eligibleOrders = useMemo(() => {
@@ -108,54 +122,60 @@ export default function DelCreation({ onGenerateChallan }) {
 
   const getOutputTypesForItem = (item) => {
       if (item.orderId && dcMode === 'Sale Orders') {
-          const typeMap = {};
-          
-          // 1. Calculate Produced Qty by Type for this Sale Order
-          if (state?.productionPlans) {
-              state.productionPlans.forEach(plan => {
-                  if (plan.status !== 'Cancelled') {
-                      plan.items?.forEach(pi => {
-                          if (pi.orderId === item.orderId && (pi.itemCode === item.itemCode || pi.itemId === item.itemId)) {
-                                  pi.outputs?.forEach(out => {
-                                      const qty = parseFloat(out.quantity) || 0;
-                                      if (qty > 0 && out.typeName && out.isDeliverable) {
-                                          typeMap[out.typeName] = (typeMap[out.typeName] || 0) + qty;
-                                      }
-                                  });
-                          }
-                      });
-                  }
-              });
-          }
-          
-          // 2. Deduct Delivered Qty by Type for this Sale Order
-          if (state?.deliveries) {
-              state.deliveries.forEach(del => {
-                  if (del.dcMode === 'Sale Orders') {
-                      del.items?.forEach(di => {
-                          if (di.orderId === item.orderId && (di.itemCode === item.itemCode || di.itemId === item.itemId)) {
-                              const qty = parseFloat(di.dispatchedQty) || 0;
-                              const typeName = di.stockType || 'Fresh';
-                              if (qty > 0 && typeMap[typeName] !== undefined) {
-                                  typeMap[typeName] = Math.max(0, typeMap[typeName] - qty);
+          const producedAll = {};
+          const producedDept = {};
+          let sawAnyOutput = false;
+
+          (state?.productionPlans || []).forEach(plan => {
+              if (plan.status === 'Cancelled') return;
+              plan.items?.forEach(pi => {
+                  if (pi.orderId === item.orderId && (pi.itemCode === item.itemCode || pi.itemId === item.itemId)) {
+                      pi.outputs?.forEach(out => {
+                          const qty = parseFloat(out.quantity) || 0;
+                          if (qty > 0 && out.typeName) {
+                              sawAnyOutput = true;
+                              if (out.isDeliverable) {
+                                  producedAll[out.typeName] = (producedAll[out.typeName] || 0) + qty;
+                                  const outDept = out.department || plan.department || '';
+                                  if (selectedDept && outDept === selectedDept) {
+                                      producedDept[out.typeName] = (producedDept[out.typeName] || 0) + qty;
+                                  }
                               }
                           }
                       });
                   }
               });
-          }
-          
-          let types = Object.entries(typeMap).filter(([_, qty]) => qty > 0);
-          
-          // If no outputs found or all delivered, fallback to totalOutput - delivered (just in case of manual data entry or older data structure)
-          if (types.length === 0) {
-              const remaining = item.readyQty || 0;
-              if (remaining > 0) {
-                  types = [['Fresh', remaining]];
+          });
+
+          const deliveredAll = {};
+          const deliveredDept = {};
+
+          (state?.deliveries || []).forEach(del => {
+              if (del.dcMode === 'Sale Orders') {
+                  del.items?.forEach(di => {
+                      if (di.orderId === item.orderId && (di.itemCode === item.itemCode || di.itemId === item.itemId)) {
+                          const qty = parseFloat(di.dispatchedQty) || 0;
+                          if (qty > 0) {
+                              const typeName = di.stockType || 'Fresh';
+                              deliveredAll[typeName] = (deliveredAll[typeName] || 0) + qty;
+                              if (selectedDept && di.department === selectedDept) {
+                                  deliveredDept[typeName] = (deliveredDept[typeName] || 0) + qty;
+                              }
+                          }
+                      }
+                  });
               }
+          });
+
+          let entries;
+          if (selectedDept) {
+              entries = Object.entries(producedDept).map(([t, q]) => { const deptRemaining = q - (deliveredDept[t] || 0); const allRemaining = (producedAll[t] || 0) - (deliveredAll[t] || 0); return [t, Math.max(0, Math.min(deptRemaining, allRemaining))]; }).filter(([_, q]) => q > 0);
+          } else {
+              entries = Object.entries(producedAll).map(([t, q]) => [t, Math.max(0, q - (deliveredAll[t] || 0))]).filter(([_, q]) => q > 0);
+              if (entries.length === 0 && !sawAnyOutput) { const remaining = item.readyQty || 0; if (remaining > 0) entries = [['Fresh', remaining]]; }
           }
-          
-          return types.map(([t, q]) => ({ typeName: t, qty: q, uniqueId: `${item.uniqueId}:::${t}` }));
+
+          return entries.map(([t, q]) => ({ typeName: t, qty: q, uniqueId: item.uniqueId + ':::' + t, department: selectedDept || null }));
       } else {
           // Manual mode
           const itemObj = state?.items?.find(x => x.id === item.itemId || x.sku === item.itemCode);
@@ -181,8 +201,11 @@ export default function DelCreation({ onGenerateChallan }) {
               return types.some(t => selectedOutputTypes.includes(t));
           });
       }
+      if (selectedDept) {
+          result = result.filter(i => getOutputTypesForItem(i).length > 0);
+      }
       return result;
-  }, [eligibleItemsList, searchQuery, selectedOutputTypes, state?.productionPlans, state?.deliveries, dcMode]);
+  }, [eligibleItemsList, searchQuery, selectedOutputTypes, state?.productionPlans, state?.deliveries, dcMode, selectedDept]);
 
   const toggleExpand = (uniqueId) => {
       setExpandedItems(prev => prev.includes(uniqueId) ? prev.filter(id => id !== uniqueId) : [...prev, uniqueId]);
@@ -260,7 +283,8 @@ export default function DelCreation({ onGenerateChallan }) {
                           uniqueId: out.uniqueId,
                           stockType: out.typeName,
                           readyQty: out.qty > 0 ? Math.min(i.readyQty, out.qty) : i.readyQty,
-                          stock: out.qty
+                          stock: out.qty,
+                          department: out.department || ''
                       });
                   }
               });
@@ -294,7 +318,7 @@ export default function DelCreation({ onGenerateChallan }) {
           });
           return manualItems;
       }
-  }, [eligibleItemsList, selectedItemIds, dcMode, state?.items]);
+  }, [eligibleItemsList, selectedItemIds, dcMode, state?.items, selectedDept]);
 
   const totalSelectedUnits = dcMode === 'Sale Orders' 
       ? selectedItemsData.reduce((sum, item) => sum + (item.readyQty || 0), 0)
@@ -413,6 +437,34 @@ export default function DelCreation({ onGenerateChallan }) {
                             Clear Filter
                         </button>
                     )}
+                </div>
+            )}
+            {viewMode === 'Item-wise' && departmentOptions.length > 0 && (
+                <div className="flex flex-wrap gap-2 items-center w-full bg-surface-container-lowest p-4 rounded-xl border border-outline-variant/10 shadow-sm">
+                    <span className="text-xs font-bold text-on-surface-variant uppercase tracking-wider mr-2 flex items-center gap-1"><span className="material-symbols-outlined text-[16px]">warehouse</span> Department:</span>
+                    <button
+                        onClick={() => { setSelectedDept(''); setSelectedItemIds([]); }}
+                        className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all border ${
+                            selectedDept === ''
+                                ? 'bg-primary text-white border-primary shadow-sm'
+                                : 'bg-surface border-outline-variant/30 text-on-surface-variant hover:bg-surface-container-low'
+                        }`}
+                    >
+                        All Departments
+                    </button>
+                    {departmentOptions.map(dept => (
+                        <button
+                            key={dept}
+                            onClick={() => { setSelectedDept(dept); setSelectedItemIds([]); }}
+                            className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all border ${
+                                selectedDept === dept
+                                    ? 'bg-primary text-white border-primary shadow-sm'
+                                    : 'bg-surface border-outline-variant/30 text-on-surface-variant hover:bg-surface-container-low'
+                            }`}
+                        >
+                            {dept}
+                        </button>
+                    ))}
                 </div>
             )}
         </div>
