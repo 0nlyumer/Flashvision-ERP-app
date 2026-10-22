@@ -3,7 +3,6 @@ import { useApp } from '../../context/AppContext';
 import { useDialog } from '../../context/DialogContext';
 import ResizableHeader from '../ui/ResizableHeader';
 import PrintLayout from '../ui/PrintLayout';
-import UniversalPrintStudioModal from '../ui/UniversalPrintStudioModal';
 
 export default function DelRecord() {
   const { state, deleteDelivery } = useApp();
@@ -13,7 +12,6 @@ export default function DelRecord() {
 
   const [searchTerm, setSearchTerm] = useState('');
   const [printData, setPrintData] = useState(null);
-    const [showStudio, setShowStudio] = useState(false);
   const [dateRange, setDateRange] = useState({ from: '', to: '' });
   const [viewDc, setViewDc] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
@@ -21,10 +19,10 @@ export default function DelRecord() {
   const itemsPerPage = 10;
 
   useEffect(() => {
-    if (printData && !showStudio) {
+    if (printData) {
       window.print();
     }
-  }, [printData, showStudio]);
+  }, [printData]);
 
   const handlePrint = (dc) => {
       setPrintData(dc);
@@ -75,15 +73,6 @@ export default function DelRecord() {
 
   return (
       <>
-        {showStudio && printData && (
-          <UniversalPrintStudioModal
-            isOpen={showStudio}
-            onClose={() => setShowStudio(false)}
-            documentType="delivery_challan"
-            documentData={printData}
-            documentTitle={`Delivery Challan #${printData.id}`}
-          />
-        )}
     <div className="flex-1 animate-in fade-in duration-500 pb-24">
       {/* Header Section with Asymmetric Layout */}
       <div className="flex flex-col md:flex-row justify-between items-end mb-10 gap-6 w-full">

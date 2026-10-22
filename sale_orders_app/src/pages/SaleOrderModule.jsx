@@ -8,7 +8,6 @@ import { useApp } from '../context/AppContext';
 import { useDialog } from '../context/DialogContext';
 import ResizableHeader from '../components/ui/ResizableHeader';
 import PrintLayout from '../components/ui/PrintLayout';
-import UniversalPrintStudioModal from '../components/ui/UniversalPrintStudioModal';
 import { exportDocumentToPdf, exportDocumentToImage, exportDocumentToCsv } from '../utils/printExportUtils';
 
 const PAPER_DIMENSIONS = {
@@ -133,21 +132,9 @@ export default function SaleOrderModule() {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 15;
 
-  const getGlobalMaxItemIndex = (additionalItems = []) => {
-    let maxIdx = 0;
-    const checkCode = (code) => {
-        if (!code) return;
-        const match = code.match(/ITM-(\d+)$/);
-        if (match) {
-            const idx = parseInt(match[1], 10);
-            if (idx > maxIdx) maxIdx = idx;
-        }
-    };
-    (state.saleOrders || []).forEach(o => (o.items || []).forEach(i => checkCode(i.itemCode)));
-    additionalItems.forEach(i => checkCode(i.itemCode));
-    return maxIdx;
-  };
-  
+  // (Removed: getGlobalMaxItemIndex — sale order lines no longer fabricate
+  // ITM-<n> codes; a line's itemCode is the picked item's master sku.)
+
   // --- Creation & Order States (Declared first to avoid TDZ errors) ---
   const getNextOrderId = () => `SO-${String((state.saleOrders || []).length + 1).padStart(3, '0')}`;
 
@@ -165,10 +152,11 @@ export default function SaleOrderModule() {
   });
 
   const [items, setItems] = useState(() => {
-    let maxIdx = getGlobalMaxItemIndex();
     return [{
       id: Date.now(),
-      itemCode: `ITM-${String(maxIdx + 1).padStart(3, '0')}`,
+      // A line's itemCode is the picked item's MASTER code (sku) — set when
+      // an item is chosen, never fabricated here.
+      itemCode: '',
       itemId: '',
       qty: 50,
       rolls: 1,
@@ -211,10 +199,9 @@ export default function SaleOrderModule() {
       paymentTerms: 'Net 30',
       salesperson: ''
     });
-    let maxIdx = getGlobalMaxItemIndex();
     setItems([{
       id: Date.now(),
-      itemCode: `ITM-${String(maxIdx + 1).padStart(3, '0')}`,
+      itemCode: '',
       itemId: '',
       qty: 50,
       rolls: 1,
@@ -515,8 +502,6 @@ export default function SaleOrderModule() {
   };
 
   const [printOrder, setPrintOrder] = useState(null);
-  const [showPrintStudio, setShowPrintStudio] = useState(false);
-  const [studioDocData, setStudioDocData] = useState(null);
 
   // Sync body class for print isolation
   useEffect(() => {
@@ -576,14 +561,24 @@ export default function SaleOrderModule() {
   };
 
   const handleItemChosen = (rowId, chosenProd) => {
+    if (!chosenProd) return;
+    const prodPrice = chosenProd.price || parseFloat(String(chosenProd.price).replace(/[^\d.]/g, '')) || 0;
+    // Duplicate warning (add-line path): the pick is applied so a different
+    // rate can still be typed, but if another line already carries this item
+    // at the same rate, warn immediately — submit will block it.
+    const conflicts = (items || []).some(other =>
+      other.id !== rowId && other.itemId === chosenProd.id &&
+      (parseFloat(other.price) || 0) === (parseFloat(prodPrice) || 0)
+    );
     setItems(prevItems => prevItems.map(item => {
       if (item.id === rowId) {
-        const prodPrice = chosenProd ? (chosenProd.price || parseFloat(String(chosenProd.price).replace(/[^\d.]/g, '')) || 0) : 0;
         const rollSz = Number(chosenProd?.rollSize || chosenProd?.packingSize || parseRollSizeFromPacking(chosenProd?.combinationDetails?.packing) || 50);
         const currentRolls = Math.max(1, Number(item.rolls) || 1);
         return {
           ...item,
           itemId: chosenProd.id,
+          // The line's itemCode is the item's MASTER code (sku).
+          itemCode: chosenProd.sku || '',
           price: prodPrice,
           rollSize: rollSz,
           rolls: currentRolls,
@@ -592,9 +587,25 @@ export default function SaleOrderModule() {
       }
       return item;
     }));
+    if (conflicts) {
+      appAlert("The same item with the same rate cannot be added twice in the same sale order.");
+    }
   };
 
   const handleItemChange = (id, field, value) => {
+    // Duplicate warning (add-line path): if this pick applies the item's
+    // default rate and another line already carries the same item at that
+    // rate, warn immediately — the pick still applies so a different rate
+    // can be typed; submit blocks an unchanged duplicate.
+    let pickConflict = false;
+    if (field === 'itemId' && value) {
+      const prod = state.items.find(i => i.id === value);
+      const appliedPrice = prod ? (prod.price || parseFloat(String(prod.price).replace(/[^\d.]/g, '')) || 0) : 0;
+      pickConflict = (items || []).some(other =>
+        other.id !== id && other.itemId === value &&
+        (parseFloat(other.price) || 0) === (parseFloat(appliedPrice) || 0)
+      );
+    }
     setItems(items.map(item => {
       if(item.id === id) {
           let updated = { ...item, [field]: value };
@@ -606,6 +617,9 @@ export default function SaleOrderModule() {
               const resolvedRollSz = prodRollSz > 0 ? prodRollSz : (Number(item.rollSize) || 50);
               const rollCount = Math.max(1, Number(item.rolls) || 1);
               updated.itemId = value;
+              // The line's itemCode is the picked item's MASTER code (sku);
+              // cleared when the pick is cleared.
+              updated.itemCode = selectedProd?.sku || '';
               updated.price = prodPrice;
               updated.rollSize = resolvedRollSz;
               updated.rolls = rollCount;
@@ -633,14 +647,21 @@ export default function SaleOrderModule() {
       }
       return item;
     }));
+    if (pickConflict) {
+      appAlert("The same item with the same rate cannot be added twice in the same sale order.");
+    }
   };
 
   const addNewItem = () => {
-    const maxIdx = getGlobalMaxItemIndex(items);
-    const newItemCode = `ITM-${String(maxIdx + 1).padStart(3, '0')}`;
+    // Duplicate guard (add-line path): if the current lines already contain
+    // the same item at the same rate, resolve that before adding more lines.
+    if (findDuplicateLine(items)) {
+      appAlert("The same item with the same rate cannot be added twice in the same sale order.");
+      return;
+    }
     setItems([...items, {
       id: Date.now(),
-      itemCode: newItemCode,
+      itemCode: '',
       itemId: "",
       qty: 50,
       rolls: 1,
@@ -698,6 +719,27 @@ export default function SaleOrderModule() {
     }
   };
 
+  // Omer's duplicate rule, keyed on the item's MASTER code (sku): two lines
+  // conflict only when they carry the same item AND the same rate. The same
+  // item at a different rate is a legitimate separate line (own lineCode).
+  // Lines without a picked item yet are ignored. Returns the first
+  // conflicting line, or null.
+  const findDuplicateLine = (lines) => {
+    const seen = new Map();
+    for (const line of (lines || [])) {
+      // Resolve the line's real MASTER code: the picked item's sku (which is
+      // what line.itemCode now stores). The master-list lookup also covers
+      // legacy lines whose stored itemCode predates that rule.
+      const prod = (state.items || []).find(p => p.id === line.itemId);
+      const code = prod?.sku || line.itemCode || line.itemId;
+      if (!code) continue;
+      const key = `${code}:::${parseFloat(line.price) || 0}`;
+      if (seen.has(key)) return line;
+      seen.set(key, line);
+    }
+    return null;
+  };
+
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!orderMeta.customerId) {
@@ -713,9 +755,7 @@ export default function SaleOrderModule() {
     // Omer's rule: the same item at the SAME rate must not be added twice
     // in one order; the same item at a DIFFERENT rate is a separate line
     // (and gets its own line code).
-    const lineKeys = items.map(i => `${i.itemId}:::${parseFloat(i.price) || 0}`);
-    const hasDuplicates = new Set(lineKeys).size !== lineKeys.length;
-    if (hasDuplicates) {
+    if (findDuplicateLine(items)) {
         appAlert("The same item with the same rate cannot be added twice in the same sale order.");
         return;
     }
@@ -758,10 +798,9 @@ export default function SaleOrderModule() {
         paymentTerms: 'Net 30',
         salesperson: ''
     });
-    const nextMaxIdx = getGlobalMaxItemIndex(items); // Since we just submitted, those items are 'virtually' the latest max before state updates completely
     setItems([{
         id: Date.now(),
-        itemCode: `ITM-${String(nextMaxIdx + 1).padStart(3, '0')}`, 
+        itemCode: '',
         itemId: '',
         qty: 1,
         rolls: 1,
@@ -2044,10 +2083,13 @@ export default function SaleOrderModule() {
                      const itemSubtotal = (item.qty * item.price) - (item.discount || 0);
                      const prodObj = state.items.find(i => i.id === item.itemId);
                      const actRollSz = item.rollSize || prodObj?.rollSize || prodObj?.packingSize || parseRollSizeFromPacking(prodObj?.combinationDetails?.packing) || 50;
-                     const filteredItemsList = state.items.filter(i => 
-                        (i.type === 'Finish Good' || i.category === 'Finished Goods') && 
-                        (i.name.toLowerCase().includes((searchQueries[item.id] || '').toLowerCase()) || i.sku.toLowerCase().includes((searchQueries[item.id] || '').toLowerCase())) &&
-                        !items.some(existingItem => existingItem.itemId === i.id && existingItem.id !== item.id)
+                     // NOTE: items already used on another line of this order
+                     // stay selectable — Omer's rule allows the same item on
+                     // a second line at a DIFFERENT rate; the duplicate guard
+                     // (same item + same rate) is enforced at pick/add/submit.
+                     const filteredItemsList = state.items.filter(i =>
+                        (i.type === 'Finish Good' || i.category === 'Finished Goods') &&
+                        (i.name.toLowerCase().includes((searchQueries[item.id] || '').toLowerCase()) || i.sku.toLowerCase().includes((searchQueries[item.id] || '').toLowerCase()))
                      );
                      
                      return (
@@ -2059,9 +2101,11 @@ export default function SaleOrderModule() {
                               <span className="material-symbols-outlined text-primary-container text-[20px]">science</span>
                             </div>
                             <div className="w-full flex flex-col pt-0.5">
+                               {item.itemCode && (
                                <div className="font-mono text-xs font-bold bg-slate-100 text-slate-800 px-2 py-0.5 rounded tracking-wide w-fit mb-2 border border-slate-200">
                                   {item.itemCode}
                                </div>
+                               )}
                                <div className="flex items-center gap-2 flex-1">
                                <div className="relative flex-1 min-w-[340px] max-w-[580px]">
                                    <div className="relative flex items-center">
@@ -2442,15 +2486,6 @@ export default function SaleOrderModule() {
             </div>
           </div>
         </div>
-      )}
-      {showPrintStudio && (
-        <UniversalPrintStudioModal
-          isOpen={showPrintStudio}
-          onClose={() => setShowPrintStudio(false)}
-          documentType="sale_order"
-          documentData={studioDocData || printOrder}
-          documentTitle="Sale Order Print Designer"
-        />
       )}
     </Layout>
     </div>
