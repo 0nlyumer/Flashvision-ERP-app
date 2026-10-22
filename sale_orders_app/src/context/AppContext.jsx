@@ -12,6 +12,7 @@ import {
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { applyTheme } from '../utils/theme';
 import { supabase } from '../utils/supabaseClient';
+import { STEP1_ENTITY_TABLES, loadStep1EntitiesFromTables, syncEntityDiffToTable, entityRecordKey } from '../utils/entityTables';
 import { getInitialFGConfig, saveFGConfig } from '../utils/fgCombinationUtils';
 import { DEFAULT_CHART_OF_ACCOUNTS } from '../utils/financeEngine';
 
@@ -607,6 +608,13 @@ export const AppProvider = ({ children }) => {
   const lastSyncedStateRef = useRef('');
   const lastSyncedUpdatedAtRef = useRef('');
   const standaloneTablesSupportedRef = useRef(false);
+  // PHASE C STEP 1: per-entity tables are the read source for the step-1
+  // collections (items, customers, suppliers + lookup lists). The gate opens
+  // only after the initial table-load attempt completes; the snapshots hold
+  // the last table-synced content per collection so state changes can be
+  // diffed and written through record-by-record.
+  const step1TablesReadyRef = useRef(false);
+  const step1SnapshotsRef = useRef({});
   const lsDebounceRef = useRef({ hr_employees_list: null, hr_uploaded_attendance: null });
 
   const safeLocalStorageSet = (key, value) => {
@@ -1344,7 +1352,50 @@ export const AppProvider = ({ children }) => {
       }
     };
 
-    fetchInitialState();
+    // PHASE C STEP 1: after the blob state is applied, overlay the step-1
+    // collections with their table contents (the tables are the read source
+    // for these entities now). Any entity whose table fetch fails keeps the
+    // blob copy — no empty screens. Snapshots are seeded from whatever
+    // content ends up in state so the write-through diff starts clean.
+    const loadStep1TablesIntoState = async () => {
+      const seedSnapshots = (source) => {
+        Object.keys(STEP1_ENTITY_TABLES).forEach((key) => {
+          const snap = new Map();
+          (Array.isArray(source[key]) ? source[key] : []).forEach((rec) => {
+            const k = entityRecordKey(rec);
+            if (k !== null) snap.set(k, JSON.stringify(rec));
+          });
+          step1SnapshotsRef.current[key] = snap;
+        });
+      };
+      try {
+        const fromTables = await loadStep1EntitiesFromTables();
+        setState(prev => {
+          const next = { ...prev };
+          const seedSource = {};
+          Object.keys(STEP1_ENTITY_TABLES).forEach((key) => {
+            if (Array.isArray(fromTables[key])) {
+              next[key] = fromTables[key];
+              seedSource[key] = fromTables[key];
+            } else {
+              seedSource[key] = prev[key];
+            }
+          });
+          seedSnapshots(seedSource);
+          return next;
+        });
+      } catch (err) {
+        console.warn('[EntityTables] initial table load failed; blob copies remain active:', err);
+        setState(prev => {
+          seedSnapshots(prev);
+          return prev;
+        });
+      } finally {
+        step1TablesReadyRef.current = true;
+      }
+    };
+
+    fetchInitialState().then(() => { loadStep1TablesIntoState(); });
 
     // 2. Subscribe to real-time changes
     const channel = supabase
@@ -4627,6 +4678,31 @@ export const AppProvider = ({ children }) => {
       auditLogs: [logoutLog, ...(prev.auditLogs || [])].slice(0, 200)
     }));
   };
+
+  // PHASE C STEP 1: write-through — whenever a step-1 collection changes in
+  // state, diff it against the last table-synced snapshot and push record
+  // upserts/deletes to its table. The blob save still carries these keys too
+  // (the fallback copy stays fresh); the tables are kept equal to state.
+  const step1Items = state.items;
+  const step1Customers = state.customers;
+  const step1Suppliers = state.suppliers;
+  const step1UomList = state.uomList;
+  const step1PackingTypesList = state.packingTypesList;
+  const step1RawMaterialTypesList = state.rawMaterialTypesList;
+  const step1ItemCategories = state.itemCategories;
+  useEffect(() => {
+    if (!step1TablesReadyRef.current) return;
+    const timer = setTimeout(() => {
+      syncEntityDiffToTable('items', step1Items, step1SnapshotsRef.current.items);
+      syncEntityDiffToTable('customers', step1Customers, step1SnapshotsRef.current.customers);
+      syncEntityDiffToTable('suppliers', step1Suppliers, step1SnapshotsRef.current.suppliers);
+      syncEntityDiffToTable('uomList', step1UomList, step1SnapshotsRef.current.uomList);
+      syncEntityDiffToTable('packingTypesList', step1PackingTypesList, step1SnapshotsRef.current.packingTypesList);
+      syncEntityDiffToTable('rawMaterialTypesList', step1RawMaterialTypesList, step1SnapshotsRef.current.rawMaterialTypesList);
+      syncEntityDiffToTable('itemCategories', step1ItemCategories, step1SnapshotsRef.current.itemCategories);
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [step1Items, step1Customers, step1Suppliers, step1UomList, step1PackingTypesList, step1RawMaterialTypesList, step1ItemCategories]);
 
   const setCollection = (collection, data) => {
     setState(prev => {
