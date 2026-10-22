@@ -600,6 +600,7 @@ export const AppProvider = ({ children }) => {
   const isLocalStorageWriting = useRef(false);
   const isRemoteSyncing = useRef(false);
   const isFirstRemoteSyncCompleted = useRef(false);
+  const guardBaseUpdatedAtRef = useRef(null); // SYNC GUARD: updated_at of the remote version this client has actually APPLIED (or written itself). erp_state writes are only allowed on top of this base.
   const isUserSettingsLoaded = useRef(false);
   const pendingWriteRef = useRef(null);
   const isLocalUpsertInFlight = useRef(false);
@@ -1208,6 +1209,7 @@ export const AppProvider = ({ children }) => {
         if (verData?.updated_at && localCachedUpdatedAt && verData.updated_at === localCachedUpdatedAt && hasLocalSavedState) {
           console.log("[Egress Guard] Local state is 100% up to date! Skipped full state download. Egress saved: ~3MB!");
           lastSyncedUpdatedAtRef.current = verData.updated_at;
+          guardBaseUpdatedAtRef.current = verData.updated_at;
           lastSyncedStateRef.current = JSON.stringify(getSanitizedSyncState(state));
           isFirstRemoteSyncCompleted.current = true;
           setIsInitialLoadCompleted(true);
@@ -1232,6 +1234,7 @@ export const AppProvider = ({ children }) => {
         if (data && data.state_data) {
           if (data.updated_at) {
             lastSyncedUpdatedAtRef.current = data.updated_at;
+            guardBaseUpdatedAtRef.current = data.updated_at;
             localStorage.setItem('fv_last_synced_updated_at', data.updated_at);
           }
           const erpData = data.state_data;
@@ -1366,6 +1369,9 @@ export const AppProvider = ({ children }) => {
                 return;
             }
             if (erpData.lastUpdatedBy === clientId.current) {
+              if (payload.new?.updated_at) {
+                guardBaseUpdatedAtRef.current = payload.new.updated_at;
+              }
               return;
             }
             if (pendingWriteRef.current !== null) {
@@ -1433,6 +1439,7 @@ export const AppProvider = ({ children }) => {
             if (copyStr === lastSyncedStateRef.current) {
               if (payload.new?.updated_at) {
                 lastSyncedUpdatedAtRef.current = payload.new.updated_at;
+                guardBaseUpdatedAtRef.current = payload.new.updated_at;
                 localStorage.setItem('fv_last_synced_updated_at', payload.new.updated_at);
               }
               return;
@@ -1442,6 +1449,7 @@ export const AppProvider = ({ children }) => {
             lastSyncedStateRef.current = copyStr;
             if (payload.new?.updated_at) {
               lastSyncedUpdatedAtRef.current = payload.new.updated_at;
+              guardBaseUpdatedAtRef.current = payload.new.updated_at;
               localStorage.setItem('fv_last_synced_updated_at', payload.new.updated_at);
             }
 
@@ -2049,6 +2057,46 @@ export const AppProvider = ({ children }) => {
     }
   };
 
+  // ===== SYNC GUARD (2026-10-22) =====
+  // All company data lives in ONE erp_state row; every write replaces it wholesale
+  // (last-write-wins). A client holding a stale copy must never overwrite a newer
+  // remote version. This runs before every erp_state write: (1) the initial remote
+  // load must have completed; (2) the remote updated_at must equal the version this
+  // client last applied or wrote (compared as parsed timestamps). Fail-safe: any
+  // probe error also refuses the write.
+  const checkSyncGuard = async (caller) => {
+    if (!isFirstRemoteSyncCompleted.current) {
+      console.warn(`[SyncGuard] ${caller}: write refused - initial remote load not completed.`);
+      return false;
+    }
+    try {
+      const { data, error } = await supabase
+        .from('erp_state')
+        .select('updated_at')
+        .eq('id', 'main_state')
+        .maybeSingle();
+      if (error) {
+        console.warn(`[SyncGuard] ${caller}: write refused - version probe failed.`, error);
+        return false;
+      }
+      const remoteUpdatedAt = data?.updated_at || null;
+      const base = guardBaseUpdatedAtRef.current;
+      if (!remoteUpdatedAt) return true; // no remote row yet - nothing to protect
+      if (!base) {
+        console.warn(`[SyncGuard] ${caller}: write refused - no applied remote version known.`);
+        return false;
+      }
+      if (Date.parse(remoteUpdatedAt) !== Date.parse(base)) {
+        console.warn(`[SyncGuard] ${caller}: write refused - remote is newer (remote ${remoteUpdatedAt} vs base ${base}).`);
+        return false;
+      }
+      return true;
+    } catch (e) {
+      console.warn(`[SyncGuard] ${caller}: write refused - probe exception.`, e);
+      return false;
+    }
+  };
+
   const triggerSyncWrite = async () => {
       if (!isOnline) return;
       
@@ -2058,24 +2106,32 @@ export const AppProvider = ({ children }) => {
         setSyncStatus('idle');
         return;
       }
+      if (!(await checkSyncGuard('triggerSyncWrite'))) {
+        setSyncStatus('idle');
+        return;
+      }
       syncState.buildVersion = BUILD_VERSION;
       syncState.lastUpdatedBy = clientId.current;
       const sanitizedSyncState = JSON.parse(JSON.stringify(syncState));
 
       isLocalUpsertInFlight.current = true;
+      const writeTime = new Date().toISOString();
       try {
           const { error } = await supabase
             .from('erp_state')
             .upsert({
               id: 'main_state',
               state_data: sanitizedSyncState,
-              updated_at: new Date().toISOString()
+              updated_at: writeTime
             });
           if (error) throw error;
           
           await syncToStandaloneTables(state);
 
           lastSyncedStateRef.current = currentSyncStateStr;
+          lastSyncedUpdatedAtRef.current = writeTime;
+          guardBaseUpdatedAtRef.current = writeTime;
+          try { localStorage.setItem('fv_last_synced_updated_at', writeTime); } catch (_) {}
           setSyncStatus('idle');
       } catch (err) {
           console.warn("Supabase retry sync write error:", err);
@@ -2204,6 +2260,11 @@ export const AppProvider = ({ children }) => {
           return;
       }
 
+      if (!(await checkSyncGuard('auto-sync'))) {
+        setSyncStatus('idle');
+        return;
+      }
+
       // Mark the write with our unique client session token
       syncState.buildVersion = BUILD_VERSION;
       syncState.lastUpdatedBy = clientId.current;
@@ -2226,6 +2287,7 @@ export const AppProvider = ({ children }) => {
             setSyncStatus('offline_retry');
           } else {
             lastSyncedUpdatedAtRef.current = writeTime;
+            guardBaseUpdatedAtRef.current = writeTime;
             localStorage.setItem('fv_last_synced_updated_at', writeTime);
             syncToStandaloneTables(state);
             lastSyncedStateRef.current = currentSyncStateStr;
@@ -3400,6 +3462,7 @@ export const AppProvider = ({ children }) => {
 
   const syncUsersToSupabase = async (nextState) => {
     try {
+      if (!(await checkSyncGuard('syncUsersToSupabase'))) return;
       const syncState = getSanitizedSyncState(nextState);
       syncState.buildVersion = BUILD_VERSION;
       syncState.lastUpdatedBy = clientId.current;
@@ -3416,14 +3479,20 @@ export const AppProvider = ({ children }) => {
         granular_permissions: u.granularPermissions || {}
       }));
 
-      await Promise.allSettled([
+      const writeTime = new Date().toISOString();
+      const results = await Promise.allSettled([
         supabase.from('erp_state').upsert({
           id: 'main_state',
           state_data: JSON.parse(JSON.stringify(syncState)),
-          updated_at: new Date().toISOString()
+          updated_at: writeTime
         }),
         userRows.length > 0 ? supabase.from('users').upsert(userRows, { onConflict: 'id' }) : Promise.resolve()
       ]);
+      if (results[0].status === 'fulfilled' && !results[0].value?.error) {
+        lastSyncedUpdatedAtRef.current = writeTime;
+        guardBaseUpdatedAtRef.current = writeTime;
+        try { localStorage.setItem('fv_last_synced_updated_at', writeTime); } catch (_) {}
+      }
     } catch(e) {
       console.warn("Supabase user permission sync error:", e);
     }
