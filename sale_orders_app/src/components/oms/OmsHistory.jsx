@@ -30,7 +30,7 @@ export default function OmsHistory({ completedRuns = [], onEditPlan }) {
         if(await appConfirm('Are you sure you want to delete this production plan?')) {
             if (planToDelete && planToDelete.items) {
                 planToDelete.items.forEach(item => {
-                    updateSaleOrderItemStatus(item.orderId, item.itemCode, 'Pending');
+                    updateSaleOrderItemStatus(item.orderId, item.itemCode, 'Pending', 0, item.lineCode || null);
                 });
             }
             const newPlans = state.productionPlans.filter(p => p.id !== planId);

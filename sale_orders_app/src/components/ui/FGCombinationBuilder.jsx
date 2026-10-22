@@ -137,7 +137,8 @@ export default function FGCombinationBuilder({
       state.items || [],
       masking,
       config.packings,
-      defaultDept
+      defaultDept,
+      state.categoryPrefixes
     );
     if (onSelectItem) {
       onSelectItem(newItem);

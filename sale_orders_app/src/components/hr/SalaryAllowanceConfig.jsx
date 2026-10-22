@@ -755,7 +755,7 @@ export default function SalaryAllowanceConfig({ isMobile, onBack }) {
               </div>
 
               <div>
-                <label className="font-bold text-slate-700 text-xs block mb-1">Bonus Amount ($)</label>
+                <label className="font-bold text-slate-700 text-xs block mb-1">Bonus Amount ({currSym})</label>
                 <input
                   type="number"
                   value={config.attendanceAllowance.bonusAmount}

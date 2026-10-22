@@ -89,7 +89,7 @@ export default function DelCreation({ onGenerateChallan }) {
                       totalOrderQty: parseFloat(i.quantity || i.qty || 0),
                       totalOutput: produced,
                       totalDelivered: delivered,
-                      uniqueId: `${so.id}:::${i.id || i.itemCode}`
+                      uniqueId: `${so.id}:::${i.lineCode || i.id || i.itemCode}`
                   });
               }
           });
@@ -129,7 +129,7 @@ export default function DelCreation({ onGenerateChallan }) {
           (state?.productionPlans || []).forEach(plan => {
               if (plan.status === 'Cancelled') return;
               plan.items?.forEach(pi => {
-                  if (pi.orderId === item.orderId && (pi.itemCode === item.itemCode || pi.itemId === item.itemId)) {
+                  if (pi.orderId === item.orderId && ((item.lineCode && pi.lineCode) ? pi.lineCode === item.lineCode : (pi.itemCode === item.itemCode || pi.itemId === item.itemId))) {
                       pi.outputs?.forEach(out => {
                           const qty = parseFloat(out.quantity) || 0;
                           if (qty > 0 && out.typeName) {
@@ -153,7 +153,7 @@ export default function DelCreation({ onGenerateChallan }) {
           (state?.deliveries || []).forEach(del => {
               if (del.dcMode === 'Sale Orders') {
                   del.items?.forEach(di => {
-                      if (di.orderId === item.orderId && (di.itemCode === item.itemCode || di.itemId === item.itemId)) {
+                      if (di.orderId === item.orderId && ((item.lineCode && di.lineCode) ? di.lineCode === item.lineCode : (di.itemCode === item.itemCode || di.itemId === item.itemId))) {
                           const qty = parseFloat(di.dispatchedQty) || 0;
                           if (qty > 0) {
                               const typeName = di.stockType || 'Fresh';

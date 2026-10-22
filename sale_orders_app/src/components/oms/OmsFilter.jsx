@@ -397,14 +397,14 @@ export default function OmsFilter({ pendingItems = [], customers = [] }) {
         let outputs = [];
         (state.productionPlans || []).forEach(plan => {
             (plan.items || []).forEach(pItem => {
-                if (pItem.orderId === item.orderId && (pItem.itemCode === item.itemCode || pItem.itemId === item.itemId)) {
+                if (pItem.orderId === item.orderId && ((item.lineCode && pItem.lineCode) ? pItem.lineCode === item.lineCode : (pItem.itemCode === item.itemCode || pItem.itemId === item.itemId))) {
                     if (pItem.outputs && pItem.outputs.length > 0) {
                         outputs = [...outputs, ...pItem.outputs.map(o => ({...o, planId: plan.id, planDate: plan.createdAt}))];
                     }
                 }
             });
         });
-        outputs.sort((a,b) => new Date(a.date) - new Date(b.date));
+        outputs.sort((a,b) => new Date(a.createdAt || a.date) - new Date(b.createdAt || b.date));
         setViewTimelinePopup({ ...item, outputs });
     };
 
@@ -465,7 +465,7 @@ export default function OmsFilter({ pendingItems = [], customers = [] }) {
                                                 className="w-full text-left px-4 py-2 text-xs font-semibold hover:bg-surface-container-low text-on-surface"
                                                 onClick={(e) => {
                                                     e.stopPropagation();
-                                                    updateSaleOrderItemStatus(item.orderId, item.itemCode, st, 0);
+                                                    updateSaleOrderItemStatus(item.orderId, item.itemCode, st, 0, item.lineCode || null);
                                                     setAcknowledgedCautionItems(prev => { const n = new Set(prev); n.add(itemKey); return n; });
                                                     setEditingStatusItem(null);
                                                 }}
@@ -504,7 +504,7 @@ export default function OmsFilter({ pendingItems = [], customers = [] }) {
                                             className="w-full text-left px-4 py-2 text-xs font-semibold hover:bg-surface-container-low text-on-surface"
                                             onClick={(e) => {
                                                 e.stopPropagation();
-                                                updateSaleOrderItemStatus(item.orderId, item.itemCode, st, 0);
+                                                updateSaleOrderItemStatus(item.orderId, item.itemCode, st, 0, item.lineCode || null);
                                                 setAcknowledgedCautionItems(prev => { const n = new Set(prev); n.add(itemKey); return n; });
                                                 setEditingStatusItem(null);
                                             }}
@@ -1061,7 +1061,7 @@ export default function OmsFilter({ pendingItems = [], customers = [] }) {
                                                         <span className="font-bold text-primary text-lg">{out.quantity}m</span>
                                                         {out.typeName && <span className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest bg-surface-container w-fit px-1.5 py-0.5 rounded mt-1">{out.typeName}</span>}
                                                     </div>
-                                                    <span className="text-xs font-semibold text-on-surface-variant bg-surface-container px-2 py-1 rounded">{new Date(out.date).toLocaleDateString()}</span>
+                                                    <span className="text-xs font-semibold text-on-surface-variant bg-surface-container px-2 py-1 rounded">{new Date(out.createdAt || out.date).toLocaleDateString()}</span>
                                                 </div>
                                                 <p className="text-xs text-on-surface-variant">Plan ID: <span className="font-mono font-bold text-on-surface">{out.planId}</span></p>
                                                 {out.rolls && <p className="text-[10px] font-bold uppercase tracking-widest text-outline mt-2">{out.rolls} Rolls Produced</p>}

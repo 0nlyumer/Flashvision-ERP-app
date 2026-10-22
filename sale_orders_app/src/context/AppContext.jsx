@@ -12,7 +12,8 @@ import {
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { applyTheme } from '../utils/theme';
 import { supabase } from '../utils/supabaseClient';
-import { STEP1_ENTITY_TABLES, loadStep1EntitiesFromTables, syncEntityDiffToTable, entityRecordKey } from '../utils/entityTables';
+import { STEP1_ENTITY_TABLES, loadStep1EntitiesFromTables, syncEntityDiffToTable, entityRecordKey, loadAdminSetupFromTable, syncAdminSetupToTable } from '../utils/entityTables';
+import { formatLineCode, maxLineCodeNumber } from '../utils/itemCodes';
 import { getInitialFGConfig, saveFGConfig } from '../utils/fgCombinationUtils';
 import { DEFAULT_CHART_OF_ACCOUNTS } from '../utils/financeEngine';
 
@@ -615,6 +616,8 @@ export const AppProvider = ({ children }) => {
   // diffed and written through record-by-record.
   const step1TablesReadyRef = useRef(false);
   const step1SnapshotsRef = useRef({});
+  const adminSetupLoadedRef = useRef(false);
+  const adminSetupSnapshotRef = useRef(null);
   const lsDebounceRef = useRef({ hr_employees_list: null, hr_uploaded_attendance: null });
 
   const safeLocalStorageSet = (key, value) => {
@@ -1370,6 +1373,7 @@ export const AppProvider = ({ children }) => {
       };
       try {
         const fromTables = await loadStep1EntitiesFromTables();
+        const adminSetupFromTable = await loadAdminSetupFromTable();
         setState(prev => {
           const next = { ...prev };
           const seedSource = {};
@@ -1381,6 +1385,15 @@ export const AppProvider = ({ children }) => {
               seedSource[key] = prev[key];
             }
           });
+          // PHASE C STEP 3 (addendum): the app_config copy of adminSetup
+          // (incl. base currency) wins over the blob copy when present.
+          if (adminSetupFromTable) {
+            next.adminSetup = adminSetupFromTable;
+            adminSetupSnapshotRef.current = adminSetupFromTable;
+          } else {
+            adminSetupSnapshotRef.current = prev.adminSetup || null;
+          }
+          adminSetupLoadedRef.current = true;
           seedSnapshots(seedSource);
           return next;
         });
@@ -1388,6 +1401,8 @@ export const AppProvider = ({ children }) => {
         console.warn('[EntityTables] initial table load failed; blob copies remain active:', err);
         setState(prev => {
           seedSnapshots(prev);
+          adminSetupSnapshotRef.current = prev.adminSetup || null;
+          adminSetupLoadedRef.current = true;
           return prev;
         });
       } finally {
@@ -3628,13 +3643,27 @@ export const AppProvider = ({ children }) => {
     const isNew = extIdx < 0;
 
     setState(prev => {
+        // PHASE C STEP 3: every sale order line gets a unique line code
+        // (ITEM-001, ITEM-002, ... — one global series, never reused). Lines
+        // that already carry a code (edits) keep it; new lines are assigned
+        // from the persisted counter, reconciled against the highest code
+        // already in use so duplicates can never occur.
+        let counter = Math.max(prev.counters?.lineCode || 0, maxLineCodeNumber(prev.saleOrders));
+        const codedItems = (so.items || []).map(line => {
+            if (line.lineCode) return line;
+            counter += 1;
+            return { ...line, lineCode: formatLineCode(counter) };
+        });
+        const codedOrder = { ...so, items: codedItems };
+        const nextCounters = { ...(prev.counters || {}), lineCode: counter };
+
         const idx = prev.saleOrders.findIndex(o => o.id === so.id);
         if (idx >= 0) {
             const newList = [...prev.saleOrders];
-            newList[idx] = so;
-            return { ...prev, saleOrders: newList };
+            newList[idx] = codedOrder;
+            return { ...prev, saleOrders: newList, counters: nextCounters };
         }
-        return { ...prev, saleOrders: [...prev.saleOrders, so] };
+        return { ...prev, saleOrders: [...prev.saleOrders, codedOrder], counters: nextCounters };
     });
 
     if (isNew) {
@@ -3653,7 +3682,7 @@ export const AppProvider = ({ children }) => {
     }
   };
 
-  const updateSaleOrderItemStatus = (orderId, itemCode, status, producedQtyToAdd = 0) => {
+  const updateSaleOrderItemStatus = (orderId, itemCode, status, producedQtyToAdd = 0, lineCode = null) => {
     setState(prev => {
       // 1. Check if it's a custom OMS stock item
       const hasCustom = (prev.customOmsItems || []).some(ci => ci.id === orderId);
@@ -3684,7 +3713,7 @@ export const AppProvider = ({ children }) => {
 
           const newItems = order.items.map(it => {
             // Apply to all items if itemCode is null (Bulk Cancel/Process)
-            if (it.itemCode === itemCode || !itemCode) {
+            if (lineCode ? it.lineCode === lineCode : (it.itemCode === itemCode || !itemCode)) {
               return { ...it, status, producedQty: (it.producedQty || 0) + producedQtyToAdd };
             }
             return it;
@@ -3708,13 +3737,13 @@ export const AppProvider = ({ children }) => {
     });
   };
 
-  const handleProductionOutput = (planId, itemCode, outputs = [], markCompleted = false, overallRemarks = '', department = '') => {
+  const handleProductionOutput = (planId, itemCode, outputs = [], markCompleted = false, overallRemarks = '', department = '', lineCode = null) => {
       setState(prev => {
           let updatedItems = [...(prev.items || [])];
           
           // 1. Find previous plan and its items
           const oldPlan = prev.productionPlans?.find(p => p.id === planId);
-          const oldItem = oldPlan?.items?.find(pi => pi.itemCode === itemCode);
+          const oldItem = oldPlan?.items?.find(pi => lineCode ? pi.lineCode === lineCode : pi.itemCode === itemCode);
           const oldOutputs = oldItem?.outputs || [];
 
           const batchTypes = prev.batchOutputTypes || [
@@ -3807,7 +3836,7 @@ export const AppProvider = ({ children }) => {
           const updatedPlans = (prev.productionPlans || []).map(plan => {
               if (plan.id === planId) {
                   const updatedItemsList = (plan.items || []).map(pi => {
-                      if (pi.itemCode === itemCode) {
+                      if (lineCode ? pi.lineCode === lineCode : pi.itemCode === itemCode) {
                           return {
                               ...pi,
                               outputs: stampedOutputs
@@ -3827,22 +3856,34 @@ export const AppProvider = ({ children }) => {
               return plan;
           });
 
-          // 5. Update saleOrders items' producedQty based on deliverable outputs
-          const planItem = oldItem || updatedPlans.find(p => p.id === planId)?.items?.find(pi => pi.itemCode === itemCode);
+          // 5. Update saleOrders items' producedQty — tracked per lineCode
+          //    (Phase C Step 3): totals are aggregated across all plans by
+          //    lineCode, so two lines of the same item in one order never
+          //    merge. Lines without a lineCode keep the legacy
+          //    (orderId + itemCode) aggregation.
+          const planItem = oldItem || updatedPlans.find(p => p.id === planId)?.items?.find(pi => lineCode ? pi.lineCode === lineCode : pi.itemCode === itemCode);
           const orderId = planItem?.orderId;
+          const targetLineCode = lineCode || planItem?.lineCode || null;
           let updatedSaleOrders = [...(prev.saleOrders || [])];
           let updatedCustomOmsItems = [...(prev.customOmsItems || [])];
           
           if (orderId) {
               let totalProduced = 0;
+              let lineTotalProduced = 0;
               updatedPlans.forEach(plan => {
                   if (plan.status !== 'Cancelled') {
                       plan.items?.forEach(pi => {
-                          if (pi.orderId === orderId && pi.itemCode === itemCode) {
+                          if (pi.orderId === orderId) {
                               pi.outputs?.forEach(out => {
                                   const isWastage = isWastageType(out.typeName, out.typeId);
                                   if (!isWastage) {
-                                      totalProduced += parseFloat(out.quantity) || 0;
+                                      const q = parseFloat(out.quantity) || 0;
+                                      if (pi.itemCode === itemCode) {
+                                          totalProduced += q;
+                                      }
+                                      if (targetLineCode && pi.lineCode === targetLineCode) {
+                                          lineTotalProduced += q;
+                                      }
                                   }
                               });
                           }
@@ -3867,6 +3908,15 @@ export const AppProvider = ({ children }) => {
                           return {
                               ...order,
                               items: order.items.map(it => {
+                                  if (targetLineCode) {
+                                      if (it.lineCode === targetLineCode) {
+                                          return {
+                                              ...it,
+                                              producedQty: lineTotalProduced
+                                          };
+                                      }
+                                      return it;
+                                  }
                                   if (it.itemCode === itemCode) {
                                       return {
                                           ...it,
@@ -3968,7 +4018,9 @@ export const AppProvider = ({ children }) => {
               return plan;
           });
 
-          // Recalculate producedQty for all items in the deleted plan
+          // Recalculate producedQty for all items in the deleted plan —
+          // per lineCode where the plan item carries one (Phase C Step 3),
+          // legacy (orderId + itemCode) aggregation otherwise.
           let updatedSaleOrders = [...(prev.saleOrders || [])];
           let updatedCustomOmsItems = [...(prev.customOmsItems || [])];
           oldPlan.items?.forEach(pi => {
@@ -3980,7 +4032,7 @@ export const AppProvider = ({ children }) => {
               updatedPlans.forEach(plan => {
                   if (plan.status !== 'Cancelled') {
                       plan.items?.forEach(pItem => {
-                          if (pItem.orderId === orderId && pItem.itemCode === itemCode) {
+                          if (pi.lineCode ? (pItem.orderId === orderId && pItem.lineCode === pi.lineCode) : (pItem.orderId === orderId && pItem.itemCode === itemCode)) {
                               pItem.outputs?.forEach(out => {
                                   const isWastage = isWastageType(out.typeName, out.typeId);
                                   if (!isWastage) {
@@ -4009,7 +4061,7 @@ export const AppProvider = ({ children }) => {
                           return {
                               ...order,
                               items: order.items.map(it => {
-                                  if (it.itemCode === itemCode) {
+                                  if (pi.lineCode ? it.lineCode === pi.lineCode : it.itemCode === itemCode) {
                                       return {
                                           ...it,
                                           producedQty: totalProduced
@@ -4075,7 +4127,7 @@ export const AppProvider = ({ children }) => {
                 if (soIndex > -1) {
                     const so = { ...updatedSaleOrders[soIndex] };
                     so.items = so.items.map(soi => {
-                        if (soi.itemId === di.itemId || soi.itemCode === di.itemCode) {
+                        if ((soi.lineCode && di.lineCode) ? soi.lineCode === di.lineCode : (soi.itemId === di.itemId || soi.itemCode === di.itemCode)) {
                             return {
                                 ...soi,
                                 deliveredQty: (parseFloat(soi.deliveredQty) || 0) + qty,
@@ -4145,7 +4197,7 @@ export const AppProvider = ({ children }) => {
                   if (soIndex > -1) {
                       const so = { ...updatedSaleOrders[soIndex] };
                       so.items = so.items.map(soi => {
-                          if (soi.itemId === di.itemId || soi.itemCode === di.itemCode) {
+                          if ((soi.lineCode && di.lineCode) ? soi.lineCode === di.lineCode : (soi.itemId === di.itemId || soi.itemCode === di.itemCode)) {
                               return {
                                   ...soi,
                                   deliveredQty: Math.max(0, (parseFloat(soi.deliveredQty) || 0) - qty),
@@ -4696,6 +4748,11 @@ export const AppProvider = ({ children }) => {
   const step1ItemCategories = state.itemCategories;
   const step2ProductionPlans = state.productionPlans;
   const step2ProductionOutputs = state.productionOutputs;
+  const step3SaleOrders = state.saleOrders;
+  const step3Deliveries = state.deliveries;
+  const step3SalesInvoices = state.salesInvoices;
+  const step3Returns = state.returns;
+  const adminSetupForSync = state.adminSetup;
   useEffect(() => {
     if (!step1TablesReadyRef.current) return;
     const timer = setTimeout(() => {
@@ -4708,9 +4765,26 @@ export const AppProvider = ({ children }) => {
       syncEntityDiffToTable('itemCategories', step1ItemCategories, step1SnapshotsRef.current.itemCategories);
       syncEntityDiffToTable('productionPlans', step2ProductionPlans, step1SnapshotsRef.current.productionPlans);
       syncEntityDiffToTable('productionOutputs', step2ProductionOutputs, step1SnapshotsRef.current.productionOutputs);
+      syncEntityDiffToTable('saleOrders', step3SaleOrders, step1SnapshotsRef.current.saleOrders);
+      syncEntityDiffToTable('deliveries', step3Deliveries, step1SnapshotsRef.current.deliveries);
+      syncEntityDiffToTable('salesInvoices', step3SalesInvoices, step1SnapshotsRef.current.salesInvoices);
+      syncEntityDiffToTable('returns', step3Returns, step1SnapshotsRef.current.returns);
     }, 250);
     return () => clearTimeout(timer);
-  }, [step1Items, step1Customers, step1Suppliers, step1UomList, step1PackingTypesList, step1RawMaterialTypesList, step1ItemCategories, step2ProductionPlans, step2ProductionOutputs]);
+  }, [step1Items, step1Customers, step1Suppliers, step1UomList, step1PackingTypesList, step1RawMaterialTypesList, step1ItemCategories, step2ProductionPlans, step2ProductionOutputs, step3SaleOrders, step3Deliveries, step3SalesInvoices, step3Returns]);
+
+  // PHASE C STEP 3 (addendum): adminSetup — incl. the base currency — is
+  // persisted to the app_config table so the selection survives blob
+  // regressions. Write-through on change (debounced, after initial load).
+  useEffect(() => {
+    if (!adminSetupLoadedRef.current) return;
+    if (adminSetupSnapshotRef.current === adminSetupForSync) return;
+    const timer = setTimeout(() => {
+      adminSetupSnapshotRef.current = adminSetupForSync;
+      syncAdminSetupToTable(adminSetupForSync);
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [adminSetupForSync]);
 
   const setCollection = (collection, data) => {
     setState(prev => {

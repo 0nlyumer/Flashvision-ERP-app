@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import BulkUploadModal from './BulkUploadModal';
 import ProfileCardModal from './ProfileCardModal';
 import { useApp } from '../../context/AppContext';
+import { nextItemCode } from '../../utils/itemCodes';
 import { useDialog } from '../../context/DialogContext';
 import CustomSelect from '../ui/CustomSelect';
 import GlobalPagination from '../ui/GlobalPagination';
@@ -20,15 +21,7 @@ export default function AddRawMaterial() {
 
   const rawMaterials = state.items.filter(item => item.category === 'Raw Material');
 
-  const generateTrackingCode = () => {
-    const rawMaterialsList = state.items.filter(item => item.category === 'Raw Material');
-    const ids = rawMaterialsList.map(item => {
-      const match = item.sku?.match(/\d+/);
-      return match ? parseInt(match[0], 10) : 0;
-    });
-    const maxId = ids.length > 0 ? Math.max(...ids) : 0;
-    return `RM-${String(maxId + 1).padStart(3, '0')}`;
-  };
+  const generateTrackingCode = () => nextItemCode(state.items, 'Raw Material', state.categoryPrefixes);
 
   // Form State
   const [formData, setFormData] = useState({
@@ -197,11 +190,10 @@ export default function AddRawMaterial() {
       const packingType = row['Packing Type'] || row['Packing type'] || 'Box';
       const packingSize = row['Packing Size'] || row['Packing size'] || '1';
       const estCost = row['Estimated Cost'] || row['Estimated cost'] || '0.00';
-      const formattedPrice = estCost.startsWith('$') ? estCost : '$' + parseFloat(estCost).toFixed(2);
+      const formattedPrice = currSym + (parseFloat(String(estCost).replace(/^[^0-9.-]+/, '')) || 0).toFixed(2);
       const model3d = row['3D Model'] || row['3d model'] || '';
 
-      rmCount++;
-      const sku = `RM-${String(rmCount).padStart(3, '0')}`;
+      const sku = nextItemCode(updatedItems, 'Raw Material', state.categoryPrefixes);
 
       updatedItems.push({
         id: 'RM' + (Date.now() + addedCount),

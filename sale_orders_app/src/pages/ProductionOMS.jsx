@@ -208,15 +208,16 @@ export default function ProductionOMS() {
         }
       }
       
-      updateSaleOrderItemStatus(pItem.orderId, pItem.itemCode, 'In Process');
-      
+      updateSaleOrderItemStatus(pItem.orderId, pItem.itemCode, 'In Process', 0, pItem.lineCode || null);
+
       return {
         orderId: pItem.orderId,
-        customerName: pItem.customerId === 'FOR STOCK' 
-          ? 'FOR STOCK' 
+        customerName: pItem.customerId === 'FOR STOCK'
+          ? 'FOR STOCK'
           : ((state.customers || []).find(c => c.id === pItem.customerId)?.name || pItem.customer || 'Unknown'),
         orderDate: pItem.date,
         itemCode: pItem.itemCode,
+        lineCode: pItem.lineCode || null,
         productName: pItem.productName,
         quantity: pItem.quantity,
         outputQty: pItem.producedQty || pItem.quantity,

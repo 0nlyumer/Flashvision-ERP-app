@@ -238,13 +238,6 @@ export default function DelRecord() {
                                 <button onClick={() => appAlert('Edit is not permitted for finalized delivery challans. Please delete and recreate if needed.')} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-tertiary/10 text-tertiary transition-colors outline-none focus:ring-2 focus:ring-tertiary/20" title="Edit">
                                   <span className="material-symbols-outlined text-lg" style={{ fontVariationSettings: "'FILL' 0" }}>edit</span>
                                 </button>
-                                <button 
-                                   onClick={() => { setPrintData(dc); setShowStudio(true); }} 
-                                   className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-primary/10 text-primary transition-colors outline-none focus:ring-2 focus:ring-primary/20 cursor-pointer" 
-                                   title="Customize Print Layout (Gear Studio)"
-                                 >
-                                   <span className="material-symbols-outlined text-lg">settings</span>
-                                 </button>
                                  <button onClick={() => handlePrint(dc)} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-surface-container text-on-surface-variant transition-colors outline-none focus:ring-2 focus:ring-primary/20 cursor-pointer" title="Print">
                                    <span className="material-symbols-outlined text-lg" style={{ fontVariationSettings: "'FILL' 0" }}>print</span>
                                  </button>

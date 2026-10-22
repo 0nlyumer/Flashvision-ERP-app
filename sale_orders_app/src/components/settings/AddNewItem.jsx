@@ -2,12 +2,14 @@ import React, { useState, useRef, useEffect } from 'react';
 import BulkUploadModal from './BulkUploadModal';
 import ProfileCardModal from './ProfileCardModal';
 import { useApp } from '../../context/AppContext';
+import { nextItemCode } from '../../utils/itemCodes';
 import { useDialog } from '../../context/DialogContext';
 import CustomSelect from '../ui/CustomSelect';
 import GlobalPagination from '../ui/GlobalPagination';
 
 export default function AddNewItem() {
-  const { state, setCollection } = useApp();
+  const { state, setCollection, currencySymbol } = useApp();
+  const currSym = currencySymbol || state?.adminSetup?.baseCurrency?.match(/\(([^)]+)\)/)?.[1] || '$';
   const { appConfirm, appPrompt, appAlert } = useDialog();
   const [showHistory, setShowHistory] = useState(false);
   const [isBulkUploadOpen, setIsBulkUploadOpen] = useState(false);
@@ -71,12 +73,7 @@ export default function AddNewItem() {
     ? filteredDisplayItems.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
     : filteredDisplayItems;
 
-  const generateTrackingCode = (cat) => {
-    const list = state.items.filter(i => (i.category === cat || i.type === cat));
-    const count = list.length;
-    const prefix = state.categoryPrefixes?.[cat] || (cat === 'Finished Goods' ? 'ITM' : 'RM');
-    return prefix + '-' + String(count + 1).padStart(3, '0');
-  };
+  const generateTrackingCode = (cat) => nextItemCode(state.items, cat, state.categoryPrefixes);
 
   useEffect(() => {
     if (!formData.id && !showHistory) {
@@ -389,14 +386,13 @@ export default function AddNewItem() {
         const uomBaseQty = Number(row['UOM Base Quantity'] || row['UOM base quantity']) || 0;
         const packSize = Number(row['Packing Size'] || row['Packing size']) || 0;
         const unitPrice = row['Unit Price'] || row['Unit price'] || '0.00';
-        const formattedPrice = unitPrice.startsWith('$') ? unitPrice : '$' + parseFloat(unitPrice).toFixed(2);
+        const formattedPrice = currSym + (parseFloat(String(unitPrice).replace(/^[^0-9.-]+/, '')) || 0).toFixed(2);
 
         // find matching cloth
         const clothItem = updatedItems.find(i => i.name.toLowerCase() === clothName.toLowerCase());
         const backClothId = clothItem ? clothItem.id : '';
 
-        fgCount++;
-        const sku = `ITM-${String(fgCount).padStart(3, '0')}`;
+        const sku = nextItemCode(updatedItems, 'Finished Goods', state.categoryPrefixes);
 
         updatedItems.push({
           id: 'I' + (Date.now() + addedCount),
@@ -439,11 +435,10 @@ export default function AddNewItem() {
         const packingType = row['Packing Type'] || row['Packing type'] || 'Box';
         const packingSize = row['Packing Size'] || row['Packing size'] || '1';
         const estCost = row['Estimated Cost'] || row['Estimated cost'] || '0.00';
-        const formattedPrice = estCost.startsWith('$') ? estCost : '$' + parseFloat(estCost).toFixed(2);
+        const formattedPrice = currSym + (parseFloat(String(estCost).replace(/^[^0-9.-]+/, '')) || 0).toFixed(2);
         const model3d = row['3D Model'] || row['3d model'] || '';
 
-        rmCount++;
-        const sku = `${prefix}-${String(rmCount).padStart(3, '0')}`;
+        const sku = nextItemCode(updatedItems, currentCat, state.categoryPrefixes);
 
         updatedItems.push({
           id: 'I' + (Date.now() + addedCount),

@@ -1252,7 +1252,7 @@ export default function UniversalPrintStudioModal({
                                 }`}
                                 style={{ width: col.width || 'auto' }}
                               >
-                                {col.label || col.key}
+                                {String(col.label || col.key).replace('($)', `(${state?.adminSetup?.baseCurrency?.match(/\(([^)]+)\)/)?.[1] || '$'})`)}
                               </th>
                             ))}
                           </tr>

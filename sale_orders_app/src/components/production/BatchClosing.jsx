@@ -597,7 +597,7 @@ function BatchClosingForm({ plan, onBack, outputTypes, setCollection, isReadOnly
         if (!plan) return;
         const init = {};
         plan.items?.forEach(item => {
-            init[item.itemCode] = item.outputs ? JSON.parse(JSON.stringify(item.outputs)) : [];
+            init[item.lineCode || item.itemCode] = item.outputs ? JSON.parse(JSON.stringify(item.outputs)) : [];
         });
         setOutputs(init);
     }, [plan]);
@@ -668,7 +668,7 @@ function BatchClosingForm({ plan, onBack, outputTypes, setCollection, isReadOnly
                 hasConsumptionMissing = true;
             }
             
-            const entries = outputs[item.itemCode] || [];
+            const entries = outputs[item.lineCode || item.itemCode] || [];
             if (entries.length > 0) {
                 const validEntries = entries.filter(e => parseFloat(e.quantity) > 0);
                 if (validEntries.length > 0) {
@@ -677,7 +677,7 @@ function BatchClosingForm({ plan, onBack, outputTypes, setCollection, isReadOnly
                         ...e,
                         createdAt: e.createdAt || new Date().toISOString()
                     }));
-                    handleProductionOutput(plan.id, item.itemCode, entriesWithTimestamp, !hasConsumptionMissing, overallRemarks, selectedDepartment);
+                    handleProductionOutput(plan.id, item.itemCode, entriesWithTimestamp, !hasConsumptionMissing, overallRemarks, selectedDepartment, item.lineCode || null);
                 }
             }
         });
@@ -766,7 +766,7 @@ function BatchClosingForm({ plan, onBack, outputTypes, setCollection, isReadOnly
                         </thead>
                         {plan.items?.map(item => {
                             const hasConsumption = plan.consumptions && plan.consumptions[item.itemCode];
-                            const itemOutputs = outputs[item.itemCode] || [];
+                            const itemOutputs = outputs[item.lineCode || item.itemCode] || [];
                             const targetQty = parseFloat(item.outputQty || item.quantity || 0);
                             const totalOut = itemOutputs.reduce((sum, o) => {
                                 const typeObj = outputTypes.find(t => String(t.id) === String(o.typeId) || t.name === o.typeName);
@@ -803,7 +803,7 @@ function BatchClosingForm({ plan, onBack, outputTypes, setCollection, isReadOnly
                                         </td>
                                         <td className="px-6 py-6 text-center">
                                             {!isReadOnly && (
-                                                <button onClick={() => handleAddRow(item.itemCode)} className="px-3 py-1.5 rounded-lg bg-surface-container-high hover:bg-surface-container-highest text-primary font-bold text-xs inline-flex items-center gap-1 transition-colors border border-outline-variant/30 shadow-sm">
+                                                <button onClick={() => handleAddRow(item.lineCode || item.itemCode)} className="px-3 py-1.5 rounded-lg bg-surface-container-high hover:bg-surface-container-highest text-primary font-bold text-xs inline-flex items-center gap-1 transition-colors border border-outline-variant/30 shadow-sm">
                                                     <span className="material-symbols-outlined text-[14px]">add</span> Add Output
                                                 </button>
                                             )}
@@ -820,7 +820,7 @@ function BatchClosingForm({ plan, onBack, outputTypes, setCollection, isReadOnly
                                             <td className="px-6 py-3">
                                                 <select 
                                                     value={row.typeId}
-                                                    onChange={e => handleUpdateRow(item.itemCode, idx, 'typeId', e.target.value)}
+                                                    onChange={e => handleUpdateRow(item.lineCode || item.itemCode, idx, 'typeId', e.target.value)}
                                                     disabled={isReadOnly}
                                                     className="w-full bg-surface border border-outline-variant/30 rounded-lg px-3 py-1.5 text-sm font-semibold text-on-surface focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 disabled:opacity-85 disabled:bg-surface-container-low"
                                                 >
@@ -833,7 +833,7 @@ function BatchClosingForm({ plan, onBack, outputTypes, setCollection, isReadOnly
                                                         type="number" 
                                                         placeholder="0.00"
                                                         value={row.quantity || ''}
-                                                        onChange={e => handleUpdateRow(item.itemCode, idx, 'quantity', e.target.value)}
+                                                        onChange={e => handleUpdateRow(item.lineCode || item.itemCode, idx, 'quantity', e.target.value)}
                                                         disabled={isReadOnly}
                                                         className="w-24 bg-surface border border-outline-variant/30 rounded-lg px-3 py-1.5 text-sm font-bold text-right text-on-surface focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 disabled:opacity-85 disabled:bg-surface-container-low"
                                                     />
@@ -845,7 +845,7 @@ function BatchClosingForm({ plan, onBack, outputTypes, setCollection, isReadOnly
                                                     <input 
                                                         type="checkbox" 
                                                         checked={row.isDeliverable ?? true}
-                                                        onChange={e => handleUpdateRow(item.itemCode, idx, 'isDeliverable', e.target.checked)}
+                                                        onChange={e => handleUpdateRow(item.lineCode || item.itemCode, idx, 'isDeliverable', e.target.checked)}
                                                         disabled={isReadOnly}
                                                         className="rounded text-primary focus:ring-primary/20 border-outline-variant/50 w-4 h-4 cursor-pointer" 
                                                     />
@@ -857,7 +857,7 @@ function BatchClosingForm({ plan, onBack, outputTypes, setCollection, isReadOnly
                                                     type="text" 
                                                     placeholder="Remarks (Optional)"
                                                     value={row.remarks || ''}
-                                                    onChange={e => handleUpdateRow(item.itemCode, idx, 'remarks', e.target.value)}
+                                                    onChange={e => handleUpdateRow(item.lineCode || item.itemCode, idx, 'remarks', e.target.value)}
                                                     disabled={isReadOnly}
                                                     className="w-full bg-surface border border-outline-variant/30 rounded-lg px-3 py-1.5 text-sm font-medium text-on-surface focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 disabled:opacity-85 disabled:bg-surface-container-low"
                                                 />
@@ -865,7 +865,7 @@ function BatchClosingForm({ plan, onBack, outputTypes, setCollection, isReadOnly
                                             <td className="px-6 py-3 text-center">
                                                 <div className="flex items-center justify-center gap-1">
                                                     {!isReadOnly && (
-                                                        <button onClick={() => handleRemoveRow(item.itemCode, idx)} className="p-1.5 text-on-surface-variant hover:text-error hover:bg-error/10 rounded-md transition-colors">
+                                                        <button onClick={() => handleRemoveRow(item.lineCode || item.itemCode, idx)} className="p-1.5 text-on-surface-variant hover:text-error hover:bg-error/10 rounded-md transition-colors">
                                                             <span className="material-symbols-outlined text-[18px]">delete</span>
                                                         </button>
                                                     )}

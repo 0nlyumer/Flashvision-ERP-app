@@ -1600,7 +1600,7 @@ export default function HRAttendance({ isMobile }) {
                     <div className="flex justify-between items-center animate-in fade-in slide-in-from-top-1 duration-150">
                       <span className="font-body text-xs font-semibold text-on-surface-variant flex items-center gap-1">
                         <span className="material-symbols-outlined text-[15px] text-error">money_off</span>
-                        Fine Amount ($)
+                        Fine Amount ({appState?.adminSetup?.baseCurrency?.match(/\(([^)]+)\)/)?.[1] || 'Rs'})
                       </span>
                       <input 
                         type="number"
@@ -1616,7 +1616,7 @@ export default function HRAttendance({ isMobile }) {
                     <div className="flex justify-between items-center animate-in fade-in slide-in-from-top-1 duration-150">
                       <span className="font-body text-xs font-semibold text-on-surface-variant flex items-center gap-1">
                         <span className="material-symbols-outlined text-[15px] text-error">remove_circle_outline</span>
-                        Deductions ($)
+                        Deductions ({appState?.adminSetup?.baseCurrency?.match(/\(([^)]+)\)/)?.[1] || 'Rs'})
                       </span>
                       <input 
                         type="number"

@@ -3,6 +3,8 @@
  * Synthetic Leather ERP Architecture
  */
 
+import { nextItemCode } from './itemCodes';
+
 export const DEFAULT_FG_CONFIG = {
   paperCodes: [
     { id: 'p1', code: 'P-101', name: 'Nappa Smooth Grain', description: 'Fine classic leather texture' },
@@ -254,25 +256,13 @@ export function parseRollSizeFromPacking(packing, packingsList = []) {
   return 50;
 }
 
-export function createFinishedGoodFromCombo(combo = {}, stateItems = [], maskingConfig = {}, packingsConfig = [], defaultDept = '') {
+export function createFinishedGoodFromCombo(combo = {}, stateItems = [], maskingConfig = {}, packingsConfig = [], defaultDept = '', categoryPrefixes = null) {
   const displayName = generateFGDisplayName(combo, maskingConfig);
 
-  // Scan existing items to continue exact ITM-xxx serial number sequence
-  let maxItemNum = 0;
-  (stateItems || []).forEach(item => {
-    const code = String(item.sku || item.itemCode || item.code || item.id || '');
-    const match = code.match(/ITM-(\d+)/i);
-    if (match) {
-      const num = parseInt(match[1], 10);
-      if (!isNaN(num) && num > maxItemNum) {
-        maxItemNum = num;
-      }
-    }
-  });
-
-  const fgCount = (stateItems || []).filter(i => i.category === 'Finished Goods' || i.type === 'Finish Good' || i.type === 'Finished Goods').length;
-  const nextSerialNum = maxItemNum > 0 ? maxItemNum + 1 : (fgCount + 1);
-  const sku = `ITM-${String(nextSerialNum).padStart(3, '0')}`;
+  // Master code: SAME settled generator as every other create path
+  // (Phase C Step 3) — Finished Goods continue the FG-001 series; popup
+  // items never get a separate code scheme.
+  const sku = nextItemCode(stateItems, 'Finished Goods', categoryPrefixes);
 
   const rollSize = parseRollSizeFromPacking(combo.packing, packingsConfig || DEFAULT_FG_CONFIG.packings);
   const assignedDept = combo.department || defaultDept || DEFAULT_FG_CONFIG.defaultDepartment || 'Finished Goods';
@@ -290,6 +280,7 @@ export function createFinishedGoodFromCombo(combo = {}, stateItems = [], masking
     },
     uom: 'Meters',
     unit: 'Meters',
+    secondaryUom: 'Rolls',
     price: 0,
     stock: 0,
     rolls: 0,

@@ -400,11 +400,11 @@ export default function SaleOrderModule() {
     // 2. Production Outputs
     (state.productionPlans || []).forEach(plan => {
       (plan.items || []).forEach(pItem => {
-         if (pItem.orderId === timelineOrderInfo.orderId && (!timelineOrderInfo.itemCode || pItem.itemCode === timelineOrderInfo.itemCode)) {
+         if (pItem.orderId === timelineOrderInfo.orderId && (!timelineOrderInfo.itemCode || (timelineOrderInfo.lineCode && pItem.lineCode ? pItem.lineCode === timelineOrderInfo.lineCode : pItem.itemCode === timelineOrderInfo.itemCode))) {
             (pItem.outputs || []).forEach(out => {
                events.push({
                  type: 'production',
-                 date: new Date(out.date),
+                 date: new Date(out.createdAt || out.date),
                  title: 'Production Output',
                  desc: `${out.quantity}m produced (Plan: ${plan.id})${out.typeName ? ` - ${out.typeName}` : ''}`,
                  icon: 'precision_manufacturing',
@@ -665,7 +665,7 @@ export default function SaleOrderModule() {
        expectedDelivery: order.expectedDelivery || '',
        notes: order.notes || '',
        paymentTerms: order.paymentTerms || 'Net 30',
-       salesperson: order.salesperson || 'Alexander Pierce'
+       salesperson: order.salesperson || ''
     });
     setItems(order.items.map(it => {
        const prod = state.items.find(p => p.id === it.itemId);
@@ -704,20 +704,19 @@ export default function SaleOrderModule() {
         appAlert("Please select a customer.");
         return;
     }
-    if (!orderMeta.salesperson) {
-        appAlert("Please select a salesperson.");
-        return;
-    }
     const invalidItem = items.find(i => !i.itemId || i.qty <= 0);
     if(invalidItem) {
         appAlert("Please select valid items and quantities greater than zero.");
         return;
     }
 
-    const duplicateIds = items.map(i => i.itemId);
-    const hasDuplicates = new Set(duplicateIds).size !== duplicateIds.length;
+    // Omer's rule: the same item at the SAME rate must not be added twice
+    // in one order; the same item at a DIFFERENT rate is a separate line
+    // (and gets its own line code).
+    const lineKeys = items.map(i => `${i.itemId}:::${parseFloat(i.price) || 0}`);
+    const hasDuplicates = new Set(lineKeys).size !== lineKeys.length;
     if (hasDuplicates) {
-        appAlert("Duplicate items are not allowed in the same sale order.");
+        appAlert("The same item with the same rate cannot be added twice in the same sale order.");
         return;
     }
 
@@ -728,6 +727,7 @@ export default function SaleOrderModule() {
       modifiedDate: orderMeta.id.startsWith('SO-') && orderMeta.status !== 'Pending' ? new Date().toISOString() : null,
       items: items.map(i => ({
         itemCode: i.itemCode,
+        lineCode: i.lineCode,
         itemId: i.itemId,
         quantity: i.qty,
         rolls: i.rolls,
@@ -907,7 +907,7 @@ export default function SaleOrderModule() {
             case 'shipping_address':
               return order.shippingAddress || 'No shipping address provided.';
             case 'salesperson':
-              return order.salesperson || 'Alexander Pierce';
+              return order.salesperson || '';
             case 'payment_terms':
               return order.paymentTerms || 'Net 30';
             case 'delivery_date':
@@ -1213,18 +1213,6 @@ export default function SaleOrderModule() {
                   </div>
 
                   <div className="flex items-center gap-3 font-sans">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setStudioDocData(printOrder);
-                        setShowPrintStudio(true);
-                      }}
-                      className="px-4 py-2 border border-primary/30 bg-primary/10 hover:bg-primary/20 text-primary font-bold text-xs rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
-                      title="Customize Print Layout (Gear Studio)"
-                    >
-                      <span className="material-symbols-outlined text-[18px]">settings</span>
-                      <span>Customize Layout (⚙️)</span>
-                    </button>
 
                     <button
                       type="button"
@@ -1711,7 +1699,7 @@ export default function SaleOrderModule() {
                           <div className="flex items-center justify-end space-x-1 opacity-90 group-hover:opacity-100 transition-opacity">
                             <button onClick={() => { setTimelineOrderInfo({ orderId: order.id, itemCode: null, type: 'order' }); setShowTimelineModal(true); }} className="p-2 hover:text-primary transition-colors hover:bg-primary/10 rounded-lg" title="Timeline View"><span className="material-symbols-outlined text-[20px]">history</span></button>
                             <button onClick={() => handleEditOrder(order)} className="p-2 hover:text-primary transition-colors hover:bg-primary/10 rounded-lg" title="Modify"><span className="material-symbols-outlined text-[20px]">edit</span></button>
-                            <button onClick={() => { setStudioDocData(order); setShowPrintStudio(true); }} className="p-2 text-primary hover:text-primary-dark transition-colors hover:bg-primary/10 rounded-lg cursor-pointer" title="Customize Print Layout (Gear Studio)"><span className="material-symbols-outlined text-[20px]">settings</span></button>
+                            
                               <button onClick={() => setPrintOrder(order)} className="p-2 hover:text-primary transition-colors hover:bg-primary/10 rounded-lg" title="Print"><span className="material-symbols-outlined text-[20px]">print</span></button>
                           </div>
                         </td>
@@ -1779,7 +1767,7 @@ export default function SaleOrderModule() {
                         </td>
                         <td className="px-6 py-5 text-right">
                           <div className="flex items-center justify-end space-x-1 opacity-40 group-hover:opacity-100 transition-opacity">
-                            <button onClick={() => { setTimelineOrderInfo({ orderId: item.orderId, itemCode: item.itemCode, type: 'item' }); setShowTimelineModal(true); }} className="p-2 hover:text-primary transition-colors hover:bg-primary/10 rounded-lg" title="Timeline View"><span className="material-symbols-outlined text-[20px]">history</span></button>
+                            <button onClick={() => { setTimelineOrderInfo({ orderId: item.orderId, itemCode: item.itemCode, lineCode: item.lineCode || null, type: 'item' }); setShowTimelineModal(true); }} className="p-2 hover:text-primary transition-colors hover:bg-primary/10 rounded-lg" title="Timeline View"><span className="material-symbols-outlined text-[20px]">history</span></button>
                           </div>
                         </td>
                       </tr>
@@ -1997,11 +1985,9 @@ export default function SaleOrderModule() {
               </div>
               <div className="space-y-5">
                 <div className="space-y-2">
-                  <label className="text-xs font-bold text-on-surface-variant uppercase tracking-wider">Salesperson *</label>
+                  <label className="text-xs font-bold text-on-surface-variant uppercase tracking-wider">Salesperson</label>
                   <select value={orderMeta.salesperson} onChange={(e) => handleMetaChange('salesperson', e.target.value)} className="w-full bg-surface-container-lowest border border-outline-variant/20 rounded-lg focus:ring-2 ring-primary/20 font-bold text-sm">
                     <option value="">Select Salesperson</option>
-                    <option value="Alexander Pierce">Alexander Pierce</option>
-                    <option value="Elena Rodriguez">Elena Rodriguez</option>
                     {(state.users || []).map(u => (
                       <option key={u.id} value={u.name}>{u.name}</option>
                     ))}
@@ -2329,13 +2315,6 @@ export default function SaleOrderModule() {
                                 <td className="px-6 py-6 overflow-visible"><StatusBadgeWithAction orderId={order.id} itemCode={null} status={order.status} updateStatus={updateSaleOrderItemStatus} /></td>
                                 <td className="px-8 py-6 text-right">
                                    <div className="flex items-center justify-end gap-2">
-                                     <button 
-                                        onClick={() => { setStudioDocData(order); setShowPrintStudio(true); }} 
-                                        className="text-primary hover:bg-primary/10 p-2 rounded-lg transition-colors flex items-center justify-center cursor-pointer" 
-                                        title="Customize Print Layout (Gear Studio)"
-                                      >
-                                         <span className="material-symbols-outlined text-[20px]">settings</span>
-                                      </button>
                                       <button onClick={() => setPrintOrder(order)} className="text-primary hover:bg-primary/10 p-2 rounded-lg transition-colors flex items-center justify-center" title="Print Record">
                                         <span className="material-symbols-outlined text-[20px]">print</span>
                                      </button>

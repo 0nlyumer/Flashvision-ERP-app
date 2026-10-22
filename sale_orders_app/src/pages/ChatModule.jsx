@@ -4456,7 +4456,7 @@ export default function ChatModule() {
         customerName: parsedCustomer,
         contactPerson: 'Shahzad Ahmed',
         shippingAddress: 'Plot 45-B, Kot Lakhpat Industrial Area, Lahore',
-        salesperson: 'Alexander Pierce',
+        salesperson: '',
         paymentTerms: 'Net 30',
         expectedDelivery: 'N/A',
         total: parsedTotal || 20000,
@@ -4519,7 +4519,7 @@ export default function ChatModule() {
           return c ? c.contactPerson || 'N/A' : (order.contactPerson || 'N/A');
         }
         case 'shipping_address': return order.shippingAddress || 'No shipping address provided.';
-        case 'salesperson': return order.salesperson || 'Alexander Pierce';
+        case 'salesperson': return order.salesperson || '';
         case 'payment_terms': return order.paymentTerms || 'Net 30';
         case 'delivery_date': return order.expectedDelivery || 'N/A';
         default: return '---';

@@ -261,7 +261,7 @@ export default function ProductionModule() {
         const itemToRemove = plan.items.find(i => i.itemCode === itemCode);
         if (itemToRemove) {
             // Update order status back to Pending
-            updateSaleOrderItemStatus(itemToRemove.orderId, itemToRemove.itemCode, 'Pending');
+            updateSaleOrderItemStatus(itemToRemove.orderId, itemToRemove.itemCode, 'Pending', 0, itemToRemove.lineCode || null);
             
             // Refund Fabric Stock
             if (itemToRemove.requiredFabricName && itemToRemove.requiredFabricName !== 'None') {
@@ -354,7 +354,7 @@ export default function ProductionModule() {
          newPlans[planIndex] = plan;
          setCollection('productionPlans', newPlans);
          
-         updateSaleOrderItemStatus(pendingItem.orderId, pendingItem.itemCode, 'In Process');
+         updateSaleOrderItemStatus(pendingItem.orderId, pendingItem.itemCode, 'In Process', 0, pendingItem.lineCode || null);
          setShowAddModal(false); // Close Modal when added
      }
   };
