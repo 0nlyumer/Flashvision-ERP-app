@@ -1,5 +1,5 @@
 import { getEffectiveDutyHours, getEffectiveOvertimeMultiplier } from '../../utils/hrDutyHours';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import PayrollAccountMapping from './PayrollAccountMapping';
 import SalaryAllowanceConfig from './SalaryAllowanceConfig';

@@ -1,6 +1,6 @@
 import { getEffectiveDutyHours, getEffectiveOvertimeMultiplier } from '../../utils/hrDutyHours';
 import HRPayslipModal from './HRPayslipModal';
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { supabase } from '../../utils/supabaseClient';
 import { useDialog } from '../../context/DialogContext';
 import { useApp } from '../../context/AppContext';
