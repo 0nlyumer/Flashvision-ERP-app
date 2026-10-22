@@ -40,14 +40,38 @@ export default function HRDashboard({ isMobile, onNavigateTab }) {
   const [divisionFilter, setDivisionFilter] = useState('ALL');
 
   const { state, setCollection } = useApp();
-  // state.departments entries are { label, value } objects — they have NO
-  // `name` field. Normalize the display name from label/value (falling back
-  // to `name` for forward compatibility) and drop entries that still have
-  // no usable name, so the .trim()/.length calls below can never crash the
-  // whole HR view ("Cannot read properties of undefined (reading 'trim')").
-  const configuredDepartments = (state.departments || [])
-    .map(d => ({ ...d, name: (d && (d.name || d.label || d.value)) || '' }))
-    .filter(d => typeof d.name === 'string' && d.name.trim() !== '');
+
+  const [localDeptTrigger, setLocalDeptTrigger] = useState(0);
+  useEffect(() => {
+    const handleUpdate = () => setLocalDeptTrigger(t => t + 1);
+    window.addEventListener('hr_departments_config_updated', handleUpdate);
+    return () => window.removeEventListener('hr_departments_config_updated', handleUpdate);
+  }, []);
+
+  const configuredDepartments = useMemo(() => {
+    try {
+      const saved = localStorage.getItem('hr_departments_config');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const isDummy = parsed.length === 3 && parsed.some(d => (d.name === 'Production Department' || d.name === 'Assembly Division'));
+          if (!isDummy) {
+            return parsed
+              .map(d => ({ ...d, name: (d && (d.name || d.label || d.value)) || '' }))
+              .filter(d => typeof d.name === 'string' && d.name.trim() !== '');
+          }
+        }
+      }
+    } catch (e) {}
+    const sDepts = (state.departments || [])
+      .map(d => ({ ...d, name: (d && (d.name || d.label || d.value)) || '' }))
+      .filter(d => {
+        if (!d.name || typeof d.name !== 'string' || !d.name.trim()) return false;
+        const n = d.name.trim().toLowerCase();
+        return n !== 'production department' && n !== 'assembly division' && n !== 'quality assurance';
+      });
+    return sDepts;
+  }, [state.departments, localDeptTrigger]);
 
   const [activePopupTab, setActivePopupTab] = useState(() => {
     return configuredDepartments[0]?.name || '';
@@ -127,7 +151,7 @@ export default function HRDashboard({ isMobile, onNavigateTab }) {
   const divisionsList = React.useMemo(() => {
     const set = new Set();
     employees.forEach(emp => {
-      const div = emp.division || emp.section;
+      const div = emp.division || emp.section || 'AJ Synthetic';
       if (div && (departmentFilter === 'ALL' || !departmentFilter || emp.department === departmentFilter)) {
         set.add(div);
       }
@@ -138,7 +162,7 @@ export default function HRDashboard({ isMobile, onNavigateTab }) {
   // 1. Get active workforce on selectedDate
   const activeEmployees = employees.filter(emp => {
     const matchesDept = departmentFilter === 'ALL' || !departmentFilter || emp.department === departmentFilter;
-    const matchesDiv = divisionFilter === 'ALL' || !divisionFilter || (emp.division === divisionFilter || emp.section === divisionFilter);
+    const matchesDiv = divisionFilter === 'ALL' || !divisionFilter || ((emp.division || emp.section || 'AJ Synthetic') === divisionFilter);
     if (!matchesDept || !matchesDiv) return false;
     if (!emp.joiningDate) return true;
     return emp.joiningDate <= selectedDate;
@@ -225,6 +249,7 @@ export default function HRDashboard({ isMobile, onNavigateTab }) {
 
   // Helper matching to check if employee belongs to configured settings departments strictly
   const isEmpInConfiguredDept = (e, deptName) => {
+if (!e || !e.department || !deptName) return false;
     return (e.department || '').trim().toLowerCase() === (deptName || '').trim().toLowerCase();
   };
 

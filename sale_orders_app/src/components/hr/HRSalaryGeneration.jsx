@@ -351,7 +351,7 @@ export default function HRSalaryGeneration({ isMobile }) {
       const isAct = (emp.status || 'Active').toLowerCase() === 'active';
       if (!isAct) return false;
       if (divFilter === 'all') return true;
-      const empDiv = (emp.division || emp.section || '').trim().toLowerCase();
+      const empDiv = (emp.division || emp.section || 'AJ Synthetic').trim().toLowerCase();
       return empDiv === divFilter;
     });
 
@@ -365,7 +365,7 @@ export default function HRSalaryGeneration({ isMobile }) {
               const isAct = (emp.status || 'Active').toLowerCase() === 'active';
               if (!isAct) return false;
               if (divFilter === 'all') return true;
-              const empDiv = (emp.division || emp.section || '').trim().toLowerCase();
+              const empDiv = (emp.division || emp.section || 'AJ Synthetic').trim().toLowerCase();
               return empDiv === divFilter;
             });
           }

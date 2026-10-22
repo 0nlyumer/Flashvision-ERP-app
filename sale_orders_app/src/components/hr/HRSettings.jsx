@@ -24,75 +24,61 @@ export default function HRSettings({ isMobile }) {
 
   const [newDesignation, setNewDesignation] = useState('');
 
-  // Pre-populated departments state - dynamically loaded from localStorage
+  // Pre-populated departments state - dynamically loaded from localStorage or state.departments
   const [departments, setDepartments] = useState(() => {
     try {
       const savedConfig = localStorage.getItem('hr_departments_config');
-      return savedConfig ? JSON.parse(savedConfig) : [];
+      if (savedConfig) {
+        const parsed = JSON.parse(savedConfig);
+        const isDummy = parsed.length === 3 && parsed.some(d => d.name === 'Production Department' || d.name === 'Assembly Division');
+        if (!isDummy && parsed.length > 0) return parsed;
+      }
     } catch (e) {
       console.error("Error initializing departments:", e);
-      return [];
     }
+    const sDepts = (state?.departments || []).filter(d => {
+      const n = (d.name || d.label || d.value || '').toLowerCase();
+      return n !== 'production department' && n !== 'assembly division' && n !== 'quality assurance';
+    }).map((d, idx) => ({
+      id: d.id || (101 + idx),
+      name: d.name || d.label || d.value,
+      tagline: d.tagline || 'Company Department',
+      managers: d.managers || [],
+      operators: d.operators || [],
+      incharges: d.incharges || [],
+      sections: d.sections || [],
+      subSections: d.subSections || []
+    }));
+    return sDepts;
   });
 
   // Persist departments configuration to localStorage on change
   useEffect(() => {
-    localStorage.setItem('hr_departments_config', JSON.stringify(departments));
+    if (departments.length > 0) {
+      localStorage.setItem('hr_departments_config', JSON.stringify(departments));
+    }
   }, [departments]);
 
-  // Safe real-time sync of departments from global state to HR settings
+  // Synchronize state.departments if local departments is empty on mount
   useEffect(() => {
-    try {
-      const globalDepts = state?.departments || [];
-      if (globalDepts.length === 0) return; // Ignore empty global state on initial startup load
-
-      const savedConfig = localStorage.getItem('hr_departments_config');
-      let hrDepts = savedConfig ? JSON.parse(savedConfig) : [];
-
-      let hasChanges = false;
-      
-      // 1. Remove departments from hrDepts that no longer exist in globalDepts
-      const initialLength = hrDepts.length;
-      hrDepts = hrDepts.filter(hrD => 
-        globalDepts.some(gD => gD.id === hrD.id || (gD.name || gD.label) === hrD.name)
-      );
-      if (hrDepts.length !== initialLength) {
-        hasChanges = true;
+    if (departments.length === 0 && state?.departments && state.departments.length > 0) {
+      const sDepts = state.departments.filter(d => {
+        const n = (d.name || d.label || d.value || '').toLowerCase();
+        return n !== 'production department' && n !== 'assembly division' && n !== 'quality assurance';
+      }).map((d, idx) => ({
+        id: d.id || (101 + idx),
+        name: d.name || d.label || d.value,
+        tagline: d.tagline || 'Company Department',
+        managers: d.managers || [],
+        operators: d.operators || [],
+        incharges: d.incharges || [],
+        sections: d.sections || [],
+        subSections: d.subSections || []
+      }));
+      if (sDepts.length > 0) {
+        setDepartments(sDepts);
+        localStorage.setItem('hr_departments_config', JSON.stringify(sDepts));
       }
-
-      // 2. Add or update departments from globalDepts
-      globalDepts.forEach(gD => {
-        const gName = gD.name || gD.label || '';
-        if (!gName) return;
-
-        const existingIdx = hrDepts.findIndex(hrD => hrD.id === gD.id || hrD.name === gName);
-        if (existingIdx > -1) {
-          if (hrDepts[existingIdx].name !== gName || hrDepts[existingIdx].id !== gD.id) {
-            hrDepts[existingIdx].name = gName;
-            hrDepts[existingIdx].id = gD.id;
-            hasChanges = true;
-          }
-        } else {
-          hrDepts.push({
-            id: gD.id,
-            name: gName,
-            tagline: gD.tagline || 'Custom Division',
-            managers: [],
-            operators: [],
-            incharges: [],
-            sections: [],
-            subSections: []
-          });
-          hasChanges = true;
-        }
-      });
-
-      if (hasChanges) {
-        localStorage.setItem('hr_departments_config', JSON.stringify(hrDepts));
-        setDepartments(hrDepts);
-      }
-    } catch (e) {
-      console.error("Error syncing global departments with HR settings:", e);
     }
   }, [state?.departments]);
 
@@ -879,11 +865,24 @@ export default function HRSettings({ isMobile }) {
     setCollection('hr_employees_list', updatedEmployees);
     localStorage.setItem('hr_employees_list', JSON.stringify(updatedEmployees));
 
+    let nextDepts;
     if (modalMode === 'add') {
-      setDepartments(prev => [...prev, payload]);
+      nextDepts = [...departments, payload];
     } else {
-      setDepartments(prev => prev.map(d => d.id === activeDept.id ? payload : d));
+      nextDepts = departments.map(d => d.id === activeDept.id ? payload : d);
     }
+    setDepartments(nextDepts);
+    localStorage.setItem('hr_departments_config', JSON.stringify(nextDepts));
+    window.dispatchEvent(new Event('hr_departments_config_updated'));
+    
+    // Sync to global state.departments
+    setCollection('departments', nextDepts.map(d => ({
+      id: d.id,
+      name: d.name,
+      label: d.name,
+      value: d.name,
+      tagline: d.tagline || ''
+    })));
     setShowModal(false);
   };
 
@@ -1094,15 +1093,24 @@ export default function HRSettings({ isMobile }) {
 
               <div className="flex items-center gap-4">
                 {activeCategory === 'departments' && (
-                  <div className="relative w-56">
-                    <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline-variant text-[14px]">search</span>
-                    <input 
-                      type="text"
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      placeholder="Search divisions..."
-                      className="w-full bg-surface-container-low border border-outline-variant/20 rounded-xl pl-9 pr-4 py-1.5 text-xs text-on-surface focus:bg-surface-container-lowest focus:border-primary/50 focus:ring-0 transition-all placeholder:text-outline/75"
-                    />
+                  <div className="flex items-center gap-3">
+                    <div className="relative w-56">
+                      <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline-variant text-[14px]">search</span>
+                      <input 
+                        type="text"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        placeholder="Search departments..."
+                        className="w-full bg-surface-container-low border border-outline-variant/20 rounded-xl pl-9 pr-4 py-1.5 text-xs text-on-surface focus:bg-surface-container-lowest focus:border-primary/50 focus:ring-0 transition-all placeholder:text-outline/75"
+                      />
+                    </div>
+                    <button
+                      onClick={handleOpenAddModal}
+                      className="flex items-center gap-1.5 px-3.5 py-1.5 bg-primary text-on-primary rounded-xl text-xs font-bold hover:bg-primary-container active:scale-95 transition-all shadow-sm cursor-pointer shrink-0"
+                    >
+                      <span className="material-symbols-outlined text-[16px]">add</span>
+                      Add Department
+                    </button>
                   </div>
                 )}
               </div>
@@ -1368,9 +1376,17 @@ export default function HRSettings({ isMobile }) {
                   <div className="flex gap-1 shrink-0">
                     <button 
                       onClick={() => handleOpenEditModal(dept)}
+                      title="Edit Department"
                       className="w-7 h-7 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-surface-container hover:text-primary transition-colors cursor-pointer"
                     >
                       <span className="material-symbols-outlined text-[15px]">edit</span>
+                    </button>
+                    <button 
+                      onClick={() => handleDeleteDept(dept.id, dept.name)}
+                      title={`Delete ${dept.name}`}
+                      className="w-7 h-7 rounded-full flex items-center justify-center text-outline-variant hover:bg-error/10 hover:text-error transition-colors cursor-pointer"
+                    >
+                      <span className="material-symbols-outlined text-[15px]">delete</span>
                     </button>
                   </div>
                 </div>
@@ -1804,6 +1820,13 @@ export default function HRSettings({ isMobile }) {
                 <span className="material-symbols-outlined text-[22px]" style={{ fontVariationSettings: "'FILL' 1" }}>domain</span>
                 <h2 className="font-headline text-sm font-bold">Departments</h2>
               </div>
+              <button
+                onClick={handleOpenAddModal}
+                className="flex items-center gap-1 px-3 py-1 bg-primary text-on-primary rounded-lg text-xs font-bold active:scale-95 transition-all shadow-sm cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-[14px]">add</span>
+                Add
+              </button>
             </div>
 
             {/* Department mini-list inside card */}
@@ -1820,9 +1843,17 @@ export default function HRSettings({ isMobile }) {
                     <div className="flex gap-1 shrink-0">
                       <button 
                         onClick={() => handleOpenEditModal(dept)}
+                        title="Edit Department"
                         className="w-7 h-7 rounded-full bg-surface flex items-center justify-center text-on-surface-variant hover:text-primary transition-colors cursor-pointer"
                       >
                         <span className="material-symbols-outlined text-[14px]">edit</span>
+                      </button>
+                      <button 
+                        onClick={() => handleDeleteDept(dept.id, dept.name)}
+                        title="Delete Department"
+                        className="w-7 h-7 rounded-full bg-surface flex items-center justify-center text-outline-variant hover:text-error transition-colors cursor-pointer"
+                      >
+                        <span className="material-symbols-outlined text-[14px]">delete</span>
                       </button>
                     </div>
                   </div>
@@ -3719,21 +3750,38 @@ function renderFormModal() {
 
           </form>
 
-          <footer className="flex justify-end gap-3 pt-4 border-t border-outline-variant/15 shrink-0 mt-2">
-            <button 
-              type="button"
-              onClick={() => setShowModal(false)}
-              className="px-4 py-2 border border-outline-variant/30 rounded-xl text-xs font-bold text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-all active:scale-[0.97] cursor-pointer"
-            >
-              Cancel
-            </button>
-            <button 
-              type="button"
-              onClick={() => handleSaveDept()}
-              className="px-6 py-2 bg-primary hover:bg-primary-container text-on-primary rounded-xl text-xs font-bold transition-all hover:shadow-md active:scale-[0.97] cursor-pointer"
-            >
-              {modalMode === 'add' ? 'Create Division' : 'Save Changes'}
-            </button>
+          <footer className="flex justify-between items-center gap-3 pt-4 border-t border-outline-variant/15 shrink-0 mt-2">
+            <div>
+              {modalMode === 'edit' && activeDept.id && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowModal(false);
+                    handleDeleteDept(activeDept.id, activeDept.name);
+                  }}
+                  className="px-4 py-2 bg-error/10 hover:bg-error/20 text-error rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-[16px]">delete</span>
+                  Delete Department
+                </button>
+              )}
+            </div>
+            <div className="flex gap-3">
+              <button 
+                type="button"
+                onClick={() => setShowModal(false)}
+                className="px-4 py-2 border border-outline-variant/30 rounded-xl text-xs font-bold text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-all active:scale-[0.97] cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button 
+                type="button"
+                onClick={() => handleSaveDept()}
+                className="px-6 py-2 bg-primary hover:bg-primary-container text-on-primary rounded-xl text-xs font-bold transition-all hover:shadow-md active:scale-[0.97] cursor-pointer"
+              >
+                {modalMode === 'add' ? 'Create Department' : 'Save Changes'}
+              </button>
+            </div>
           </footer>
         </div>
       </div>
@@ -3759,7 +3807,17 @@ function renderFormModal() {
             <button 
               type="button"
               onClick={() => {
-                setDepartments(prev => prev.filter(d => d.id !== deleteConfirm.deptId));
+                const nextDepts = departments.filter(d => d.id !== deleteConfirm.deptId);
+                setDepartments(nextDepts);
+                localStorage.setItem('hr_departments_config', JSON.stringify(nextDepts));
+                window.dispatchEvent(new Event('hr_departments_config_updated'));
+                setCollection('departments', nextDepts.map(d => ({
+                  id: d.id,
+                  name: d.name,
+                  label: d.name,
+                  value: d.name,
+                  tagline: d.tagline || ''
+                })));
                 setDeleteConfirm({ show: false, deptId: null, deptName: '' });
               }}
               className="px-5 py-2 bg-error text-white hover:bg-error/90 rounded-xl text-xs font-bold transition-all active:scale-[0.97] cursor-pointer"

@@ -142,11 +142,10 @@ export default function HROnboarding({ isMobile }) {
       } else {
         // Fallback / Init from global database (aj_synthetic_erp)
         const erpState = JSON.parse(localStorage.getItem('aj_synthetic_erp') || '{}');
-        const globalDepts = erpState.departments || [
-          { label: 'Production Department', value: 'Production Department' },
-          { label: 'Assembly Division', value: 'Assembly Division' },
-          { label: 'Quality Assurance', value: 'Quality Assurance' }
-        ];
+        const globalDepts = (erpState.departments || []).filter(d => {
+          const n = (d.name || d.label || d.value || '').toLowerCase();
+          return n !== 'production department' && n !== 'assembly division' && n !== 'quality assurance';
+        });
         const initialConfig = globalDepts.map((d, index) => ({
           id: 100 + index + 1,
           name: d.value || d.label,

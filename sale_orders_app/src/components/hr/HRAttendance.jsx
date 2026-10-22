@@ -1081,9 +1081,9 @@ export default function HRAttendance({ isMobile }) {
 
   // Distinct Divisions/Sections for Filter Dropdown
   const divisionsList = React.useMemo(() => {
-    const set = new Set();
+    const set = new Set(['AJ Synthetic', 'AAA']);
     localEmployees.forEach(emp => {
-      const div = emp.division || emp.section;
+      const div = emp.division || emp.section || 'AJ Synthetic';
       if (div && (departmentFilter === 'ALL' || !departmentFilter || emp.department === departmentFilter)) {
         set.add(div);
       }
@@ -1261,7 +1261,8 @@ export default function HRAttendance({ isMobile }) {
       (emp.department && emp.department.toLowerCase().includes(q));
 
     const matchDept = departmentFilter === 'ALL' || !departmentFilter || emp.department === departmentFilter;
-    const matchDiv = divisionFilter === 'ALL' || !divisionFilter || (emp.division === divisionFilter || emp.section === divisionFilter);
+    const empDiv = emp.division || emp.section || 'AJ Synthetic';
+    const matchDiv = divisionFilter === 'ALL' || !divisionFilter || (empDiv === divisionFilter);
 
     if (!matchSearch || !matchDept || !matchDiv) return false;
 

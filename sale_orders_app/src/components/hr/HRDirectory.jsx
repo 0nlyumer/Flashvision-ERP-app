@@ -165,7 +165,7 @@ export default function HRDirectory({ isMobile }) {
   const departmentsList = React.useMemo(() => {
     const set = new Set();
     employees.forEach(emp => {
-      const div = emp.division || emp.section;
+      const div = emp.division || emp.section || 'AJ Synthetic';
       if (divisionFilter === 'ALL' || !divisionFilter || div === divisionFilter) {
         if (emp.department) set.add(emp.department);
       }
@@ -175,9 +175,9 @@ export default function HRDirectory({ isMobile }) {
 
   // Distinct Divisions for Filter Dropdown
   const divisionsList = React.useMemo(() => {
-    const set = new Set();
+    const set = new Set(['AJ Synthetic', 'AAA']);
     employees.forEach(emp => {
-      const div = emp.division || emp.section;
+      const div = emp.division || emp.section || 'AJ Synthetic';
       if (div && (departmentFilter === 'ALL' || !departmentFilter || emp.department === departmentFilter)) {
         set.add(div);
       }
@@ -198,7 +198,7 @@ export default function HRDirectory({ isMobile }) {
       (emp.cnic || '').toLowerCase().includes(query)
     );
     const matchesDept = departmentFilter === 'ALL' || !departmentFilter || emp.department === departmentFilter;
-    const divVal = emp.division || emp.section;
+    const divVal = emp.division || emp.section || 'AJ Synthetic';
     const matchesDiv = divisionFilter === 'ALL' || !divisionFilter || (divVal === divisionFilter);
     const rawStatus = (emp.status || 'Active').trim().toLowerCase();
     const isAct = rawStatus === 'active';
