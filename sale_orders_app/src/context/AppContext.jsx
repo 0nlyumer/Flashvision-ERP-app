@@ -4679,7 +4679,7 @@ export const AppProvider = ({ children }) => {
     }));
   };
 
-  // PHASE C STEP 1: write-through — whenever a step-1 collection changes in
+  // PHASE C STEP 1: write-through — whenever a step-1/2 collection changes in
   // state, diff it against the last table-synced snapshot and push record
   // upserts/deletes to its table. The blob save still carries these keys too
   // (the fallback copy stays fresh); the tables are kept equal to state.
@@ -4690,6 +4690,8 @@ export const AppProvider = ({ children }) => {
   const step1PackingTypesList = state.packingTypesList;
   const step1RawMaterialTypesList = state.rawMaterialTypesList;
   const step1ItemCategories = state.itemCategories;
+  const step2ProductionPlans = state.productionPlans;
+  const step2ProductionOutputs = state.productionOutputs;
   useEffect(() => {
     if (!step1TablesReadyRef.current) return;
     const timer = setTimeout(() => {
@@ -4700,9 +4702,11 @@ export const AppProvider = ({ children }) => {
       syncEntityDiffToTable('packingTypesList', step1PackingTypesList, step1SnapshotsRef.current.packingTypesList);
       syncEntityDiffToTable('rawMaterialTypesList', step1RawMaterialTypesList, step1SnapshotsRef.current.rawMaterialTypesList);
       syncEntityDiffToTable('itemCategories', step1ItemCategories, step1SnapshotsRef.current.itemCategories);
+      syncEntityDiffToTable('productionPlans', step2ProductionPlans, step1SnapshotsRef.current.productionPlans);
+      syncEntityDiffToTable('productionOutputs', step2ProductionOutputs, step1SnapshotsRef.current.productionOutputs);
     }, 250);
     return () => clearTimeout(timer);
-  }, [step1Items, step1Customers, step1Suppliers, step1UomList, step1PackingTypesList, step1RawMaterialTypesList, step1ItemCategories]);
+  }, [step1Items, step1Customers, step1Suppliers, step1UomList, step1PackingTypesList, step1RawMaterialTypesList, step1ItemCategories, step2ProductionPlans, step2ProductionOutputs]);
 
   const setCollection = (collection, data) => {
     setState(prev => {

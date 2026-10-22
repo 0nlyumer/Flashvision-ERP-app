@@ -1,7 +1,7 @@
-// entityTables.js — Phase C Step 1: per-entity Supabase tables for reference data.
+// entityTables.js — Phase C Step 1 & Step 2: per-entity Supabase tables for reference data and production.
 //
 // App state still lives in AppContext and the erp_state blob remains a
-// fallback copy, but these seven collections are now ALSO kept in their own
+// fallback copy, but these collections are now ALSO kept in their own
 // tables (created in Phase A, backfilled in Phase B):
 //
 //   state key            table
@@ -12,6 +12,8 @@
 //   packingTypesList     packing_types_list
 //   rawMaterialTypesList raw_material_types_list
 //   itemCategories       item_categories
+//   productionPlans      production_plans
+//   productionOutputs    production_outputs
 //
 // Every table row is { id, ...promoted scalar columns, data } where `data`
 // holds the complete original record — reads use `data` so no field is lost.
@@ -28,6 +30,8 @@ export const STEP1_ENTITY_TABLES = {
   packingTypesList: 'packing_types_list',
   rawMaterialTypesList: 'raw_material_types_list',
   itemCategories: 'item_categories',
+  productionPlans: 'production_plans',
+  productionOutputs: 'production_outputs',
 };
 
 // Promoted columns per table (verified 2026-10-22 against the live schema).
@@ -51,6 +55,8 @@ const PROMOTED_COLUMNS = {
   packing_types_list: [['label', 'text'], ['value', 'text'], ['disabled', 'boolean']],
   raw_material_types_list: [['label', 'text'], ['value', 'text'], ['disabled', 'boolean']],
   item_categories: [['label', 'text'], ['value', 'text'], ['disabled', 'boolean']],
+  production_plans: [ ['plan_no', 'text'], ['product_name', 'text'], ['target_qty', 'numeric'], ['completed_qty', 'numeric'], ['phases', 'json'], ['status', 'text'], ['details', 'json'] ],
+  production_outputs: [ ['plan_id', 'text'], ['item_code', 'text'], ['date', 'text'] ],
 };
 
 const camel = (snake) => {
