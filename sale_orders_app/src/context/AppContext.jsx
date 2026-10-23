@@ -12,7 +12,7 @@ import {
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { applyTheme } from '../utils/theme';
 import { supabase } from '../utils/supabaseClient';
-import { STEP1_ENTITY_TABLES, loadStep1EntitiesFromTables, syncEntityDiffToTable, recordKeyWithFallback, loadAdminSetupFromTable, syncAdminSetupToTable, loadFGComboConfigFromTable, syncFGComboConfigToTable } from '../utils/entityTables';
+import { STEP1_ENTITY_TABLES, loadStep1EntitiesFromTables, syncEntityDiffToTable, recordKeyWithFallback, loadAdminSetupFromTable, syncAdminSetupToTable, loadFGComboConfigFromTable, syncFGComboConfigToTable, loadCategoryPrefixesFromTable, syncCategoryPrefixesToTable, loadScalarsFromTable, syncScalarsToTable } from '../utils/entityTables';
 import { formatLineCode, maxLineCodeNumber } from '../utils/itemCodes';
 import { getInitialFGConfig, saveFGConfig, normalizeFGConfig } from '../utils/fgCombinationUtils';
 import { DEFAULT_CHART_OF_ACCOUNTS } from '../utils/financeEngine';
@@ -556,6 +556,16 @@ export const reconcileHRApprovalsAndLedgers = (stateObj) => {
   return stateObj;
 };
 
+// Phase C Step 6 — binders structural guard: session saves from a client
+// holding a degraded (null) documentWarehouseBinders used to wipe the server
+// copy (36 binders -> null, seen 2026-10-22 and during later sessions).
+// getSanitizedSyncState is the choke point of every blob write path, so the
+// last valid binders array seen is cached here and substituted whenever a
+// save would otherwise carry a non-array value. The
+// document_warehouse_binders table is the read source since Step 6; this
+// guard additionally protects the blob fallback copy.
+let lastGoodBindersCache = null;
+
 const getSanitizedSyncState = (stateObj) => {
   if (!stateObj) return {};
   const cleanState = { ...stateObj };
@@ -565,6 +575,11 @@ const getSanitizedSyncState = (stateObj) => {
   delete cleanState.dashboardBackground;
   // Retain documentWarehouseBinders in cloud state so documents are never lost across devices/logins!
   delete cleanState.currentUser;
+  if (Array.isArray(cleanState.documentWarehouseBinders)) {
+    lastGoodBindersCache = cleanState.documentWarehouseBinders;
+  } else if (lastGoodBindersCache) {
+    cleanState.documentWarehouseBinders = lastGoodBindersCache;
+  }
   if (cleanState.users) {
     cleanState.users = cleanState.users.map(u => {
       const { lastActive, ...rest } = u;
@@ -620,6 +635,10 @@ export const AppProvider = ({ children }) => {
   const adminSetupSnapshotRef = useRef(null);
   const fgComboConfigLoadedRef = useRef(false);
   const fgComboConfigSnapshotRef = useRef(null);
+  const categoryPrefixesLoadedRef = useRef(false);
+  const categoryPrefixesSnapshotRef = useRef(null);
+  const scalarsLoadedRef = useRef(false);
+  const scalarsSnapshotRef = useRef(null);
   const lsDebounceRef = useRef({ hr_employees_list: null, hr_uploaded_attendance: null });
 
   const safeLocalStorageSet = (key, value) => {
@@ -1378,6 +1397,8 @@ export const AppProvider = ({ children }) => {
         const fromTables = await loadStep1EntitiesFromTables();
         const adminSetupFromTable = await loadAdminSetupFromTable();
         const fgComboConfigFromTable = await loadFGComboConfigFromTable();
+        const categoryPrefixesFromTable = await loadCategoryPrefixesFromTable();
+        const scalarsFromTable = await loadScalarsFromTable();
         setState(prev => {
           const next = { ...prev };
           const seedSource = {};
@@ -1412,6 +1433,24 @@ export const AppProvider = ({ children }) => {
             fgComboConfigSnapshotRef.current = null;
           }
           fgComboConfigLoadedRef.current = true;
+          // PHASE C STEP 6: app-config completion — the app_config copy of
+          // categoryPrefixes wins over the blob copy when present.
+          if (categoryPrefixesFromTable) {
+            next.categoryPrefixes = categoryPrefixesFromTable;
+            categoryPrefixesSnapshotRef.current = categoryPrefixesFromTable;
+          } else {
+            categoryPrefixesSnapshotRef.current = prev.categoryPrefixes || null;
+          }
+          categoryPrefixesLoadedRef.current = true;
+          // PHASE C STEP 6: of the app_config `scalars` bundle only the two
+          // user settings are applied (productionTarget, isGlobalPaginated);
+          // buildVersion/lastUpdatedBy are app-owned meta and never read back.
+          if (scalarsFromTable) {
+            if (typeof scalarsFromTable.productionTarget === 'number') next.productionTarget = scalarsFromTable.productionTarget;
+            if (typeof scalarsFromTable.isGlobalPaginated === 'boolean') next.isGlobalPaginated = scalarsFromTable.isGlobalPaginated;
+          }
+          scalarsSnapshotRef.current = JSON.stringify({ buildVersion: next.buildVersion, productionTarget: next.productionTarget, isGlobalPaginated: next.isGlobalPaginated });
+          scalarsLoadedRef.current = true;
           seedSnapshots(seedSource);
           return next;
         });
@@ -1423,6 +1462,10 @@ export const AppProvider = ({ children }) => {
           adminSetupLoadedRef.current = true;
           fgComboConfigSnapshotRef.current = null;
           fgComboConfigLoadedRef.current = true;
+          categoryPrefixesSnapshotRef.current = prev.categoryPrefixes || null;
+          categoryPrefixesLoadedRef.current = true;
+          scalarsSnapshotRef.current = JSON.stringify({ buildVersion: prev.buildVersion, productionTarget: prev.productionTarget, isGlobalPaginated: prev.isGlobalPaginated });
+          scalarsLoadedRef.current = true;
           return prev;
         });
       } finally {
@@ -4787,8 +4830,23 @@ export const AppProvider = ({ children }) => {
   const step5HrLoanRequests = state.hr_loan_requests;
   const step5HrLoanLedger = state.hr_loan_ledger;
   const step5HrGeneratedSalaries = state.hr_generated_salaries;
+  const step6ChartOfAccounts = state.chartOfAccounts;
+  const step6Vouchers = state.vouchers;
+  const step6PaymentVouchers = state.paymentVouchers;
+  const step6Approvals = state.approvals;
+  const step6Notifications = state.notifications;
+  const step6AuditLogs = state.auditLogs;
+  const step6Chats = state.chats;
+  const step6RoutingRules = state.routingRules;
+  const step6RoutingTasks = state.routingTasks;
+  const step6Binders = state.documentWarehouseBinders;
+  const step6GatePassActivities = state.gatePassActivities;
+  const step6OtherConsumptions = state.otherConsumptions;
   const adminSetupForSync = state.adminSetup;
   const fgComboConfigForSync = state.fg_combinations_config;
+  const categoryPrefixesForSync = state.categoryPrefixes;
+  const scalarsBundleForSync = { buildVersion: state.buildVersion, lastUpdatedBy: state.lastUpdatedBy, productionTarget: state.productionTarget, isGlobalPaginated: state.isGlobalPaginated };
+  const scalarsWatchKey = JSON.stringify({ buildVersion: state.buildVersion, productionTarget: state.productionTarget, isGlobalPaginated: state.isGlobalPaginated });
   useEffect(() => {
     if (!step1TablesReadyRef.current) return;
     const timer = setTimeout(() => {
@@ -4820,9 +4878,21 @@ export const AppProvider = ({ children }) => {
       syncEntityDiffToTable('hr_loan_requests', step5HrLoanRequests, step1SnapshotsRef.current.hr_loan_requests);
       syncEntityDiffToTable('hr_loan_ledger', step5HrLoanLedger, step1SnapshotsRef.current.hr_loan_ledger);
       syncEntityDiffToTable('hr_generated_salaries', step5HrGeneratedSalaries, step1SnapshotsRef.current.hr_generated_salaries);
+      syncEntityDiffToTable('chartOfAccounts', step6ChartOfAccounts, step1SnapshotsRef.current.chartOfAccounts);
+      syncEntityDiffToTable('vouchers', step6Vouchers, step1SnapshotsRef.current.vouchers);
+      syncEntityDiffToTable('paymentVouchers', step6PaymentVouchers, step1SnapshotsRef.current.paymentVouchers);
+      syncEntityDiffToTable('approvals', step6Approvals, step1SnapshotsRef.current.approvals);
+      syncEntityDiffToTable('notifications', step6Notifications, step1SnapshotsRef.current.notifications);
+      syncEntityDiffToTable('auditLogs', step6AuditLogs, step1SnapshotsRef.current.auditLogs);
+      syncEntityDiffToTable('chats', step6Chats, step1SnapshotsRef.current.chats);
+      syncEntityDiffToTable('routingRules', step6RoutingRules, step1SnapshotsRef.current.routingRules);
+      syncEntityDiffToTable('routingTasks', step6RoutingTasks, step1SnapshotsRef.current.routingTasks);
+      syncEntityDiffToTable('documentWarehouseBinders', step6Binders, step1SnapshotsRef.current.documentWarehouseBinders);
+      syncEntityDiffToTable('gatePassActivities', step6GatePassActivities, step1SnapshotsRef.current.gatePassActivities);
+      syncEntityDiffToTable('otherConsumptions', step6OtherConsumptions, step1SnapshotsRef.current.otherConsumptions);
     }, 250);
     return () => clearTimeout(timer);
-  }, [step1Items, step1Customers, step1Suppliers, step1UomList, step1PackingTypesList, step1RawMaterialTypesList, step1ItemCategories, step2ProductionPlans, step2ProductionOutputs, step3SaleOrders, step3Deliveries, step3SalesInvoices, step3Returns, step4Adjustments, step4StockTransfers, step4Grns, step4InwardGatePasses, step4PurchaseDemands, step4PurchaseOrders, step4PurchaseInvoices, step5HrEmployees, step5HrUploadedAttendance, step5HrLeaveRequests, step5HrOvertimeRequests, step5HrAdvanceRequests, step5HrLoanRequests, step5HrLoanLedger, step5HrGeneratedSalaries]);
+  }, [step1Items, step1Customers, step1Suppliers, step1UomList, step1PackingTypesList, step1RawMaterialTypesList, step1ItemCategories, step2ProductionPlans, step2ProductionOutputs, step3SaleOrders, step3Deliveries, step3SalesInvoices, step3Returns, step4Adjustments, step4StockTransfers, step4Grns, step4InwardGatePasses, step4PurchaseDemands, step4PurchaseOrders, step4PurchaseInvoices, step5HrEmployees, step5HrUploadedAttendance, step5HrLeaveRequests, step5HrOvertimeRequests, step5HrAdvanceRequests, step5HrLoanRequests, step5HrLoanLedger, step5HrGeneratedSalaries, step6ChartOfAccounts, step6Vouchers, step6PaymentVouchers, step6Approvals, step6Notifications, step6AuditLogs, step6Chats, step6RoutingRules, step6RoutingTasks, step6Binders, step6GatePassActivities, step6OtherConsumptions]);
 
   // PHASE C STEP 3 (addendum): adminSetup — incl. the base currency — is
   // persisted to the app_config table so the selection survives blob
@@ -4851,6 +4921,34 @@ export const AppProvider = ({ children }) => {
     }, 250);
     return () => clearTimeout(timer);
   }, [fgComboConfigForSync]);
+
+  // PHASE C STEP 6: categoryPrefixes ride in app_config like adminSetup —
+  // the table copy wins on load; changes write through (debounced).
+  useEffect(() => {
+    if (!categoryPrefixesLoadedRef.current) return;
+    if (!categoryPrefixesForSync || typeof categoryPrefixesForSync !== 'object') return;
+    if (categoryPrefixesSnapshotRef.current === categoryPrefixesForSync) return;
+    const timer = setTimeout(() => {
+      categoryPrefixesSnapshotRef.current = categoryPrefixesForSync;
+      syncCategoryPrefixesToTable(categoryPrefixesForSync);
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [categoryPrefixesForSync]);
+
+  // PHASE C STEP 6: the app_config `scalars` bundle is written through when
+  // a watched value changes (buildVersion / productionTarget /
+  // isGlobalPaginated). lastUpdatedBy rides along in the written bundle but
+  // is excluded from change detection — it changes on every save and would
+  // otherwise retrigger this effect constantly.
+  useEffect(() => {
+    if (!scalarsLoadedRef.current) return;
+    if (scalarsSnapshotRef.current === scalarsWatchKey) return;
+    const timer = setTimeout(() => {
+      scalarsSnapshotRef.current = scalarsWatchKey;
+      syncScalarsToTable(scalarsBundleForSync);
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [scalarsWatchKey]);
 
   const setCollection = (collection, data) => {
     setState(prev => {

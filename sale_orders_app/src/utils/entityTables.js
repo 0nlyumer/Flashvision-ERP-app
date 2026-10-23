@@ -1,4 +1,4 @@
-// entityTables.js — Phase C Steps 1–5: per-entity Supabase tables for reference data, production, sales, purchasing & inventory, HR.
+// entityTables.js — Phase C Steps 1–6: per-entity Supabase tables for reference data, production, sales, purchasing & inventory, HR, finance & misc.
 //
 // App state still lives in AppContext and the erp_state blob remains a
 // fallback copy, but these collections are now ALSO kept in their own
@@ -33,6 +33,18 @@
 //   hr_loan_requests     hr_loan_requests
 //   hr_loan_ledger       hr_loan_ledger
 //   hr_generated_salaries hr_generated_salaries
+//   chartOfAccounts      chart_of_accounts
+//   vouchers             vouchers
+//   paymentVouchers      payment_vouchers
+//   approvals            approvals
+//   notifications        notifications
+//   auditLogs            audit_logs
+//   chats                chats
+//   routingRules         routing_rules
+//   routingTasks         routing_tasks
+//   documentWarehouseBinders document_warehouse_binders
+//   gatePassActivities   gate_pass_activities
+//   otherConsumptions    other_consumptions
 //
 // Every table row is { id, ...promoted scalar columns, data } where `data`
 // holds the complete original record — reads use `data` so no field is lost.
@@ -70,6 +82,18 @@ export const STEP1_ENTITY_TABLES = {
   hr_loan_requests: 'hr_loan_requests',
   hr_loan_ledger: 'hr_loan_ledger',
   hr_generated_salaries: 'hr_generated_salaries',
+  chartOfAccounts: 'chart_of_accounts',
+  vouchers: 'vouchers',
+  paymentVouchers: 'payment_vouchers',
+  approvals: 'approvals',
+  notifications: 'notifications',
+  auditLogs: 'audit_logs',
+  chats: 'chats',
+  routingRules: 'routing_rules',
+  routingTasks: 'routing_tasks',
+  documentWarehouseBinders: 'document_warehouse_binders',
+  gatePassActivities: 'gate_pass_activities',
+  otherConsumptions: 'other_consumptions',
 };
 
 // Promoted columns per table (verified 2026-10-22 against the live schema).
@@ -135,6 +159,21 @@ const PROMOTED_COLUMNS = {
     ['remaining_balance', 'numeric'], ['status', 'text'], ['deductions_history', 'json'],
   ],
   hr_generated_salaries: [ ['employee_id', 'text'] ],
+  chart_of_accounts: [ ['name', 'text'], ['category', 'text'] ],
+  vouchers: [],
+  payment_vouchers: [],
+  approvals: [
+    ['type', 'text'], ['status', 'text'], ['requested_to', 'text'], ['requested_by', 'text'],
+    ['value', 'text'], ['completed_at', 'text'], ['reason_comment', 'text'], ['details', 'json'],
+  ],
+  notifications: [ ['type', 'text'], ['title', 'text'] ],
+  audit_logs: [ ['action', 'text'], ['module', 'text'], ['status', 'text'] ],
+  chats: [ ['name', 'text'], ['username', 'text'], ['is_group', 'boolean'] ],
+  routing_rules: [],
+  routing_tasks: [],
+  document_warehouse_binders: [ ['name', 'text'] ],
+  gate_pass_activities: [],
+  other_consumptions: [],
 };
 
 const camel = (snake) => {
@@ -362,5 +401,68 @@ export const syncFGComboConfigToTable = async (config) => {
     if (error) throw error;
   } catch (err) {
     console.warn('[EntityTables] fgComboConfig write-through failed:', err?.message || err);
+  }
+};
+
+// --- categoryPrefixes + scalars (app_config) — Phase C Step 6 -------------
+// App-config completion: the remaining blob config now also rides in
+// app_config, mirroring adminSetup. categoryPrefixes (the item-code prefix
+// map) is a plain settings object: table copy wins on load, changes write
+// through. The `scalars` row bundles buildVersion / lastUpdatedBy /
+// productionTarget / isGlobalPaginated; of these only productionTarget and
+// isGlobalPaginated are user settings (applied on load by AppContext) —
+// buildVersion is force-stamped from the code constant on every sync and
+// lastUpdatedBy changes per save, so they are mirrored into the row for
+// completeness but never read back.
+
+export const loadCategoryPrefixesFromTable = async () => {
+  try {
+    const { data, error } = await supabase
+      .from('app_config')
+      .select('data')
+      .eq('key', 'categoryPrefixes')
+      .maybeSingle();
+    if (error || !data || typeof data.data !== 'object' || data.data === null) return null;
+    return data.data;
+  } catch (_) {
+    return null;
+  }
+};
+
+export const syncCategoryPrefixesToTable = async (categoryPrefixes) => {
+  if (!categoryPrefixes || typeof categoryPrefixes !== 'object') return;
+  try {
+    const { error } = await supabase
+      .from('app_config')
+      .upsert({ key: 'categoryPrefixes', data: categoryPrefixes, updated_at: new Date().toISOString() }, { onConflict: 'key' });
+    if (error) throw error;
+  } catch (err) {
+    console.warn('[EntityTables] categoryPrefixes write-through failed:', err?.message || err);
+  }
+};
+
+export const loadScalarsFromTable = async () => {
+  try {
+    const { data, error } = await supabase
+      .from('app_config')
+      .select('data')
+      .eq('key', 'scalars')
+      .maybeSingle();
+    if (error || !data || typeof data.data !== 'object' || data.data === null) return null;
+    return data.data;
+  } catch (_) {
+    return null;
+  }
+};
+
+export const syncScalarsToTable = async (scalars) => {
+  if (!scalars || typeof scalars !== 'object') return;
+  try {
+    const { error } = await supabase
+      .from('app_config')
+      .upsert({ key: 'scalars', data: scalars, updated_at: new Date().toISOString() }, { onConflict: 'key' });
+    if (error) throw error;
+  } catch (err) {
+    console.warn('[EntityTables] scalars write-through failed:', err?.message || err);
   }
 };
