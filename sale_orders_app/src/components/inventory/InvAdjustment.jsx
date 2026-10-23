@@ -1,5 +1,6 @@
 import FGCombinationBuilder from "../ui/FGCombinationBuilder";
 import React, { useState, useRef, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useApp } from '../../context/AppContext';
 import PrintLayout from '../ui/PrintLayout';
 import InventoryAdjustmentHistory from './InventoryAdjustmentHistory';
@@ -36,6 +37,17 @@ export default function InvAdjustment({ selectedDepartments = [], onBack }) {
 
   // Print state
   const [printData, setPrintData] = useState(null);
+
+  // Blocking-error popup state (save-time validation problems also surface as a
+  // proper modal — toasts alone auto-dismiss and are easy to miss)
+  const [errorPopup, setErrorPopup] = useState(null);
+
+  useEffect(() => {
+      if (!errorPopup) return;
+      const onKey = (e) => { if (e.key === 'Escape') setErrorPopup(null); };
+      window.addEventListener('keydown', onKey);
+      return () => window.removeEventListener('keydown', onKey);
+  }, [errorPopup]);
 
   const effectiveDepartments = selectedDepartments.length > 0 ? selectedDepartments : localDepartments;
 
@@ -102,6 +114,7 @@ export default function InvAdjustment({ selectedDepartments = [], onBack }) {
       const validLines = lines.filter(l => l.itemId && l.qty && l.reason);
       if (validLines.length === 0) {
           addNotification('Error', 'Please complete at least one line (Item, Qty, Reason).', 'error');
+          setErrorPopup({ message: 'Please complete at least one line (Item, Qty, Reason). Nothing was saved.' });
           return;
       }
       
@@ -112,11 +125,27 @@ export default function InvAdjustment({ selectedDepartments = [], onBack }) {
 
           if (isNaN(qty) || qty <= 0 || (l.reason === 'Others' && !l.customReason)) {
               addNotification('Error', 'Quantity must be > 0 and Custom Reason must be provided if "Others" is selected.', 'error');
+              if (isNaN(qty) || qty <= 0) {
+                  setErrorPopup({
+                      itemName, itemCode: item?.sku || '',
+                      message: 'Quantity must be greater than 0 for this item. Nothing was saved.',
+                      attempted: l.qty, attemptedLabel: 'Entered Quantity'
+                  });
+              } else {
+                  setErrorPopup({
+                      itemName, itemCode: item?.sku || '',
+                      message: 'A Custom Reason is required when "Others" is selected as the reason. Nothing was saved.'
+                  });
+              }
               return;
           }
 
           if (!l.department) {
               addNotification('Error', `Department is required for: ${itemName}`, 'error');
+              setErrorPopup({
+                  itemName, itemCode: item?.sku || '',
+                  message: 'Department is required for this item. Please select a department for the line — nothing was saved.'
+              });
               return;
           }
 
@@ -124,12 +153,22 @@ export default function InvAdjustment({ selectedDepartments = [], onBack }) {
               const available = item?.stockByDepartment?.[l.department] || 0;
               if (qty > available) {
                   addNotification('Error', `Insufficient stock in ${l.department} for ${itemName} (Available: ${available}).`, 'error');
+                  setErrorPopup({
+                      itemName, itemCode: item?.sku || '',
+                      message: `There is not enough stock in ${l.department} for this subtraction. Nothing was saved.`,
+                      department: l.department,
+                      available, attempted: qty, attemptedLabel: 'Subtraction Quantity'
+                  });
                   return;
               }
           }
 
           if (item && item.category === 'Finished Goods' && !l.outputType) {
               addNotification('Error', `Output Type is required for Finished Good: ${itemName}`, 'error');
+              setErrorPopup({
+                  itemName, itemCode: item?.sku || '',
+                  message: 'Output Type is required for this Finished Good. Please select an output type — nothing was saved.'
+              });
               return;
           }
       }
@@ -594,6 +633,72 @@ export default function InvAdjustment({ selectedDepartments = [], onBack }) {
         </aside>
       </div>
     </div>
+
+    {/* BLOCKING-ERROR POPUP — portaled to <body> (this page tree has animated
+        ancestors, so a plain fixed overlay would resolve against them, the
+        same trap the Salary Print Studio hit). Theme-driven styling mirrors
+        the app's DialogContext modals: light surface in light theme, dark
+        surface only in dark theme. */}
+    {errorPopup && createPortal((
+        <div
+            role="dialog"
+            aria-modal="true"
+            className="fixed inset-0 z-[10004] flex items-center justify-center p-4 bg-slate-900/40 dark:bg-black/75 backdrop-blur-md animate-in fade-in duration-200 print:hidden"
+            onClick={() => setErrorPopup(null)}
+        >
+            <div
+                className="relative z-20 w-full max-w-md bg-white dark:bg-[#14171f] border border-slate-200 dark:border-white/[0.08] rounded-3xl shadow-2xl backdrop-blur-2xl p-7 animate-in zoom-in-95 duration-200 text-on-surface"
+                onClick={(e) => e.stopPropagation()}
+            >
+                <div className="flex flex-col items-center text-center">
+                    <div className="w-14 h-14 rounded-2xl bg-error/10 border border-error/25 flex items-center justify-center mb-5 text-error shadow-inner">
+                        <span className="material-symbols-outlined text-[30px]">error</span>
+                    </div>
+                    <h2 className="font-headline font-black text-lg text-on-surface mb-2 tracking-tight">Stock Adjustment — Problem</h2>
+                    <p className="font-body text-xs text-on-surface-variant leading-relaxed max-w-[320px]">
+                        {errorPopup.message}
+                    </p>
+                </div>
+
+                {(errorPopup.itemName || errorPopup.department || errorPopup.available !== undefined || errorPopup.attempted !== undefined) && (
+                    <div className="mt-5 rounded-2xl border border-outline-variant/20 bg-surface-container-low p-4 space-y-2">
+                        {errorPopup.itemName && (
+                            <div className="flex items-center justify-between gap-3 text-xs">
+                                <span className="font-bold text-on-surface-variant uppercase tracking-widest text-[10px]">Item</span>
+                                <span className="font-bold text-on-surface text-right">{errorPopup.itemName}{errorPopup.itemCode ? ` (${errorPopup.itemCode})` : ''}</span>
+                            </div>
+                        )}
+                        {errorPopup.department && (
+                            <div className="flex items-center justify-between gap-3 text-xs">
+                                <span className="font-bold text-on-surface-variant uppercase tracking-widest text-[10px]">Department</span>
+                                <span className="font-bold text-on-surface text-right">{errorPopup.department}</span>
+                            </div>
+                        )}
+                        {errorPopup.available !== undefined && (
+                            <div className="flex items-center justify-between gap-3 text-xs">
+                                <span className="font-bold text-on-surface-variant uppercase tracking-widest text-[10px]">Available Stock</span>
+                                <span className="font-mono font-bold text-on-surface">{errorPopup.available}</span>
+                            </div>
+                        )}
+                        {errorPopup.attempted !== undefined && (
+                            <div className="flex items-center justify-between gap-3 text-xs">
+                                <span className="font-bold text-on-surface-variant uppercase tracking-widest text-[10px]">{errorPopup.attemptedLabel || 'Entered Quantity'}</span>
+                                <span className="font-mono font-bold text-error">{errorPopup.attempted}</span>
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                <button
+                    type="button"
+                    onClick={() => setErrorPopup(null)}
+                    className="mt-6 w-full py-2.5 px-6 rounded-xl bg-primary text-white font-bold text-xs hover:bg-primary/90 transition-all shadow-md active:scale-95 cursor-pointer"
+                >
+                    OK
+                </button>
+            </div>
+        </div>
+    ), document.body)}
 
     {/* PRINT ONLY UI */}
     {printData && (() => {
