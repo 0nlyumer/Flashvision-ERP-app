@@ -1,5 +1,6 @@
 import FGCombinationBuilder from "../components/ui/FGCombinationBuilder";
-import { parseRollSizeFromPacking } from "../utils/fgCombinationUtils";
+import { parseRollSizeFromPacking, linePackingForItem, qtyFromRolls, rollsFromQty } from "../utils/fgCombinationUtils";
+import { resolveClothForFGFromList, clothStockMeters } from "../utils/clothRequirement";
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import Layout from '../components/Layout';
@@ -560,6 +561,24 @@ export default function SaleOrderModule() {
     setOrderMeta(prev => ({ ...prev, [field]: value }));
   };
 
+  // Backing-cloth stock hint for a picked line (FG Combo phase): resolves
+  // the item's cloth from inventory and compares its meter stock (kg x
+  // clothQuality, the app's convention) with the line quantity.
+  const lineClothHint = (line) => {
+    if (!line?.itemId) return null;
+    const prod = (state.items || []).find(i => i.id === line.itemId);
+    if (!prod) return null;
+    const resolved = resolveClothForFGFromList(prod, state.items || []);
+    if (!resolved || !resolved.clothItem || resolved.nonWoven) return null;
+    const stock = clothStockMeters(resolved.clothItem);
+    return {
+      label: resolved.label,
+      meters: stock.meters,
+      kg: stock.kg,
+      warn: stock.meters !== null && stock.meters < (parseFloat(line.qty) || 0)
+    };
+  };
+
   const handleItemChosen = (rowId, chosenProd) => {
     if (!chosenProd) return;
     const prodPrice = chosenProd.price || parseFloat(String(chosenProd.price).replace(/[^\d.]/g, '')) || 0;
@@ -572,7 +591,9 @@ export default function SaleOrderModule() {
     );
     setItems(prevItems => prevItems.map(item => {
       if (item.id === rowId) {
-        const rollSz = Number(chosenProd?.rollSize || chosenProd?.packingSize || parseRollSizeFromPacking(chosenProd?.combinationDetails?.packing) || 50);
+        // Rolls <-> Meters: only items that carry a packing convert; the
+        // line's qty follows rolls x packing, exactly as typed rolls do.
+        const packing = linePackingForItem(chosenProd, state.fg_combinations_config?.packings || []);
         const currentRolls = Math.max(1, Number(item.rolls) || 1);
         return {
           ...item,
@@ -580,9 +601,9 @@ export default function SaleOrderModule() {
           // The line's itemCode is the item's MASTER code (sku).
           itemCode: chosenProd.sku || '',
           price: prodPrice,
-          rollSize: rollSz,
+          rollSize: packing > 0 ? packing : (Number(chosenProd?.rollSize || chosenProd?.packingSize || 0)),
           rolls: currentRolls,
-          qty: currentRolls * rollSz // Auto total meters: Rolls * Roll Size!
+          qty: packing > 0 ? qtyFromRolls(currentRolls, packing) : item.qty
         };
       }
       return item;
@@ -610,38 +631,44 @@ export default function SaleOrderModule() {
       if(item.id === id) {
           let updated = { ...item, [field]: value };
           const selectedProd = state.items.find(i => i.id === (field === 'itemId' ? value : updated.itemId));
-          const prodRollSz = Number(selectedProd?.rollSize || selectedProd?.packingSize || parseRollSizeFromPacking(selectedProd?.combinationDetails?.packing) || 0);
+          // The line converts Rolls <-> Meters ONLY when the picked item
+          // carries a packing (roll size). No packing -> fields independent.
+          const prodPacking = linePackingForItem(selectedProd, state.fg_combinations_config?.packings || []);
+          const linePacking = Number(item.rollSize || 0) > 0 ? Number(item.rollSize) : prodPacking;
 
           if (field === 'itemId') {
               const prodPrice = selectedProd ? (selectedProd.price || parseFloat(String(selectedProd.price).replace(/[^\d.]/g, '')) || 0) : 0;
-              const resolvedRollSz = prodRollSz > 0 ? prodRollSz : (Number(item.rollSize) || 50);
               const rollCount = Math.max(1, Number(item.rolls) || 1);
               updated.itemId = value;
               // The line's itemCode is the picked item's MASTER code (sku);
               // cleared when the pick is cleared.
               updated.itemCode = selectedProd?.sku || '';
               updated.price = prodPrice;
-              updated.rollSize = resolvedRollSz;
+              updated.rollSize = prodPacking > 0 ? prodPacking : (Number(selectedProd?.rollSize || selectedProd?.packingSize || 0));
               updated.rolls = rollCount;
-              updated.qty = rollCount * resolvedRollSz; // Auto-calculate total meters!
+              updated.qty = prodPacking > 0 ? qtyFromRolls(rollCount, prodPacking) : item.qty;
           }
           if (field === 'rolls') {
-               const rollCount = Math.max(0, parseInt(value) || 0);
-               const rollSz = Number(item.rollSize || prodRollSz || 50);
-               updated.rolls = rollCount;
-               updated.qty = rollCount * rollSz; // Total meters = roll quantity * roll size!
+               const rollCount = Math.max(0, parseFloat(value) || 0);
+               updated.rolls = Math.round(rollCount * 100) / 100;
+               if (linePacking > 0) {
+                 updated.rollSize = linePacking;
+                 updated.qty = qtyFromRolls(rollCount, linePacking); // Meters = rolls x packing
+               }
           }
           if (field === 'rollSize') {
-               const rollSz = Math.max(1, parseFloat(value) || 1);
-               const rollCount = Math.max(0, parseInt(item.rolls) || 0);
+               const rollSz = Math.max(0, parseFloat(value) || 0);
+               const rollCount = Math.max(0, parseFloat(item.rolls) || 0);
                updated.rollSize = rollSz;
-               updated.qty = rollCount * rollSz; // Auto recalculate meters if roll size changes!
+               if (rollSz > 0) updated.qty = qtyFromRolls(rollCount, rollSz);
           }
           if (field === 'qty') {
                const qtyVal = Math.max(0, parseFloat(value) || 0);
-               const rollSz = Number(item.rollSize || prodRollSz || 50);
                updated.qty = qtyVal;
-               updated.rolls = rollSz > 0 ? Math.ceil(qtyVal / rollSz) : 1;
+               if (linePacking > 0) {
+                 updated.rollSize = linePacking;
+                 updated.rolls = rollsFromQty(qtyVal, linePacking); // Rolls = meters / packing (2dp)
+               }
           }
           return updated;
       }
@@ -2228,18 +2255,32 @@ export default function SaleOrderModule() {
                                  }}
                                />
                              </div>
+                             {(() => {
+                               const hint = lineClothHint(item);
+                               if (!hint) return null;
+                               return (
+                                 <div className={`mt-2 flex items-center gap-1.5 text-[11px] font-bold w-fit px-2 py-1 rounded-lg border ${
+                                   hint.warn
+                                     ? 'text-red-500 bg-red-500/10 border-red-500/30'
+                                     : 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border-emerald-500/25'
+                                 }`} title="Backing cloth stock on hand for this line's item">
+                                   <span className="material-symbols-outlined text-[13px]">dry_cleaning</span>
+                                   <span>Cloth: {hint.label} — {hint.meters !== null ? `${hint.meters.toLocaleString()} m in stock` : `${hint.kg.toLocaleString()} kg (quality not set)`}{hint.warn ? ' · less than this line' : ''}</span>
+                                 </div>
+                               );
+                             })()}
                             </div>
                           </div>
                         </td>
                         <td className="px-4 py-4 text-right align-top pt-11">
                           <div className="flex items-center justify-end gap-1.5">
-                            <input type="number" min="1" value={item.qty} onChange={(e) => handleItemChange(item.id, 'qty', parseInt(e.target.value.replace(/\D/g, '') || 0))} className="w-24 text-right bg-surface-container-lowest border border-outline-variant/30 rounded-lg p-2.5 text-sm font-extrabold focus:ring-2 focus:ring-primary/20 shadow-sm" />
+                            <input type="number" min="0" step="0.01" value={item.qty} onChange={(e) => handleItemChange(item.id, 'qty', parseFloat(e.target.value.replace(/[^0-9.]/g, '') || 0))} className="w-24 text-right bg-surface-container-lowest border border-outline-variant/30 rounded-lg p-2.5 text-sm font-extrabold focus:ring-2 focus:ring-primary/20 shadow-sm" />
                             <span className="text-xs text-slate-400 font-bold w-6 text-left">{prodObj?.unit === 'Meters' ? 'm' : (prodObj?.unit || 'm') }</span>
                           </div>
                         </td>
                         <td className="px-4 py-4 text-right align-top pt-11">
                           <div className="flex items-center justify-center gap-1.5">
-                            <input type="number" min="1" value={item.rolls} onChange={(e) => handleItemChange(item.id, 'rolls', parseInt(e.target.value.replace(/\D/g, '') || 0))} className="w-16 text-right bg-surface-container-lowest border border-outline-variant/30 rounded-lg p-2.5 text-sm font-extrabold focus:ring-2 focus:ring-primary/20 shadow-sm" />
+                            <input type="number" min="0" step="0.01" value={item.rolls} onChange={(e) => handleItemChange(item.id, 'rolls', parseFloat(e.target.value.replace(/[^0-9.]/g, '') || 0))} className="w-16 text-right bg-surface-container-lowest border border-outline-variant/30 rounded-lg p-2.5 text-sm font-extrabold focus:ring-2 focus:ring-primary/20 shadow-sm" />
                             <span className="text-xs text-slate-400 font-bold">rolls</span>
                           </div>
                         </td>

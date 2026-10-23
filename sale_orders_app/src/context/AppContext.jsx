@@ -12,9 +12,9 @@ import {
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { applyTheme } from '../utils/theme';
 import { supabase } from '../utils/supabaseClient';
-import { STEP1_ENTITY_TABLES, loadStep1EntitiesFromTables, syncEntityDiffToTable, entityRecordKey, loadAdminSetupFromTable, syncAdminSetupToTable } from '../utils/entityTables';
+import { STEP1_ENTITY_TABLES, loadStep1EntitiesFromTables, syncEntityDiffToTable, entityRecordKey, loadAdminSetupFromTable, syncAdminSetupToTable, loadFGComboConfigFromTable, syncFGComboConfigToTable } from '../utils/entityTables';
 import { formatLineCode, maxLineCodeNumber } from '../utils/itemCodes';
-import { getInitialFGConfig, saveFGConfig } from '../utils/fgCombinationUtils';
+import { getInitialFGConfig, saveFGConfig, normalizeFGConfig } from '../utils/fgCombinationUtils';
 import { DEFAULT_CHART_OF_ACCOUNTS } from '../utils/financeEngine';
 
 const AppContext = createContext();
@@ -618,6 +618,8 @@ export const AppProvider = ({ children }) => {
   const step1SnapshotsRef = useRef({});
   const adminSetupLoadedRef = useRef(false);
   const adminSetupSnapshotRef = useRef(null);
+  const fgComboConfigLoadedRef = useRef(false);
+  const fgComboConfigSnapshotRef = useRef(null);
   const lsDebounceRef = useRef({ hr_employees_list: null, hr_uploaded_attendance: null });
 
   const safeLocalStorageSet = (key, value) => {
@@ -1374,6 +1376,7 @@ export const AppProvider = ({ children }) => {
       try {
         const fromTables = await loadStep1EntitiesFromTables();
         const adminSetupFromTable = await loadAdminSetupFromTable();
+        const fgComboConfigFromTable = await loadFGComboConfigFromTable();
         setState(prev => {
           const next = { ...prev };
           const seedSource = {};
@@ -1394,6 +1397,20 @@ export const AppProvider = ({ children }) => {
             adminSetupSnapshotRef.current = prev.adminSetup || null;
           }
           adminSetupLoadedRef.current = true;
+          // FG COMBO PHASE: the app_config copy of the builder config wins
+          // over this browser's localStorage copy when present; when the
+          // table has none yet, the snapshot stays null so the write-through
+          // effect seeds the table with the current (local) config — the
+          // settings can no longer be lost in a blob flip or browser swap.
+          if (fgComboConfigFromTable) {
+            const normalized = normalizeFGConfig(fgComboConfigFromTable);
+            next.fg_combinations_config = normalized;
+            fgComboConfigSnapshotRef.current = normalized;
+            saveFGConfig(normalized);
+          } else {
+            fgComboConfigSnapshotRef.current = null;
+          }
+          fgComboConfigLoadedRef.current = true;
           seedSnapshots(seedSource);
           return next;
         });
@@ -1403,6 +1420,8 @@ export const AppProvider = ({ children }) => {
           seedSnapshots(prev);
           adminSetupSnapshotRef.current = prev.adminSetup || null;
           adminSetupLoadedRef.current = true;
+          fgComboConfigSnapshotRef.current = null;
+          fgComboConfigLoadedRef.current = true;
           return prev;
         });
       } finally {
@@ -4753,6 +4772,7 @@ export const AppProvider = ({ children }) => {
   const step3SalesInvoices = state.salesInvoices;
   const step3Returns = state.returns;
   const adminSetupForSync = state.adminSetup;
+  const fgComboConfigForSync = state.fg_combinations_config;
   useEffect(() => {
     if (!step1TablesReadyRef.current) return;
     const timer = setTimeout(() => {
@@ -4785,6 +4805,21 @@ export const AppProvider = ({ children }) => {
     }, 250);
     return () => clearTimeout(timer);
   }, [adminSetupForSync]);
+
+  // FG COMBO PHASE: the builder config (lookups, masking switches,
+  // auto-select rules) write-through to app_config on change — same durable
+  // pattern as adminSetup. A null snapshot means "table had no copy at
+  // load", so the first effect run seeds it with the current config.
+  useEffect(() => {
+    if (!fgComboConfigLoadedRef.current) return;
+    if (!fgComboConfigForSync || typeof fgComboConfigForSync !== 'object') return;
+    if (fgComboConfigSnapshotRef.current === fgComboConfigForSync) return;
+    const timer = setTimeout(() => {
+      fgComboConfigSnapshotRef.current = fgComboConfigForSync;
+      syncFGComboConfigToTable(fgComboConfigForSync);
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [fgComboConfigForSync]);
 
   const setCollection = (collection, data) => {
     setState(prev => {

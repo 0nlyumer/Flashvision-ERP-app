@@ -1,14 +1,21 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useApp } from '../../context/AppContext';
-import { DEFAULT_FG_CONFIG, getInitialFGConfig, saveFGConfig } from '../../utils/fgCombinationUtils';
+import { DEFAULT_FG_CONFIG, getInitialFGConfig, saveFGConfig, normalizeFGConfig, FG_COMBO_FIELDS } from '../../utils/fgCombinationUtils';
 
 export default function FGQuickConfigModal({ isOpen, onClose }) {
   const { state, setCollection } = useApp();
   const [activeTab, setActiveTab] = useState('paperCodes');
 
-  // Load from state or persistent initial config
-  const config = state.fg_combinations_config || getInitialFGConfig();
+  // Load from state or persistent initial config (normalized so the
+  // auto-select maps/seeds always exist, even for older saved configs)
+  const config = normalizeFGConfig(state.fg_combinations_config || getInitialFGConfig());
+  const autoSelect = config.autoSelect || { typeFabric: [], typePacking: [], rules: [] };
+
+  // Local form states for the auto-select editors
+  const [newTypeFabric, setNewTypeFabric] = useState({ type: '', fabric: '' });
+  const [newTypePacking, setNewTypePacking] = useState({ type: '', packing: '' });
+  const [newRule, setNewRule] = useState({ whenField: 'baseItem', whenValue: '', setField: 'fabricName', setValue: '' });
 
   // Local form states for adding new entries
   const [newPaper, setNewPaper] = useState({ code: '', name: '', description: '' });
@@ -195,6 +202,42 @@ export default function FGQuickConfigModal({ isOpen, onClose }) {
     setCollection('fg_combinations_config', newConfig);
   };
 
+  const updateAutoSelect = (updater) => {
+    const updated = typeof updater === 'function' ? updater(autoSelect) : updater;
+    const newConfig = { ...config, autoSelect: updated };
+    saveFGConfig(newConfig);
+    setCollection('fg_combinations_config', newConfig);
+  };
+
+  const handleAddTypeFabric = () => {
+    const type = newTypeFabric.type.trim().toUpperCase();
+    if (!type || !newTypeFabric.fabric.trim()) return;
+    updateAutoSelect(prev => ({
+      ...prev,
+      typeFabric: [...(prev.typeFabric || []).filter(r => (r.type || '').toUpperCase() !== type), { type, fabric: newTypeFabric.fabric.trim() }]
+    }));
+    setNewTypeFabric({ type: '', fabric: '' });
+  };
+
+  const handleAddTypePacking = () => {
+    const type = newTypePacking.type.trim().toUpperCase();
+    if (!type || !newTypePacking.packing) return;
+    updateAutoSelect(prev => ({
+      ...prev,
+      typePacking: [...(prev.typePacking || []).filter(r => (r.type || '').toUpperCase() !== type), { type, packing: newTypePacking.packing }]
+    }));
+    setNewTypePacking({ type: '', packing: '' });
+  };
+
+  const handleAddRule = () => {
+    if (!newRule.whenValue.trim() || !newRule.setValue.trim()) return;
+    updateAutoSelect(prev => ({
+      ...prev,
+      rules: [...(prev.rules || []), { id: 'rule_' + Date.now(), ...newRule, whenValue: newRule.whenValue.trim(), setValue: newRule.setValue.trim() }]
+    }));
+    setNewRule({ whenField: 'baseItem', whenValue: '', setField: 'fabricName', setValue: '' });
+  };
+
   const tabs = [
     { id: 'departments', label: 'Departments', icon: 'business' },
     { id: 'paperCodes', label: 'Paper / Texture', icon: 'texture' },
@@ -203,7 +246,8 @@ export default function FGQuickConfigModal({ isOpen, onClose }) {
     { id: 'layers', label: 'Layers', icon: 'layers' },
     { id: 'fabrics', label: 'Backing Fabrics', icon: 'dry_cleaning' },
     { id: 'packings', label: 'Packing Types', icon: 'inventory_2' },
-    { id: 'masking', label: 'Name Masking', icon: 'visibility_off' }
+    { id: 'masking', label: 'Name Masking', icon: 'visibility_off' },
+    { id: 'autoSelect', label: 'Auto-Select Rules', icon: 'auto_awesome' }
   ];
 
   const masking = config.masking || DEFAULT_FG_CONFIG.masking;
@@ -285,7 +329,7 @@ export default function FGQuickConfigModal({ isOpen, onClose }) {
             >
               <span className="material-symbols-outlined text-[16px]">{tab.icon}</span>
               <span>{tab.label}</span>
-              {tab.id !== 'masking' && (
+              {tab.id !== 'masking' && tab.id !== 'autoSelect' && (
                 <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${activeTab === tab.id ? 'bg-white/20 text-white' : 'bg-surface-container text-on-surface-variant'}`}>
                   {tab.id === 'departments' ? erpDepartments.length : (config[tab.id] || []).length}
                 </span>
@@ -752,7 +796,8 @@ export default function FGQuickConfigModal({ isOpen, onClose }) {
                   { key: 'maskItemName', label: 'Mask Base Item Name / Gauge', desc: 'Omit gauge baseline from generated title' },
                   { key: 'maskColor', label: 'Mask Top Color', desc: 'Omit primary surface color from generated title' },
                   { key: 'maskLayers', label: 'Mask Layers', desc: 'Omit specification layers (e.g. 2 Layer)' },
-                  { key: 'maskFabric', label: 'Mask Backing Fabric', desc: 'Omit backing fabric and color parenthesis' }
+                  { key: 'maskFabric', label: 'Mask Backing Fabric Name', desc: 'Omit the fabric name from the title parenthesis (color follows its own switch)' },
+                  { key: 'maskFabricColor', label: 'Mask Backing Fabric Color', desc: 'Omit the fabric color from the title parenthesis' }
                 ].map(item => (
                   <div key={item.key} className="p-4 rounded-2xl border border-outline-variant/20 bg-surface-container-lowest/80 backdrop-blur-md flex items-center justify-between gap-4">
                     <div>
@@ -774,6 +819,129 @@ export default function FGQuickConfigModal({ isOpen, onClose }) {
                     </button>
                   </div>
                 ))}
+              </div>
+            </div>
+          )}
+
+          {/* TAB 8: Auto-Select Rules */}
+          {activeTab === 'autoSelect' && (
+            <div className="space-y-6">
+              <div className="bg-primary/5 border border-primary/20 rounded-2xl p-4 text-xs text-on-surface leading-relaxed">
+                <p className="font-bold text-primary mb-1">How auto-select works</p>
+                When a Gauge / Item carrying a known item type (DTY, COLLAR, MISMA, CN...) is picked in the builder, the backing fabric and packing below follow automatically. Fabric <strong>color</strong> is never auto-selected — it is always chosen manually. Generic rules then link any two fields (for example Paper or Color driven links).
+              </div>
+
+              {/* Type -> Fabric */}
+              <div className="space-y-3">
+                <h4 className="text-xs font-black uppercase tracking-wider text-on-surface">Item Type → Backing Fabric</h4>
+                <div className="space-y-2">
+                  {(autoSelect.typeFabric || []).map((row, idx) => (
+                    <div key={idx} className="flex items-center gap-2 p-2.5 rounded-xl border border-outline-variant/15 bg-surface-container-lowest/80">
+                      <span className="font-mono font-bold text-xs text-primary bg-primary/10 px-2 py-1 rounded-md border border-primary/20 min-w-[90px] text-center">{row.type}</span>
+                      <span className="material-symbols-outlined text-[16px] text-on-surface-variant">arrow_forward</span>
+                      <span className="font-bold text-xs text-on-surface flex-1">{row.fabric}</span>
+                      <button type="button" onClick={() => updateAutoSelect(prev => ({ ...prev, typeFabric: (prev.typeFabric || []).filter((_, i) => i !== idx) }))} className="text-on-surface-variant/40 hover:text-red-500 p-1 rounded-lg hover:bg-red-500/10 transition-colors cursor-pointer" title="Remove row">
+                        <span className="material-symbols-outlined text-[16px]">delete</span>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex flex-wrap gap-2 items-end">
+                  <div className="w-[150px]">
+                    <label className="text-[11px] font-bold text-on-surface-variant block mb-1">Item Type</label>
+                    <input type="text" placeholder="e.g. DTY" value={newTypeFabric.type} onChange={(e) => setNewTypeFabric(p => ({ ...p, type: e.target.value }))} className="w-full bg-surface-container-lowest border border-outline-variant/30 rounded-xl px-3 py-2 text-xs font-bold text-on-surface uppercase outline-none focus:ring-2 focus:ring-primary/25" />
+                  </div>
+                  <div className="w-[200px]">
+                    <label className="text-[11px] font-bold text-on-surface-variant block mb-1">Fabric</label>
+                    <input type="text" placeholder="e.g. PC" list="fg-fabric-names" value={newTypeFabric.fabric} onChange={(e) => setNewTypeFabric(p => ({ ...p, fabric: e.target.value }))} className="w-full bg-surface-container-lowest border border-outline-variant/30 rounded-xl px-3 py-2 text-xs font-bold text-on-surface outline-none focus:ring-2 focus:ring-primary/25" />
+                    <datalist id="fg-fabric-names">
+                      {(config.fabrics || []).map(f => <option key={f.id} value={f.name} />)}
+                    </datalist>
+                  </div>
+                  <button type="button" onClick={handleAddTypeFabric} className="bg-primary hover:bg-primary/90 text-white font-bold text-xs px-4 py-2 rounded-xl flex items-center gap-1.5 shadow-sm transition-all active:scale-95 cursor-pointer">
+                    <span className="material-symbols-outlined text-[16px]">add</span><span>+ Add Row</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Type -> Packing */}
+              <div className="space-y-3">
+                <h4 className="text-xs font-black uppercase tracking-wider text-on-surface">Item Type → Default Packing</h4>
+                <div className="space-y-2">
+                  {(autoSelect.typePacking || []).map((row, idx) => (
+                    <div key={idx} className="flex items-center gap-2 p-2.5 rounded-xl border border-outline-variant/15 bg-surface-container-lowest/80">
+                      <span className="font-mono font-bold text-xs text-primary bg-primary/10 px-2 py-1 rounded-md border border-primary/20 min-w-[90px] text-center">{row.type}</span>
+                      <span className="material-symbols-outlined text-[16px] text-on-surface-variant">arrow_forward</span>
+                      <span className="font-bold text-xs text-on-surface flex-1">{row.packing || <em className="text-on-surface-variant font-medium">not set</em>}</span>
+                      <button type="button" onClick={() => updateAutoSelect(prev => ({ ...prev, typePacking: (prev.typePacking || []).filter((_, i) => i !== idx) }))} className="text-on-surface-variant/40 hover:text-red-500 p-1 rounded-lg hover:bg-red-500/10 transition-colors cursor-pointer" title="Remove row">
+                        <span className="material-symbols-outlined text-[16px]">delete</span>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex flex-wrap gap-2 items-end">
+                  <div className="w-[150px]">
+                    <label className="text-[11px] font-bold text-on-surface-variant block mb-1">Item Type</label>
+                    <input type="text" placeholder="e.g. MISMA" value={newTypePacking.type} onChange={(e) => setNewTypePacking(p => ({ ...p, type: e.target.value }))} className="w-full bg-surface-container-lowest border border-outline-variant/30 rounded-xl px-3 py-2 text-xs font-bold text-on-surface uppercase outline-none focus:ring-2 focus:ring-primary/25" />
+                  </div>
+                  <div className="w-[220px]">
+                    <label className="text-[11px] font-bold text-on-surface-variant block mb-1">Packing</label>
+                    <select value={newTypePacking.packing} onChange={(e) => setNewTypePacking(p => ({ ...p, packing: e.target.value }))} className="w-full bg-surface-container-lowest border border-outline-variant/30 rounded-xl px-2 py-2 text-xs font-bold text-on-surface outline-none">
+                      <option value="">Select packing…</option>
+                      {(config.packings || []).map(pk => <option key={pk.id} value={pk.name}>{pk.name} ({pk.size}{pk.uom})</option>)}
+                    </select>
+                  </div>
+                  <button type="button" onClick={handleAddTypePacking} className="bg-primary hover:bg-primary/90 text-white font-bold text-xs px-4 py-2 rounded-xl flex items-center gap-1.5 shadow-sm transition-all active:scale-95 cursor-pointer">
+                    <span className="material-symbols-outlined text-[16px]">add</span><span>+ Add Row</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Generic cross-field rules */}
+              <div className="space-y-3">
+                <h4 className="text-xs font-black uppercase tracking-wider text-on-surface">Generic Rules — when a field is set, set another</h4>
+                <div className="space-y-2">
+                  {(autoSelect.rules || []).map((rule) => (
+                    <div key={rule.id} className="flex items-center gap-2 p-2.5 rounded-xl border border-outline-variant/15 bg-surface-container-lowest/80 flex-wrap">
+                      <span className="text-[11px] font-bold text-on-surface-variant">WHEN</span>
+                      <span className="font-bold text-xs text-on-surface">{FG_COMBO_FIELDS.find(f => f.field === rule.whenField)?.label || rule.whenField} = <span className="text-primary">{rule.whenValue}</span></span>
+                      <span className="material-symbols-outlined text-[16px] text-on-surface-variant">arrow_forward</span>
+                      <span className="text-[11px] font-bold text-on-surface-variant">SET</span>
+                      <span className="font-bold text-xs text-on-surface">{FG_COMBO_FIELDS.find(f => f.field === rule.setField)?.label || rule.setField} = <span className="text-primary">{rule.setValue}</span></span>
+                      <button type="button" onClick={() => updateAutoSelect(prev => ({ ...prev, rules: (prev.rules || []).filter(r => r.id !== rule.id) }))} className="text-on-surface-variant/40 hover:text-red-500 p-1 rounded-lg hover:bg-red-500/10 transition-colors cursor-pointer ml-auto" title="Remove rule">
+                        <span className="material-symbols-outlined text-[16px]">delete</span>
+                      </button>
+                    </div>
+                  ))}
+                  {(autoSelect.rules || []).length === 0 && (
+                    <p className="text-[11px] text-on-surface-variant italic">No generic rules yet — add one below to link Paper, Color or any other pair of fields.</p>
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-2 items-end">
+                  <div className="w-[150px]">
+                    <label className="text-[11px] font-bold text-on-surface-variant block mb-1">When Field</label>
+                    <select value={newRule.whenField} onChange={(e) => setNewRule(p => ({ ...p, whenField: e.target.value }))} className="w-full bg-surface-container-lowest border border-outline-variant/30 rounded-xl px-2 py-2 text-xs font-bold text-on-surface outline-none">
+                      {FG_COMBO_FIELDS.map(f => <option key={f.field} value={f.field}>{f.label}</option>)}
+                    </select>
+                  </div>
+                  <div className="w-[150px]">
+                    <label className="text-[11px] font-bold text-on-surface-variant block mb-1">Equals Value</label>
+                    <input type="text" placeholder="e.g. 170" value={newRule.whenValue} onChange={(e) => setNewRule(p => ({ ...p, whenValue: e.target.value }))} className="w-full bg-surface-container-lowest border border-outline-variant/30 rounded-xl px-3 py-2 text-xs font-bold text-on-surface outline-none focus:ring-2 focus:ring-primary/25" />
+                  </div>
+                  <div className="w-[150px]">
+                    <label className="text-[11px] font-bold text-on-surface-variant block mb-1">Set Field</label>
+                    <select value={newRule.setField} onChange={(e) => setNewRule(p => ({ ...p, setField: e.target.value }))} className="w-full bg-surface-container-lowest border border-outline-variant/30 rounded-xl px-2 py-2 text-xs font-bold text-on-surface outline-none">
+                      {FG_COMBO_FIELDS.map(f => <option key={f.field} value={f.field}>{f.label}</option>)}
+                    </select>
+                  </div>
+                  <div className="w-[150px]">
+                    <label className="text-[11px] font-bold text-on-surface-variant block mb-1">To Value</label>
+                    <input type="text" placeholder="e.g. DTY" value={newRule.setValue} onChange={(e) => setNewRule(p => ({ ...p, setValue: e.target.value }))} className="w-full bg-surface-container-lowest border border-outline-variant/30 rounded-xl px-3 py-2 text-xs font-bold text-on-surface outline-none focus:ring-2 focus:ring-primary/25" />
+                  </div>
+                  <button type="button" onClick={handleAddRule} className="bg-primary hover:bg-primary/90 text-white font-bold text-xs px-4 py-2 rounded-xl flex items-center gap-1.5 shadow-sm transition-all active:scale-95 cursor-pointer">
+                    <span className="material-symbols-outlined text-[16px]">add</span><span>+ Add Rule</span>
+                  </button>
+                </div>
               </div>
             </div>
           )}

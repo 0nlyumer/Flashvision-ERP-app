@@ -7,8 +7,13 @@ import {
   generateFGDisplayName,
   matchItemToCombination,
   createFinishedGoodFromCombo,
-  parseRollSizeFromPacking
+  parseRollSizeFromPacking,
+  normalizeFGConfig,
+  applyAutoSelect,
+  effectiveMasking,
+  FG_MASK_FIELDS
 } from '../../utils/fgCombinationUtils';
+import { findClothItemForFabric, clothStockMeters } from '../../utils/clothRequirement';
 import FGQuickConfigModal from './FGQuickConfigModal';
 
 export default function FGCombinationBuilder({
@@ -32,26 +37,29 @@ export default function FGCombinationBuilder({
   const [isDragging, setIsDragging] = useState(false);
   const dragOffsetRef = useRef({ mouseX: 0, mouseY: 0, initialTop: 0, initialLeft: 0 });
 
-  // Dynamic configuration with live local sync
-  const [config, setConfig] = useState(() => state.fg_combinations_config || getInitialFGConfig());
+  // Dynamic configuration with live local sync (normalized so masking
+  // defaults + auto-select seeds exist even for older saved configs)
+  const [config, setConfig] = useState(() => normalizeFGConfig(state.fg_combinations_config || getInitialFGConfig()));
 
   useEffect(() => {
     if (state.fg_combinations_config) {
-      setConfig(state.fg_combinations_config);
+      setConfig(normalizeFGConfig(state.fg_combinations_config));
     }
   }, [state.fg_combinations_config]);
 
   useEffect(() => {
     const handleUpdate = (e) => {
       if (e.detail) {
-        setConfig(e.detail);
+        setConfig(normalizeFGConfig(e.detail));
       }
     };
     window.addEventListener('fg-config-updated', handleUpdate);
     return () => window.removeEventListener('fg-config-updated', handleUpdate);
   }, []);
 
-  const masking = config.masking || DEFAULT_FG_CONFIG.masking;
+  // Per-item masking overrides for THIS registration only (maskKey -> masked)
+  const [maskOverrides, setMaskOverrides] = useState({});
+  const masking = useMemo(() => effectiveMasking(config, maskOverrides), [config, maskOverrides]);
 
   // Combination selection state
   const [combo, setCombo] = useState({
@@ -98,15 +106,41 @@ export default function FGCombinationBuilder({
     return finishedGoods.some(i => (i.name || '').toLowerCase() === generatedName.toLowerCase());
   }, [finishedGoods, generatedName]);
 
+  // Stock hints: cloth stock resolves from inventory by fabric + fabric
+  // color; paper stock shows only when the paper is tracked as an
+  // inventory item (never invented when it is not).
+  const clothHint = useMemo(() => {
+    if (!combo.fabricName || !combo.fabricColor) return null;
+    const cloth = findClothItemForFabric(combo.fabricName, combo.fabricColor, state.items || []);
+    if (!cloth) return null;
+    return { cloth, stock: clothStockMeters(cloth) };
+  }, [combo.fabricName, combo.fabricColor, state.items]);
+
+  const paperHint = useMemo(() => {
+    if (!combo.paperCode) return null;
+    const code = combo.paperCode.trim().toUpperCase();
+    if (!code) return null;
+    const paper = (state.items || []).find(i => i && i.category !== 'Finished Goods' &&
+      String(i.name || '').toUpperCase().split(/[^A-Z0-9]+/).includes(code));
+    if (!paper) return null;
+    return { paper, stock: Number(paper.stock ?? 0) || 0, uom: paper.uom || '' };
+  }, [combo.paperCode, state.items]);
+
   const handleSelectField = (field, value) => {
     setCombo(prev => {
-      const next = { ...prev, [field]: value };
+      let next = { ...prev, [field]: value };
       if (field === 'fabricName') {
         next.fabricColor = ''; // Reset fabric color if fabric changed
       }
+      // Auto-select: type->fabric / type->packing maps + generic rules
+      next = applyAutoSelect(next, field, config);
       return next;
     });
     setIsMatchDropdownOpen(true);
+  };
+
+  const toggleMaskOverride = (maskKey) => {
+    setMaskOverrides(prev => ({ ...prev, [maskKey]: !(masking[maskKey]) }));
   };
 
   const handleReset = () => {
@@ -120,6 +154,7 @@ export default function FGCombinationBuilder({
       packing: '',
       department: ''
     });
+    setMaskOverrides({});
   };
 
   const handleChooseItem = (item) => {
@@ -138,7 +173,8 @@ export default function FGCombinationBuilder({
       masking,
       config.packings,
       defaultDept,
-      state.categoryPrefixes
+      state.categoryPrefixes,
+      Object.keys(maskOverrides).length > 0 ? maskOverrides : null
     );
     if (onSelectItem) {
       onSelectItem(newItem);
@@ -583,6 +619,60 @@ export default function FGCombinationBuilder({
             </div>
 
           </div>
+
+          {/* ROW 2b: per-item title masking overrides + live stock hints */}
+          {(allowCreation || clothHint || paperHint) && (
+            <div className="flex items-center gap-2 pt-2 flex-wrap">
+              {allowCreation && (
+                <div className="flex items-center gap-1 flex-wrap" title="Title masking for THIS item only — overrides the global masking set in the gear configuration">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-on-surface-variant flex items-center gap-1 mr-0.5">
+                    <span className="material-symbols-outlined text-[13px]">visibility</span> Title:
+                  </span>
+                  {FG_MASK_FIELDS.map(f => {
+                    const masked = !!masking[f.maskKey];
+                    const overridden = Object.prototype.hasOwnProperty.call(maskOverrides, f.maskKey);
+                    return (
+                      <button
+                        key={f.maskKey}
+                        type="button"
+                        onClick={() => toggleMaskOverride(f.maskKey)}
+                        className={`text-[10px] font-bold px-2 py-0.5 rounded-md border transition-all cursor-pointer ${
+                          masked
+                            ? 'bg-surface-container text-on-surface-variant/60 border-outline-variant/20 line-through decoration-on-surface-variant/40'
+                            : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30'
+                        } ${overridden ? 'ring-1 ring-primary/60' : ''}`}
+                        title={masked ? `${f.label} is masked out of this item's title — click to include it` : `${f.label} is included in this item's title — click to mask it`}
+                      >
+                        {f.label}{overridden ? ' •' : ''}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              {(clothHint || paperHint) && <span className="flex-1" />}
+
+              {paperHint && (
+                <span className="text-[10px] font-bold text-sky-600 dark:text-sky-400 bg-sky-500/10 px-2 py-0.5 rounded border border-sky-500/25 shrink-0" title={`Paper stock on hand (${paperHint.paper.name})`}>
+                  <span className="material-symbols-outlined text-[12px] align-middle mr-0.5">layers</span>
+                  Paper stock: {paperHint.stock.toLocaleString()} {paperHint.uom}
+                </span>
+              )}
+
+              {clothHint && (
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded border shrink-0 ${
+                  clothHint.stock.meters !== null && clothHint.stock.meters <= 0
+                    ? 'text-red-500 bg-red-500/10 border-red-500/30'
+                    : 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border-emerald-500/25'
+                }`} title={`Backing cloth stock on hand (${clothHint.cloth.name})`}>
+                  <span className="material-symbols-outlined text-[12px] align-middle mr-0.5">dry_cleaning</span>
+                  Cloth: {clothHint.cloth.name} — {clothHint.stock.meters !== null
+                    ? `${clothHint.stock.meters.toLocaleString()} m in stock`
+                    : `${clothHint.stock.kg.toLocaleString()} kg (quality not set)`}
+                </span>
+              )}
+            </div>
+          )}
 
           {/* ROW 3: INSTANT LIVE MATCHING FINISHED GOODS (Auto-opens right below builder on any selection) */}
           {activeAttributeCount > 0 && matchingItems.length > 0 && isMatchDropdownOpen && (

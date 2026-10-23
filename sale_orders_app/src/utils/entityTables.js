@@ -232,3 +232,36 @@ export const syncAdminSetupToTable = async (adminSetup) => {
     console.warn('[EntityTables] adminSetup write-through failed:', err?.message || err);
   }
 };
+
+// --- FG Combination Builder config (app_config) — FG Combo phase ----------
+// The builder config (lookups, masking switches, auto-select rules) used to
+// live ONLY in each browser's localStorage, so it could silently diverge or
+// be lost. It now rides in app_config under key 'fgComboConfig', mirroring
+// adminSetup: the table copy wins on load, localStorage remains a fallback
+// and offline cache, and changes write through.
+
+export const loadFGComboConfigFromTable = async () => {
+  try {
+    const { data, error } = await supabase
+      .from('app_config')
+      .select('data')
+      .eq('key', 'fgComboConfig')
+      .maybeSingle();
+    if (error || !data || typeof data.data !== 'object' || data.data === null) return null;
+    return data.data;
+  } catch (_) {
+    return null;
+  }
+};
+
+export const syncFGComboConfigToTable = async (config) => {
+  if (!config || typeof config !== 'object') return;
+  try {
+    const { error } = await supabase
+      .from('app_config')
+      .upsert({ key: 'fgComboConfig', data: config, updated_at: new Date().toISOString() }, { onConflict: 'key' });
+    if (error) throw error;
+  } catch (err) {
+    console.warn('[EntityTables] fgComboConfig write-through failed:', err?.message || err);
+  }
+};

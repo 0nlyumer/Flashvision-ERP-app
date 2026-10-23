@@ -4,6 +4,7 @@ import { useSearchParams } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 
 import OmsFilter from '../components/oms/OmsFilter';
+import OmsClothRequirement from '../components/oms/OmsClothRequirement';
 import OmsSelection from '../components/oms/OmsSelection';
 import OmsAdjustment from '../components/oms/OmsAdjustment';
 import OmsSlip from '../components/oms/OmsSlip';
@@ -267,8 +268,9 @@ export default function ProductionOMS() {
 
   const tabs = [
     { id: 'filter', label: 'Filter Sale Orders', icon: 'filter_alt' },
-    { id: 'planning', label: 'Production Planning', icon: 'build' }, 
-    { id: 'history', label: 'Planning History', icon: 'history' }
+    { id: 'planning', label: 'Production Planning', icon: 'build' },
+    { id: 'history', label: 'Planning History', icon: 'history' },
+    { id: 'cloth', label: 'Cloth Requirement', icon: 'dry_cleaning' }
   ];
 
   const [searchParams, setSearchParams] = useSearchParams();
@@ -344,6 +346,7 @@ export default function ProductionOMS() {
                 />
             )}
             {activeTab === 'history' && <OmsHistory completedRuns={activeRuns} onEditPlan={triggerEditPlan} />}
+            {activeTab === 'cloth' && <OmsClothRequirement />}
         </div>
       </div>
     </Layout>
