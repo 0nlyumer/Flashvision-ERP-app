@@ -5331,7 +5331,11 @@ export const AppProvider = ({ children }) => {
         const canonicalApprovalUser = getCanonicalUsername(approvalUser, usersList);
         const canonicalCreator = getCanonicalUsername(task.document.createdBy, usersList);
 
-        const existingApproval = updatedApprovals.find(a => a.id === approvalId);
+        // Dedupe against BOTH the canonical suffixed id and the legacy
+        // unsuffixed id, so a pre-suffix approval for this gate is reused
+        // instead of duplicated.
+        const legacyApprovalId = `APP-RT-${task.id.split('-')[1]}`;
+        const existingApproval = updatedApprovals.find(a => a.id === approvalId || a.id === legacyApprovalId);
         if (!existingApproval) {
           updatedApprovals.push({
             id: approvalId,
@@ -5622,7 +5626,11 @@ export const AppProvider = ({ children }) => {
       const currentStep = task.steps[task.currentStepIndex];
       if (currentStep && currentStep.type === 'approval_gate') {
         const approvalId = `APP-RT-${task.id.split('-')[1]}-s${task.currentStepIndex}`;
-        const approval = state.approvals.find(a => a.id === approvalId);
+        // Legacy approvals created before the -s<stepIndex> suffix existed
+        // carry the unsuffixed id APP-RT-<taskTs>; accept either form or
+        // those tasks can never leave Waiting_Approval.
+        const legacyApprovalId = `APP-RT-${task.id.split('-')[1]}`;
+        const approval = state.approvals.find(a => a.id === approvalId || a.id === legacyApprovalId);
         
         if (approval && approval.status !== 'Pending') {
           stateChanged = true;
@@ -5701,7 +5709,7 @@ export const AppProvider = ({ children }) => {
                   message: `Rejection escalated. Rerouting approval to Admin.`
                 });
                 
-                const appIndex = updatedApprovals.findIndex(a => a.id === approvalId);
+                const appIndex = updatedApprovals.findIndex(a => a.id === approval.id);
                 if (appIndex !== -1) {
                   updatedApprovals[appIndex] = {
                     ...updatedApprovals[appIndex],

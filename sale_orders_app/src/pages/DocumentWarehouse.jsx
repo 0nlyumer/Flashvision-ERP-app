@@ -171,26 +171,12 @@ export default function DocumentWarehouse({ insideDashboard = false }) {
     let parsedBinders = [];
     
     if (savedBinders && Array.isArray(savedBinders)) {
-      try {
-        // Dynamically update document lists if names match live system data!
-        parsedBinders = savedBinders.map(binder => {
-          if (binder.name === 'FINANCIAL_REPORTS' || binder.name === 'SALES_INVOICES' || binder.name === 'VENDOR_LEDGERS') {
-            return { ...binder, documents: financeDocs };
-          }
-          if (binder.name === 'HR_ONBOARDING_PROFILES' || binder.name === 'EMPLOYEE_ROSTER') {
-            return { ...binder, documents: hrDocs };
-          }
-          if (binder.name === 'DOC_ROUTING_CONFIG') {
-            return { ...binder, documents: routingDocs };
-          }
-          if (binder.name.includes('BOM') || binder.name === 'INVENTORY_GOODS') {
-            return { ...binder, documents: itemDocs };
-          }
-          return binder;
-        });
-      } catch(e) {
-        parsedBinders = [];
-      }
+      // A binder always displays its OWN stored documents — including the
+      // ones the routing archive step files into it. The generated
+      // financeDocs / hrDocs / routingDocs / itemDocs lists are used ONLY
+      // in the first-run seed below (folderTemplates, when no binders exist
+      // yet); they must never replace a binder's real documents.
+      parsedBinders = savedBinders;
     }
 
     if (parsedBinders.length === 0) {

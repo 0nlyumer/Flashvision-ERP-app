@@ -4365,7 +4365,10 @@ export default function ChatModule() {
     
     if (item.type === 'Routing Approval') {
       docType = item.value;
-      const matchKey = item.id.replace('APP-RT-', '');
+      // Strip the -s<stepIndex> suffix: task ids are TASK-<ts>-<rand>, so a
+      // matchKey of "<ts>-s2" would never be included in them. Legacy
+      // unsuffixed approval ids are unaffected by the strip.
+      const matchKey = item.id.replace('APP-RT-', '').replace(/-s\d+$/, '');
       const task = (state.routingTasks || []).find(t => t.id.includes(matchKey));
       if (task && task.document) {
         docType = task.document.type;

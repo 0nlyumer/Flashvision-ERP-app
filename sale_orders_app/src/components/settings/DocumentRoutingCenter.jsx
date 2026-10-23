@@ -68,18 +68,15 @@ export default function DocumentRoutingCenter() {
     { id: 1, name: 'Admin', username: 'admin', role: 'Super Admin', status: 'Active' }
   ];
 
-  // Load rules on mount - NO DUMMY RULES seeded
+  // Load rules on mount - NO DUMMY RULES seeded.
+  // AppContext state is the single source of truth for routing rules (it is
+  // persisted to the erp_state blob AND the routing_rules table); the
+  // localStorage copy is only a mirror and must never be the read source —
+  // reading it here previously resurrected stale rules whenever the mirror
+  // lagged state. The [state.routingRules] effect below keeps the list in
+  // sync from then on.
   useEffect(() => {
-    const savedRules = localStorage.getItem('hr_routing_rules_config');
-    if (savedRules) {
-      try {
-        setRulesList(JSON.parse(savedRules));
-      } catch (e) {
-        setRulesList([]);
-      }
-    } else {
-      setRulesList([]);
-    }
+    setRulesList(Array.isArray(state.routingRules) ? state.routingRules : []);
   }, []);
 
   const saveRulesToLocalStorage = (updated) => {
@@ -375,13 +372,20 @@ export default function DocumentRoutingCenter() {
 
   // Simulate Actions for Waiting_Approval Tasks directly from simulator
   const handleSimulateApprovalAction = (taskId, status) => {
-    const approvalId = `APP-RT-${taskId.split('-')[1]}`;
-    
+    // The routing engine creates approvals as APP-RT-<taskTs>-s<stepIndex>
+    // (see AppContext executeNextSteps); older approvals exist in the legacy
+    // unsuffixed form APP-RT-<taskTs>. Match EITHER form — building only the
+    // legacy id here previously matched nothing, so this button was a no-op.
+    const task = (state.routingTasks || []).find(t => t.id === taskId);
+    const taskTs = taskId.split('-')[1];
+    const suffixedId = task ? `APP-RT-${taskTs}-s${task.currentStepIndex}` : null;
+    const legacyId = `APP-RT-${taskTs}`;
+
     // Update state.approvals through AppContext setCollection
     setCollection('approvals', prev => {
       const approvalsList = prev || [];
       return approvalsList.map(a => {
-        if (a.id === approvalId) {
+        if (a.id === suffixedId || a.id === legacyId) {
           return { ...a, status: status, completedAt: new Date().toISOString(), reasonComment: 'Simulated review action.' };
         }
         return a;

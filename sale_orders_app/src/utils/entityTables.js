@@ -96,10 +96,13 @@ export const STEP1_ENTITY_TABLES = {
   otherConsumptions: 'other_consumptions',
 };
 
-// Promoted columns per table (verified 2026-10-22 against the live schema).
+// Promoted columns per table (verified 2026-10-22 against the live schema;
+// routing entries corrected 2026-10-23 — see the routing note below).
 // kind drives the same type coercion the Phase B backfill used: text keeps
 // strings (numbers stringified), numeric keeps numbers (numeric strings
-// parsed), boolean keeps booleans only, json takes the value as-is.
+// parsed), boolean keeps booleans only, json takes the value as-is. An
+// optional 3rd element names the record field to read when it differs from
+// the column name / its camelCase form.
 const PROMOTED_COLUMNS = {
   items: [
     ['sku', 'text'], ['name', 'text'], ['type', 'text'], ['category', 'text'],
@@ -169,8 +172,21 @@ const PROMOTED_COLUMNS = {
   notifications: [ ['type', 'text'], ['title', 'text'] ],
   audit_logs: [ ['action', 'text'], ['module', 'text'], ['status', 'text'] ],
   chats: [ ['name', 'text'], ['username', 'text'], ['is_group', 'boolean'] ],
-  routing_rules: [],
-  routing_tasks: [],
+  // routing_rules / routing_tasks were created (Phase A) with their own
+  // dedicated columns instead of the generic {id, data} shape, and several
+  // are NOT NULL (verified live 2026-10-23): routing_rules.rule_name,
+  // routing_rules.steps, routing_tasks.document, routing_tasks.steps,
+  // routing_tasks.history. Leaving these lists empty made buildEntityRow
+  // emit rows that violated those constraints — every write-through upsert
+  // failed (PostgREST 23502), so the routing tables never received a single
+  // new record and the boot overlay kept reverting rules/tasks to the
+  // Phase B backfill. The entries below mirror the backfill exactly
+  // (rule_name <- record.name via the source-field alias).
+  routing_rules: [ ['rule_name', 'text', 'name'], ['status', 'text'], ['steps', 'json'] ],
+  routing_tasks: [
+    ['rule_id', 'text'], ['rule_name', 'text'], ['document', 'json'],
+    ['current_step_index', 'numeric'], ['status', 'text'], ['steps', 'json'], ['history', 'json'],
+  ],
   document_warehouse_binders: [ ['name', 'text'] ],
   gate_pass_activities: [],
   other_consumptions: [],
@@ -222,8 +238,11 @@ export const recordKeyWithFallback = (stateKey, record, seen) => {
   return n === 1 ? base : `${base}-${n}`;
 };
 
-const pickPromoted = (record, colName, kind) => {
-  const candidates = [colName, camel(colName)];
+const pickPromoted = (record, colName, kind, sourceField) => {
+  // A promoted-column entry may name an explicit source field (3rd element)
+  // when the record's field differs from both the column name and its
+  // camelCase form (e.g. routing_rules.rule_name comes from record.name).
+  const candidates = sourceField ? [sourceField, colName, camel(colName)] : [colName, camel(colName)];
   for (const field of candidates) {
     if (!(field in record)) continue;
     const v = record[field];
@@ -251,8 +270,8 @@ export const buildEntityRow = (table, record, keyOverride) => {
   const id = keyOverride !== undefined && keyOverride !== null ? keyOverride : entityRecordKey(record);
   if (id === null) return null;
   const row = { id, data: record, updated_at: new Date().toISOString() };
-  (PROMOTED_COLUMNS[table] || []).forEach(([colName, kind]) => {
-    const v = pickPromoted(record, colName, kind);
+  (PROMOTED_COLUMNS[table] || []).forEach(([colName, kind, sourceField]) => {
+    const v = pickPromoted(record, colName, kind, sourceField);
     if (v !== undefined) row[colName] = v;
   });
   return row;
