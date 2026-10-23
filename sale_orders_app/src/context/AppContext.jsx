@@ -967,8 +967,13 @@ export const AppProvider = ({ children }) => {
             updated = true;
           }
         }
-        // Clean dummy invoices and vouchers if present in state
-        const dummyBadIds = new Set(['INV-8901','INV-8902','INV-8903','INV-8904','PINV-7801','PINV-7802','PINV-7803','PV-001','PV-002','PV-003','VOUCH-1001','VOUCH-1002','VOUCH-1003','VOUCH-1004','JV-2026-0001','CPV-2026-0002']);
+        // Clean legacy dummy invoices and vouchers if present in state.
+        // ONLY ids no live generator can produce: the writers number their
+        // first real documents PINV-7801…, INV-8901…, JV-<year>-0001 and
+        // CPV-<year>-0002, so those ids must never be purged here — an
+        // earlier version of this set deleted the first real PIs/SIs/
+        // vouchers from state on app load. 'PV-*'/'VOUCH-*' are seed-only.
+        const dummyBadIds = new Set(['PV-001','PV-002','PV-003','PV-004','VOUCH-1001','VOUCH-1002','VOUCH-1003','VOUCH-1004']);
         const isLegacyDummy = x => {
           if (!x) return false;
           const id = x.id || x.voucherNo || x.invoiceNo || '';

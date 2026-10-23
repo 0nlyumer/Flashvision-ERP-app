@@ -1,13 +1,16 @@
 
 import { resolvePayrollAccountCode } from './payrollAccountMapping';
 
-// Universal filter for legacy mock/dummy invoice & voucher identifiers
+// Universal filter for legacy mock/dummy invoice & voucher identifiers.
+// ONLY ids that no live document generator can produce belong here:
+// the writers number their first real documents PINV-7801… (Purchase
+// Invoice), INV-8901… (Sales Invoice) and JV-<year>-0001 / CPV-<year>-0002
+// (Vouchers), so those ids must never be treated as dummy — an earlier
+// version of this set silently swallowed the first real PIs/SIs/vouchers
+// from the GL. 'PV-*' and 'VOUCH-*' are legacy seed-only ids.
 const DUMMY_IDS = new Set([
-  'INV-8901', 'INV-8902', 'INV-8903', 'INV-8904',
-  'PINV-7801', 'PINV-7802', 'PINV-7803',
   'PV-001', 'PV-002', 'PV-003', 'PV-004',
-  'VOUCH-1001', 'VOUCH-1002', 'VOUCH-1003', 'VOUCH-1004',
-  'JV-2026-0001', 'CPV-2026-0002'
+  'VOUCH-1001', 'VOUCH-1002', 'VOUCH-1003', 'VOUCH-1004'
 ]);
 
 export const isDummyFinancialRecord = (item) => {
@@ -41,6 +44,24 @@ export const formatMoney = (val, currencyCode = 'PKR') => {
   const formatted = num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   return `${currencyCode} ${formatted}`;
 };
+
+// ----------------------------------------------------------------------------
+// CASH & BANK ACCOUNT RESOLUTION (single source of truth)
+// The chart's cash-in-hand accounts are 111010/111020 and its bank accounts
+// are 112010 (HBL), 112020 (Meezan), 112030 (MCB). UI pickers (e.g. the
+// Vouchers screen's BPV/BRV bank selector) must resolve bank accounts
+// through here instead of hardcoding their own lists.
+// ----------------------------------------------------------------------------
+export const CASH_ACCOUNT_IDS = ['111010', '111020'];
+export const BANK_ACCOUNT_IDS = ['112010', '112020', '112030'];
+export const CASH_AND_BANK_ACCOUNT_IDS = [...CASH_ACCOUNT_IDS, ...BANK_ACCOUNT_IDS];
+
+export const isBankAccountId = (accountId) => BANK_ACCOUNT_IDS.includes(accountId);
+
+export const getBankAccounts = (chart = []) =>
+  (Array.isArray(chart) ? chart : []).filter(
+    acc => acc && !acc.isGroup && BANK_ACCOUNT_IDS.includes(acc.id || acc.code)
+  );
 
 // ----------------------------------------------------------------------------
 // 1. STANDARD 5-TIER CHART OF ACCOUNTS FOR SYNTHETIC LEATHER MANUFACTURING
@@ -918,7 +939,7 @@ export const generateBalanceSheet = (state = {}, asOfDate = null) => {
 export const generateCashFlow = (state = {}, fromDate = null, toDate = null) => {
   const gl = generateGeneralLedger(state, { fromDate, toDate });
 
-  const cashAccounts = ['111010', '111020', '112010', '112020', '112030'];
+  const cashAccounts = CASH_AND_BANK_ACCOUNT_IDS;
   let customerCollections = 0;
   let supplierPayments = 0;
   let operatingCashOutflows = 0;

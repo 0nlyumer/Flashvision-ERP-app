@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useDialog } from '../../context/DialogContext';
 import ResizableHeader from '../ui/ResizableHeader';
-import { DEFAULT_CHART_OF_ACCOUNTS } from '../../utils/financeEngine';
+import { DEFAULT_CHART_OF_ACCOUNTS, getBankAccounts } from '../../utils/financeEngine';
 import { useLocation } from 'react-router-dom';
 
 export default function Vouchers() {
@@ -33,11 +33,24 @@ export default function Vouchers() {
 
   const activeAccountsList = [...coaAccounts, ...customerAccounts, ...supplierAccounts];
 
+  // Bank accounts for BPV/BRV offset selection — resolved from the chart
+  // through the finance engine's resolver (112010 HBL / 112020 Meezan /
+  // 112030 MCB), never a hardcoded UI list.
+  const bankAccountsList = getBankAccounts(coaAccounts);
+
+  // Voucher families: JV is free-form Dr/Cr; CPV/BPV pay OUT of a cash/bank
+  // account (lines debit, offset account credited); CRV/BRV receive INTO a
+  // cash/bank account (lines credit, offset account debited).
+  const isPaymentType = voucherType === 'CPV' || voucherType === 'BPV';
+  const isReceiptType = voucherType === 'CRV' || voucherType === 'BRV';
+  const isOffsetType = isPaymentType || isReceiptType;
+  const isBankType = voucherType === 'BPV' || voucherType === 'BRV';
+
   // Pure real vouchers from ERP state with ZERO dummy fallback entries
   const vouchers = state.vouchers || [];
 
   // ==================== VOUCHER CREATION STATE ====================
-  const [voucherType, setVoucherType] = useState(''); // '' | 'JV' | 'CPV' | 'CRV'
+  const [voucherType, setVoucherType] = useState(''); // '' | 'JV' | 'CPV' | 'CRV' | 'BPV' | 'BRV'
   const [voucherDate, setVoucherDate] = useState(new Date().toISOString().substring(0, 10));
   const [reference, setReference] = useState('');
   const [overallNarration, setOverallNarration] = useState('');
@@ -123,10 +136,10 @@ export default function Vouchers() {
     } else if (field === 'amount') {
       const numVal = parseFloat(value) || 0;
       updated[index].amount = numVal;
-      if (voucherType === 'CPV') {
+      if (voucherType === 'CPV' || voucherType === 'BPV') {
         updated[index].debit = numVal;
         updated[index].credit = 0;
-      } else if (voucherType === 'CRV') {
+      } else if (voucherType === 'CRV' || voucherType === 'BRV') {
         updated[index].credit = numVal;
         updated[index].debit = 0;
       }
@@ -170,8 +183,10 @@ export default function Vouchers() {
       return;
     }
 
-    if ((voucherType === 'CPV' || voucherType === 'CRV') && !defaultCashAccount) {
-      appAlert("Please select a Default Cash Account for this cash voucher.");
+    if (isOffsetType && !defaultCashAccount) {
+      appAlert(isBankType
+        ? "Please select a Bank Account for this bank voucher."
+        : "Please select a Default Cash Account for this cash voucher.");
       return;
     }
 
@@ -213,15 +228,16 @@ export default function Vouchers() {
     let finalTotalDebit = sumDebit;
     let finalTotalCredit = sumCredit;
 
-    if (voucherType === 'CPV' || voucherType === 'CRV') {
+    if (isOffsetType) {
       const cashAcc = activeAccountsList.find(a => a.id === defaultCashAccount);
-      const cashAccName = cashAcc ? cashAcc.name : 'Cash Account';
-      
-      if (voucherType === 'CPV') {
+      const cashAccName = cashAcc ? cashAcc.name : (isBankType ? 'Bank Account' : 'Cash Account');
+      const offsetKind = isBankType ? 'bank' : 'cash';
+
+      if (isPaymentType) {
         const offsetLine = {
           accountId: defaultCashAccount,
           accountName: cashAccName,
-          narration: `Offset cash credit for voucher ${voucherId}`,
+          narration: `Offset ${offsetKind} credit for voucher ${voucherId}`,
           debit: 0,
           credit: sumDebit
         };
@@ -231,7 +247,7 @@ export default function Vouchers() {
         const offsetLine = {
           accountId: defaultCashAccount,
           accountName: cashAccName,
-          narration: `Offset cash debit for voucher ${voucherId}`,
+          narration: `Offset ${offsetKind} debit for voucher ${voucherId}`,
           debit: sumCredit,
           credit: 0
         };
@@ -390,7 +406,7 @@ export default function Vouchers() {
         <body>
           <div class="header">
             <div class="company">Flashvision ERP</div>
-            <div class="title">${voucher.type === 'JV' ? 'Journal Voucher' : voucher.type === 'CPV' ? 'Cash Payment Voucher' : 'Cash Receive Voucher'}</div>
+            <div class="title">${voucher.type === 'JV' ? 'Journal Voucher' : voucher.type === 'CPV' ? 'Cash Payment Voucher' : voucher.type === 'CRV' ? 'Cash Receive Voucher' : voucher.type === 'BPV' ? 'Bank Payment Voucher' : voucher.type === 'BRV' ? 'Bank Receipt Voucher' : 'Voucher'}</div>
           </div>
           
           <div class="grid">
@@ -500,6 +516,8 @@ export default function Vouchers() {
                   <option value="JV">General Journal Voucher (JV)</option>
                   <option value="CPV">Cash Payment Voucher (CPV)</option>
                   <option value="CRV">Cash Receive Voucher (CRV)</option>
+                  <option value="BPV">Bank Payment Voucher (BPV)</option>
+                  <option value="BRV">Bank Receipt Voucher (BRV)</option>
                 </select>
                 <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-primary pointer-events-none text-[20px]">
                   expand_more
@@ -512,6 +530,8 @@ export default function Vouchers() {
               {voucherType === 'JV' && 'Adjust transactions between general accounts.'}
               {voucherType === 'CPV' && 'Record and post cash payments.'}
               {voucherType === 'CRV' && 'Record and post cash receipts.'}
+              {voucherType === 'BPV' && 'Record and post payments from a bank account.'}
+              {voucherType === 'BRV' && 'Record and post receipts into a bank account.'}
             </div>
           </div>
 
@@ -544,11 +564,13 @@ export default function Vouchers() {
               />
             </div>
             
-            {(voucherType === 'CPV' || voucherType === 'CRV') ? (
+            {isOffsetType ? (
               <>
                 <div className="flex flex-col gap-2">
                   <label className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">
-                    {voucherType === 'CPV' ? 'Default Cash Credit Account' : 'Default Cash Debit Account'}
+                    {isBankType
+                      ? (isPaymentType ? 'Bank Credit Account (Payment From)' : 'Bank Debit Account (Receipt Into)')
+                      : (voucherType === 'CPV' ? 'Default Cash Credit Account' : 'Default Cash Debit Account')}
                   </label>
                   <div className="relative">
                     <select
@@ -556,8 +578,8 @@ export default function Vouchers() {
                       onChange={(e) => setDefaultCashAccount(e.target.value)}
                       className="w-full appearance-none bg-surface border border-outline-variant/30 rounded-xl px-4 py-3 text-xs font-bold text-primary focus:ring-2 focus:ring-primary/20 outline-none cursor-pointer"
                     >
-                      <option value="">Select Cash Account...</option>
-                      {activeAccountsList.map(acc => (
+                      <option value="">{isBankType ? 'Select Bank Account...' : 'Select Cash Account...'}</option>
+                      {(isBankType ? bankAccountsList : activeAccountsList).map(acc => (
                         <option key={acc.id} value={acc.id}>{acc.id} - {acc.name}</option>
                       ))}
                     </select>
@@ -670,7 +692,7 @@ export default function Vouchers() {
                       {/* Account selection */}
                       <div className="flex flex-col gap-1.5">
                         <label className="text-[9px] font-black uppercase text-on-surface-variant tracking-wider select-none">
-                          {voucherType === 'CPV' ? 'Debit Account' : voucherType === 'CRV' ? 'Credit Account' : 'Account selection'}
+                          {isPaymentType ? 'Debit Account' : isReceiptType ? 'Credit Account' : 'Account selection'}
                         </label>
                         <div className="relative">
                           <select
@@ -735,10 +757,10 @@ export default function Vouchers() {
                     <tr className="bg-surface/50 border-b border-outline-variant/10 text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">
                       <th className="p-4 w-12 text-center">#</th>
                       <th className="p-4 w-1/3">
-                        {voucherType === 'CPV' ? 'Debit Account' : voucherType === 'CRV' ? 'Credit Account' : 'Account Code & Name'}
+                        {isPaymentType ? 'Debit Account' : isReceiptType ? 'Credit Account' : 'Account Code & Name'}
                       </th>
                       <th className="p-4 w-1/3">Particulars / Narration</th>
-                      {(voucherType === 'CPV' || voucherType === 'CRV') ? (
+                      {isOffsetType ? (
                         <th className="p-4 w-48 text-right">Amount ({currencyCode})</th>
                       ) : (
                         <>
@@ -775,7 +797,7 @@ export default function Vouchers() {
                           />
                         </td>
                         
-                        {(voucherType === 'CPV' || voucherType === 'CRV') ? (
+                        {isOffsetType ? (
                           <td className="p-2 text-right">
                             <input
                               type="number"
@@ -918,24 +940,24 @@ export default function Vouchers() {
             </div>
             
             <div className="flex flex-col justify-between gap-4">
-              {(voucherType === 'CPV' || voucherType === 'CRV') ? (
+              {isOffsetType ? (
                 <div className="bg-surface-container-low/40 p-5 rounded-2xl border border-outline-variant/15 space-y-3.5">
                   <div className="flex justify-between items-center text-xs font-semibold text-on-surface-variant">
                     <span>Total Voucher Amount:</span>
                     <span className="font-bold text-on-surface text-sm">
-                      {currencyCode} {(voucherType === 'CPV' ? totalDebit : totalCredit).toLocaleString()}
+                      {currencyCode} {(isPaymentType ? totalDebit : totalCredit).toLocaleString()}
                     </span>
                   </div>
                   <div className="flex justify-between items-center text-xs font-semibold text-on-surface-variant border-b border-outline-variant/10 pb-3">
-                    <span>Offset Cash Account:</span>
+                    <span>Offset {isBankType ? 'Bank' : 'Cash'} Account:</span>
                     <span className="font-bold text-primary text-xs">
-                      {defaultCashAccount ? `${defaultCashAccount} (Will be automatically ${voucherType === 'CPV' ? 'credited' : 'debited'})` : 'None Selected'}
+                      {defaultCashAccount ? `${defaultCashAccount} (Will be automatically ${isPaymentType ? 'credited' : 'debited'})` : 'None Selected'}
                     </span>
                   </div>
                   <div className="flex justify-between items-center font-bold">
                     <span className="text-xs uppercase tracking-wider text-on-surface">Double Entry Status:</span>
                     <span className={`px-3 py-1 text-xs rounded-full ${defaultCashAccount ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>
-                      {defaultCashAccount ? 'Auto-Balanced on Posting' : 'Requires Cash Account Selection'}
+                      {defaultCashAccount ? 'Auto-Balanced on Posting' : (isBankType ? 'Requires Bank Account Selection' : 'Requires Cash Account Selection')}
                     </span>
                   </div>
                 </div>
@@ -1009,6 +1031,8 @@ export default function Vouchers() {
                   <option value="JV">Journal (JV)</option>
                   <option value="CPV">Payment (CPV)</option>
                   <option value="CRV">Receive (CRV)</option>
+                  <option value="BPV">Bank Payment (BPV)</option>
+                  <option value="BRV">Bank Receipt (BRV)</option>
                 </select>
                 <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none text-[20px]">
                   expand_more
@@ -1112,7 +1136,7 @@ export default function Vouchers() {
                         )}
                         {visibleColumns.type && (
                           <td className="px-6 py-4 text-sm font-semibold text-on-surface">
-                            {voucher.type === 'JV' ? 'Journal (JV)' : voucher.type === 'CPV' ? 'Payment (CPV)' : 'Receive (CRV)'}
+                            {voucher.type === 'JV' ? 'Journal (JV)' : voucher.type === 'CPV' ? 'Payment (CPV)' : voucher.type === 'CRV' ? 'Receive (CRV)' : voucher.type === 'BPV' ? 'Bank Payment (BPV)' : voucher.type === 'BRV' ? 'Bank Receipt (BRV)' : voucher.type}
                           </td>
                         )}
                         {visibleColumns.reference && (
