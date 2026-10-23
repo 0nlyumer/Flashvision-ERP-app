@@ -1,4 +1,6 @@
 
+import { resolvePayrollAccountCode } from './payrollAccountMapping';
+
 // Universal filter for legacy mock/dummy invoice & voucher identifiers
 const DUMMY_IDS = new Set([
   'INV-8901', 'INV-8902', 'INV-8903', 'INV-8904',
@@ -444,41 +446,129 @@ export const generateGeneralLedger = (state = {}, filters = {}) => {
   });
 
   // E. Actual HR Generated Salaries -> Post to GL
+  // Accounts resolve through the HR Payroll Account Mapping
+  // (state.payroll_account_mapping — persisted in app_config under key
+  // 'payrollAccountMapping', maintained in HR Settings): each payroll
+  // component posts to its mapped GL account, and every unmapped category
+  // falls back EXACTLY to the historical hardcoded accounts (expense
+  // Dr 512010 / bank Cr 112010), so with no mapping saved the resolved
+  // accounts — and the legacy entries below — are unchanged. The mapping
+  // screen defines no bank/credit category, so the disbursement credit
+  // stays on the historical bank account.
+  const payrollMappings = Array.isArray(state.payroll_account_mapping) ? state.payroll_account_mapping : [];
+  const SALARY_EXPENSE_FALLBACK = '512010';
+  const SALARY_BANK_ACCOUNT = '112010';
+  const PAYROLL_FALLBACK_NAMES = {
+    '512010': 'Direct Factory Labor & Overtime Wages',
+    '112010': 'HBL Main Operations A/C 0019284',
+    '214010': 'Accrued Factory Wages & Admin Salaries'
+  };
+  const payrollAccountName = (code) => accountMap.get(code)?.name || PAYROLL_FALLBACK_NAMES[code] || code;
+  const salaryExpenseAccount = resolvePayrollAccountCode(payrollMappings, 'base_salary', SALARY_EXPENSE_FALLBACK);
+  const pushPayrollEntry = ({ date, voucherNo, accountId, party, costCenter, narration, debit, credit }) => {
+    rawEntries.push({
+      id: `GLE-${seq++}`,
+      date,
+      voucherType: 'Payroll Disbursement',
+      voucherNo,
+      sourceDocId: voucherNo,
+      accountId,
+      accountName: payrollAccountName(accountId),
+      party,
+      partyType: 'Employee',
+      costCenter,
+      narration,
+      debit: debit || 0,
+      credit: credit || 0
+    });
+  };
+
   hrSalaries.forEach(sal => {
+    // Month records — the shape HRSalaryGeneration actually saves on
+    // finalize: { month, division, status, generatedAt, records: [...] }.
+    // (The legacy flat shape below never matches these records, so before
+    // this phase finalized payroll produced no GL entries at all.)
+    if (sal && Array.isArray(sal.records)) {
+      const salDate = sal.generatedAt || sal.date || sal.month || new Date().toISOString();
+      const salId = sal.id || `PAYROLL-${sal.month || seq}`;
+      sal.records.forEach(row => {
+        if (!row || typeof row !== 'object') return;
+        const empName = row.employeeName || 'Staff Payroll';
+        const net = round2(row.netSalary || 0);
+        const components = [
+          { categoryId: 'base_salary', label: 'Base Salary', amount: round2(row.earnedBasicSalary ?? row.basicSalary ?? 0) },
+          { categoryId: 'overtime_pay', label: 'Overtime Pay', amount: round2(row.overtime || 0) },
+          { categoryId: 'special_allowance', label: 'Special Allowances', amount: round2(row.allowance || 0) }
+        ].filter(c => c.amount > 0);
+        const gross = round2(components.reduce((s, c) => s + c.amount, 0));
+        const deductionsTotal = round2((Number(row.lateDeduction) || 0) + (Number(row.absents) || 0) + (Number(row.fine) || 0) + (Number(row.loan) || 0) + (Number(row.advanceAmount) || 0));
+        const deductionsAccount = resolvePayrollAccountCode(payrollMappings, 'deductions', '');
+        const componentAccounts = components.map(c => resolvePayrollAccountCode(payrollMappings, c.categoryId, SALARY_EXPENSE_FALLBACK));
+        // Split posting only when the mapping actually routes money
+        // somewhere non-default AND the row's components reconcile
+        // exactly with its net (gross - deductions = net).
+        const splitRouted = componentAccounts.some(code => code !== SALARY_EXPENSE_FALLBACK) || (deductionsAccount !== '' && deductionsTotal > 0);
+        const reconciles = round2(gross - deductionsTotal) === net;
+        if (gross > 0 && splitRouted && reconciles) {
+          components.forEach((c, i) => {
+            pushPayrollEntry({
+              date: salDate, voucherNo: salId, accountId: componentAccounts[i], party: empName,
+              costCenter: 'CC-DRY-01',
+              narration: c.categoryId === 'base_salary' ? `Monthly salary disbursement for ${empName}` : `${c.label} for ${empName}`,
+              debit: c.amount
+            });
+          });
+          if (deductionsAccount !== '' && deductionsTotal > 0) {
+            pushPayrollEntry({
+              date: salDate, voucherNo: salId, accountId: deductionsAccount, party: empName,
+              costCenter: 'CC-ADMIN-07', narration: `Payroll deductions for ${empName}`,
+              credit: deductionsTotal
+            });
+          }
+          if (net > 0) {
+            pushPayrollEntry({
+              date: salDate, voucherNo: salId, accountId: SALARY_BANK_ACCOUNT, party: empName,
+              costCenter: 'CC-ADMIN-07', narration: `Net payroll paid via HBL Direct Transfer`,
+              credit: net
+            });
+          }
+        } else if (net > 0) {
+          // Unmapped (or non-reconciling) rows keep the historical single
+          // net posting, per employee.
+          pushPayrollEntry({
+            date: salDate, voucherNo: salId, accountId: salaryExpenseAccount, party: empName,
+            costCenter: 'CC-DRY-01', narration: `Monthly salary disbursement for ${empName}`,
+            debit: net
+          });
+          pushPayrollEntry({
+            date: salDate, voucherNo: salId, accountId: SALARY_BANK_ACCOUNT, party: empName,
+            costCenter: 'CC-ADMIN-07', narration: `Net payroll paid via HBL Direct Transfer`,
+            credit: net
+          });
+        }
+      });
+      return;
+    }
+
+    // Legacy flat salary records (pre month-record shape).
     const salDate = sal.date || sal.month || new Date().toISOString();
     const salId = sal.id || `PAY-${seq}`;
     const netSal = round2(sal.netSalary || sal.amount || 0);
 
     if (netSal > 0) {
-      rawEntries.push({
-        id: `GLE-${seq++}`,
-        date: salDate,
-        voucherType: 'Payroll Disbursement',
-        voucherNo: salId,
-        sourceDocId: salId,
-        accountId: '512010',
-        accountName: accountMap.get('512010')?.name || 'Direct Factory Labor & Overtime Wages',
+      pushPayrollEntry({
+        date: salDate, voucherNo: salId, accountId: salaryExpenseAccount,
         party: sal.employeeName || 'Staff Payroll',
-        partyType: 'Employee',
         costCenter: 'CC-DRY-01',
         narration: `Monthly salary disbursement for ${sal.employeeName || 'Staff'}`,
-        debit: netSal,
-        credit: 0
+        debit: netSal
       });
 
-      rawEntries.push({
-        id: `GLE-${seq++}`,
-        date: salDate,
-        voucherType: 'Payroll Disbursement',
-        voucherNo: salId,
-        sourceDocId: salId,
-        accountId: '112010',
-        accountName: accountMap.get('112010')?.name || 'HBL Main Operations A/C 0019284',
+      pushPayrollEntry({
+        date: salDate, voucherNo: salId, accountId: SALARY_BANK_ACCOUNT,
         party: sal.employeeName || 'Staff Payroll',
-        partyType: 'Employee',
         costCenter: 'CC-ADMIN-07',
         narration: `Net payroll paid via HBL Direct Transfer`,
-        debit: 0,
         credit: netSal
       });
     }
