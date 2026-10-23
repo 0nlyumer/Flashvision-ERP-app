@@ -1,4 +1,6 @@
 import HRPayslipModal from './HRPayslipModal';
+import SalaryPrintStudio from './SalaryPrintStudio';
+import { normalizeSalaryPrintSettings } from '../../utils/salaryPrintSettings';
 import { getEffectiveDutyHours, getEffectiveOvertimeMultiplier } from '../../utils/hrDutyHours';
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
@@ -93,6 +95,39 @@ export default function HRSalaryGeneration({ isMobile }) {
   // Hidden print container ref for PDF / Image export
   const printStatementRef = useRef(null);
   const [exportTargetRecord, setExportTargetRecord] = useState(null);
+
+  // Salary Print Studio (HR Prints): big preview popup + gear settings.
+  // Settings persist in the database via AppContext (app_config
+  // 'salaryPrintSettings', state key 'salary_print_settings').
+  const [isSalaryPrintOpen, setIsSalaryPrintOpen] = useState(false);
+  const [salaryPrintSettingsOpen, setSalaryPrintSettingsOpen] = useState(false);
+  const salaryPrintSettings = normalizeSalaryPrintSettings(state.salary_print_settings);
+  const salaryWidthsAppliedRef = useRef(false);
+
+  const openSalaryPrint = (withSettings) => {
+    setSalaryPrintSettingsOpen(withSettings);
+    setIsSalaryPrintOpen(true);
+  };
+
+  const handleSalaryColumnWidthChange = (colId, width) => {
+    setColumns(prev => prev.map(c => (c.id === colId ? { ...c, width } : c)));
+  };
+
+  const handleSaveSalaryPrintSettings = (next) => {
+    setCollection('salary_print_settings', next);
+  };
+
+  // Apply the database-saved print column widths onto the screen columns
+  // once, when the settings arrive from app_config — so the printed
+  // statement follows the account's saved layout on any machine.
+  useEffect(() => {
+    if (salaryWidthsAppliedRef.current) return;
+    const widths = salaryPrintSettings.columnWidths || {};
+    if (Object.keys(widths).length === 0) return;
+    salaryWidthsAppliedRef.current = true;
+    setColumns(prev => prev.map(c => (widths[c.id] ? { ...c, width: widths[c.id] } : c)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.salary_print_settings]);
 
   // Default Columns Definition (includes Paid Days / Payable Days column)
   const DEFAULT_COLUMNS = [
@@ -1381,6 +1416,35 @@ export default function HRSalaryGeneration({ isMobile }) {
                 </div>
 
                 <div className="flex items-center gap-3 self-stretch sm:self-auto justify-end">
+                  {/* Salary Print Studio: Print button + settings gear (HR Prints) */}
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => openSalaryPrint(false)}
+                      disabled={filteredList.length === 0}
+                      title={filteredList.length === 0 ? 'Calculate salaries first — nothing to print yet' : 'Print salary statement (preview studio)'}
+                      className={`flex items-center gap-2 px-4 h-9 rounded-xl text-xs font-bold transition-all ${
+                        filteredList.length === 0
+                          ? 'bg-neutral-300 dark:bg-neutral-700 text-neutral-500 cursor-not-allowed opacity-60'
+                          : 'bg-primary text-on-primary hover:bg-primary-container active:scale-[0.98] shadow-sm cursor-pointer'
+                      }`}
+                    >
+                      <span className="material-symbols-outlined text-[17px]">print</span>
+                      Print
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => openSalaryPrint(true)}
+                      disabled={filteredList.length === 0}
+                      title="Salary print settings (header, slogan, columns, signatures)"
+                      className={`w-9 h-9 flex items-center justify-center rounded-xl bg-surface-container-low hover:bg-surface-container-high border border-outline-variant/20 text-on-surface-variant transition-colors ${
+                        filteredList.length === 0 ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
+                      }`}
+                    >
+                      <span className="material-symbols-outlined text-[19px]">settings</span>
+                    </button>
+                  </div>
+
                   {/* Status Filter */}
                   <div className="flex items-center gap-2 bg-surface-container-low px-3 py-1.5 rounded-xl border border-outline-variant/10">
                     <span className="text-xs font-semibold text-on-surface-variant">Status:</span>
@@ -2238,6 +2302,26 @@ export default function HRSalaryGeneration({ isMobile }) {
         isOpen={Boolean(selectedRecordForDetail)}
         onClose={() => setSelectedRecordForDetail(null)}
         slip={formattedDetailSlip}
+      />
+
+      {/* ========================================================= */}
+      {/* SALARY PRINT STUDIO (HR Prints): big preview popup built  */}
+      {/* from the live screen state — visible columns + totals     */}
+      {/* ========================================================= */}
+      <SalaryPrintStudio
+        isOpen={isSalaryPrintOpen}
+        onClose={() => setIsSalaryPrintOpen(false)}
+        initialSettingsOpen={salaryPrintSettingsOpen}
+        columns={visibleColumns}
+        rows={filteredList}
+        divisionName={selectedDivision !== 'ALL' ? selectedDivision : (state.adminSetup?.companyName || 'All Divisions')}
+        periodLabel={payrollPeriod ? getPeriodLabel(payrollPeriod) : ''}
+        periodKey={payrollPeriod}
+        currencySymbol={currSym}
+        settings={salaryPrintSettings}
+        onSaveSettings={handleSaveSalaryPrintSettings}
+        onColumnWidthChange={handleSalaryColumnWidthChange}
+        onNotify={triggerToast}
       />
 
       {/* ========================================================= */}

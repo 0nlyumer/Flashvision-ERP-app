@@ -12,10 +12,11 @@ import {
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { applyTheme } from '../utils/theme';
 import { supabase } from '../utils/supabaseClient';
-import { STEP1_ENTITY_TABLES, loadStep1EntitiesFromTables, syncEntityDiffToTable, recordKeyWithFallback, loadAdminSetupFromTable, syncAdminSetupToTable, loadFGComboConfigFromTable, syncFGComboConfigToTable, loadFlashAmConfigFromTable, syncFlashAmConfigToTable, loadCategoryPrefixesFromTable, syncCategoryPrefixesToTable, loadScalarsFromTable, syncScalarsToTable } from '../utils/entityTables';
+import { STEP1_ENTITY_TABLES, loadStep1EntitiesFromTables, syncEntityDiffToTable, recordKeyWithFallback, loadAdminSetupFromTable, syncAdminSetupToTable, loadFGComboConfigFromTable, syncFGComboConfigToTable, loadFlashAmConfigFromTable, syncFlashAmConfigToTable, loadSalaryPrintSettingsFromTable, syncSalaryPrintSettingsToTable, loadCategoryPrefixesFromTable, syncCategoryPrefixesToTable, loadScalarsFromTable, syncScalarsToTable } from '../utils/entityTables';
 import { formatLineCode, maxLineCodeNumber } from '../utils/itemCodes';
 import { getInitialFGConfig, saveFGConfig, normalizeFGConfig } from '../utils/fgCombinationUtils';
 import { getInitialFlashAmConfig, normalizeFlashAmConfig } from '../utils/flashAmConfig';
+import { getInitialSalaryPrintSettings, normalizeSalaryPrintSettings } from '../utils/salaryPrintSettings';
 import { DEFAULT_CHART_OF_ACCOUNTS } from '../utils/financeEngine';
 
 const AppContext = createContext();
@@ -31,6 +32,7 @@ const initialMockState = {
   currentUser: null,
   fg_combinations_config: getInitialFGConfig(),
   flash_am_config: getInitialFlashAmConfig(),
+  salary_print_settings: getInitialSalaryPrintSettings(),
   customers: [],
   suppliers: [],
   items: [],
@@ -580,6 +582,9 @@ const getSanitizedSyncState = (stateObj) => {
   // FLASHAM PHASE A: the Flash AM terminal config lives ONLY in app_config
   // (key 'flashAmConfig', table copy wins on load) — never in the blob.
   delete cleanState.flash_am_config;
+  // HR PRINTS: the Salary Generation print settings live ONLY in app_config
+  // (key 'salaryPrintSettings', table copy wins on load) — never in the blob.
+  delete cleanState.salary_print_settings;
   if (Array.isArray(cleanState.documentWarehouseBinders)) {
     lastGoodBindersCache = cleanState.documentWarehouseBinders;
   } else if (lastGoodBindersCache) {
@@ -642,6 +647,8 @@ export const AppProvider = ({ children }) => {
   const fgComboConfigSnapshotRef = useRef(null);
   const flashAmConfigLoadedRef = useRef(false);
   const flashAmConfigSnapshotRef = useRef(null);
+  const salaryPrintSettingsLoadedRef = useRef(false);
+  const salaryPrintSettingsSnapshotRef = useRef(null);
   const categoryPrefixesLoadedRef = useRef(false);
   const categoryPrefixesSnapshotRef = useRef(null);
   const scalarsLoadedRef = useRef(false);
@@ -1405,6 +1412,7 @@ export const AppProvider = ({ children }) => {
         const adminSetupFromTable = await loadAdminSetupFromTable();
         const fgComboConfigFromTable = await loadFGComboConfigFromTable();
         const flashAmConfigFromTable = await loadFlashAmConfigFromTable();
+        const salaryPrintSettingsFromTable = await loadSalaryPrintSettingsFromTable();
         const categoryPrefixesFromTable = await loadCategoryPrefixesFromTable();
         const scalarsFromTable = await loadScalarsFromTable();
         setState(prev => {
@@ -1453,6 +1461,19 @@ export const AppProvider = ({ children }) => {
             flashAmConfigSnapshotRef.current = null;
           }
           flashAmConfigLoadedRef.current = true;
+          // HR PRINTS: the app_config copy of the Salary Generation print
+          // settings wins when present; when the table has none yet, the
+          // snapshot stays null so the write-through effect seeds the table
+          // with the defaults — the settings survive reload, follow the
+          // account, and can never be lost in a blob flip.
+          if (salaryPrintSettingsFromTable) {
+            const normalizedSalaryPrint = normalizeSalaryPrintSettings(salaryPrintSettingsFromTable);
+            next.salary_print_settings = normalizedSalaryPrint;
+            salaryPrintSettingsSnapshotRef.current = normalizedSalaryPrint;
+          } else {
+            salaryPrintSettingsSnapshotRef.current = null;
+          }
+          salaryPrintSettingsLoadedRef.current = true;
           // PHASE C STEP 6: app-config completion — the app_config copy of
           // categoryPrefixes wins over the blob copy when present.
           if (categoryPrefixesFromTable) {
@@ -1484,6 +1505,8 @@ export const AppProvider = ({ children }) => {
           fgComboConfigLoadedRef.current = true;
           flashAmConfigSnapshotRef.current = null;
           flashAmConfigLoadedRef.current = true;
+          salaryPrintSettingsSnapshotRef.current = null;
+          salaryPrintSettingsLoadedRef.current = true;
           categoryPrefixesSnapshotRef.current = prev.categoryPrefixes || null;
           categoryPrefixesLoadedRef.current = true;
           scalarsSnapshotRef.current = JSON.stringify({ buildVersion: prev.buildVersion, productionTarget: prev.productionTarget, isGlobalPaginated: prev.isGlobalPaginated });
@@ -4897,6 +4920,7 @@ export const AppProvider = ({ children }) => {
   const adminSetupForSync = state.adminSetup;
   const fgComboConfigForSync = state.fg_combinations_config;
   const flashAmConfigForSync = state.flash_am_config;
+  const salaryPrintSettingsForSync = state.salary_print_settings;
   const categoryPrefixesForSync = state.categoryPrefixes;
   const scalarsBundleForSync = { buildVersion: state.buildVersion, lastUpdatedBy: state.lastUpdatedBy, productionTarget: state.productionTarget, isGlobalPaginated: state.isGlobalPaginated };
   const scalarsWatchKey = JSON.stringify({ buildVersion: state.buildVersion, productionTarget: state.productionTarget, isGlobalPaginated: state.isGlobalPaginated });
@@ -4989,6 +5013,21 @@ export const AppProvider = ({ children }) => {
     }, 250);
     return () => clearTimeout(timer);
   }, [flashAmConfigForSync]);
+
+  // HR PRINTS: the Salary Generation print settings write-through to
+  // app_config on change — same durable pattern as flashAmConfig. A null
+  // snapshot means "table had no copy at load", so the first effect run
+  // seeds it with the current (default) settings.
+  useEffect(() => {
+    if (!salaryPrintSettingsLoadedRef.current) return;
+    if (!salaryPrintSettingsForSync || typeof salaryPrintSettingsForSync !== 'object') return;
+    if (salaryPrintSettingsSnapshotRef.current === salaryPrintSettingsForSync) return;
+    const timer = setTimeout(() => {
+      salaryPrintSettingsSnapshotRef.current = salaryPrintSettingsForSync;
+      syncSalaryPrintSettingsToTable(salaryPrintSettingsForSync);
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [salaryPrintSettingsForSync]);
 
   // PHASE C STEP 6: categoryPrefixes ride in app_config like adminSetup —
   // the table copy wins on load; changes write through (debounced).

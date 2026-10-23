@@ -1,4 +1,5 @@
 import React, { useRef } from 'react';
+import { createPortal } from 'react-dom';
 
 // Number to Words Converter (Pakistani / South Asian & Western standard)
 export function numberToWords(num) {
@@ -44,10 +45,10 @@ export default function HRPayslipModal({ isOpen, onClose, slip }) {
 
   const amountInWords = slip.amountInWords || numberToWords(slip.netSalary);
 
-  return (
-    <div className="fixed inset-0 z-[10000] bg-black/60 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 overflow-y-auto print:p-0 print:bg-white animate-fade-in">
+  const modalContent = (
+    <div id="fv-payslip-print-root" className="fixed inset-0 z-[10000] bg-black/60 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 overflow-y-auto print:p-0 print:bg-white animate-fade-in">
       {/* Container Box */}
-      <div className="bg-white text-slate-900 rounded-3xl shadow-2xl border border-slate-200 w-full max-w-4xl max-h-[96vh] flex flex-col overflow-hidden print:max-w-none print:max-h-none print:shadow-none print:border-none print:rounded-none">
+      <div className="fv-payslip-sheet bg-white text-slate-900 rounded-3xl shadow-2xl border border-slate-200 w-full max-w-4xl max-h-[96vh] flex flex-col overflow-hidden print:max-w-none print:max-h-none print:shadow-none print:border-none print:rounded-none">
         
         {/* Modal Top Actions Bar (Hidden in Print) */}
         <div className="px-6 py-3.5 bg-slate-50 border-b border-slate-200 flex justify-between items-center print:hidden shrink-0">
@@ -77,7 +78,7 @@ export default function HRPayslipModal({ isOpen, onClose, slip }) {
         </div>
 
         {/* Printable Payslip Body */}
-        <div className="flex-1 overflow-y-auto p-6 sm:p-8 space-y-4 print:p-0 print:space-y-3 font-sans custom-scrollbar select-none" ref={printRef}>
+        <div className="fv-payslip-body flex-1 overflow-y-auto p-6 sm:p-8 space-y-4 print:p-0 print:space-y-3 font-sans custom-scrollbar select-none" ref={printRef}>
           
           {/* 1. Header (Brand & Month Badge) */}
           <div className="flex justify-between items-start border-b border-slate-200 pb-4">
@@ -344,28 +345,68 @@ export default function HRPayslipModal({ isOpen, onClose, slip }) {
         </div>
       </div>
 
-      {/* Embedded CSS for Exact 100% / 110% Cross-Browser Printing */}
+      {/* Embedded CSS for one-page A4 printing (HR Prints fix).
+          Root causes of the old 2-page spill: (1) the slip was rendered
+          deep inside the app tree and the old rules only used
+          `visibility: hidden` on the rest of the app — hidden content
+          still occupies layout height, so Chrome paginated it; the modal
+          is now portaled to <body> (same pattern as FGQuickConfigModal)
+          and sibling content is display:none'd out of the print flow.
+          (2) The scrollable body kept `overflow-y: auto` + the 96vh cap
+          in print, which mis-paginates; both are released below.
+          (3) A small print-only zoom guarantees the (design-final) slip
+          fits the A4 printable height with headroom. Screen UI unchanged. */}
       <style>{`
         @media print {
           @page {
             size: A4 portrait;
-            margin: 8mm 10mm 8mm 10mm;
+            margin: 6mm 8mm 6mm 8mm;
           }
-          body * {
-            visibility: hidden;
+          body {
+            margin: 0 !important;
+            padding: 0 !important;
+            background: #ffffff !important;
+          }
+          body > *:not(#fv-payslip-print-root) {
+            display: none !important;
+          }
+          #fv-payslip-print-root {
+            position: static !important;
+            display: block !important;
+            width: auto !important;
+            height: auto !important;
+            overflow: visible !important;
+            background: #ffffff !important;
+            padding: 0 !important;
+            margin: 0 !important;
+          }
+          #fv-payslip-print-root * {
+            visibility: visible !important;
           }
           .print\\:hidden {
             display: none !important;
           }
-          .fixed {
-            position: static !important;
-            background: white !important;
-            padding: 0 !important;
-            margin: 0 !important;
+          .fv-payslip-sheet {
+            display: block !important;
+            width: 100% !important;
+            max-width: none !important;
+            max-height: none !important;
+            height: auto !important;
             overflow: visible !important;
+            box-shadow: none !important;
+            border: none !important;
+            border-radius: 0 !important;
           }
-          .fixed * {
-            visibility: visible;
+          .fv-payslip-body {
+            display: block !important;
+            overflow: visible !important;
+            max-height: none !important;
+            height: auto !important;
+            flex: none !important;
+            padding: 0 !important;
+            zoom: 0.94;
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
           }
           * {
             -webkit-print-color-adjust: exact !important;
@@ -376,4 +417,6 @@ export default function HRPayslipModal({ isOpen, onClose, slip }) {
       `}</style>
     </div>
   );
+
+  return typeof document !== 'undefined' ? createPortal(modalContent, document.body) : modalContent;
 }

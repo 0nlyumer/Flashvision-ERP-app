@@ -434,6 +434,37 @@ export const syncFlashAmConfigToTable = async (config) => {
   }
 };
 
+// --- Salary Print Settings (app_config) — HR Prints phase ------------------
+// Salary Generation print-studio settings ride in app_config under key
+// 'salaryPrintSettings': the table copy wins on load and changes write
+// through, mirroring flashAmConfig. Never stored in the blob/localStorage.
+
+export const loadSalaryPrintSettingsFromTable = async () => {
+  try {
+    const { data, error } = await supabase
+      .from('app_config')
+      .select('data')
+      .eq('key', 'salaryPrintSettings')
+      .maybeSingle();
+    if (error || !data || typeof data.data !== 'object' || data.data === null) return null;
+    return data.data;
+  } catch (_) {
+    return null;
+  }
+};
+
+export const syncSalaryPrintSettingsToTable = async (settings) => {
+  if (!settings || typeof settings !== 'object') return;
+  try {
+    const { error } = await supabase
+      .from('app_config')
+      .upsert({ key: 'salaryPrintSettings', data: settings, updated_at: new Date().toISOString() }, { onConflict: 'key' });
+    if (error) throw error;
+  } catch (err) {
+    console.warn('[EntityTables] salaryPrintSettings write-through failed:', err?.message || err);
+  }
+};
+
 // --- categoryPrefixes + scalars (app_config) — Phase C Step 6 -------------
 // App-config completion: the remaining blob config now also rides in
 // app_config, mirroring adminSetup. categoryPrefixes (the item-code prefix
