@@ -4771,6 +4771,13 @@ export const AppProvider = ({ children }) => {
   const step3Deliveries = state.deliveries;
   const step3SalesInvoices = state.salesInvoices;
   const step3Returns = state.returns;
+  const step4Adjustments = state.adjustments;
+  const step4StockTransfers = state.stockTransfers;
+  const step4Grns = state.grns;
+  const step4InwardGatePasses = state.inwardGatePasses;
+  const step4PurchaseDemands = state.purchaseDemands;
+  const step4PurchaseOrders = state.purchaseOrders;
+  const step4PurchaseInvoices = state.purchaseInvoices;
   const adminSetupForSync = state.adminSetup;
   const fgComboConfigForSync = state.fg_combinations_config;
   useEffect(() => {
@@ -4789,9 +4796,16 @@ export const AppProvider = ({ children }) => {
       syncEntityDiffToTable('deliveries', step3Deliveries, step1SnapshotsRef.current.deliveries);
       syncEntityDiffToTable('salesInvoices', step3SalesInvoices, step1SnapshotsRef.current.salesInvoices);
       syncEntityDiffToTable('returns', step3Returns, step1SnapshotsRef.current.returns);
+      syncEntityDiffToTable('adjustments', step4Adjustments, step1SnapshotsRef.current.adjustments);
+      syncEntityDiffToTable('stockTransfers', step4StockTransfers, step1SnapshotsRef.current.stockTransfers);
+      syncEntityDiffToTable('grns', step4Grns, step1SnapshotsRef.current.grns);
+      syncEntityDiffToTable('inwardGatePasses', step4InwardGatePasses, step1SnapshotsRef.current.inwardGatePasses);
+      syncEntityDiffToTable('purchaseDemands', step4PurchaseDemands, step1SnapshotsRef.current.purchaseDemands);
+      syncEntityDiffToTable('purchaseOrders', step4PurchaseOrders, step1SnapshotsRef.current.purchaseOrders);
+      syncEntityDiffToTable('purchaseInvoices', step4PurchaseInvoices, step1SnapshotsRef.current.purchaseInvoices);
     }, 250);
     return () => clearTimeout(timer);
-  }, [step1Items, step1Customers, step1Suppliers, step1UomList, step1PackingTypesList, step1RawMaterialTypesList, step1ItemCategories, step2ProductionPlans, step2ProductionOutputs, step3SaleOrders, step3Deliveries, step3SalesInvoices, step3Returns]);
+  }, [step1Items, step1Customers, step1Suppliers, step1UomList, step1PackingTypesList, step1RawMaterialTypesList, step1ItemCategories, step2ProductionPlans, step2ProductionOutputs, step3SaleOrders, step3Deliveries, step3SalesInvoices, step3Returns, step4Adjustments, step4StockTransfers, step4Grns, step4InwardGatePasses, step4PurchaseDemands, step4PurchaseOrders, step4PurchaseInvoices]);
 
   // PHASE C STEP 3 (addendum): adminSetup — incl. the base currency — is
   // persisted to the app_config table so the selection survives blob

@@ -1,4 +1,4 @@
-// entityTables.js — Phase C Step 1, Step 2 & Step 3: per-entity Supabase tables for reference data and production.
+// entityTables.js — Phase C Steps 1–4: per-entity Supabase tables for reference data, production, sales, purchasing & inventory.
 //
 // App state still lives in AppContext and the erp_state blob remains a
 // fallback copy, but these collections are now ALSO kept in their own
@@ -18,6 +18,13 @@
 //   deliveries           deliveries
 //   salesInvoices        sales_invoices
 //   returns              returns
+//   adjustments          adjustments
+//   stockTransfers       stock_transfers
+//   grns                 grns
+//   inwardGatePasses     inward_gate_passes
+//   purchaseDemands      purchase_demands
+//   purchaseOrders       purchase_orders
+//   purchaseInvoices     purchase_invoices
 //
 // Every table row is { id, ...promoted scalar columns, data } where `data`
 // holds the complete original record — reads use `data` so no field is lost.
@@ -40,6 +47,13 @@ export const STEP1_ENTITY_TABLES = {
   deliveries: 'deliveries',
   salesInvoices: 'sales_invoices',
   returns: 'returns',
+  adjustments: 'adjustments',
+  stockTransfers: 'stock_transfers',
+  grns: 'grns',
+  inwardGatePasses: 'inward_gate_passes',
+  purchaseDemands: 'purchase_demands',
+  purchaseOrders: 'purchase_orders',
+  purchaseInvoices: 'purchase_invoices',
 };
 
 // Promoted columns per table (verified 2026-10-22 against the live schema).
@@ -69,6 +83,13 @@ const PROMOTED_COLUMNS = {
   deliveries: [ ['customer_id', 'text'], ['customer_name', 'text'], ['status', 'text'], ['date', 'text'], ['is_invoiced', 'boolean'] ],
   sales_invoices: [ ['delivery_id', 'text'] ],
   returns: [ ['order_id', 'text'], ['customer_name', 'text'], ['date', 'text'] ],
+  adjustments: [ ['item_id', 'text'], ['item_code', 'text'], ['type', 'text'], ['date', 'text'] ],
+  stock_transfers: [ ['status', 'text'], ['date', 'text'], ['source', 'text'], ['destination', 'text'] ],
+  grns: [ ['po_id', 'text'], ['igp_id', 'text'], ['supplier_id', 'text'], ['supplier_name', 'text'], ['status', 'text'], ['date', 'text'], ['is_invoiced', 'boolean'] ],
+  inward_gate_passes: [ ['po_id', 'text'], ['supplier_id', 'text'], ['supplier_name', 'text'], ['status', 'text'], ['date', 'text'], ['is_invoiced', 'boolean'] ],
+  purchase_demands: [ ['status', 'text'], ['date', 'text'], ['department', 'text'] ],
+  purchase_orders: [ ['pd_id', 'text'], ['supplier_id', 'text'], ['supplier_name', 'text'], ['status', 'text'], ['date', 'text'] ],
+  purchase_invoices: [ ['source_id', 'text'] ],
 };
 
 const camel = (snake) => {
