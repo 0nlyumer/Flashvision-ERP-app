@@ -38,19 +38,22 @@ export default function Vouchers() {
   // 112030 MCB), never a hardcoded UI list.
   const bankAccountsList = getBankAccounts(coaAccounts);
 
-  // Voucher families: JV is free-form Dr/Cr; CPV/BPV pay OUT of a cash/bank
-  // account (lines debit, offset account credited); CRV/BRV receive INTO a
-  // cash/bank account (lines credit, offset account debited).
-  const isPaymentType = voucherType === 'CPV' || voucherType === 'BPV';
-  const isReceiptType = voucherType === 'CRV' || voucherType === 'BRV';
-  const isOffsetType = isPaymentType || isReceiptType;
-  const isBankType = voucherType === 'BPV' || voucherType === 'BRV';
-
   // Pure real vouchers from ERP state with ZERO dummy fallback entries
   const vouchers = state.vouchers || [];
 
   // ==================== VOUCHER CREATION STATE ====================
   const [voucherType, setVoucherType] = useState(''); // '' | 'JV' | 'CPV' | 'CRV' | 'BPV' | 'BRV'
+
+  // Voucher families: JV is free-form Dr/Cr; CPV/BPV pay OUT of a cash/bank
+  // account (lines debit, offset account credited); CRV/BRV receive INTO a
+  // cash/bank account (lines credit, offset account debited).
+  // NOTE: these MUST stay below the voucherType useState above — reading
+  // voucherType before its declaration throws a TDZ ReferenceError and
+  // crashes the whole view on first render.
+  const isPaymentType = voucherType === 'CPV' || voucherType === 'BPV';
+  const isReceiptType = voucherType === 'CRV' || voucherType === 'BRV';
+  const isOffsetType = isPaymentType || isReceiptType;
+  const isBankType = voucherType === 'BPV' || voucherType === 'BRV';
   const [voucherDate, setVoucherDate] = useState(new Date().toISOString().substring(0, 10));
   const [reference, setReference] = useState('');
   const [overallNarration, setOverallNarration] = useState('');
