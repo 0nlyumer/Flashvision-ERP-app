@@ -50,7 +50,8 @@ export default function AddNewUser({ initialUser, onCancel }) {
       }
     },
     requirePasswordChange: true,
-    password: 'Temporary2024!'
+    password: 'Temporary2024!',
+    amPin: ''
   });
 
   useEffect(() => {
@@ -103,7 +104,8 @@ export default function AddNewUser({ initialUser, onCancel }) {
         granularPermissions: initialUser.granularPermissions || {},
         allowedDepartments: initialUser.allowedDepartments || (state.departments || []).map(d => d.name || d.label || d.value || d),
         requirePasswordChange: initialUser.requirePasswordChange ?? true,
-        password: initialUser.password || 'Temporary2024!'
+        password: initialUser.password || 'Temporary2024!',
+        amPin: initialUser.amPin || ''
       });
     } else {
       setFormData(prev => ({
@@ -185,12 +187,18 @@ export default function AddNewUser({ initialUser, onCancel }) {
       return;
     }
 
-    const usernameExists = state?.users?.some(u => 
-      u.username?.toLowerCase() === formData.username?.trim().toLowerCase() && 
+    const usernameExists = state?.users?.some(u =>
+      u.username?.toLowerCase() === formData.username?.trim().toLowerCase() &&
       (!initialUser || u.id !== initialUser.id)
     );
     if (usernameExists) {
       alert(`Username Error!\n\nThe username "@${formData.username}" is already taken. Please choose a different username.`);
+      return;
+    }
+
+    const amPinValue = (formData.amPin || '').trim();
+    if (amPinValue && !/^\d{4,6}$/.test(amPinValue)) {
+      alert(`Flash AM PIN Error!\n\nThe Flash AM PIN must be 4 to 6 numeric digits, or left empty to clear it.`);
       return;
     }
 
@@ -209,7 +217,8 @@ export default function AddNewUser({ initialUser, onCancel }) {
       granularPermissions: formData.granularPermissions,
       allowedDepartments: formData.allowedDepartments || (state.departments || []).map(d => d.name || d.label || d.value || d),
       requirePasswordChange: formData.requirePasswordChange,
-      password: formData.password
+      password: formData.password,
+      amPin: amPinValue
     };
 
     if (initialUser) {
@@ -616,6 +625,22 @@ export default function AddNewUser({ initialUser, onCancel }) {
                   {showPassword ? "visibility_off" : "visibility"}
                 </span>
               </div>
+            </div>
+            <div className="max-w-md space-y-2">
+              <label className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest ml-1">Flash AM PIN (Reset)</label>
+              <div className="relative">
+                <input
+                  name="amPin"
+                  value={formData.amPin || ''}
+                  onChange={(e) => setFormData(prev => ({ ...prev, amPin: e.target.value.replace(/\D/g, '').slice(0, 6) }))}
+                  placeholder="Not set"
+                  inputMode="numeric"
+                  className="w-full bg-surface-container-lowest border border-outline-variant/20 focus:ring-2 focus:ring-primary/20 focus:border-primary rounded-xl px-4 py-3 outline-none transition-all text-sm font-semibold text-on-surface"
+                  type="text"
+                />
+                <span className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 text-on-surface-variant text-[18px] select-none">pin</span>
+              </div>
+              <p className="text-[11px] text-on-surface-variant leading-relaxed">4–6 digit PIN this user enters on the Flash AM terminal. Type a new PIN to reset it, or leave empty to clear it.</p>
             </div>
             <label className="flex items-center gap-4 cursor-pointer group">
               <div className="relative">

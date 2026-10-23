@@ -3,6 +3,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import PayrollAccountMapping from './PayrollAccountMapping';
 import SalaryAllowanceConfig from './SalaryAllowanceConfig';
+import FlashAMConfig from './FlashAMConfig';
 
 
 
@@ -771,6 +772,7 @@ export default function HRSettings({ isMobile }) {
     { id: 'divisions', label: 'Divisions Management', icon: 'apartment' },
     { id: 'payroll_mapping', label: 'Payroll Account Mapping', icon: 'account_balance' },
     { id: 'salary_allowance_config', label: 'Salary & Allowance Configuration', icon: 'payments' },
+    { id: 'flasham_config', label: 'Flash AM Configuration', icon: 'fingerprint' },
     { id: 'subsections', label: 'Sub-sections', icon: 'account_tree' },
     { id: 'permissions', label: 'HR Permissions', icon: 'verified_user' },
     { id: 'roles', label: 'Role Management', icon: 'admin_panel_settings' },
@@ -1064,6 +1066,36 @@ export default function HRSettings({ isMobile }) {
                   <span className="text-on-surface-variant font-body">Global Scope</span>
                 </div>
               </div>
+
+              {/* Flash AM Configuration App-Style Card */}
+              <div
+                onClick={() => {
+                  setActiveCategory('flasham_config');
+                  setViewMode('departments');
+                }}
+                className="group relative bg-gradient-to-br from-surface-container-lowest via-surface-container-lowest to-cyan-500/5 border border-outline-variant/15 hover:border-cyan-500/30 rounded-3xl p-6 shadow-sm hover:shadow-xl hover:shadow-cyan-500/5 hover:-translate-y-1.5 transition-all duration-300 ease-out cursor-pointer flex flex-col justify-between min-h-[190px] overflow-hidden"
+              >
+                <div className="absolute top-0 right-0 w-32 h-32 bg-cyan-500/5 rounded-full blur-3xl group-hover:bg-cyan-500/10 transition-all duration-300 animate-pulse"></div>
+
+                <div className="flex items-start justify-between relative z-10">
+                  <div className="w-14 h-14 rounded-2xl bg-cyan-500/10 text-cyan-600 flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
+                    <span className="material-symbols-outlined text-[32px] icon-fill">fingerprint</span>
+                  </div>
+                  <span className="material-symbols-outlined text-outline-variant group-hover:text-cyan-600 transition-colors text-[20px] font-bold">arrow_forward</span>
+                </div>
+
+                <div className="mt-6 relative z-10">
+                  <h3 className="font-headline text-md font-black text-on-surface leading-tight group-hover:text-cyan-600 transition-colors">Flash AM Configuration</h3>
+                  <p className="font-body text-[11px] text-on-surface-variant mt-1.5 font-medium leading-relaxed">
+                    Short-punch, late-coming and punch-out overtime rules for the Flash AM attendance terminal.
+                  </p>
+                </div>
+
+                <div className="mt-4 pt-4 border-t border-outline-variant/10 flex items-center justify-between relative z-10 text-[10px] uppercase tracking-wider font-bold">
+                  <span className="text-cyan-600 font-body">Terminal Rules</span>
+                  <span className="text-on-surface-variant font-body">All Terminals</span>
+                </div>
+              </div>
             </div>
           </main>
         ) : (
@@ -1123,6 +1155,7 @@ export default function HRSettings({ isMobile }) {
               {activeCategory === 'divisions' && renderDesktopDivisions()}
               {activeCategory === 'payroll_mapping' && <PayrollAccountMapping isMobile={isMobile} onBack={() => setViewMode('grid')} />}
               {activeCategory === 'salary_allowance_config' && <SalaryAllowanceConfig isMobile={isMobile} onBack={() => setViewMode('grid')} />}
+              {activeCategory === 'flasham_config' && <FlashAMConfig isMobile={isMobile} onBack={() => setViewMode('grid')} />}
               {activeCategory === 'subsections' && renderDesktopSubsections()}
               {activeCategory === 'permissions' && renderDesktopPermissions()}
               {activeCategory === 'roles' && renderDesktopRoles()}
@@ -1726,6 +1759,9 @@ export default function HRSettings({ isMobile }) {
     if (activeCategory === 'salary_allowance_config') {
       return <SalaryAllowanceConfig isMobile={true} onBack={() => setActiveCategory('departments')} />;
     }
+    if (activeCategory === 'flasham_config') {
+      return <FlashAMConfig isMobile={true} onBack={() => setActiveCategory('departments')} />;
+    }
     if (activeCategory === 'duty_hours') {
       return renderMobileDutyHours();
     }
@@ -1808,6 +1844,23 @@ export default function HRSettings({ isMobile }) {
               <div>
                 <h2 className="font-headline text-sm font-bold text-on-surface">Salary & Allowance Configuration</h2>
                 <p className="font-body text-[10px] text-on-surface-variant font-medium">Overtime & Attendance Triggers</p>
+              </div>
+            </div>
+            <span className="material-symbols-outlined text-outline-variant text-[20px]">chevron_right</span>
+          </div>
+
+          {/* Flash AM Configuration Bento Block */}
+          <div
+            onClick={() => setActiveCategory('flasham_config')}
+            className="bg-surface-container-lowest rounded-2xl p-5 border border-outline-variant/15 shadow-sm cursor-pointer hover:border-cyan-500/30 transition-all flex justify-between items-center"
+          >
+            <div className="flex items-center gap-3 text-cyan-600">
+              <div className="w-10 h-10 rounded-xl bg-cyan-500/10 flex items-center justify-center">
+                <span className="material-symbols-outlined text-[24px]">fingerprint</span>
+              </div>
+              <div>
+                <h2 className="font-headline text-sm font-bold text-on-surface">Flash AM Configuration</h2>
+                <p className="font-body text-[10px] text-on-surface-variant font-medium">Terminal Punch Rules</p>
               </div>
             </div>
             <span className="material-symbols-outlined text-outline-variant text-[20px]">chevron_right</span>

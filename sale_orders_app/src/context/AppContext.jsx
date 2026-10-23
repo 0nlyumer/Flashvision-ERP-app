@@ -12,9 +12,10 @@ import {
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { applyTheme } from '../utils/theme';
 import { supabase } from '../utils/supabaseClient';
-import { STEP1_ENTITY_TABLES, loadStep1EntitiesFromTables, syncEntityDiffToTable, recordKeyWithFallback, loadAdminSetupFromTable, syncAdminSetupToTable, loadFGComboConfigFromTable, syncFGComboConfigToTable, loadCategoryPrefixesFromTable, syncCategoryPrefixesToTable, loadScalarsFromTable, syncScalarsToTable } from '../utils/entityTables';
+import { STEP1_ENTITY_TABLES, loadStep1EntitiesFromTables, syncEntityDiffToTable, recordKeyWithFallback, loadAdminSetupFromTable, syncAdminSetupToTable, loadFGComboConfigFromTable, syncFGComboConfigToTable, loadFlashAmConfigFromTable, syncFlashAmConfigToTable, loadCategoryPrefixesFromTable, syncCategoryPrefixesToTable, loadScalarsFromTable, syncScalarsToTable } from '../utils/entityTables';
 import { formatLineCode, maxLineCodeNumber } from '../utils/itemCodes';
 import { getInitialFGConfig, saveFGConfig, normalizeFGConfig } from '../utils/fgCombinationUtils';
+import { getInitialFlashAmConfig, normalizeFlashAmConfig } from '../utils/flashAmConfig';
 import { DEFAULT_CHART_OF_ACCOUNTS } from '../utils/financeEngine';
 
 const AppContext = createContext();
@@ -29,6 +30,7 @@ const initialMockState = {
   ],
   currentUser: null,
   fg_combinations_config: getInitialFGConfig(),
+  flash_am_config: getInitialFlashAmConfig(),
   customers: [],
   suppliers: [],
   items: [],
@@ -575,6 +577,9 @@ const getSanitizedSyncState = (stateObj) => {
   delete cleanState.dashboardBackground;
   // Retain documentWarehouseBinders in cloud state so documents are never lost across devices/logins!
   delete cleanState.currentUser;
+  // FLASHAM PHASE A: the Flash AM terminal config lives ONLY in app_config
+  // (key 'flashAmConfig', table copy wins on load) — never in the blob.
+  delete cleanState.flash_am_config;
   if (Array.isArray(cleanState.documentWarehouseBinders)) {
     lastGoodBindersCache = cleanState.documentWarehouseBinders;
   } else if (lastGoodBindersCache) {
@@ -635,6 +640,8 @@ export const AppProvider = ({ children }) => {
   const adminSetupSnapshotRef = useRef(null);
   const fgComboConfigLoadedRef = useRef(false);
   const fgComboConfigSnapshotRef = useRef(null);
+  const flashAmConfigLoadedRef = useRef(false);
+  const flashAmConfigSnapshotRef = useRef(null);
   const categoryPrefixesLoadedRef = useRef(false);
   const categoryPrefixesSnapshotRef = useRef(null);
   const scalarsLoadedRef = useRef(false);
@@ -1397,6 +1404,7 @@ export const AppProvider = ({ children }) => {
         const fromTables = await loadStep1EntitiesFromTables();
         const adminSetupFromTable = await loadAdminSetupFromTable();
         const fgComboConfigFromTable = await loadFGComboConfigFromTable();
+        const flashAmConfigFromTable = await loadFlashAmConfigFromTable();
         const categoryPrefixesFromTable = await loadCategoryPrefixesFromTable();
         const scalarsFromTable = await loadScalarsFromTable();
         setState(prev => {
@@ -1433,6 +1441,18 @@ export const AppProvider = ({ children }) => {
             fgComboConfigSnapshotRef.current = null;
           }
           fgComboConfigLoadedRef.current = true;
+          // FLASHAM PHASE A: the app_config copy of the Flash AM terminal
+          // config wins when present; when the table has none yet, the
+          // snapshot stays null so the write-through effect seeds the table
+          // with the defaults — the config can never be lost in a blob flip.
+          if (flashAmConfigFromTable) {
+            const normalizedFlashAm = normalizeFlashAmConfig(flashAmConfigFromTable);
+            next.flash_am_config = normalizedFlashAm;
+            flashAmConfigSnapshotRef.current = normalizedFlashAm;
+          } else {
+            flashAmConfigSnapshotRef.current = null;
+          }
+          flashAmConfigLoadedRef.current = true;
           // PHASE C STEP 6: app-config completion — the app_config copy of
           // categoryPrefixes wins over the blob copy when present.
           if (categoryPrefixesFromTable) {
@@ -1462,6 +1482,8 @@ export const AppProvider = ({ children }) => {
           adminSetupLoadedRef.current = true;
           fgComboConfigSnapshotRef.current = null;
           fgComboConfigLoadedRef.current = true;
+          flashAmConfigSnapshotRef.current = null;
+          flashAmConfigLoadedRef.current = true;
           categoryPrefixesSnapshotRef.current = prev.categoryPrefixes || null;
           categoryPrefixesLoadedRef.current = true;
           scalarsSnapshotRef.current = JSON.stringify({ buildVersion: prev.buildVersion, productionTarget: prev.productionTarget, isGlobalPaginated: prev.isGlobalPaginated });
@@ -4874,6 +4896,7 @@ export const AppProvider = ({ children }) => {
   const step6OtherConsumptions = state.otherConsumptions;
   const adminSetupForSync = state.adminSetup;
   const fgComboConfigForSync = state.fg_combinations_config;
+  const flashAmConfigForSync = state.flash_am_config;
   const categoryPrefixesForSync = state.categoryPrefixes;
   const scalarsBundleForSync = { buildVersion: state.buildVersion, lastUpdatedBy: state.lastUpdatedBy, productionTarget: state.productionTarget, isGlobalPaginated: state.isGlobalPaginated };
   const scalarsWatchKey = JSON.stringify({ buildVersion: state.buildVersion, productionTarget: state.productionTarget, isGlobalPaginated: state.isGlobalPaginated });
@@ -4951,6 +4974,21 @@ export const AppProvider = ({ children }) => {
     }, 250);
     return () => clearTimeout(timer);
   }, [fgComboConfigForSync]);
+
+  // FLASHAM PHASE A: the Flash AM terminal config write-through to
+  // app_config on change — same durable pattern as fgComboConfig. A null
+  // snapshot means "table had no copy at load", so the first effect run
+  // seeds it with the current (default) config.
+  useEffect(() => {
+    if (!flashAmConfigLoadedRef.current) return;
+    if (!flashAmConfigForSync || typeof flashAmConfigForSync !== 'object') return;
+    if (flashAmConfigSnapshotRef.current === flashAmConfigForSync) return;
+    const timer = setTimeout(() => {
+      flashAmConfigSnapshotRef.current = flashAmConfigForSync;
+      syncFlashAmConfigToTable(flashAmConfigForSync);
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [flashAmConfigForSync]);
 
   // PHASE C STEP 6: categoryPrefixes ride in app_config like adminSetup —
   // the table copy wins on load; changes write through (debounced).

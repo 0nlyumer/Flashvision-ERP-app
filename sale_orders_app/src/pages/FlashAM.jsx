@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '../utils/supabaseClient';
 import { buildEntityRow, recordKeyWithFallback } from '../utils/entityTables';
 import { verifyPassword } from '../utils/securityAuth';
+import { normalizeFlashAmConfig } from '../utils/flashAmConfig';
 
 // Audio feedback engine for tactile punch & biometric confirmation
 const playChime = (type = 'in') => {
@@ -95,8 +96,40 @@ const calculateDuration = (inTimeStr, outTimeStr) => {
   }
 };
 
+// Parses 'hh:mm:ss AM/PM', 'hh:mm AM/PM' or 'HH:MM' into minutes since
+// midnight. Returns null when unparseable.
+const parseTimeToMinutes = (timeStr) => {
+  if (!timeStr) return null;
+  try {
+    const d = new Date(`1970-01-01 ${timeStr}`);
+    if (isNaN(d.getTime())) return null;
+    return d.getHours() * 60 + d.getMinutes();
+  } catch (e) {
+    return null;
+  }
+};
+
+// Numeric duration in minutes between two punch times (handles overnight).
+const durationMinutesBetween = (inTimeStr, outTimeStr) => {
+  const inMin = parseTimeToMinutes(inTimeStr);
+  const outMin = parseTimeToMinutes(outTimeStr);
+  if (inMin === null || outMin === null) return null;
+  let diff = outMin - inMin;
+  if (diff < 0) diff += 24 * 60;
+  return diff;
+};
+
+// Fallback shift starts (mirror HR Settings' built-in Duty Hours shifts) —
+// used only when hr_duty_settings has no shifts saved yet.
+const DEFAULT_SHIFT_STARTS = [
+  { name: 'GENERAL SHIFT', startTime: '09:00' },
+  { name: 'MORNING SHIFT', startTime: '06:00' },
+  { name: 'EVENING SHIFT', startTime: '14:00' },
+  { name: 'NIGHT SHIFT', startTime: '22:00' }
+];
+
 export default function FlashAM() {
-  const { state } = useApp() || {};
+  const { state, updateUser } = useApp() || {};
   const navigate = useNavigate();
 
   // 1. Theme State (Dark / Light)
@@ -180,8 +213,10 @@ export default function FlashAM() {
     record: null
   });
 
-  // User Profile Dropdown Modal
-  const [showProfileModal, setShowProfileModal] = useState(false);
+  // User Profile Screen (Phase A)
+  const [showProfileScreen, setShowProfileScreen] = useState(false);
+  const [profilePwForm, setProfilePwForm] = useState({ current: '', next: '', confirm: '' });
+  const [profilePwMsg, setProfilePwMsg] = useState('');
 
   // Filter & Navigation
   const [activeTab, setActiveTab] = useState('attendance'); // 'attendance' | 'roster' | 'reports' | 'sync' | 'settings'
@@ -611,12 +646,12 @@ export default function FlashAM() {
           if (idx >= 0) {
             const inTime = currentAttendance[idx].inTime;
             const dur = calculateDuration(inTime, item.time);
-            currentAttendance[idx] = {
+            currentAttendance[idx] = applyShortPunchRule({
               ...currentAttendance[idx],
               outTime: item.time,
               duration: dur,
               status: 'Completed'
-            };
+            });
           }
         } else if (item.action === 'UNDO_IN') {
           currentAttendance = currentAttendance.filter(
@@ -631,7 +666,8 @@ export default function FlashAM() {
               ...currentAttendance[idx],
               outTime: null,
               duration: null,
-              status: 'Present'
+              status: 'Present',
+              shortPunch: false
             };
           }
         }
@@ -662,6 +698,47 @@ export default function FlashAM() {
   // AUTHENTICATION & LOGIN LOGIC
   // ---------------------------------------------------------------------------
   const activeUser = authSession?.user || null;
+
+  // FLASHAM PHASE A: terminal rules (HR Settings -> Flash AM Configuration,
+  // persisted in app_config) + the signed-in user's own ERP record, which now
+  // carries the per-user AM PIN (users.amPin). The old device-wide
+  // localStorage PIN is retired.
+  const flashAmConfig = useMemo(
+    () => normalizeFlashAmConfig(state?.flash_am_config),
+    [state?.flash_am_config]
+  );
+  const currentUserRecord = useMemo(() => {
+    if (!activeUser) return null;
+    const pool = dbUsers.length > 0 ? dbUsers : (state?.users || []);
+    return pool.find(
+      (u) =>
+        String(u.id) === String(activeUser.id) ||
+        (u.username && activeUser.username && u.username.toLowerCase() === activeUser.username.toLowerCase())
+    ) || null;
+  }, [dbUsers, state?.users, activeUser]);
+  const userAmPin = currentUserRecord?.amPin ? String(currentUserRecord.amPin) : '';
+  const pinRequired = userAmPin.length >= 4;
+
+  useEffect(() => {
+    try { localStorage.removeItem('flasham_pin'); } catch (e) {}
+  }, []);
+
+  // Patch the locally cached users pool after a self-service credential
+  // change so the new password / PIN is effective immediately on this
+  // terminal (AppContext updateUser already persisted it to the ERP users).
+  const patchLocalUser = (fields) => {
+    if (!activeUser) return;
+    setDbUsers(prev => {
+      const next = (prev || []).map(u =>
+        String(u.id) === String(activeUser.id) ||
+        (u.username && activeUser.username && u.username.toLowerCase() === activeUser.username.toLowerCase())
+          ? { ...u, ...fields }
+          : u
+      );
+      try { localStorage.setItem('flasham_cached_users', JSON.stringify(next)); } catch (e) {}
+      return next;
+    });
+  };
 
   // Real Login with ERP credentials
   const handleAuthorizeTerminal = (e) => {
@@ -713,22 +790,25 @@ export default function FlashAM() {
 
     setAuthSession(sessionObj);
     localStorage.setItem('flasham_auth', JSON.stringify(sessionObj));
-    setIsUnlocked(true);
+    // FLASHAM PHASE A: users WITH an AM PIN must unlock with their own PIN;
+    // users without one go straight in (PIN can be set from the profile).
+    setIsUnlocked(foundUser.amPin ? false : true);
     setIsAuthorizing(false);
     playChime('biometric');
     showToast(`Welcome ${foundUser.name}! Terminal Authorized.`, 'success');
   };
 
-  // PIN Unlock
+  // PIN Unlock — validates against the signed-in user's own AM PIN
+  // (users.amPin), never a device-wide code.
   const handlePinDigit = (digit) => {
-    if (enteredPin.length >= 4) return;
+    if (!pinRequired) return;
+    if (enteredPin.length >= userAmPin.length) return;
     const nextPin = enteredPin + digit;
     setEnteredPin(nextPin);
     setPinError('');
 
-    if (nextPin.length === 4) {
-      const storedPin = localStorage.getItem('flasham_pin') || '1234';
-      if (nextPin === storedPin) {
+    if (nextPin.length === userAmPin.length) {
+      if (nextPin === userAmPin) {
         playChime('biometric');
         setIsUnlocked(true);
         setEnteredPin('');
@@ -787,19 +867,26 @@ export default function FlashAM() {
     showToast('Biometric sensor verified', 'success');
   };
 
-  // Change PIN Submit
+  // Change AM PIN Submit — saves to the signed-in user's ERP record
+  // (users.amPin) through the normal AppContext update path, so the PIN
+  // persists in the ERP users collection and follows the user to any
+  // terminal. Setting a first PIN needs no current PIN.
   const handleChangePinSubmit = (e) => {
     e.preventDefault();
     setChangePinError('');
-    const storedPin = localStorage.getItem('flasham_pin') || '1234';
 
-    if (changePinForm.currentPin !== storedPin) {
+    if (!currentUserRecord) {
+      setChangePinError('User record not found. Please sign in again.');
+      playChime('error');
+      return;
+    }
+    if (pinRequired && changePinForm.currentPin !== userAmPin) {
       setChangePinError('Current PIN is incorrect');
       playChime('error');
       return;
     }
-    if (!/^\d{4}$/.test(changePinForm.newPin)) {
-      setChangePinError('New PIN must be exactly 4 numeric digits');
+    if (!/^\d{4,6}$/.test(changePinForm.newPin)) {
+      setChangePinError('New PIN must be 4 to 6 numeric digits');
       playChime('error');
       return;
     }
@@ -809,11 +896,48 @@ export default function FlashAM() {
       return;
     }
 
-    localStorage.setItem('flasham_pin', changePinForm.newPin);
+    if (typeof updateUser === 'function') {
+      updateUser(currentUserRecord.id, { amPin: changePinForm.newPin });
+    }
+    patchLocalUser({ amPin: changePinForm.newPin });
     setShowChangePinModal(false);
     setChangePinForm({ currentPin: '', newPin: '', confirmPin: '' });
     playChime('in');
-    showToast('Security PIN successfully updated!', 'success');
+    showToast('AM PIN successfully updated!', 'success');
+  };
+
+  // Change account password from the Flash AM profile — same mechanism as
+  // the ERP profile screen (AppContext updateUser on the users record).
+  const handleProfileChangePassword = (e) => {
+    e.preventDefault();
+    setProfilePwMsg('');
+    if (!currentUserRecord) {
+      setProfilePwMsg('User record not found. Please sign in again.');
+      playChime('error');
+      return;
+    }
+    if (!verifyPassword(profilePwForm.current, currentUserRecord.password)) {
+      setProfilePwMsg('Current password is incorrect.');
+      playChime('error');
+      return;
+    }
+    if (!profilePwForm.next || profilePwForm.next.length < 4) {
+      setProfilePwMsg('New password must be at least 4 characters long.');
+      playChime('error');
+      return;
+    }
+    if (profilePwForm.next !== profilePwForm.confirm) {
+      setProfilePwMsg('Confirm password does not match the new password.');
+      playChime('error');
+      return;
+    }
+    if (typeof updateUser === 'function') {
+      updateUser(currentUserRecord.id, { password: profilePwForm.next, requirePasswordChange: false });
+    }
+    patchLocalUser({ password: profilePwForm.next });
+    setProfilePwForm({ current: '', next: '', confirm: '' });
+    playChime('in');
+    showToast('Password updated successfully!', 'success');
   };
 
   // Logout / Switch User
@@ -821,7 +945,7 @@ export default function FlashAM() {
     setAuthSession(null);
     localStorage.removeItem('flasham_auth');
     setIsUnlocked(false);
-    setShowProfileModal(false);
+    setShowProfileScreen(false);
     playChime('undo');
     showToast('Signed out of Flash AM terminal', 'info');
   };
@@ -829,7 +953,7 @@ export default function FlashAM() {
   // Lock Terminal
   const handleLockTerminal = () => {
     setIsUnlocked(false);
-    setShowProfileModal(false);
+    setShowProfileScreen(false);
     setEnteredPin('');
     playChime('undo');
     showToast('Terminal Locked', 'info');
@@ -900,6 +1024,50 @@ export default function FlashAM() {
     }
   };
 
+  // FLASHAM PHASE A — config-driven punch rules (HR Settings -> Flash AM
+  // Configuration). Short punch: a punch-out inside the configured window
+  // marks the day Absent (not counted) unless the config says to count it.
+  // The record keeps its punch times + a shortPunch flag for audit; salary
+  // generation honours the flag (see HRSalaryGeneration).
+  const applyShortPunchRule = (record) => {
+    const sp = flashAmConfig.shortPunch;
+    if (!record) return record;
+    if (!sp || !sp.enabled || sp.countAttendance) {
+      return record.shortPunch ? { ...record, shortPunch: false } : record;
+    }
+    const mins = durationMinutesBetween(record.inTime, record.outTime);
+    if (mins !== null && mins < sp.withinHours * 60) {
+      return {
+        ...record,
+        status: 'Absent',
+        shortPunch: true,
+        remarks: `Short punch (${record.duration || mins + 'm'} worked, under ${sp.withinHours}h) - attendance not counted per Flash AM Configuration`
+      };
+    }
+    return record.shortPunch ? { ...record, shortPunch: false } : record;
+  };
+
+  const lateAppliesTo = (emp) =>
+    flashAmConfig.rulesApplyToAll ||
+    (flashAmConfig.late.applyToEmployeeIds || []).includes(String(emp?.id));
+
+  // Late minutes for the row badge: punch-in past (shift start + grace).
+  const getLateMinutes = (emp, rec) => {
+    const late = flashAmConfig.late;
+    if (!late || !late.showLateMinutes || !rec?.inTime) return 0;
+    if (!lateAppliesTo(emp)) return 0;
+    const shifts = state?.hr_duty_settings?.shifts;
+    const shiftList = Array.isArray(shifts) && shifts.length > 0 ? shifts : DEFAULT_SHIFT_STARTS;
+    const match = emp?.shift
+      ? shiftList.find(s => String(s.name || '').trim().toUpperCase() === String(emp.shift).trim().toUpperCase())
+      : null;
+    const startMin = parseTimeToMinutes(match?.startTime || late.shiftStartDefault || '09:00');
+    const inMin = parseTimeToMinutes(rec.inTime);
+    if (startMin === null || inMin === null) return 0;
+    const lateBy = inMin - (startMin + (late.graceMinutes || 0));
+    return lateBy > 0 ? lateBy : 0;
+  };
+
   // Clock OUT Trigger
   const handlePunchOut = async (emp) => {
     const existing = getEmployeeAttendance(emp);
@@ -927,12 +1095,12 @@ export default function FlashAM() {
     let updatedRecord = null;
     const updatedList = dbAttendance.map((r) => {
       if (r === existing || (r.employeeId === emp.id && r.date === selectedDate)) {
-        updatedRecord = {
+        updatedRecord = applyShortPunchRule({
           ...r,
           outTime: punchTime,
           duration: workedDuration,
           status: 'Completed'
-        };
+        });
         return updatedRecord;
       }
       return r;
@@ -940,7 +1108,11 @@ export default function FlashAM() {
 
     setDbAttendance(updatedList);
     localStorage.setItem('flasham_cached_attendance', JSON.stringify(updatedList));
-    showToast(`${emp.name} clocked OUT at ${punchTime} (${workedDuration || 'Logged'})`, 'success');
+    if (updatedRecord?.shortPunch) {
+      showToast(`${emp.name} clocked OUT at ${punchTime} - short punch, attendance NOT counted`, 'warning');
+    } else {
+      showToast(`${emp.name} clocked OUT at ${punchTime} (${workedDuration || 'Logged'})`, 'success');
+    }
 
     // Instant WhatsApp-like WebSocket Broadcast
     broadcastPunchEvent('PUNCH_OUT', updatedRecord || existing, emp.id, emp.employeeCode, selectedDate);
@@ -991,7 +1163,8 @@ export default function FlashAM() {
             ...r,
             outTime: null,
             duration: null,
-            status: 'Present'
+            status: 'Present',
+            shortPunch: false
           };
         }
         return r;
@@ -1748,11 +1921,14 @@ export default function FlashAM() {
           </span>
 
           <p className={`text-xs mb-4 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-            Enter 4-Digit Security PIN or Touch Fingerprint Sensor
+            {pinRequired
+              ? `Enter your ${userAmPin.length}-Digit AM PIN or Touch Fingerprint Sensor`
+              : 'Touch Fingerprint Sensor or tap Unlock to continue'}
           </p>
 
+          {pinRequired ? (
           <div className="flex gap-3 mb-6">
-            {[0, 1, 2, 3].map((idx) => (
+            {(userAmPin ? userAmPin.split('') : [0, 1, 2, 3]).map((_, idx) => (
               <div
                 key={idx}
                 className={`w-3.5 h-3.5 rounded-full border-2 transition-all duration-200 ${
@@ -1765,11 +1941,13 @@ export default function FlashAM() {
               ></div>
             ))}
           </div>
+          ) : null}
 
           {pinError && (
             <p className="text-xs font-semibold text-red-500 mb-3 animate-shake">{pinError}</p>
           )}
 
+          {pinRequired && (
           <div className="grid grid-cols-3 gap-2.5 w-full max-w-[260px] mb-5">
             {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((num) => (
               <button
@@ -1812,6 +1990,17 @@ export default function FlashAM() {
               <span className="material-symbols-outlined text-xl">backspace</span>
             </button>
           </div>
+          )}
+
+          {!pinRequired && (
+            <button
+              onClick={handleBiometricAuth}
+              className="w-full max-w-[260px] py-3 px-4 rounded-xl font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 border border-cyan-500/30 bg-cyan-500/10 text-cyan-400 active:scale-95 transition-all mb-5"
+            >
+              <span className="material-symbols-outlined text-[18px]">lock_open</span>
+              <span>Unlock Terminal</span>
+            </button>
+          )}
 
           <button
             onClick={handleBiometricAuth}
@@ -1915,7 +2104,7 @@ export default function FlashAM() {
             </button>
 
             <button
-              onClick={() => setShowProfileModal(true)}
+              onClick={() => setShowProfileScreen(true)}
               className="flex items-center gap-2 pl-1 pr-2 py-1 rounded-xl border border-transparent hover:border-slate-700 transition-all active:scale-95"
             >
               <div className="relative">
@@ -2138,6 +2327,7 @@ export default function FlashAM() {
                   const rec = getEmployeeAttendance(emp);
                   const hasIn = Boolean(rec && rec.inTime);
                   const hasOut = Boolean(rec && rec.outTime);
+                  const lateMins = getLateMinutes(emp, rec);
 
                   return (
                     <div
@@ -2201,6 +2391,13 @@ export default function FlashAM() {
                             ) : (
                               <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-400 bg-slate-500/10 px-2 py-0.5 rounded-full">
                                 Not Clocked In
+                              </span>
+                            )}
+
+                            {lateMins > 0 && (
+                              <span className="inline-flex items-center gap-1 text-[11px] font-bold text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded-full border border-rose-500/20">
+                                <span className="material-symbols-outlined text-[12px]">schedule</span>
+                                Late {lateMins} min
                               </span>
                             )}
 
@@ -2593,20 +2790,25 @@ export default function FlashAM() {
                   <span className="material-symbols-outlined text-xl">password</span>
                 </div>
                 <div>
-                  <h3 className="text-sm font-bold font-manrope">Security Access PIN</h3>
-                  <p className="text-xs text-slate-400">Change the 4-digit PIN used to unlock this terminal</p>
+                  <h3 className="text-sm font-bold font-manrope">AM PIN</h3>
+                  <p className="text-xs text-slate-400">
+                    {pinRequired
+                      ? 'Your personal PIN for unlocking this terminal (saved on your ERP user account)'
+                      : 'PIN not set - set your personal PIN for unlocking this terminal'}
+                  </p>
                 </div>
               </div>
 
               <button
                 onClick={() => {
                   setChangePinError('');
+                  setChangePinForm({ currentPin: '', newPin: '', confirmPin: '' });
                   setShowChangePinModal(true);
                 }}
                 className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-md shadow-cyan-600/20 active:scale-95 transition-all"
               >
                 <span className="material-symbols-outlined text-[17px]">lock_reset</span>
-                <span>Change 4-Digit Security PIN</span>
+                <span>{pinRequired ? 'Change AM PIN' : 'Set AM PIN'}</span>
               </button>
             </div>
 
@@ -3012,7 +3214,7 @@ export default function FlashAM() {
             }`}
           >
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-base font-bold font-manrope">Change Security PIN</h3>
+              <h3 className="text-base font-bold font-manrope">{pinRequired ? 'Change AM PIN' : 'Set AM PIN'}</h3>
               <button
                 onClick={() => setShowChangePinModal(false)}
                 className="text-slate-400 hover:text-white text-sm font-bold"
@@ -3022,31 +3224,33 @@ export default function FlashAM() {
             </div>
 
             <form onSubmit={handleChangePinSubmit} className="space-y-3">
+              {pinRequired && (
               <div>
                 <label className="block text-[11px] font-semibold text-slate-400 mb-1 uppercase tracking-wider">
-                  Current 4-Digit PIN
+                  Current PIN
                 </label>
                 <input
                   type="password"
-                  maxLength={4}
+                  maxLength={6}
                   value={changePinForm.currentPin}
-                  onChange={(e) => setChangePinForm({ ...changePinForm, currentPin: e.target.value })}
+                  onChange={(e) => setChangePinForm({ ...changePinForm, currentPin: e.target.value.replace(/\D/g, '') })}
                   placeholder="••••"
                   className={`w-full px-3.5 py-2.5 rounded-xl border text-sm text-center font-mono tracking-widest font-bold focus:outline-none focus:ring-2 focus:ring-cyan-500 ${
                     isDark ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200 text-slate-900'
                   }`}
                 />
               </div>
+              )}
 
               <div>
                 <label className="block text-[11px] font-semibold text-slate-400 mb-1 uppercase tracking-wider">
-                  New 4-Digit PIN
+                  New PIN (4-6 digits)
                 </label>
                 <input
                   type="password"
-                  maxLength={4}
+                  maxLength={6}
                   value={changePinForm.newPin}
-                  onChange={(e) => setChangePinForm({ ...changePinForm, newPin: e.target.value })}
+                  onChange={(e) => setChangePinForm({ ...changePinForm, newPin: e.target.value.replace(/\D/g, '') })}
                   placeholder="••••"
                   className={`w-full px-3.5 py-2.5 rounded-xl border text-sm text-center font-mono tracking-widest font-bold focus:outline-none focus:ring-2 focus:ring-cyan-500 ${
                     isDark ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200 text-slate-900'
@@ -3060,9 +3264,9 @@ export default function FlashAM() {
                 </label>
                 <input
                   type="password"
-                  maxLength={4}
+                  maxLength={6}
                   value={changePinForm.confirmPin}
-                  onChange={(e) => setChangePinForm({ ...changePinForm, confirmPin: e.target.value })}
+                  onChange={(e) => setChangePinForm({ ...changePinForm, confirmPin: e.target.value.replace(/\D/g, '') })}
                   placeholder="••••"
                   className={`w-full px-3.5 py-2.5 rounded-xl border text-sm text-center font-mono tracking-widest font-bold focus:outline-none focus:ring-2 focus:ring-cyan-500 ${
                     isDark ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200 text-slate-900'
@@ -3098,76 +3302,141 @@ export default function FlashAM() {
         </div>
       )}
 
-      {/* MODAL 3: USER PROFILE DRAWER / POPUP */}
-      {showProfileModal && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/75 backdrop-blur-md animate-in fade-in duration-200">
-          <div
-            className={`w-full max-w-sm p-6 rounded-t-3xl sm:rounded-3xl border shadow-2xl transition-all ${
-              isDark ? 'bg-[#121927] border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-900'
-            }`}
-          >
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-base font-bold font-manrope">Operator Profile</h3>
+      {/* PROFILE SCREEN (Phase A): ERP-style operator profile — details,
+          change password, change AM PIN, lock / sign out. */}
+      {showProfileScreen && (
+        <div className={`fixed inset-0 z-50 overflow-y-auto animate-in fade-in duration-200 ${isDark ? 'bg-[#090d16] text-white' : 'bg-slate-50 text-slate-900'}`}>
+          <div className="max-w-2xl mx-auto px-4 py-5 pb-16">
+            <div className="flex items-center gap-3 mb-5">
               <button
-                onClick={() => setShowProfileModal(false)}
-                className="text-slate-400 hover:text-white text-sm font-bold"
+                onClick={() => { setShowProfileScreen(false); setProfilePwMsg(''); }}
+                className={`w-9 h-9 rounded-xl flex items-center justify-center border transition-all active:scale-95 ${isDark ? 'bg-slate-800/80 border-slate-700 text-slate-300 hover:text-white' : 'bg-white border-slate-200 text-slate-600 hover:text-slate-900'}`}
+                title="Back to Terminal"
               >
-                ✕
+                <span className="material-symbols-outlined text-[19px]">arrow_back</span>
               </button>
+              <h3 className="text-lg font-bold font-manrope">My Profile</h3>
             </div>
 
-            <div className="flex items-center gap-3.5 p-3 rounded-2xl bg-slate-900/50 border border-slate-800 mb-4">
-              <div className="w-12 h-12 rounded-full bg-gradient-to-tr from-cyan-600 to-purple-600 flex items-center justify-center text-white font-black text-base shadow-md">
-                {userInitials}
+            <div className={`p-5 rounded-3xl border shadow-sm mb-4 ${isDark ? 'bg-[#121927]/90 border-slate-800' : 'bg-white border-slate-200'}`}>
+              <div className="flex items-center gap-4">
+                <div className="w-16 h-16 rounded-full bg-gradient-to-tr from-cyan-600 to-purple-600 flex items-center justify-center text-white font-black text-xl shadow-md shrink-0">
+                  {userInitials}
+                </div>
+                <div className="min-w-0">
+                  <h4 className="font-bold text-base font-manrope truncate">{currentUserRecord?.name || activeUser?.name}</h4>
+                  <div className="text-xs text-slate-400 truncate">@{currentUserRecord?.username || activeUser?.username}</div>
+                  <span className="inline-block text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-cyan-500/15 text-cyan-400 border border-cyan-500/20 mt-1.5">
+                    {currentUserRecord?.role || activeUser?.role}
+                  </span>
+                </div>
               </div>
-              <div>
-                <h4 className="font-bold text-sm font-manrope">{activeUser?.name}</h4>
-                <div className="text-xs text-slate-400">@{activeUser?.username}</div>
-                <span className="inline-block text-[10px] font-bold uppercase text-cyan-400 mt-1">
-                  {activeUser?.role}
-                </span>
+
+              {!pinRequired && (
+                <div className="mt-4 p-3 rounded-2xl bg-amber-500/10 border border-amber-500/25 text-amber-500 text-xs font-semibold flex items-center gap-2">
+                  <span className="material-symbols-outlined text-[17px]">warning</span>
+                  <span>PIN not set — set your AM PIN below so this terminal locks with your own code.</span>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 mt-5">
+                {[
+                  ['Full Name', currentUserRecord?.name],
+                  ['Username', currentUserRecord?.username ? `@${currentUserRecord.username}` : ''],
+                  ['Email', currentUserRecord?.email],
+                  ['Phone', currentUserRecord?.phone],
+                  ['Role', currentUserRecord?.role],
+                  ['Department', currentUserRecord?.department],
+                  ['Division', currentUserRecord?.division],
+                  ['Job Title', currentUserRecord?.jobTitle],
+                  ['Status', currentUserRecord?.status || 'Active'],
+                  ['AM PIN', pinRequired ? 'Set (••••)' : 'Not set']
+                ].filter(([, v]) => v !== undefined && v !== null && String(v).trim() !== '').map(([label, value]) => (
+                  <div key={label} className={`p-3 rounded-2xl border ${isDark ? 'bg-slate-900/50 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{label}</div>
+                    <div className="text-sm font-bold mt-0.5 truncate">{String(value)}</div>
+                  </div>
+                ))}
               </div>
             </div>
 
-            <div className="space-y-2">
+            <div className={`p-5 rounded-3xl border shadow-sm mb-4 ${isDark ? 'bg-[#121927]/90 border-slate-800' : 'bg-white border-slate-200'}`}>
+              <h4 className="text-sm font-bold font-manrope flex items-center gap-2 mb-3">
+                <span className="material-symbols-outlined text-[19px] text-cyan-400">lock</span>
+                Change Password
+              </h4>
+              <form onSubmit={handleProfileChangePassword} className="space-y-3">
+                <input
+                  type="password"
+                  value={profilePwForm.current}
+                  onChange={(e) => setProfilePwForm({ ...profilePwForm, current: e.target.value })}
+                  placeholder="Current password"
+                  className={`w-full px-3.5 py-2.5 rounded-xl border text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 ${isDark ? 'bg-slate-900 border-slate-700 text-white placeholder-slate-500' : 'bg-slate-50 border-slate-200 text-slate-900 placeholder-slate-400'}`}
+                />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <input
+                    type="password"
+                    value={profilePwForm.next}
+                    onChange={(e) => setProfilePwForm({ ...profilePwForm, next: e.target.value })}
+                    placeholder="New password"
+                    className={`w-full px-3.5 py-2.5 rounded-xl border text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 ${isDark ? 'bg-slate-900 border-slate-700 text-white placeholder-slate-500' : 'bg-slate-50 border-slate-200 text-slate-900 placeholder-slate-400'}`}
+                  />
+                  <input
+                    type="password"
+                    value={profilePwForm.confirm}
+                    onChange={(e) => setProfilePwForm({ ...profilePwForm, confirm: e.target.value })}
+                    placeholder="Confirm new password"
+                    className={`w-full px-3.5 py-2.5 rounded-xl border text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 ${isDark ? 'bg-slate-900 border-slate-700 text-white placeholder-slate-500' : 'bg-slate-50 border-slate-200 text-slate-900 placeholder-slate-400'}`}
+                  />
+                </div>
+                {profilePwMsg && (
+                  <div className="p-2.5 bg-red-500/15 border border-red-500/30 rounded-xl text-xs text-red-500 font-semibold">{profilePwMsg}</div>
+                )}
+                <button
+                  type="submit"
+                  className="px-5 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs uppercase tracking-wider shadow-md shadow-cyan-600/20 active:scale-95 transition-all cursor-pointer"
+                >
+                  Update Password
+                </button>
+              </form>
+            </div>
+
+            <div className={`p-5 rounded-3xl border shadow-sm mb-4 ${isDark ? 'bg-[#121927]/90 border-slate-800' : 'bg-white border-slate-200'}`}>
+              <h4 className="text-sm font-bold font-manrope flex items-center gap-2 mb-1">
+                <span className="material-symbols-outlined text-[19px] text-cyan-400">password</span>
+                AM PIN
+              </h4>
+              <p className="text-xs text-slate-400 mb-3">
+                {pinRequired
+                  ? 'This PIN unlocks the Flash AM terminal for your account.'
+                  : 'PIN not set — without a PIN this terminal opens right after login.'}
+              </p>
               <button
                 onClick={() => {
-                  setShowProfileModal(false);
+                  setChangePinError('');
+                  setChangePinForm({ currentPin: '', newPin: '', confirmPin: '' });
                   setShowChangePinModal(true);
                 }}
-                className={`w-full py-3 px-4 rounded-xl font-bold text-xs border flex items-center justify-between transition-all active:scale-98 ${
-                  isDark ? 'bg-slate-800/80 border-slate-700 text-white' : 'bg-slate-100 border-slate-200 text-slate-800'
-                }`}
+                className="px-5 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs uppercase tracking-wider shadow-md shadow-cyan-600/20 active:scale-95 transition-all cursor-pointer"
               >
-                <span className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-[18px] text-cyan-400">password</span>
-                  <span>Change Security PIN</span>
-                </span>
-                <span className="material-symbols-outlined text-[16px] text-slate-400">chevron_right</span>
+                {pinRequired ? 'Change AM PIN' : 'Set AM PIN'}
               </button>
+            </div>
 
+            <div className="grid grid-cols-2 gap-3">
               <button
                 onClick={handleLockTerminal}
-                className={`w-full py-3 px-4 rounded-xl font-bold text-xs border flex items-center justify-between transition-all active:scale-98 ${
-                  isDark ? 'bg-slate-800/80 border-slate-700 text-white' : 'bg-slate-100 border-slate-200 text-slate-800'
-                }`}
+                className={`py-3 px-4 rounded-xl font-bold text-xs border flex items-center justify-center gap-2 transition-all active:scale-95 ${isDark ? 'bg-slate-800/80 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-800'}`}
               >
-                <span className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-[18px] text-amber-400">lock</span>
-                  <span>Lock Terminal</span>
-                </span>
-                <span className="material-symbols-outlined text-[16px] text-slate-400">chevron_right</span>
+                <span className="material-symbols-outlined text-[18px] text-amber-400">lock</span>
+                Lock Terminal
               </button>
-
               <button
                 onClick={handleLogout}
-                className="w-full py-3 px-4 rounded-xl font-bold text-xs bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 text-red-400 flex items-center justify-between transition-all active:scale-98"
+                className="py-3 px-4 rounded-xl font-bold text-xs bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 text-red-400 flex items-center justify-center gap-2 transition-all active:scale-95"
               >
-                <span className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-[18px]">logout</span>
-                  <span>Log Out / Switch User</span>
-                </span>
-                <span className="material-symbols-outlined text-[16px]">chevron_right</span>
+                <span className="material-symbols-outlined text-[18px]">logout</span>
+                Log Out / Switch User
               </button>
             </div>
           </div>

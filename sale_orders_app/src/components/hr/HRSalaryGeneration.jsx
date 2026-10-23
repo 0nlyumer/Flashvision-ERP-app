@@ -465,6 +465,7 @@ export default function HRSalaryGeneration({ isMobile }) {
             dailyMap[logDate] = {
               ...(dailyMap[logDate] || {}),
               status: log.status || 'present',
+              shortPunch: Boolean(log.shortPunch) || Boolean(dailyMap[logDate]?.shortPunch),
               inTime: log.inTime || dailyMap[logDate]?.inTime,
               outTime: log.outTime || dailyMap[logDate]?.outTime,
               ot: parseFloat(log.ot || log.overtimeHours || dailyMap[logDate]?.ot || 0) || 0,
@@ -502,7 +503,12 @@ export default function HRSalaryGeneration({ isMobile }) {
         const st = String(rec.status || '').toLowerCase().trim();
         const hasPunch = Boolean(rec.inTime || rec.outTime);
 
-        if (st.includes('present') || st === 'completed' || st === 'p' || hasPunch) {
+        if (rec.shortPunch) {
+          // FLASHAM PHASE A: a short punch the terminal marked not-counted
+          // (status 'Absent' + shortPunch flag) is never a worked day, even
+          // though the record still carries its punch times for audit.
+          absentsCount += 1;
+        } else if (st.includes('present') || st === 'completed' || st === 'p' || hasPunch) {
           workedDays += 1;
         } else if (st.includes('half')) {
           workedDays += 0.5;

@@ -404,6 +404,36 @@ export const syncFGComboConfigToTable = async (config) => {
   }
 };
 
+// --- Flash AM Configuration (app_config) — FlashAM Phase A -----------------
+// Flash AM terminal configuration rides in app_config under key 'flashAmConfig':
+// the table copy wins on load and changes write through, mirroring fgComboConfig.
+
+export const loadFlashAmConfigFromTable = async () => {
+  try {
+    const { data, error } = await supabase
+      .from('app_config')
+      .select('data')
+      .eq('key', 'flashAmConfig')
+      .maybeSingle();
+    if (error || !data || typeof data.data !== 'object' || data.data === null) return null;
+    return data.data;
+  } catch (_) {
+    return null;
+  }
+};
+
+export const syncFlashAmConfigToTable = async (config) => {
+  if (!config || typeof config !== 'object') return;
+  try {
+    const { error } = await supabase
+      .from('app_config')
+      .upsert({ key: 'flashAmConfig', data: config, updated_at: new Date().toISOString() }, { onConflict: 'key' });
+    if (error) throw error;
+  } catch (err) {
+    console.warn('[EntityTables] flashAmConfig write-through failed:', err?.message || err);
+  }
+};
+
 // --- categoryPrefixes + scalars (app_config) — Phase C Step 6 -------------
 // App-config completion: the remaining blob config now also rides in
 // app_config, mirroring adminSetup. categoryPrefixes (the item-code prefix
