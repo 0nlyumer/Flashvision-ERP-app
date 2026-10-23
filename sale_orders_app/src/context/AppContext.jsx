@@ -4501,11 +4501,41 @@ export const AppProvider = ({ children }) => {
           grn.id === invoice.sourceId ? { ...grn, isInvoiced: true } : grn
         );
       }
+
+      const rateMap = new Map();
+      (invoice.items || []).forEach(line => {
+        const rate = Number(line.unitPrice);
+        if (!line.itemCode || Number.isNaN(rate)) return;
+        const target = (prev.items || []).find(it => it.sku === line.itemCode || it.id === line.itemCode);
+        if (target) {
+          rateMap.set(target.id, rate);
+        }
+      });
+
+      const nextItems = rateMap.size > 0
+        ? (prev.items || []).map(it => {
+            if (rateMap.has(it.id)) {
+              const rate = rateMap.get(it.id);
+              const formatted = 'Rs. ' + rate.toFixed(2);
+              return {
+                ...it,
+                price: formatted,
+                pricesByType: {
+                  ...(it.pricesByType || {}),
+                  'Base Item': formatted
+                }
+              };
+            }
+            return it;
+          })
+        : prev.items;
+
       return {
         ...prev,
         inwardGatePasses: nextGatePasses,
         grns: nextGRNs,
-        purchaseInvoices: [invoice, ...(prev.purchaseInvoices || [])]
+        purchaseInvoices: [invoice, ...(prev.purchaseInvoices || [])],
+        items: nextItems
       };
     });
     addNotification('Purchase Invoice Posted', `Invoice ${invoice.id} has been posted successfully.`, 'success');

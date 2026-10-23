@@ -15,7 +15,7 @@ export default function InvAdjustment({ selectedDepartments = [], onBack }) {
   
   // State for the multi-item form
   const [lines, setLines] = useState([
-      { id: Date.now(), itemId: '', type: 'Addition', qty: '', reason: '', customReason: '', remarks: '', outputType: '' }
+      { id: Date.now(), itemId: '', department: '', type: 'Addition', qty: '', reason: '', customReason: '', remarks: '', outputType: '' }
   ]);
 
   // Local department filter for modules that don't pass it down
@@ -66,7 +66,7 @@ export default function InvAdjustment({ selectedDepartments = [], onBack }) {
   ];
 
   const handleAddLine = () => {
-      setLines([...lines, { id: Date.now(), itemId: '', type: 'Addition', qty: '', reason: '', customReason: '', remarks: '', outputType: '' }]);
+      setLines([...lines, { id: Date.now(), itemId: '', department: '', type: 'Addition', qty: '', reason: '', customReason: '', remarks: '', outputType: '' }]);
   };
 
   const handleRemoveLine = (idToRemove) => {
@@ -76,7 +76,25 @@ export default function InvAdjustment({ selectedDepartments = [], onBack }) {
   };
 
   const updateLine = (id, field, value) => {
-      setLines(lines.map(l => l.id === id ? { ...l, [field]: value } : l));
+      setLines(lines => lines.map(l => l.id === id ? { ...l, [field]: value } : l));
+  };
+
+  const handleSelectItem = (lineId, item) => {
+      if (!item) {
+          setLines(lines => lines.map(l => l.id === lineId ? { ...l, itemId: '', department: '' } : l));
+          return;
+      }
+      const fullItem = state?.items?.find(i => i.id === item.id) || item;
+      const depts = (fullItem.department || '').split(',').map(d => d.trim()).filter(Boolean);
+      let chosenDept = '';
+      if (depts.length === 1) {
+          chosenDept = depts[0];
+      } else if (effectiveDepartments[0] && depts.includes(effectiveDepartments[0])) {
+          chosenDept = effectiveDepartments[0];
+      }
+      setLines(lines => lines.map(l => l.id === lineId ? { ...l, itemId: fullItem.id, department: chosenDept } : l));
+      setItemSearchQuery('');
+      setOpenItemDropdownId(null);
   };
 
   const handleProcessAdjustment = async () => {
@@ -87,23 +105,33 @@ export default function InvAdjustment({ selectedDepartments = [], onBack }) {
           return;
       }
       
-      let hasError = false;
-      let errorMsg = 'Quantity must be > 0 and Custom Reason must be provided if "Others" is selected.';
-      
-      validLines.forEach(l => {
-          if (parseFloat(l.qty) <= 0) hasError = true;
-          if (l.reason === 'Others' && !l.customReason) hasError = true;
-          
+      for (const l of validLines) {
           const item = state.items.find(i => i.id === l.itemId);
-          if (item && item.category === 'Finished Goods' && !l.outputType) {
-              hasError = true;
-              errorMsg = `Output Type is required for Finished Good: ${item.name}`;
-          }
-      });
+          const itemName = item?.name || 'Selected item';
+          const qty = parseFloat(l.qty);
 
-      if (hasError) {
-          addNotification('Error', errorMsg, 'error');
-          return;
+          if (isNaN(qty) || qty <= 0 || (l.reason === 'Others' && !l.customReason)) {
+              addNotification('Error', 'Quantity must be > 0 and Custom Reason must be provided if "Others" is selected.', 'error');
+              return;
+          }
+
+          if (!l.department) {
+              addNotification('Error', `Department is required for: ${itemName}`, 'error');
+              return;
+          }
+
+          if (l.type === 'Subtraction') {
+              const available = item?.stockByDepartment?.[l.department] || 0;
+              if (qty > available) {
+                  addNotification('Error', `Insufficient stock in ${l.department} for ${itemName} (Available: ${available}).`, 'error');
+                  return;
+              }
+          }
+
+          if (item && item.category === 'Finished Goods' && !l.outputType) {
+              addNotification('Error', `Output Type is required for Finished Good: ${itemName}`, 'error');
+              return;
+          }
       }
 
       // Check internet and Supabase connection
@@ -145,16 +173,9 @@ export default function InvAdjustment({ selectedDepartments = [], onBack }) {
           const netChange = line.type === 'Addition' ? qty : -qty;
           const selectedItem = updatedItems.find(i => i.id === line.itemId);
           
-          let targetDept = effectiveDepartments[0] || 'Warehouse';
+          const targetDept = line.department;
           if (selectedItem) {
               if (!selectedItem.stockByDepartment) selectedItem.stockByDepartment = {};
-              
-              // Auto-associate department if not in item mapped list
-              const existingDepts = (selectedItem.department || '').split(',').map(d => d.trim()).filter(Boolean);
-              if (!existingDepts.includes(targetDept)) {
-                  existingDepts.push(targetDept);
-                  selectedItem.department = existingDepts.join(', ');
-              }
               
               selectedItem.stockByDepartment[targetDept] = (selectedItem.stockByDepartment[targetDept] || 0) + netChange;
               selectedItem.stock = Object.values(selectedItem.stockByDepartment).reduce((sum, val) => sum + Number(val || 0), 0);
@@ -189,12 +210,12 @@ export default function InvAdjustment({ selectedDepartments = [], onBack }) {
       setCollection('items', updatedItems);
       setCollection('adjustments', updatedAdjustments);
       
-      setLines([{ id: Date.now(), itemId: '', type: 'Addition', qty: '', reason: '', customReason: '', remarks: '', outputType: '' }]);
+      setLines([{ id: Date.now(), itemId: '', department: '', type: 'Addition', qty: '', reason: '', customReason: '', remarks: '', outputType: '' }]);
       addNotification('Success', `Processed ${validLines.length} stock adjustment(s).`, 'success');
   };
 
   const handleDiscard = () => {
-      setLines([{ id: Date.now(), itemId: '', type: 'Addition', qty: '', reason: '', customReason: '', remarks: '', outputType: '' }]);
+      setLines([{ id: Date.now(), itemId: '', department: '', type: 'Addition', qty: '', reason: '', customReason: '', remarks: '', outputType: '' }]);
   };
 
   const handlePrint = (act) => {
@@ -248,7 +269,7 @@ export default function InvAdjustment({ selectedDepartments = [], onBack }) {
                                   const val = e.target.value;
                                   setLocalDepartments(val ? [val] : []);
                                   // Clear selections if department changes
-                                  setLines([{ id: Date.now(), itemId: '', type: 'Addition', qty: '', reason: '', customReason: '', remarks: '', outputType: '' }]);
+                                  setLines([{ id: Date.now(), itemId: '', department: '', type: 'Addition', qty: '', reason: '', customReason: '', remarks: '', outputType: '' }]);
                               }}
                               className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg py-2.5 px-4 text-sm font-body text-on-surface focus:outline-none focus:bg-surface-container-lowest focus:border-outline-variant/40 transition-all cursor-pointer font-bold"
                           >
@@ -279,7 +300,8 @@ export default function InvAdjustment({ selectedDepartments = [], onBack }) {
             <form className="space-y-6">
                 
               {lines.map((line, index) => {
-                  const selectedItem = filteredItems.find(i => i.id === line.itemId);
+                  const selectedItem = (state?.items || []).find(i => i.id === line.itemId) || filteredItems.find(i => i.id === line.itemId);
+                  const itemDepartments = (selectedItem?.department || '').split(',').map(d => d.trim()).filter(Boolean);
                   return (
                   <div key={line.id} className="p-6 bg-surface border border-outline-variant/10 rounded-xl relative group">
                       {lines.length > 1 && (
@@ -298,7 +320,7 @@ export default function InvAdjustment({ selectedDepartments = [], onBack }) {
                           <div className="relative">
                             <div className="flex items-center justify-between mb-2">
                               <label className="text-sm font-bold text-on-surface tracking-wide uppercase text-[10px]">Select Item</label>
-                              <FGCombinationBuilder compact={true} allowCreation={false} onSelectItem={(chosen) => { updateLine(line.id, 'itemId', chosen.id); setItemSearchQuery(''); setOpenItemDropdownId(null); }} />
+                              <FGCombinationBuilder compact={true} allowCreation={false} onSelectItem={(chosen) => handleSelectItem(line.id, chosen)} />
                             </div>
                             <div 
                                 className="relative cursor-pointer"
@@ -313,7 +335,7 @@ export default function InvAdjustment({ selectedDepartments = [], onBack }) {
                                   onChange={(e) => {
                                       setItemSearchQuery(e.target.value);
                                       setOpenItemDropdownId(line.id);
-                                      if (e.target.value === '') updateLine(line.id, 'itemId', '');
+                                      if (e.target.value === '') handleSelectItem(line.id, null);
                                   }}
                                   onFocus={() => {
                                       setOpenItemDropdownId(line.id);
@@ -333,11 +355,7 @@ export default function InvAdjustment({ selectedDepartments = [], onBack }) {
                                                     <li 
                                                         key={item.id}
                                                         className="px-4 py-3 hover:bg-surface-container-low cursor-pointer flex items-center gap-3 transition-colors group"
-                                                        onClick={() => {
-                                                            updateLine(line.id, 'itemId', item.id);
-                                                            setOpenItemDropdownId(null);
-                                                            setItemSearchQuery('');
-                                                        }}
+                                                        onClick={() => handleSelectItem(line.id, item)}
                                                     >
                                                         <div className="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
                                                             <span className="material-symbols-outlined text-[16px]">conveyor_belt</span>
@@ -395,7 +413,36 @@ export default function InvAdjustment({ selectedDepartments = [], onBack }) {
                           </div>
                       </div>
 
-                      <div className={`grid grid-cols-1 md:grid-cols-${selectedItem && selectedItem.category === 'Finished Goods' ? '3' : '2'} gap-6`}>
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                          {/* Department */}
+                          <div className="relative">
+                              <label className="block text-sm font-bold text-on-surface mb-2 tracking-wide uppercase text-[10px] text-primary">Department *</label>
+                              <div className="relative">
+                                  <select
+                                      className={`w-full bg-surface-container-low border rounded-xl px-4 py-4 focus:ring-2 focus:ring-primary focus:bg-surface-container-lowest transition-all outline-none text-sm font-medium appearance-none ${line.department ? 'border-primary ring-2 ring-primary/20 bg-surface-container-lowest text-on-surface' : 'border-outline-variant/20 hover:bg-surface-container text-on-surface-variant'} ${!selectedItem ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}
+                                      value={line.department || ''}
+                                      onChange={(e) => updateLine(line.id, 'department', e.target.value)}
+                                      disabled={!selectedItem}
+                                  >
+                                      {!selectedItem ? (
+                                          <option value="" disabled>Select item first</option>
+                                      ) : (
+                                          <>
+                                              <option value="" disabled>Select department...</option>
+                                              {itemDepartments.map(dept => (
+                                                  <option key={dept} value={dept}>{dept}</option>
+                                              ))}
+                                          </>
+                                      )}
+                                  </select>
+                                  <span className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 text-outline-variant pointer-events-none">expand_more</span>
+                              </div>
+                              {selectedItem && line.department && (
+                                  <p className="mt-1.5 text-[11px] text-on-surface-variant font-medium">
+                                      Available in this department: {selectedItem.stockByDepartment?.[line.department] || 0}
+                                  </p>
+                              )}
+                          </div>
                           {/* Reason */}
                           <div className="relative">
                             <label className="block text-sm font-bold text-on-surface mb-2 tracking-wide uppercase text-[10px]">Reason</label>
