@@ -1460,17 +1460,17 @@ export default function DocumentRoutingCenter() {
             className="bg-white rounded-3xl overflow-hidden shadow-2xl flex flex-col w-full max-w-4xl h-[75vh] border border-slate-200 animate-scaleUp text-left"
           >
             {/* Header */}
-            <div className="bg-slate-900 px-6 py-4 flex items-center justify-between shrink-0">
+            <div className="bg-slate-100 dark:bg-slate-900 px-6 py-4 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-3">
                 <span className="material-symbols-outlined text-primary text-2xl font-bold">history</span>
                 <div>
-                  <h3 className="text-sm font-black text-white leading-none">Execution History: {historyRule.name}</h3>
-                  <p className="text-[10px] text-slate-400 mt-1">Rule ID: {historyRule.id} • Dynamic Run Log</p>
+                  <h3 className="text-sm font-black text-slate-900 dark:text-white leading-none">Execution History: {historyRule.name}</h3>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">Rule ID: {historyRule.id} • Dynamic Run Log</p>
                 </div>
               </div>
               <button 
                 onClick={() => setHistoryRule(null)}
-                className="p-1.5 hover:bg-slate-800 rounded-xl text-slate-400 hover:text-white transition-all cursor-pointer"
+                className="p-1.5 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-xl text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all cursor-pointer"
               >
                 <span className="material-symbols-outlined text-lg font-bold">close</span>
               </button>

@@ -219,18 +219,18 @@ export default function AICopilot({ isOpen, onClose }) {
 
   return (
     <div className="fixed inset-0 z-[120] flex items-center justify-center p-3 sm:p-6 bg-black/60 backdrop-blur-md animate-in fade-in duration-200">
-      <div className="relative w-full max-w-2xl h-[90vh] max-h-[820px] bg-slate-900 text-slate-100 rounded-3xl shadow-2xl border border-cyan-500/30 flex flex-col overflow-hidden font-body">
+      <div className="relative w-full max-w-2xl h-[90vh] max-h-[820px] bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 rounded-3xl shadow-2xl border border-cyan-500/30 flex flex-col overflow-hidden font-body">
         
         {/* Top Header */}
-        <div className="px-6 py-4 bg-slate-950/80 border-b border-cyan-500/20 flex items-center justify-between shrink-0">
+        <div className="px-6 py-4 bg-slate-100/90 dark:bg-slate-950/80 border-b border-cyan-500/20 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-cyan-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-cyan-500/30">
               <span className="material-symbols-outlined text-white text-[24px]">bolt</span>
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="font-bold text-base text-white tracking-wide">FlashVision AI Brain</h2>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+                <h2 className="font-bold text-base text-slate-900 dark:text-white tracking-wide">FlashVision AI Brain</h2>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-cyan-500/20 text-cyan-700 dark:text-cyan-300 border border-cyan-500/30">
                   Soul Core
                 </span>
               </div>
@@ -238,7 +238,7 @@ export default function AICopilot({ isOpen, onClose }) {
                 <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
                 <span>Pool: {keyStatus.availableKeys}/{keyStatus.totalKeys} Keys Active</span>
                 <span className="text-slate-600">|</span>
-                <span className="text-cyan-400 font-semibold">{state.currentUser?.role || 'Super Admin'}</span>
+                <span className="text-cyan-600 dark:text-cyan-400 font-semibold">{state.currentUser?.role || 'Super Admin'}</span>
               </div>
             </div>
           </div>
@@ -250,7 +250,7 @@ export default function AICopilot({ isOpen, onClose }) {
                 if (!voiceMuted) humanoidAudio.stop();
               }}
               title={voiceMuted ? 'Unmute Humanoid Voice' : 'Mute Humanoid Voice'}
-              className={`w-9 h-9 rounded-xl flex items-center justify-center transition-colors ${voiceMuted ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30' : 'bg-slate-800 text-cyan-300 hover:bg-slate-700'}`}
+              className={`w-9 h-9 rounded-xl flex items-center justify-center transition-colors ${voiceMuted ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30' : 'bg-slate-200 dark:bg-slate-800 text-cyan-700 dark:text-cyan-300 hover:bg-slate-300 dark:hover:bg-slate-700'}`}
             >
               <span className="material-symbols-outlined text-[20px]">
                 {voiceMuted ? 'volume_off' : 'volume_up'}
@@ -258,7 +258,7 @@ export default function AICopilot({ isOpen, onClose }) {
             </button>
             <button
               onClick={onClose}
-              className="w-9 h-9 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center transition-colors"
+              className="w-9 h-9 rounded-xl bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 flex items-center justify-center transition-colors"
             >
               <span className="material-symbols-outlined text-[20px]">close</span>
             </button>
@@ -273,7 +273,7 @@ export default function AICopilot({ isOpen, onClose }) {
               className={`flex gap-3 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
             >
               {msg.role !== 'user' && (
-                <div className="w-8 h-8 rounded-xl bg-cyan-600/30 border border-cyan-500/40 flex items-center justify-center text-cyan-300 shrink-0 mt-0.5">
+                <div className="w-8 h-8 rounded-xl bg-cyan-600/30 border border-cyan-500/40 flex items-center justify-center text-cyan-700 dark:text-cyan-300 shrink-0 mt-0.5">
                   <span className="material-symbols-outlined text-[18px]">neurology</span>
                 </div>
               )}
@@ -281,7 +281,7 @@ export default function AICopilot({ isOpen, onClose }) {
                 className={`max-w-[85%] rounded-2xl p-4 text-sm leading-relaxed shadow-md ${
                   msg.role === 'user'
                     ? 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white rounded-tr-none'
-                    : 'bg-slate-800/90 border border-slate-700/60 text-slate-200 rounded-tl-none'
+                    : 'bg-slate-100 dark:bg-slate-800/90 border border-slate-300/70 dark:border-slate-700/60 text-slate-800 dark:text-slate-200 rounded-tl-none'
                 }`}
               >
                 <div className="whitespace-pre-wrap">{msg.text}</div>
@@ -292,21 +292,21 @@ export default function AICopilot({ isOpen, onClose }) {
 
           {/* Pending Action Card */}
           {pendingAction && (
-            <div className="p-4 rounded-2xl bg-cyan-950/60 border border-cyan-500/40 shadow-xl space-y-3 animate-in fade-in">
+            <div className="p-4 rounded-2xl bg-cyan-50 dark:bg-cyan-950/60 border border-cyan-500/40 shadow-xl space-y-3 animate-in fade-in">
               <div className="flex items-center justify-between border-b border-cyan-500/20 pb-2">
-                <span className="text-xs font-bold uppercase tracking-wider text-cyan-400 flex items-center gap-1.5">
+                <span className="text-xs font-bold uppercase tracking-wider text-cyan-700 dark:text-cyan-400 flex items-center gap-1.5">
                   <span className="material-symbols-outlined text-[16px]">edit_document</span>
                   Action Ready for Confirmation
                 </span>
                 <span className="text-[11px] text-slate-400 font-mono">{pendingAction.name}</span>
               </div>
-              <div className="text-xs text-slate-300 bg-slate-900/60 p-3 rounded-xl border border-slate-800 font-mono whitespace-pre-wrap">
+              <div className="text-xs text-slate-700 dark:text-slate-300 bg-white/70 dark:bg-slate-900/60 p-3 rounded-xl border border-slate-300 dark:border-slate-800 font-mono whitespace-pre-wrap">
                 {JSON.stringify(pendingAction.args, null, 2)}
               </div>
               <div className="flex gap-2 justify-end pt-1">
                 <button
                   onClick={() => setPendingAction(null)}
-                  className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors"
+                  className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 transition-colors"
                 >
                   Discard
                 </button>
@@ -322,7 +322,7 @@ export default function AICopilot({ isOpen, onClose }) {
           )}
 
           {isThinking && (
-            <div className="flex gap-3 items-center text-cyan-400 text-xs italic">
+            <div className="flex gap-3 items-center text-cyan-600 dark:text-cyan-400 text-xs italic">
               <span className="material-symbols-outlined animate-spin text-[18px]">progress_activity</span>
               FlashVision Brain analyze kar raha hai...
             </div>
@@ -332,7 +332,7 @@ export default function AICopilot({ isOpen, onClose }) {
         </div>
 
         {/* Quick Suggestion Chips */}
-        <div className="px-5 py-2 bg-slate-950/40 border-t border-slate-800/60 flex items-center gap-2 overflow-x-auto no-scrollbar">
+        <div className="px-5 py-2 bg-slate-100/70 dark:bg-slate-950/40 border-t border-slate-200 dark:border-slate-800/60 flex items-center gap-2 overflow-x-auto no-scrollbar">
           {[
             '📊 Low Stock Report do',
             '🛒 Ahmed Bhai ka sale order banao',
@@ -342,7 +342,7 @@ export default function AICopilot({ isOpen, onClose }) {
             <button
               key={idx}
               onClick={() => handleSend(chip)}
-              className="px-3 py-1 rounded-xl text-[11px] font-medium bg-slate-800/80 hover:bg-cyan-950 hover:text-cyan-300 hover:border-cyan-500/40 border border-slate-700/50 text-slate-300 whitespace-nowrap transition-all"
+              className="px-3 py-1 rounded-xl text-[11px] font-medium bg-slate-200/80 dark:bg-slate-800/80 hover:bg-cyan-100 dark:hover:bg-cyan-950 hover:text-cyan-800 dark:hover:text-cyan-300 hover:border-cyan-500/40 border border-slate-300 dark:border-slate-700/50 text-slate-700 dark:text-slate-300 whitespace-nowrap transition-all"
             >
               {chip}
             </button>
@@ -351,7 +351,7 @@ export default function AICopilot({ isOpen, onClose }) {
 
         {/* Voice Visualizer / Status Banner */}
         {(isListening || isSpeaking) && (
-          <div className="px-5 py-2 bg-gradient-to-r from-cyan-950/80 via-indigo-950/80 to-purple-950/80 border-t border-cyan-500/30 flex items-center justify-between text-xs text-cyan-300">
+          <div className="px-5 py-2 bg-gradient-to-r from-cyan-100/80 via-indigo-100/80 to-purple-100/80 dark:from-cyan-950/80 dark:via-indigo-950/80 dark:to-purple-950/80 border-t border-cyan-500/30 flex items-center justify-between text-xs text-cyan-800 dark:text-cyan-300">
             <div className="flex items-center gap-2">
               <span className="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-ping"></span>
               <span>{isListening ? 'Aapki aawaz suni ja rahi hai...' : 'AI Humanoid bol rahi hai...'}</span>
@@ -368,7 +368,7 @@ export default function AICopilot({ isOpen, onClose }) {
         )}
 
         {/* Bottom Input Area */}
-        <div className="p-4 bg-slate-950 border-t border-slate-800/80 flex items-center gap-3">
+        <div className="p-4 bg-slate-50 dark:bg-slate-950 border-t border-slate-200 dark:border-slate-800/80 flex items-center gap-3">
           <button
             onClick={toggleListening}
             className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all shadow-lg ${
@@ -389,7 +389,7 @@ export default function AICopilot({ isOpen, onClose }) {
             onChange={(e) => setInputText(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleSend()}
             placeholder="Kuch bhi bole ya type karein (e.g. 50 bags cement ka order bana do)..."
-            className="flex-1 bg-slate-900 border border-slate-700/70 focus:border-cyan-500 rounded-2xl px-4 py-3 text-sm text-slate-100 placeholder-slate-500 outline-none transition-all shadow-inner"
+            className="flex-1 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700/70 focus:border-cyan-500 rounded-2xl px-4 py-3 text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 outline-none transition-all shadow-inner"
           />
 
           <button

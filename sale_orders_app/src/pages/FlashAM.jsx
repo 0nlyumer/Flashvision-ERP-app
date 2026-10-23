@@ -2557,7 +2557,7 @@ export default function FlashAM() {
 
       {/* Floating Toast Notification */}
       {toastMessage && (
-        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-2xl shadow-2xl border flex items-center gap-2.5 animate-in slide-in-from-top-4 duration-300 backdrop-blur-xl bg-slate-900/95 text-white border-slate-700">
+        <div className={`fixed top-16 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-2xl shadow-2xl border flex items-center gap-2.5 animate-in slide-in-from-top-4 duration-300 backdrop-blur-xl ${isDark ? 'bg-slate-900/95 text-white border-slate-700' : 'bg-white/95 text-slate-900 border-slate-200'}`}>
           <span
             className={`material-symbols-outlined text-[18px] ${
               toastMessage.type === 'success'
@@ -3347,20 +3347,20 @@ export default function FlashAM() {
               </div>
 
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 pt-2">
-                <div className="p-3 rounded-xl bg-slate-900/40 border border-slate-800">
-                  <div className="text-[10px] text-slate-400 uppercase font-bold">Connection</div>
-                  <div className="text-xs font-bold text-emerald-400 mt-1 flex items-center gap-1">
+                <div className={`p-3 rounded-xl border ${isDark ? 'bg-slate-900/40 border-slate-800' : 'bg-white border-slate-200'}`}>
+                  <div className={`text-[10px] uppercase font-bold ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Connection</div>
+                  <div className={`text-xs font-bold mt-1 flex items-center gap-1 ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`}>
                     <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
                     {isOnline ? 'Online Realtime' : 'Offline Mode'}
                   </div>
                 </div>
-                <div className="p-3 rounded-xl bg-slate-900/40 border border-slate-800">
-                  <div className="text-[10px] text-slate-400 uppercase font-bold">Last Synchronized</div>
-                  <div className="text-xs font-bold text-white mt-1 font-mono">{lastSyncTime || 'Just now'}</div>
+                <div className={`p-3 rounded-xl border ${isDark ? 'bg-slate-900/40 border-slate-800' : 'bg-white border-slate-200'}`}>
+                  <div className={`text-[10px] uppercase font-bold ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Last Synchronized</div>
+                  <div className={`text-xs font-bold mt-1 font-mono ${isDark ? 'text-white' : 'text-slate-900'}`}>{lastSyncTime || 'Just now'}</div>
                 </div>
-                <div className="p-3 rounded-xl bg-slate-900/40 border border-slate-800">
-                  <div className="text-[10px] text-slate-400 uppercase font-bold">Pending Offline Punches</div>
-                  <div className="text-xs font-bold text-amber-400 mt-1">{pendingQueue.length} records</div>
+                <div className={`p-3 rounded-xl border ${isDark ? 'bg-slate-900/40 border-slate-800' : 'bg-white border-slate-200'}`}>
+                  <div className={`text-[10px] uppercase font-bold ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Pending Offline Punches</div>
+                  <div className={`text-xs font-bold mt-1 ${isDark ? 'text-amber-400' : 'text-amber-600'}`}>{pendingQueue.length} records</div>
                 </div>
               </div>
             </div>

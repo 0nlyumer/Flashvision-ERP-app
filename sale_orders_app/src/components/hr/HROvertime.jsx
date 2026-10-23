@@ -891,9 +891,9 @@ export default function HROvertime({ isMobile }) {
       {showPrintPreviewModal && (
         <div className="fixed inset-0 z-[99999] bg-black/75 backdrop-blur-xs flex items-center justify-center p-2 sm:p-6 animate-in fade-in duration-200">
           <div className="bg-white rounded-3xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden shadow-2xl">
-            <div className="p-4 bg-slate-900 text-white flex items-center justify-between">
+            <div className="p-4 bg-slate-100 dark:bg-slate-900 text-slate-900 dark:text-white flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-xl text-primary-container">print</span>
+                <span className="material-symbols-outlined text-xl text-primary dark:text-primary-container">print</span>
                 <span className="font-bold text-sm">Overtime Request Official Print Document</span>
               </div>
               <div className="flex items-center gap-3">
@@ -906,7 +906,7 @@ export default function HROvertime({ isMobile }) {
                 </button>
                 <button 
                   onClick={() => setShowPrintPreviewModal(false)}
-                  className="p-1.5 rounded-lg hover:bg-white/10 text-white/80 transition-colors cursor-pointer"
+                  className="p-1.5 rounded-lg hover:bg-slate-900/10 dark:hover:bg-white/10 text-slate-500 dark:text-white/80 transition-colors cursor-pointer"
                 >
                   <span className="material-symbols-outlined text-xl">close</span>
                 </button>

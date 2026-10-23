@@ -466,21 +466,21 @@ export default function UniversalPrintStudioModal({
       />
 
       {/* TOP CONTROL TOOLBAR */}
-      <div className="no-print w-full bg-slate-900 border-b border-slate-800 px-4 md:px-6 py-3.5 flex flex-wrap items-center justify-between gap-3 shrink-0 shadow-lg z-20">
+      <div className="no-print w-full bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-4 md:px-6 py-3.5 flex flex-wrap items-center justify-between gap-3 shrink-0 shadow-lg z-20">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-blue-500/10 text-blue-400 border border-blue-500/20 flex items-center justify-center font-bold">
+          <div className="w-10 h-10 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 flex items-center justify-center font-bold">
             <span className="material-symbols-outlined text-xl">palette</span>
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="text-sm font-extrabold text-white tracking-tight">{docTitleDisplay}</h2>
-              <span className="px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20 text-[10px] font-mono font-bold uppercase">
+              <h2 className="text-sm font-extrabold text-slate-900 dark:text-white tracking-tight">{docTitleDisplay}</h2>
+              <span className="px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 text-[10px] font-mono font-bold uppercase">
                 {currentPaper.label}
               </span>
             </div>
-            <p className="text-[11px] text-slate-400">
-              Universal Print Studio • Total Rows: <strong className="text-white">{resolvedLineItems.length}</strong> •{' '}
-              Pages: <strong className="text-white">{pages.length}</strong>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400">
+              Universal Print Studio • Total Rows: <strong className="text-slate-900 dark:text-white">{resolvedLineItems.length}</strong> •{' '}
+              Pages: <strong className="text-slate-900 dark:text-white">{pages.length}</strong>
             </p>
           </div>
         </div>
@@ -491,7 +491,7 @@ export default function UniversalPrintStudioModal({
             type="button"
             onClick={handleExportCsv}
             disabled={exporting !== null}
-            className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+            className="px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-700 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
             title="Export Line Items into CSV Spreadsheet"
           >
             <span className="material-symbols-outlined text-base text-emerald-400">table_view</span>
@@ -502,7 +502,7 @@ export default function UniversalPrintStudioModal({
             type="button"
             onClick={handleDownloadImage}
             disabled={exporting !== null}
-            className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+            className="px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-700 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
             title="Download High-Resolution PNG Image"
           >
             <span className="material-symbols-outlined text-base text-amber-400">image</span>
@@ -513,7 +513,7 @@ export default function UniversalPrintStudioModal({
             type="button"
             onClick={handleDownloadPdf}
             disabled={exporting !== null}
-            className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+            className="px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-700 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
             title="Generate and Download Vector PDF"
           >
             <span className="material-symbols-outlined text-base text-red-400">picture_as_pdf</span>
@@ -543,7 +543,7 @@ export default function UniversalPrintStudioModal({
           <button
             type="button"
             onClick={onClose}
-            className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition-all ml-1 cursor-pointer"
+            className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all ml-1 cursor-pointer"
           >
             <span className="material-symbols-outlined text-lg">close</span>
           </button>
@@ -555,15 +555,15 @@ export default function UniversalPrintStudioModal({
         {/* ============================================================== */}
         {/* LEFT TOOLBOX & INSPECTOR DRAWER                                */}
         {/* ============================================================== */}
-        <div className="no-print w-full lg:w-[420px] xl:w-[460px] bg-slate-900 border-r border-slate-800 flex flex-col shrink-0 overflow-hidden shadow-2xl z-10">
+        <div className="no-print w-full lg:w-[420px] xl:w-[460px] bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col shrink-0 overflow-hidden shadow-2xl z-10">
           {/* Tab Navigation */}
-          <div className="flex items-center border-b border-slate-800 bg-slate-950/60 p-1.5 gap-1 overflow-x-auto text-xs font-bold">
+          <div className="flex items-center border-b border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-950/60 p-1.5 gap-1 overflow-x-auto text-xs font-bold">
             <button
               onClick={() => setActiveTab('pagination')}
               className={`px-3 py-2 rounded-xl transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
                 activeTab === 'pagination'
                   ? 'bg-blue-600 text-white shadow'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200/70 dark:hover:bg-slate-800/60'
               }`}
             >
               <span className="material-symbols-outlined text-sm">auto_stories</span>
@@ -574,7 +574,7 @@ export default function UniversalPrintStudioModal({
               className={`px-3 py-2 rounded-xl transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
                 activeTab === 'columns'
                   ? 'bg-blue-600 text-white shadow'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200/70 dark:hover:bg-slate-800/60'
               }`}
             >
               <span className="material-symbols-outlined text-sm">view_column</span>
@@ -585,7 +585,7 @@ export default function UniversalPrintStudioModal({
               className={`px-3 py-2 rounded-xl transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
                 activeTab === 'header'
                   ? 'bg-blue-600 text-white shadow'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200/70 dark:hover:bg-slate-800/60'
               }`}
             >
               <span className="material-symbols-outlined text-sm">badge</span>
@@ -596,7 +596,7 @@ export default function UniversalPrintStudioModal({
               className={`px-3 py-2 rounded-xl transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
                 activeTab === 'branding'
                   ? 'bg-blue-600 text-white shadow'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200/70 dark:hover:bg-slate-800/60'
               }`}
             >
               <span className="material-symbols-outlined text-sm">style</span>
@@ -607,7 +607,7 @@ export default function UniversalPrintStudioModal({
               className={`px-3 py-2 rounded-xl transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
                 activeTab === 'signatures'
                   ? 'bg-blue-600 text-white shadow'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200/70 dark:hover:bg-slate-800/60'
               }`}
             >
               <span className="material-symbols-outlined text-sm">draw</span>
@@ -616,26 +616,26 @@ export default function UniversalPrintStudioModal({
           </div>
 
           {/* Tab Content Container */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-4 text-xs text-slate-300">
+          <div className="flex-1 overflow-y-auto p-4 space-y-4 text-xs text-slate-600 dark:text-slate-300">
             {/* ------------------------------------------------------------ */}
             {/* TAB 1: PAGINATION & ROWS PER PAGE ENGINE                     */}
             {/* ------------------------------------------------------------ */}
             {activeTab === 'pagination' && (
               <div className="space-y-4 animate-fade-in">
-                <div className="bg-slate-950/70 p-3.5 rounded-2xl border border-slate-800 space-y-3">
-                  <h3 className="font-bold text-white text-xs flex items-center gap-2">
-                    <span className="material-symbols-outlined text-blue-400 text-base">pageview</span>
+                <div className="bg-slate-50 dark:bg-slate-950/70 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-3">
+                  <h3 className="font-bold text-slate-900 dark:text-white text-xs flex items-center gap-2">
+                    <span className="material-symbols-outlined text-blue-500 dark:text-blue-400 text-base">pageview</span>
                     Multi-Page Splitting & Row Limits
                   </h3>
-                  <p className="text-[11px] text-slate-400">
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
                     Control exactly how many data rows appear on the 1st page versus continuation pages (Page 2, 3...).
                   </p>
 
                   {/* Rows on Page 1 */}
                   <div>
                     <div className="flex justify-between items-center mb-1">
-                      <label className="text-[11px] font-semibold text-slate-300">Rows on First Page (Page 1):</label>
-                      <span className="font-mono text-blue-400 font-bold">{layoutConfig.firstPageRows || 8} rows</span>
+                      <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-300">Rows on First Page (Page 1):</label>
+                      <span className="font-mono text-blue-600 dark:text-blue-400 font-bold">{layoutConfig.firstPageRows || 8} rows</span>
                     </div>
                     <input
                       type="range"
@@ -654,8 +654,8 @@ export default function UniversalPrintStudioModal({
                   {/* Rows on Subsequent Pages */}
                   <div>
                     <div className="flex justify-between items-center mb-1">
-                      <label className="text-[11px] font-semibold text-slate-300">Rows on Continuation Pages (Page 2+):</label>
-                      <span className="font-mono text-blue-400 font-bold">{layoutConfig.continuationPageRows || 14} rows</span>
+                      <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-300">Rows on Continuation Pages (Page 2+):</label>
+                      <span className="font-mono text-blue-600 dark:text-blue-400 font-bold">{layoutConfig.continuationPageRows || 14} rows</span>
                     </div>
                     <input
                       type="range"
@@ -672,16 +672,16 @@ export default function UniversalPrintStudioModal({
                   </div>
 
                   {/* Live Distribution Status */}
-                  <div className="p-2.5 rounded-xl bg-blue-950/40 border border-blue-900/50 text-[11px] text-blue-200">
+                  <div className="p-2.5 rounded-xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900/50 text-[11px] text-blue-800 dark:text-blue-200">
                     <div className="font-bold flex items-center gap-1.5">
-                      <span className="material-symbols-outlined text-sm text-blue-400">info</span>
+                      <span className="material-symbols-outlined text-sm text-blue-500 dark:text-blue-400">info</span>
                       Active Layout Distribution:
                     </div>
-                    <div className="mt-1 space-y-0.5 text-[10px] text-slate-300">
+                    <div className="mt-1 space-y-0.5 text-[10px] text-slate-600 dark:text-slate-300">
                       {pages.map((pItems, idx) => (
                         <div key={idx} className="flex justify-between">
                           <span>Page {idx + 1}:</span>
-                          <strong className="text-white">{pItems.length} rows</strong>
+                          <strong className="text-slate-900 dark:text-white">{pItems.length} rows</strong>
                         </div>
                       ))}
                     </div>
@@ -689,14 +689,14 @@ export default function UniversalPrintStudioModal({
                 </div>
 
                 {/* Repeat Controls */}
-                <div className="bg-slate-950/70 p-3.5 rounded-2xl border border-slate-800 space-y-3">
-                  <h3 className="font-bold text-white text-xs flex items-center gap-2">
-                    <span className="material-symbols-outlined text-blue-400 text-base">repeat</span>
+                <div className="bg-slate-50 dark:bg-slate-950/70 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-3">
+                  <h3 className="font-bold text-slate-900 dark:text-white text-xs flex items-center gap-2">
+                    <span className="material-symbols-outlined text-blue-500 dark:text-blue-400 text-base">repeat</span>
                     Page Repetition Rules
                   </h3>
 
-                  <label className="flex items-center justify-between p-2 rounded-xl bg-slate-900 border border-slate-800 cursor-pointer hover:bg-slate-800/60">
-                    <span className="text-[11px] text-slate-200 font-medium">Repeat Table Header Row on Each Page</span>
+                  <label className="flex items-center justify-between p-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800/60">
+                    <span className="text-[11px] text-slate-700 dark:text-slate-200 font-medium">Repeat Table Header Row on Each Page</span>
                     <input
                       type="checkbox"
                       checked={layoutConfig.repeatTableHeader !== false}
@@ -705,8 +705,8 @@ export default function UniversalPrintStudioModal({
                     />
                   </label>
 
-                  <label className="flex items-center justify-between p-2 rounded-xl bg-slate-900 border border-slate-800 cursor-pointer hover:bg-slate-800/60">
-                    <span className="text-[11px] text-slate-200 font-medium">Repeat Document Header / Logo on Page 2+</span>
+                  <label className="flex items-center justify-between p-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800/60">
+                    <span className="text-[11px] text-slate-700 dark:text-slate-200 font-medium">Repeat Document Header / Logo on Page 2+</span>
                     <input
                       type="checkbox"
                       checked={layoutConfig.repeatHeader === true}
@@ -716,11 +716,11 @@ export default function UniversalPrintStudioModal({
                   </label>
 
                   <div>
-                    <label className="block text-[11px] font-semibold text-slate-300 mb-1">Totals & Summary Placement:</label>
+                    <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-300 mb-1">Totals & Summary Placement:</label>
                     <select
                       value={layoutConfig.totalsPosition || 'last_page'}
                       onChange={(e) => updateLayout('totalsPosition', e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-800 rounded-xl p-2 text-xs text-white"
+                      className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-800 rounded-xl p-2 text-xs text-slate-900 dark:text-white"
                     >
                       <option value="last_page">Last Page Only (Recommended Standard)</option>
                       <option value="every_page">Bottom of Every Page</option>
@@ -729,19 +729,19 @@ export default function UniversalPrintStudioModal({
                 </div>
 
                 {/* Paper Sizing */}
-                <div className="bg-slate-950/70 p-3.5 rounded-2xl border border-slate-800 space-y-3">
-                  <h3 className="font-bold text-white text-xs flex items-center gap-2">
-                    <span className="material-symbols-outlined text-blue-400 text-base">crop_free</span>
+                <div className="bg-slate-50 dark:bg-slate-950/70 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-3">
+                  <h3 className="font-bold text-slate-900 dark:text-white text-xs flex items-center gap-2">
+                    <span className="material-symbols-outlined text-blue-500 dark:text-blue-400 text-base">crop_free</span>
                     Paper Size & Orientation
                   </h3>
 
                   <div className="grid grid-cols-2 gap-2">
                     <div>
-                      <label className="block text-[11px] font-semibold text-slate-400 mb-1">Paper Format:</label>
+                      <label className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">Paper Format:</label>
                       <select
                         value={layoutConfig.paperSize || 'A4'}
                         onChange={(e) => updateLayout('paperSize', e.target.value)}
-                        className="w-full bg-slate-900 border border-slate-800 rounded-xl p-2 text-xs text-white"
+                        className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-800 rounded-xl p-2 text-xs text-slate-900 dark:text-white"
                       >
                         <option value="A4">A4 (210 × 297 mm)</option>
                         <option value="Letter">Letter (8.5 × 11 in)</option>
@@ -752,11 +752,11 @@ export default function UniversalPrintStudioModal({
                     </div>
 
                     <div>
-                      <label className="block text-[11px] font-semibold text-slate-400 mb-1">Orientation:</label>
+                      <label className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">Orientation:</label>
                       <select
                         value={layoutConfig.orientation || 'portrait'}
                         onChange={(e) => updateLayout('orientation', e.target.value)}
-                        className="w-full bg-slate-900 border border-slate-800 rounded-xl p-2 text-xs text-white"
+                        className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-800 rounded-xl p-2 text-xs text-slate-900 dark:text-white"
                       >
                         <option value="portrait">Portrait</option>
                         <option value="landscape">Landscape</option>
@@ -766,7 +766,7 @@ export default function UniversalPrintStudioModal({
 
                   {/* Margins */}
                   <div>
-                    <label className="block text-[11px] font-semibold text-slate-400 mb-1">Document Margins:</label>
+                    <label className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">Document Margins:</label>
                     <div className="grid grid-cols-2 gap-2">
                       <div>
                         <span className="text-[10px] text-slate-500">Top / Bottom:</span>
@@ -777,7 +777,7 @@ export default function UniversalPrintStudioModal({
                             updateLayout('marginTop', e.target.value);
                             updateLayout('marginBottom', e.target.value);
                           }}
-                          className="w-full bg-slate-900 border border-slate-800 rounded-lg p-1.5 text-xs text-white"
+                          className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-800 rounded-lg p-1.5 text-xs text-slate-900 dark:text-white"
                         />
                       </div>
                       <div>
@@ -789,7 +789,7 @@ export default function UniversalPrintStudioModal({
                             updateLayout('marginLeft', e.target.value);
                             updateLayout('marginRight', e.target.value);
                           }}
-                          className="w-full bg-slate-900 border border-slate-800 rounded-lg p-1.5 text-xs text-white"
+                          className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-800 rounded-lg p-1.5 text-xs text-slate-900 dark:text-white"
                         />
                       </div>
                     </div>
@@ -804,7 +804,7 @@ export default function UniversalPrintStudioModal({
             {activeTab === 'columns' && (
               <div className="space-y-3 animate-fade-in">
                 <div className="flex justify-between items-center">
-                  <span className="text-xs font-bold text-white">Table Columns Editor</span>
+                  <span className="text-xs font-bold text-slate-900 dark:text-white">Table Columns Editor</span>
                   <button
                     type="button"
                     onClick={addCustomColumn}
@@ -820,8 +820,8 @@ export default function UniversalPrintStudioModal({
                       key={col.key || idx}
                       className={`p-2.5 rounded-xl border transition-all ${
                         col.enabled !== false
-                          ? 'bg-slate-950/80 border-slate-800'
-                          : 'bg-slate-950/30 border-slate-800/40 opacity-60'
+                          ? 'bg-white dark:bg-slate-950/80 border-slate-200 dark:border-slate-800'
+                          : 'bg-slate-50 dark:bg-slate-950/30 border-slate-200/60 dark:border-slate-800/40 opacity-60'
                       }`}
                     >
                       <div className="flex items-center justify-between gap-2 mb-2">
@@ -836,7 +836,7 @@ export default function UniversalPrintStudioModal({
                             type="text"
                             value={col.label || col.key}
                             onChange={(e) => updateColumnProp(idx, 'label', e.target.value)}
-                            className="bg-transparent border-b border-transparent focus:border-blue-500 text-xs font-bold text-white px-1 py-0.5 outline-none flex-1"
+                            className="bg-transparent border-b border-transparent focus:border-blue-500 text-xs font-bold text-slate-900 dark:text-white px-1 py-0.5 outline-none flex-1"
                           />
                         </div>
 
@@ -846,7 +846,7 @@ export default function UniversalPrintStudioModal({
                             type="button"
                             disabled={idx === 0}
                             onClick={() => moveColumn(idx, -1)}
-                            className="p-1 rounded bg-slate-800 hover:bg-slate-700 disabled:opacity-30 text-slate-300"
+                            className="p-1 rounded bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 disabled:opacity-30 text-slate-600 dark:text-slate-300"
                             title="Move Up / Left"
                           >
                             <span className="material-symbols-outlined text-xs">arrow_upward</span>
@@ -855,7 +855,7 @@ export default function UniversalPrintStudioModal({
                             type="button"
                             disabled={idx === (layoutConfig.gridColumns || []).length - 1}
                             onClick={() => moveColumn(idx, 1)}
-                            className="p-1 rounded bg-slate-800 hover:bg-slate-700 disabled:opacity-30 text-slate-300"
+                            className="p-1 rounded bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 disabled:opacity-30 text-slate-600 dark:text-slate-300"
                             title="Move Down / Right"
                           >
                             <span className="material-symbols-outlined text-xs">arrow_downward</span>
@@ -871,7 +871,7 @@ export default function UniversalPrintStudioModal({
                             type="text"
                             value={col.width || '15%'}
                             onChange={(e) => updateColumnProp(idx, 'width', e.target.value)}
-                            className="bg-slate-900 border border-slate-800 rounded px-1.5 py-0.5 text-white w-14 text-center font-mono"
+                            className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-800 rounded px-1.5 py-0.5 text-slate-900 dark:text-white w-14 text-center font-mono"
                           />
                         </div>
 
@@ -884,7 +884,7 @@ export default function UniversalPrintStudioModal({
                               className={`p-1 rounded text-xs ${
                                 (col.align || 'left') === align
                                   ? 'bg-blue-600 text-white font-bold'
-                                  : 'bg-slate-900 text-slate-400 hover:bg-slate-800'
+                                  : 'bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
                               }`}
                             >
                               <span className="material-symbols-outlined text-[12px]">
@@ -905,8 +905,8 @@ export default function UniversalPrintStudioModal({
             {/* ------------------------------------------------------------ */}
             {activeTab === 'header' && (
               <div className="space-y-3 animate-fade-in">
-                <span className="text-xs font-bold text-white block">Document Header Fields & Badges</span>
-                <p className="text-[11px] text-slate-400">
+                <span className="text-xs font-bold text-slate-900 dark:text-white block">Document Header Fields & Badges</span>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
                   Toggle which fields appear in the document header block (Customer, Order #, Dates, Address, etc.).
                 </p>
 
@@ -916,8 +916,8 @@ export default function UniversalPrintStudioModal({
                       key={field.key || idx}
                       className={`p-2.5 rounded-xl border flex items-center justify-between gap-2 ${
                         field.enabled !== false
-                          ? 'bg-slate-950/80 border-slate-800'
-                          : 'bg-slate-950/30 border-slate-800/40 opacity-60'
+                          ? 'bg-white dark:bg-slate-950/80 border-slate-200 dark:border-slate-800'
+                          : 'bg-slate-50 dark:bg-slate-950/30 border-slate-200/60 dark:border-slate-800/40 opacity-60'
                       }`}
                     >
                       <div className="flex items-center gap-2 flex-1">
@@ -931,14 +931,14 @@ export default function UniversalPrintStudioModal({
                           type="text"
                           value={field.label || field.key}
                           onChange={(e) => updateHeaderFieldProp(idx, 'label', e.target.value)}
-                          className="bg-transparent border-b border-transparent focus:border-blue-500 text-xs font-bold text-white px-1 py-0.5 outline-none flex-1"
+                          className="bg-transparent border-b border-transparent focus:border-blue-500 text-xs font-bold text-slate-900 dark:text-white px-1 py-0.5 outline-none flex-1"
                         />
                       </div>
 
                       <select
                         value={field.width || 'span-1'}
                         onChange={(e) => updateHeaderFieldProp(idx, 'width', e.target.value)}
-                        className="bg-slate-900 border border-slate-800 rounded px-2 py-1 text-[10px] text-slate-300"
+                        className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-800 rounded px-2 py-1 text-[10px] text-slate-700 dark:text-slate-300"
                       >
                         <option value="span-1">1 Col</option>
                         <option value="span-2">2 Cols</option>
@@ -957,7 +957,7 @@ export default function UniversalPrintStudioModal({
               <div className="space-y-4 animate-fade-in">
                 {/* Header Theme */}
                 <div>
-                  <label className="block text-xs font-bold text-white mb-1.5">Header Layout Style:</label>
+                  <label className="block text-xs font-bold text-slate-900 dark:text-white mb-1.5">Header Layout Style:</label>
                   <div className="grid grid-cols-1 gap-1.5">
                     {HEADER_THEMES.map((theme) => (
                       <button
@@ -966,13 +966,13 @@ export default function UniversalPrintStudioModal({
                         onClick={() => updateLayout('headerTheme', theme.id)}
                         className={`p-2.5 rounded-xl border text-left text-xs font-medium transition-all flex items-center justify-between ${
                           (layoutConfig.headerTheme || 'classic_split') === theme.id
-                            ? 'bg-blue-600/15 border-blue-500 text-white font-bold'
-                            : 'bg-slate-950/60 border-slate-800 text-slate-300 hover:bg-slate-900'
+                            ? 'bg-blue-600/15 border-blue-500 text-blue-700 dark:text-white font-bold'
+                            : 'bg-white dark:bg-slate-950/60 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-900'
                         }`}
                       >
                         <span>{theme.name}</span>
                         {(layoutConfig.headerTheme || 'classic_split') === theme.id && (
-                          <span className="material-symbols-outlined text-sm text-blue-400">check</span>
+                          <span className="material-symbols-outlined text-sm text-blue-500 dark:text-blue-400">check</span>
                         )}
                       </button>
                     ))}
@@ -981,7 +981,7 @@ export default function UniversalPrintStudioModal({
 
                 {/* Primary Brand Color */}
                 <div>
-                  <label className="block text-xs font-bold text-white mb-1.5">Accent & Table Header Color:</label>
+                  <label className="block text-xs font-bold text-slate-900 dark:text-white mb-1.5">Accent & Table Header Color:</label>
                   <div className="grid grid-cols-3 gap-2">
                     {BRAND_PALETTES.map((pal) => (
                       <button
@@ -991,7 +991,7 @@ export default function UniversalPrintStudioModal({
                           updateLayout('primaryColor', pal.primary);
                           updateLayout('tableHeaderBgColor', pal.bg);
                         }}
-                        className="p-2 rounded-xl border border-slate-800 flex items-center gap-2 text-[10px] hover:border-slate-600 transition-all text-left"
+                        className="p-2 rounded-xl border border-slate-300 dark:border-slate-800 flex items-center gap-2 text-[10px] hover:border-slate-400 dark:hover:border-slate-600 transition-all text-left"
                       >
                         <span className="w-4 h-4 rounded-full shrink-0 shadow-sm" style={{ backgroundColor: pal.primary }} />
                         <span className="truncate">{pal.name}</span>
@@ -1003,11 +1003,11 @@ export default function UniversalPrintStudioModal({
                 {/* Typography */}
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className="block text-[11px] font-semibold text-slate-400 mb-1">Font Family:</label>
+                    <label className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">Font Family:</label>
                     <select
                       value={layoutConfig.fontFamily || 'Inter'}
                       onChange={(e) => updateLayout('fontFamily', e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-800 rounded-xl p-2 text-xs text-white"
+                      className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-800 rounded-xl p-2 text-xs text-slate-900 dark:text-white"
                     >
                       {FONT_OPTIONS.map((f) => (
                         <option key={f.id} value={f.id}>
@@ -1018,11 +1018,11 @@ export default function UniversalPrintStudioModal({
                   </div>
 
                   <div>
-                    <label className="block text-[11px] font-semibold text-slate-400 mb-1">Body Text Size:</label>
+                    <label className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">Body Text Size:</label>
                     <select
                       value={layoutConfig.bodyFontSize || '11px'}
                       onChange={(e) => updateLayout('bodyFontSize', e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-800 rounded-xl p-2 text-xs text-white"
+                      className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-800 rounded-xl p-2 text-xs text-slate-900 dark:text-white"
                     >
                       <option value="9px">9px (Micro Dense)</option>
                       <option value="10px">10px (Compact)</option>
@@ -1033,9 +1033,9 @@ export default function UniversalPrintStudioModal({
                 </div>
 
                 {/* Company Logo & Address toggles */}
-                <div className="space-y-2 pt-2 border-t border-slate-800">
-                  <label className="flex items-center justify-between p-2 rounded-xl bg-slate-900 border border-slate-800 cursor-pointer">
-                    <span className="text-[11px] text-slate-200">Show Company Logo</span>
+                <div className="space-y-2 pt-2 border-t border-slate-200 dark:border-slate-800">
+                  <label className="flex items-center justify-between p-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 cursor-pointer">
+                    <span className="text-[11px] text-slate-700 dark:text-slate-200">Show Company Logo</span>
                     <input
                       type="checkbox"
                       checked={layoutConfig.showHeaderLogo !== false}
@@ -1044,8 +1044,8 @@ export default function UniversalPrintStudioModal({
                     />
                   </label>
 
-                  <label className="flex items-center justify-between p-2 rounded-xl bg-slate-900 border border-slate-800 cursor-pointer">
-                    <span className="text-[11px] text-slate-200">Show Address & Contact Info</span>
+                  <label className="flex items-center justify-between p-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 cursor-pointer">
+                    <span className="text-[11px] text-slate-700 dark:text-slate-200">Show Address & Contact Info</span>
                     <input
                       type="checkbox"
                       checked={layoutConfig.showHeaderDetails !== false}
@@ -1065,7 +1065,7 @@ export default function UniversalPrintStudioModal({
                 {/* Signatures Manager */}
                 <div className="space-y-3">
                   <div className="flex justify-between items-center">
-                    <span className="text-xs font-bold text-white">Signature Blocks</span>
+                    <span className="text-xs font-bold text-slate-900 dark:text-white">Signature Blocks</span>
                     <button
                       type="button"
                       onClick={addSignatureBlock}
@@ -1077,13 +1077,13 @@ export default function UniversalPrintStudioModal({
 
                   <div className="space-y-2">
                     {(layoutConfig.signatures || []).map((sig, idx) => (
-                      <div key={sig.key || idx} className="p-2.5 rounded-xl bg-slate-950/80 border border-slate-800 space-y-2">
+                      <div key={sig.key || idx} className="p-2.5 rounded-xl bg-white dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 space-y-2">
                         <div className="flex items-center justify-between gap-2">
                           <input
                             type="text"
                             value={sig.label || 'Signature'}
                             onChange={(e) => updateSignatureProp(idx, 'label', e.target.value)}
-                            className="bg-transparent border-b border-transparent focus:border-blue-500 text-xs font-bold text-white px-1 py-0.5 outline-none flex-1"
+                            className="bg-transparent border-b border-transparent focus:border-blue-500 text-xs font-bold text-slate-900 dark:text-white px-1 py-0.5 outline-none flex-1"
                           />
                           <button
                             type="button"
@@ -1098,7 +1098,7 @@ export default function UniversalPrintStudioModal({
                           <select
                             value={sig.type || 'text'}
                             onChange={(e) => updateSignatureProp(idx, 'type', e.target.value)}
-                            className="bg-slate-900 border border-slate-800 rounded px-2 py-1 text-slate-300"
+                            className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-800 rounded px-2 py-1 text-slate-700 dark:text-slate-300"
                           >
                             <option value="text">Signature Line</option>
                             <option value="stamp">Official Stamp Box</option>
@@ -1110,35 +1110,35 @@ export default function UniversalPrintStudioModal({
                 </div>
 
                 {/* Terms and Conditions */}
-                <div className="space-y-2 pt-2 border-t border-slate-800">
-                  <label className="block text-xs font-bold text-white">Terms & Conditions:</label>
+                <div className="space-y-2 pt-2 border-t border-slate-200 dark:border-slate-800">
+                  <label className="block text-xs font-bold text-slate-900 dark:text-white">Terms & Conditions:</label>
                   <textarea
                     rows={3}
                     value={layoutConfig.termsConditions || ''}
                     onChange={(e) => updateLayout('termsConditions', e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 outline-none focus:border-blue-500"
+                    className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-xl p-2.5 text-xs text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500"
                   />
                 </div>
 
                 {/* Custom Footer Text */}
                 <div className="space-y-2">
-                  <label className="block text-xs font-bold text-white">Custom Computer-Generated Footer:</label>
+                  <label className="block text-xs font-bold text-slate-900 dark:text-white">Custom Computer-Generated Footer:</label>
                   <input
                     type="text"
                     value={layoutConfig.customFooterText || ''}
                     onChange={(e) => updateLayout('customFooterText', e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 outline-none focus:border-blue-500"
+                    className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-xl p-2.5 text-xs text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500"
                   />
                 </div>
               </div>
             )}
 
             {/* RESET BUTTON */}
-            <div className="pt-4 border-t border-slate-800">
+            <div className="pt-4 border-t border-slate-200 dark:border-slate-800">
               <button
                 type="button"
                 onClick={handleResetDefaults}
-                className="w-full py-2.5 rounded-xl border border-slate-800 hover:bg-slate-800/80 text-slate-400 hover:text-slate-200 text-xs font-bold transition-all flex items-center justify-center gap-1.5"
+                className="w-full py-2.5 rounded-xl border border-slate-300 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800/80 text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 text-xs font-bold transition-all flex items-center justify-center gap-1.5"
               >
                 <span className="material-symbols-outlined text-sm">restart_alt</span>
                 Reset to Default Preset
@@ -1150,7 +1150,7 @@ export default function UniversalPrintStudioModal({
         {/* ============================================================== */}
         {/* RIGHT LIVE PRINT PREVIEW (DIGITAL TWIN MULTI-PAGE RENDERER)   */}
         {/* ============================================================== */}
-        <div className="flex-1 bg-slate-950/95 overflow-y-auto p-4 md:p-8 flex flex-col items-center gap-8 relative select-none">
+        <div className="flex-1 bg-slate-300/70 dark:bg-slate-950/95 overflow-y-auto p-4 md:p-8 flex flex-col items-center gap-8 relative select-none">
           <div
             id="fv-print-studio-container"
             ref={printContainerRef}

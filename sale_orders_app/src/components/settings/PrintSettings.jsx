@@ -1146,7 +1146,7 @@ export default function PrintSettings() {
             </div>
             <button
               onClick={() => setShowSaveSuccess(false)}
-              className="w-full py-2.5 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800 transition-all shadow"
+              className="w-full py-2.5 bg-primary text-white rounded-xl text-xs font-bold hover:bg-primary/90 transition-all shadow"
             >
               Done
             </button>
