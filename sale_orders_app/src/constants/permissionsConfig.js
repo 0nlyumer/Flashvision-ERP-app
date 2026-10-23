@@ -589,5 +589,47 @@ export const permissionsConfig = {
         ]
       }
     ]
+  },
+  flasham: {
+    title: 'Flash AM Terminal',
+    icon: 'fingerprint',
+    screens: [
+      {
+        id: 'punch',
+        title: 'Attendance Punch',
+        description: 'Clock employees in and out on the Flash AM terminal and view the attendance list.',
+        icon: 'fingerprint',
+        perms: [
+          { id: 'access', label: 'Punch Attendance', desc: 'Allows punch in / punch out, manual time entry, and viewing the Flash AM attendance list.' }
+        ]
+      },
+      {
+        id: 'deduction',
+        title: 'Deduction Entry',
+        description: 'Add per-day deduction hours for employees on the Flash AM terminal (attendance itself stays hidden).',
+        icon: 'remove_circle',
+        perms: [
+          { id: 'access', label: 'Add Deductions', desc: 'Allows entering deduction hours per employee for a selected date.' }
+        ]
+      },
+      {
+        id: 'overtime',
+        title: 'Overtime Entry',
+        description: 'Add per-day overtime hours for employees on the Flash AM terminal (attendance itself stays hidden).',
+        icon: 'more_time',
+        perms: [
+          { id: 'access', label: 'Add Overtime', desc: 'Allows entering overtime hours per employee for a selected date.' }
+        ]
+      },
+      {
+        id: 'fine',
+        title: 'Fine Entry',
+        description: 'Add per-day fines for employees on the Flash AM terminal (attendance itself stays hidden).',
+        icon: 'money_off',
+        perms: [
+          { id: 'access', label: 'Add Fines', desc: 'Allows entering a fine amount (with an optional note) per employee for a selected date.' }
+        ]
+      }
+    ]
   }
 };

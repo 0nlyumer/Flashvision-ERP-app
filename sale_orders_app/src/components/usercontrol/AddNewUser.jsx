@@ -42,7 +42,8 @@ export default function AddNewUser({ initialUser, onCancel }) {
       settings: true,
       hr: false,
       chat: false,
-      finance: false
+      finance: false,
+      flasham: false
     },
     granularPermissions: {
       settings: {
@@ -77,7 +78,8 @@ export default function AddNewUser({ initialUser, onCancel }) {
         settings: false,
         hr: false,
         chat: false,
-        finance: false
+        finance: false,
+        flasham: false
       };
       if (Array.isArray(initialUser.permissions)) {
         initialUser.permissions.forEach(p => { perms[p] = true; });
@@ -497,6 +499,7 @@ export default function AddNewUser({ initialUser, onCancel }) {
                      perm === 'hr' ? 'HR Management' :
                      perm === 'chat' ? 'Chat Module' :
                      perm === 'finance' ? 'Finance Module' :
+                     perm === 'flasham' ? 'Flash AM Terminal' :
                      'User Management'}
                   </span>
                 </label>
