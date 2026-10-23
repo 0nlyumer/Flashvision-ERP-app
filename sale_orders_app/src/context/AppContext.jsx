@@ -12,11 +12,12 @@ import {
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { applyTheme } from '../utils/theme';
 import { supabase } from '../utils/supabaseClient';
-import { STEP1_ENTITY_TABLES, loadStep1EntitiesFromTables, syncEntityDiffToTable, recordKeyWithFallback, loadAdminSetupFromTable, syncAdminSetupToTable, loadFGComboConfigFromTable, syncFGComboConfigToTable, loadFlashAmConfigFromTable, syncFlashAmConfigToTable, loadSalaryPrintSettingsFromTable, syncSalaryPrintSettingsToTable, loadCategoryPrefixesFromTable, syncCategoryPrefixesToTable, loadScalarsFromTable, syncScalarsToTable } from '../utils/entityTables';
+import { STEP1_ENTITY_TABLES, loadStep1EntitiesFromTables, syncEntityDiffToTable, recordKeyWithFallback, loadAdminSetupFromTable, syncAdminSetupToTable, loadFGComboConfigFromTable, syncFGComboConfigToTable, loadFlashAmConfigFromTable, syncFlashAmConfigToTable, loadSalaryPrintSettingsFromTable, syncSalaryPrintSettingsToTable, loadPayrollAccountMappingFromTable, syncPayrollAccountMappingToTable, loadCategoryPrefixesFromTable, syncCategoryPrefixesToTable, loadScalarsFromTable, syncScalarsToTable } from '../utils/entityTables';
 import { formatLineCode, maxLineCodeNumber } from '../utils/itemCodes';
 import { getInitialFGConfig, saveFGConfig, normalizeFGConfig } from '../utils/fgCombinationUtils';
 import { getInitialFlashAmConfig, normalizeFlashAmConfig } from '../utils/flashAmConfig';
 import { getInitialSalaryPrintSettings, normalizeSalaryPrintSettings } from '../utils/salaryPrintSettings';
+import { getInitialPayrollMappings, normalizePayrollMappings } from '../utils/payrollAccountMapping';
 import { DEFAULT_CHART_OF_ACCOUNTS } from '../utils/financeEngine';
 
 const AppContext = createContext();
@@ -33,6 +34,7 @@ const initialMockState = {
   fg_combinations_config: getInitialFGConfig(),
   flash_am_config: getInitialFlashAmConfig(),
   salary_print_settings: getInitialSalaryPrintSettings(),
+  payroll_account_mapping: getInitialPayrollMappings(),
   customers: [],
   suppliers: [],
   items: [],
@@ -585,6 +587,10 @@ const getSanitizedSyncState = (stateObj) => {
   // HR PRINTS: the Salary Generation print settings live ONLY in app_config
   // (key 'salaryPrintSettings', table copy wins on load) — never in the blob.
   delete cleanState.salary_print_settings;
+  // HR PAYROLL MAPPING: the payroll-category -> GL-account mappings live
+  // ONLY in app_config (key 'payrollAccountMapping', table copy wins on
+  // load) — never in the blob.
+  delete cleanState.payroll_account_mapping;
   if (Array.isArray(cleanState.documentWarehouseBinders)) {
     lastGoodBindersCache = cleanState.documentWarehouseBinders;
   } else if (lastGoodBindersCache) {
@@ -649,6 +655,8 @@ export const AppProvider = ({ children }) => {
   const flashAmConfigSnapshotRef = useRef(null);
   const salaryPrintSettingsLoadedRef = useRef(false);
   const salaryPrintSettingsSnapshotRef = useRef(null);
+  const payrollMappingLoadedRef = useRef(false);
+  const payrollMappingSnapshotRef = useRef(null);
   const categoryPrefixesLoadedRef = useRef(false);
   const categoryPrefixesSnapshotRef = useRef(null);
   const scalarsLoadedRef = useRef(false);
@@ -1413,6 +1421,7 @@ export const AppProvider = ({ children }) => {
         const fgComboConfigFromTable = await loadFGComboConfigFromTable();
         const flashAmConfigFromTable = await loadFlashAmConfigFromTable();
         const salaryPrintSettingsFromTable = await loadSalaryPrintSettingsFromTable();
+        const payrollMappingFromTable = await loadPayrollAccountMappingFromTable();
         const categoryPrefixesFromTable = await loadCategoryPrefixesFromTable();
         const scalarsFromTable = await loadScalarsFromTable();
         setState(prev => {
@@ -1474,6 +1483,20 @@ export const AppProvider = ({ children }) => {
             salaryPrintSettingsSnapshotRef.current = null;
           }
           salaryPrintSettingsLoadedRef.current = true;
+          // HR PAYROLL MAPPING: the app_config copy of the payroll-category
+          // -> GL-account mappings wins when present; when the table has
+          // none yet, the snapshot stays null so the write-through effect
+          // seeds the table with the current mappings (defaults, or the
+          // localStorage copy the mapping screen migrates on first open) —
+          // the mappings survive reload and can never be lost in a blob flip.
+          if (payrollMappingFromTable) {
+            const normalizedPayrollMapping = normalizePayrollMappings(payrollMappingFromTable);
+            next.payroll_account_mapping = normalizedPayrollMapping;
+            payrollMappingSnapshotRef.current = normalizedPayrollMapping;
+          } else {
+            payrollMappingSnapshotRef.current = null;
+          }
+          payrollMappingLoadedRef.current = true;
           // PHASE C STEP 6: app-config completion — the app_config copy of
           // categoryPrefixes wins over the blob copy when present.
           if (categoryPrefixesFromTable) {
@@ -1507,6 +1530,8 @@ export const AppProvider = ({ children }) => {
           flashAmConfigLoadedRef.current = true;
           salaryPrintSettingsSnapshotRef.current = null;
           salaryPrintSettingsLoadedRef.current = true;
+          payrollMappingSnapshotRef.current = null;
+          payrollMappingLoadedRef.current = true;
           categoryPrefixesSnapshotRef.current = prev.categoryPrefixes || null;
           categoryPrefixesLoadedRef.current = true;
           scalarsSnapshotRef.current = JSON.stringify({ buildVersion: prev.buildVersion, productionTarget: prev.productionTarget, isGlobalPaginated: prev.isGlobalPaginated });
@@ -4921,6 +4946,7 @@ export const AppProvider = ({ children }) => {
   const fgComboConfigForSync = state.fg_combinations_config;
   const flashAmConfigForSync = state.flash_am_config;
   const salaryPrintSettingsForSync = state.salary_print_settings;
+  const payrollMappingForSync = state.payroll_account_mapping;
   const categoryPrefixesForSync = state.categoryPrefixes;
   const scalarsBundleForSync = { buildVersion: state.buildVersion, lastUpdatedBy: state.lastUpdatedBy, productionTarget: state.productionTarget, isGlobalPaginated: state.isGlobalPaginated };
   const scalarsWatchKey = JSON.stringify({ buildVersion: state.buildVersion, productionTarget: state.productionTarget, isGlobalPaginated: state.isGlobalPaginated });
@@ -5028,6 +5054,21 @@ export const AppProvider = ({ children }) => {
     }, 250);
     return () => clearTimeout(timer);
   }, [salaryPrintSettingsForSync]);
+
+  // HR PAYROLL MAPPING: the payroll-category -> GL-account mappings
+  // write-through to app_config on change — same durable pattern as
+  // salaryPrintSettings. A null snapshot means "table had no copy at
+  // load", so the first effect run seeds it with the current mappings.
+  useEffect(() => {
+    if (!payrollMappingLoadedRef.current) return;
+    if (!Array.isArray(payrollMappingForSync)) return;
+    if (payrollMappingSnapshotRef.current === payrollMappingForSync) return;
+    const timer = setTimeout(() => {
+      payrollMappingSnapshotRef.current = payrollMappingForSync;
+      syncPayrollAccountMappingToTable(payrollMappingForSync);
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [payrollMappingForSync]);
 
   // PHASE C STEP 6: categoryPrefixes ride in app_config like adminSetup —
   // the table copy wins on load; changes write through (debounced).

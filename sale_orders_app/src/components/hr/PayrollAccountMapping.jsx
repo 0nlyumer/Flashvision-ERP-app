@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useDialog } from '../../context/DialogContext';
+import { normalizePayrollMappings, PAYROLL_MAPPING_LEGACY_STORAGE_KEY } from '../../utils/payrollAccountMapping';
 
 export default function PayrollAccountMapping({ isMobile, onBack }) {
   const { state, setCollection } = useApp();
@@ -11,30 +12,51 @@ export default function PayrollAccountMapping({ isMobile, onBack }) {
     ? state.chartOfAccounts.map(acc => `${acc.code || acc.accountCode || acc.id || ''} - ${acc.name || acc.accountName || ''}`.trim())
     : [];
 
-  // Default mappings list
-  const defaultMappings = [
-    { id: 'base_salary', category: 'Base Salary', description: 'Core monthly remuneration', color: 'bg-primary', account: '', status: 'Missing' },
-    { id: 'overtime_pay', category: 'Overtime Pay', description: 'Hours exceeding standard roster', color: 'bg-secondary', account: '', status: 'Missing' },
-    { id: 'attendance_bonus', category: 'Attendance Bonus', description: 'Monthly reward for perfect attendance', color: 'bg-amber-600', account: '', status: 'Missing' },
-    { id: 'special_allowance', category: 'Special Allowances', description: 'Housing and transport subsidies', color: 'bg-blue-500', account: '', status: 'Missing' },
-    { id: 'performance_bonus', category: 'Performance Bonus', description: 'Quarterly KPI-based incentives', color: 'bg-indigo-500', account: '', status: 'Missing' },
-    { id: 'deductions', category: 'Deductions', description: 'Tax, Pension and Insurance', color: 'bg-error', account: '', status: 'Missing' }
-  ];
-
-  const [mappings, setMappings] = useState(() => {
-    try {
-      const saved = localStorage.getItem('hr_payroll_account_mappings');
-      return saved ? JSON.parse(saved) : defaultMappings;
-    } catch (e) {
-      return defaultMappings;
-    }
-  });
+  // Mappings live in app state (state.payroll_account_mapping), persisted
+  // to the database (app_config key 'payrollAccountMapping') through
+  // AppContext write-through — no longer only in this browser's
+  // localStorage. Defaults come from utils/payrollAccountMapping.js.
+  const [mappings, setMappings] = useState(() => normalizePayrollMappings(state.payroll_account_mapping));
 
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [newCat, setNewCat] = useState({ category: '', description: '', account: '' });
   const [showAuditModal, setShowAuditModal] = useState(false);
+
+  // One-time migration: if the database copy is still pristine (every
+  // category unmapped) and this browser still holds a legacy localStorage
+  // mapping, lift the local copy into app state — it then write-throughs
+  // to app_config — and remove the local key so this can never run twice.
+  const migrationDoneRef = useRef(false);
+  useEffect(() => {
+    if (migrationDoneRef.current) return;
+    migrationDoneRef.current = true;
+    try {
+      const legacyRaw = localStorage.getItem(PAYROLL_MAPPING_LEGACY_STORAGE_KEY);
+      if (!legacyRaw) return;
+      const legacy = normalizePayrollMappings(JSON.parse(legacyRaw));
+      const current = normalizePayrollMappings(state.payroll_account_mapping);
+      const currentIsPristine = current.every(m => !m.account || m.account.trim() === '');
+      const legacyHasData = legacy.some(m => m.account && m.account.trim() !== '') || legacy.length !== current.length;
+      if (currentIsPristine && legacyHasData) {
+        setMappings(legacy);
+        setCollection('payroll_account_mapping', legacy);
+      }
+      localStorage.removeItem(PAYROLL_MAPPING_LEGACY_STORAGE_KEY);
+    } catch (e) { /* legacy copy unreadable — the database/defaults stand */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Keep the grid in step with app state when it changes outside this
+  // screen (initial app_config load, another device) — but never stomp
+  // unsaved edits in progress.
+  useEffect(() => {
+    if (!hasUnsavedChanges) {
+      setMappings(normalizePayrollMappings(state.payroll_account_mapping));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.payroll_account_mapping]);
 
   // Derived Stats
   const totalCategories = mappings.length;
@@ -123,10 +145,11 @@ export default function PayrollAccountMapping({ isMobile, onBack }) {
     }, 1200);
   };
 
-  // Save Mappings Handler
+  // Save Mappings Handler — writes to app state; AppContext write-through
+  // persists it to the database (app_config key 'payrollAccountMapping').
   const handleApplySave = () => {
     showLoading('Saving Payroll Mappings...', 'Updating financial ledger rules & syncing database');
-    localStorage.setItem('hr_payroll_account_mappings', JSON.stringify(mappings));
+    setCollection('payroll_account_mapping', normalizePayrollMappings(mappings));
     setHasUnsavedChanges(false);
     setTimeout(() => {
       hideLoading();
