@@ -3,6 +3,7 @@ import { useApp } from '../../context/AppContext';
 import { useDialog } from '../../context/DialogContext';
 import ResizableHeader from '../ui/ResizableHeader';
 import PrintLayout from '../ui/PrintLayout';
+import { resolveDcLineRate, resolveTypeRate } from '../../utils/typePricing';
 
 export default function DelCreationSlip({ items = [], dcMode = 'Sale Orders', onBack, onFinalize }) {
   const { state, addDelivery } = useApp();
@@ -45,12 +46,47 @@ export default function DelCreationSlip({ items = [], dcMode = 'Sale Orders', on
               const rSize = parseFloat(product?.packingStandard) || 50;
               const eq = parseFloat(i.readyQty || 0);
               const availTypes = getAvailableTypes(i.itemId || i.itemCode);
+              const lineType = i.stockType || availTypes[0]; // Preserve the passed output type
               return {
                   ...i,
                   rolls: (eq > 0 && eq < rSize) ? 1 : (rSize > 0 ? (eq / rSize).toFixed(1) : 0),
-                  type: i.stockType || availTypes[0], // Preserve the passed output type
+                  type: lineType,
                   editedQty: eq,
-                  rollSize: rSize
+                  rollSize: rSize,
+                  // Type-wise rate from the Item Rate Profile (pricesByType);
+                  // falls back to the rate the line already carries / master price.
+                  price: resolveDcLineRate(product, lineType, i.price)
+              };
+          }));
+      } else {
+          // Manual (bina-SO) mode: the selection coming from the department
+          // stock picker must land on the slip — previously this branch never
+          // initialized slipItems, so the challan opened empty and the picked
+          // goods silently vanished.
+          setSlipItems(items.map(i => {
+              const product = state?.items?.find(x => x.id === (i.itemId || i.id) || x.sku === (i.itemCode || i.sku)) || i;
+              const rSize = parseFloat(product?.packingStandard) || 50;
+              const lineType = i.stockType || 'Standard';
+              const avail = parseFloat(i.stock ?? i.readyQty ?? product?.stockByDepartment?.[dcMode] ?? 0) || 0;
+              // DelCreation appends " (Type)" to the display name; strip it so
+              // the challan carries the clean product name.
+              const cleanName = (i.productName || i.name || product?.name || '').replace(new RegExp(`\\s*\\(${lineType.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\)$`), '');
+              return {
+                  ...i,
+                  itemId: i.itemId || i.id || product?.id || '',
+                  itemCode: i.itemCode || i.sku || product?.sku || '',
+                  productName: cleanName,
+                  category: i.category || product?.category || 'Finished Goods',
+                  rolls: (avail > 0 && avail < rSize) ? 1 : (rSize > 0 ? (avail / rSize).toFixed(1) : 0),
+                  type: lineType,
+                  stockType: lineType,
+                  editedQty: avail,
+                  readyQty: avail,
+                  availableQty: avail,
+                  department: dcMode,
+                  rollSize: rSize,
+                  // Type-wise rate from the Item Rate Profile (pricesByType).
+                  price: resolveDcLineRate(product, lineType, i.price)
               };
           }));
       }
@@ -92,6 +128,8 @@ export default function DelCreationSlip({ items = [], dcMode = 'Sale Orders', on
       setSlipItems(prev => {
           const newItems = [...prev];
           const availTypes = getAvailableTypes(payload.id || payload.itemId);
+          const product = state?.items?.find(x => x.id === (payload.id || payload.itemId) || x.sku === (payload.sku || payload.itemCode)) || payload;
+          const chosenType = availTypes[0];
           newItems[index] = {
               ...newItems[index],
               isDraft: false,
@@ -99,9 +137,11 @@ export default function DelCreationSlip({ items = [], dcMode = 'Sale Orders', on
               itemCode: payload.sku || payload.itemCode,
               productName: payload.name || payload.productName,
               category: payload.category,
-              price: payload.price || 0,
+              // Type-wise rate from the Item Rate Profile for the default type.
+              price: resolveDcLineRate(product, chosenType, payload.price),
               rollSize: parseFloat(payload.packingStandard || payload.rollSize) || 50,
-              type: availTypes[0],
+              type: chosenType,
+              availableQty: isManual ? (parseFloat(product?.stockByType?.[chosenType]) || 0) : undefined,
               orderId: payload.orderId || '',
               readyQty: payload.readyQty || 0
           };
@@ -132,6 +172,17 @@ export default function DelCreationSlip({ items = [], dcMode = 'Sale Orders', on
               }
           } else if (field === 'draftSearchText') {
               item.draftSearchText = value;
+          } else if (field === 'type') {
+              item.type = value;
+              // Type badalne par rate bhi usi type ke Item Rate Profile rate
+              // par le jao (type rate na ho to maujooda rate rehne do), aur
+              // manual mode mein available qty bhi naye type ki stock ho.
+              const product = state?.items?.find(x => x.id === item.itemId || x.sku === item.itemCode);
+              const typeRate = resolveTypeRate(product, value);
+              if (typeRate !== null) item.price = typeRate;
+              if (isManual && product?.stockByType) {
+                  item.availableQty = parseFloat(product.stockByType[value]) || 0;
+              }
           } else {
               item[field] = value;
           }
@@ -181,6 +232,18 @@ export default function DelCreationSlip({ items = [], dcMode = 'Sale Orders', on
               sums[key] = (sums[key] || 0) + parseFloat(item.editedQty);
               if (item.readyQty !== undefined && sums[key] > item.readyQty) {
                   appAlert(`Quantity for item ${item.productName || item.itemCode} exceeds available ready quantity (${item.readyQty}).`);
+                  return;
+              }
+          }
+      }
+
+      // Manual mode: dispatched qty kisi type ki available stock se zyada
+      // na ho — warna addDelivery stock ko khamoshi se 0 par clamp kar deta
+      // hai aur challan zyada quantity dikhata rehta hai.
+      if (isManual) {
+          for (let item of slipItems) {
+              if (item.availableQty !== undefined && item.availableQty !== null && parseFloat(item.editedQty) > parseFloat(item.availableQty)) {
+                  appAlert(`Quantity for item ${item.productName || item.itemCode} (${item.type}) exceeds available stock (${item.availableQty}).`);
                   return;
               }
           }
@@ -416,7 +479,7 @@ export default function DelCreationSlip({ items = [], dcMode = 'Sale Orders', on
                 </button>
             </div>
             <div className="overflow-x-auto w-full">
-              <table className="w-full border-collapse min-w-[900px]">
+              <table className="w-full border-collapse min-w-[1080px]">
                 <thead>
                   <tr className="bg-surface-container text-left border-b border-outline-variant/10">
                     <ResizableHeader className="py-4 px-6 text-[10px] font-black uppercase tracking-widest text-on-surface-variant w-1">Item ID</ResizableHeader>
@@ -425,12 +488,14 @@ export default function DelCreationSlip({ items = [], dcMode = 'Sale Orders', on
                     <ResizableHeader className="py-4 px-6 text-[10px] font-black uppercase tracking-widest text-on-surface-variant w-32">Qty (Mtrs)</ResizableHeader>
                     <ResizableHeader className="py-4 px-6 text-[10px] font-black uppercase tracking-widest text-on-surface-variant w-28">Rolls</ResizableHeader>
                     <ResizableHeader className="py-4 px-6 text-[10px] font-black uppercase tracking-widest text-on-surface-variant w-28">Packing</ResizableHeader>
+                    <ResizableHeader className="py-4 px-6 text-[10px] font-black uppercase tracking-widest text-on-surface-variant w-28">Rate</ResizableHeader>
+                    <ResizableHeader className="py-4 px-6 text-[10px] font-black uppercase tracking-widest text-on-surface-variant w-32">Amount</ResizableHeader>
                     <th className="py-4 px-6 text-[10px] font-black uppercase tracking-widest text-on-surface-variant w-1">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-outline-variant/10">
                   {slipItems.length === 0 ? (
-                      <tr><td colSpan="7" className="py-12 text-center text-on-surface-variant">No items in challan</td></tr>
+                      <tr><td colSpan="9" className="py-12 text-center text-on-surface-variant">No items in challan</td></tr>
                   ) : (
                       slipItems.map((item, idx) => {
                           if (item.isDraft) {
@@ -463,7 +528,7 @@ export default function DelCreationSlip({ items = [], dcMode = 'Sale Orders', on
                               return (
                                   <tr key={item.uniqueId || idx} className="hover:bg-surface-container-low/50 transition-colors group">
                                       <td className="py-3 px-6 font-mono text-xs text-on-surface-variant text-center">--</td>
-                                      <td className="py-3 px-6 relative" colSpan="5">
+                                      <td className="py-3 px-6 relative" colSpan="7">
                                           <input 
                                               type="text" 
                                               placeholder={isManual ? "Search FG Name or SKU..." : "Search pending items for this customer..."}
@@ -552,6 +617,20 @@ export default function DelCreationSlip({ items = [], dcMode = 'Sale Orders', on
                             <td className="py-3 px-6">
                                 <span className={`px-2.5 py-1 text-xs font-bold rounded-md ${isLoose ? 'bg-secondary/10 text-secondary' : 'bg-primary/10 text-primary'}`}>
                                     {isLoose ? 'Loose' : 'Standard'}
+                                </span>
+                            </td>
+                            <td className="py-3 px-6">
+                                <input
+                                    type="number"
+                                    value={item.price ?? 0}
+                                    onChange={(e) => handleItemChange(idx, 'price', parseFloat(e.target.value) || 0)}
+                                    className="w-full p-2.5 bg-surface-container-lowest border border-outline-variant/30 rounded-lg focus:ring-2 focus:ring-primary/30 text-sm font-bold text-on-surface outline-none transition-shadow"
+                                    min="0"
+                                />
+                            </td>
+                            <td className="py-3 px-6">
+                                <span className="text-sm font-bold text-on-surface whitespace-nowrap">
+                                    {currencyCode} {((parseFloat(item.editedQty) || 0) * (parseFloat(item.price) || 0)).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                                 </span>
                             </td>
                             <td className="py-3 px-6 text-center">

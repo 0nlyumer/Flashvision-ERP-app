@@ -3,6 +3,7 @@ import { useApp } from '../../context/AppContext';
 import { useDialog } from '../../context/DialogContext';
 import SalesInvoiceHistory from './SalesInvoiceHistory';
 import ResizableHeader from '../ui/ResizableHeader';
+import { resolveSalesLineRate } from '../../utils/typePricing';
 
 // Sales Invoice generator panel matching Stitch template 26c3ab0c527b4bc0949cef1a9a63fd5a
 export default function SalesInvoice() {
@@ -44,17 +45,12 @@ export default function SalesInvoice() {
     itemsList = selectedDc.items.map((di, idx) => {
       // Item price database se fetch karna, agar nahi ho to default price define karna
       const matchedItem = (state.items || []).find(i => i.id === di.itemId || i.sku === di.itemCode);
-      
-      let unitPrice = 0;
-      if (di.unitPrice) {
-        unitPrice = di.unitPrice;
-      } else if (matchedItem) {
-        // dollar sign remove karna price parsing ke liye
-        const rawPrice = parseFloat(matchedItem.price?.replace(/[^0-9.]/g, '')) || 50;
-        unitPrice = (matchedItem.price?.startsWith('$') && currencyCode === 'PKR') ? rawPrice * 280 : rawPrice; // USD to PKR rate if applicable
-      } else {
-        unitPrice = 12000; // standard default price
-      }
+
+      // Rate ab challan line se ata hai: DC line ka rate Item Rate Profile ke
+      // type-wise rate (pricesByType) se resolve hota hai, is liye invoice
+      // wohi type pricing dikhati hai jo challan par lagi thi. Challan rate
+      // na ho to resolver purane master-price fallback par girta hai.
+      const unitPrice = resolveSalesLineRate(di, matchedItem, currencyCode);
 
       const qty = parseFloat(di.dispatchedQty || di.qty) || 1;
       const discPercent = discounts[idx] || 0;
@@ -105,6 +101,7 @@ export default function SalesInvoice() {
       items: itemsList.map(it => ({
         itemCode: it.itemCode,
         productName: it.productName,
+        stockType: it.stockType || null,
         quantity: parseFloat(it.dispatchedQty || it.qty) || 1,
         unitPrice: it.unitPrice,
         discountPercent: it.discountPercent,
@@ -295,6 +292,9 @@ export default function SalesInvoice() {
                       {visibleColumns.name && (
                         <td className="px-6 py-4 text-sm text-on-surface font-medium">
                           {item.productName}
+                          {item.stockType && (
+                            <span className="ml-2 px-2 py-0.5 bg-primary/10 text-primary font-bold text-[10px] rounded-md uppercase tracking-wide">{item.stockType}</span>
+                          )}
                         </td>
                       )}
                       {visibleColumns.uom && (

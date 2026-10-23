@@ -229,7 +229,7 @@ export default function SalesInvoiceHistory({ onViewCreate }) {
                 <tr>
                   <td>${String(idx + 1).padStart(2, '0')}</td>
                   <td style="font-family: monospace;">${item.itemCode}</td>
-                  <td>${item.productName}</td>
+                  <td>${item.productName}${item.stockType ? ` (${item.stockType})` : ''}</td>
                   <td>${item.uom || 'Units'}</td>
                   <td class="text-right">${(item.quantity || 0).toLocaleString()}</td>
                   <td class="text-right">${(item.unitPrice || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
@@ -568,7 +568,7 @@ export default function SalesInvoiceHistory({ onViewCreate }) {
                       <tr key={idx} className="hover:bg-surface-container-lowest transition-colors">
                         <td className="px-5 py-3 font-medium text-on-surface-variant">{String(idx + 1).padStart(2, '0')}</td>
                         <td className="px-5 py-3 font-mono font-semibold text-primary">{item.itemCode}</td>
-                        <td className="px-5 py-3 font-medium">{item.productName}</td>
+                        <td className="px-5 py-3 font-medium">{item.productName}{item.stockType ? ` (${item.stockType})` : ''}</td>
                         <td className="px-5 py-3 text-on-surface-variant">{item.uom || 'Units'}</td>
                         <td className="px-5 py-3 text-right font-bold">{item.quantity?.toLocaleString()}</td>
                         <td className="px-5 py-3 text-right font-medium">{item.unitPrice?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
