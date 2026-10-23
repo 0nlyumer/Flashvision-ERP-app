@@ -81,6 +81,19 @@ export default function ThemeSettings() {
     { id: 'inter', label: 'Inter (Ultra Clean Sans)', desc: 'High-density, crisp alphanumeric clarity' },
     { id: 'outfit', label: 'Outfit (Modern Display)', desc: 'Geometric, futuristic, ultra-smooth' },
     { id: 'roboto', label: 'Roboto (Enterprise)', desc: 'Classic, dependable industrial typography' },
+    { id: 'manrope', label: 'Manrope (Rounded Modern)', desc: 'Semi-rounded geometric neo-grotesque with open letters' },
+    { id: 'poppins', label: 'Poppins (Geometric Clean)', desc: 'Balanced geometric circles and modern rhythm' },
+    { id: 'montserrat', label: 'Montserrat (Modernist Urban)', desc: 'Bold, architectural modernist proportions' },
+    { id: 'opensans', label: 'Open Sans (Neutral Reading)', desc: 'Highly legible humanist design optimized for screens' },
+    { id: 'lato', label: 'Lato (Warm Corporate)', desc: 'Harmonious semi-rounded warmth with serious stability' },
+    { id: 'nunito', label: 'Nunito (Friendly Rounded)', desc: 'Soft rounded terminals offering approachable warmth' },
+    { id: 'rubik', label: 'Rubik (Gentle Tech)', desc: 'Subtly rounded corners designed for smooth digital UI' },
+    { id: 'worksans', label: 'Work Sans (Editorial Utility)', desc: 'Optimized for screen readability and clean data tables' },
+    { id: 'dmsans', label: 'DM Sans (Minimal Precision)', desc: 'Low-contrast geometric sans for sleek interfaces' },
+    { id: 'plusjakarta', label: 'Plus Jakarta Sans (Modern Executive)', desc: 'Refined contemporary sans with distinctive cut angles' },
+    { id: 'ibmplex', label: 'IBM Plex Sans (Industrial Tech)', desc: 'Engineered corporate neutrality with sharp clarity' },
+    { id: 'sourcesans', label: 'Source Sans 3 (Classic UI)', desc: 'Adobe-designed workhorse for enterprise interfaces' },
+    { id: 'figtree', label: 'Figtree (Friendly Clean)', desc: 'Lighthearted, clear contemporary geometric sans' },
   ];
 
   const radiusOptions = [

@@ -85,6 +85,18 @@ export const applyTheme = (settings = {}) => {
     roboto: '"Roboto", sans-serif',
     outfit: '"Outfit", sans-serif',
     manrope: '"Manrope", sans-serif',
+    poppins: '"Poppins", sans-serif',
+    montserrat: '"Montserrat", sans-serif',
+    opensans: '"Open Sans", sans-serif',
+    lato: '"Lato", sans-serif',
+    nunito: '"Nunito", sans-serif',
+    rubik: '"Rubik", sans-serif',
+    worksans: '"Work Sans", sans-serif',
+    dmsans: '"DM Sans", sans-serif',
+    plusjakarta: '"Plus Jakarta Sans", sans-serif',
+    ibmplex: '"IBM Plex Sans", sans-serif',
+    sourcesans: '"Source Sans 3", sans-serif',
+    figtree: '"Figtree", sans-serif',
   };
   const selectedFont = fonts[settings.fontStyle] || fonts.inter;
   root.style.setProperty('--font-body', selectedFont);

@@ -87,7 +87,7 @@ export const DEFAULT_FG_CONFIG = {
   maskingVersion: 2
 };
 
-// The seven popup attributes and the masking key that hides each one from
+// The six popup attributes and the masking key that hides each one from
 // the generated item title. Used by the config modal (global switches) and
 // the builder popup (per-item overrides) so both stay in sync.
 export const FG_MASK_FIELDS = [
@@ -96,7 +96,6 @@ export const FG_MASK_FIELDS = [
   { field: 'color', maskKey: 'maskColor', label: 'Color' },
   { field: 'layers', maskKey: 'maskLayers', label: 'Layers' },
   { field: 'fabricName', maskKey: 'maskFabric', label: 'Fabric' },
-  { field: 'fabricColor', maskKey: 'maskFabricColor', label: 'Fabric Color' },
   { field: 'packing', maskKey: 'maskPacking', label: 'Packing' }
 ];
 
@@ -119,7 +118,6 @@ export const FG_COMBO_FIELDS = [
   { field: 'color', label: 'Color' },
   { field: 'layers', label: 'Layers' },
   { field: 'fabricName', label: 'Fabric' },
-  { field: 'fabricColor', label: 'Fabric Color' },
   { field: 'packing', label: 'Packing' }
 ];
 

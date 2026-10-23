@@ -796,8 +796,7 @@ export default function FGQuickConfigModal({ isOpen, onClose }) {
                   { key: 'maskItemName', label: 'Mask Base Item Name / Gauge', desc: 'Omit gauge baseline from generated title' },
                   { key: 'maskColor', label: 'Mask Top Color', desc: 'Omit primary surface color from generated title' },
                   { key: 'maskLayers', label: 'Mask Layers', desc: 'Omit specification layers (e.g. 2 Layer)' },
-                  { key: 'maskFabric', label: 'Mask Backing Fabric Name', desc: 'Omit the fabric name from the title parenthesis (color follows its own switch)' },
-                  { key: 'maskFabricColor', label: 'Mask Backing Fabric Color', desc: 'Omit the fabric color from the title parenthesis' }
+                  { key: 'maskFabric', label: 'Mask Backing Fabric Name', desc: 'Omit the fabric name from the title parenthesis (color follows its own switch)' }
                 ].map(item => (
                   <div key={item.key} className="p-4 rounded-2xl border border-outline-variant/20 bg-surface-container-lowest/80 backdrop-blur-md flex items-center justify-between gap-4">
                     <div>

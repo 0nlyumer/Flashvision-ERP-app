@@ -513,27 +513,7 @@ export default function FGCombinationBuilder({
               </select>
             </div>
 
-            {/* 6. Fabric Color — carried by the picked cloth item's name */}
-            <div className="shrink-0 w-[125px]">
-              <select
-                value={combo.fabricColor}
-                onChange={(e) => handleSelectField('fabricColor', e.target.value)}
-                disabled={!selectedClothItem || availableFabricColors.length === 0}
-                className={`w-full bg-surface-container-lowest border rounded-lg px-2 py-1.5 text-xs font-bold transition-all focus:ring-2 focus:ring-primary/25 outline-none disabled:opacity-40 disabled:cursor-not-allowed ${
-                  combo.fabricColor ? 'border-primary text-primary bg-primary/5' : 'border-outline-variant/30 text-on-surface'
-                }`}
-                title={masking.maskFabricColor ? "Fabric Color (Masked in title)" : "Backing Fabric Color (from the cloth item)"}
-              >
-                <option value="">Fabric Col {masking.maskFabricColor ? '🔒' : ''} ▾</option>
-                {availableFabricColors.map((col, idx) => (
-                  <option key={idx} value={col}>
-                    {col}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* 7. Packing */}
+            {/* 6. Packing */}
             <div className="shrink-0 w-[120px]">
               <select
                 value={combo.packing}

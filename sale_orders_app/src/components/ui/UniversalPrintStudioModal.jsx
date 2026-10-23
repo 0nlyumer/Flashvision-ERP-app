@@ -49,7 +49,19 @@ const FONT_OPTIONS = [
   { id: 'Roboto', name: 'Roboto (Enterprise)' },
   { id: 'Outfit', name: 'Outfit (Geometric UI)' },
   { id: 'Courier Prime', name: 'Courier Prime (Technical)' },
-  { id: 'Playfair Display', name: 'Playfair Display (Executive)' }
+  { id: 'Playfair Display', name: 'Playfair Display (Executive)' },
+  { id: 'Poppins', name: 'Poppins' },
+  { id: 'Montserrat', name: 'Montserrat' },
+  { id: 'Open Sans', name: 'Open Sans' },
+  { id: 'Lato', name: 'Lato' },
+  { id: 'Nunito', name: 'Nunito' },
+  { id: 'Rubik', name: 'Rubik' },
+  { id: 'Work Sans', name: 'Work Sans' },
+  { id: 'DM Sans', name: 'DM Sans' },
+  { id: 'Plus Jakarta Sans', name: 'Plus Jakarta Sans' },
+  { id: 'IBM Plex Sans', name: 'IBM Plex Sans' },
+  { id: 'Source Sans 3', name: 'Source Sans 3' },
+  { id: 'Figtree', name: 'Figtree' }
 ];
 
 export default function UniversalPrintStudioModal({
