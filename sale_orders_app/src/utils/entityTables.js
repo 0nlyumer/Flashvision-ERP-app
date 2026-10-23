@@ -1,4 +1,4 @@
-// entityTables.js — Phase C Steps 1–4: per-entity Supabase tables for reference data, production, sales, purchasing & inventory.
+// entityTables.js — Phase C Steps 1–5: per-entity Supabase tables for reference data, production, sales, purchasing & inventory, HR.
 //
 // App state still lives in AppContext and the erp_state blob remains a
 // fallback copy, but these collections are now ALSO kept in their own
@@ -25,6 +25,14 @@
 //   purchaseDemands      purchase_demands
 //   purchaseOrders       purchase_orders
 //   purchaseInvoices     purchase_invoices
+//   hr_employees_list    hr_employees
+//   hr_uploaded_attendance hr_uploaded_attendance
+//   hr_leave_requests    hr_leave_requests
+//   hr_overtime_requests hr_overtime_requests
+//   hr_advance_requests  hr_advance_requests
+//   hr_loan_requests     hr_loan_requests
+//   hr_loan_ledger       hr_loan_ledger
+//   hr_generated_salaries hr_generated_salaries
 //
 // Every table row is { id, ...promoted scalar columns, data } where `data`
 // holds the complete original record — reads use `data` so no field is lost.
@@ -54,6 +62,14 @@ export const STEP1_ENTITY_TABLES = {
   purchaseDemands: 'purchase_demands',
   purchaseOrders: 'purchase_orders',
   purchaseInvoices: 'purchase_invoices',
+  hr_employees_list: 'hr_employees',
+  hr_uploaded_attendance: 'hr_uploaded_attendance',
+  hr_leave_requests: 'hr_leave_requests',
+  hr_overtime_requests: 'hr_overtime_requests',
+  hr_advance_requests: 'hr_advance_requests',
+  hr_loan_requests: 'hr_loan_requests',
+  hr_loan_ledger: 'hr_loan_ledger',
+  hr_generated_salaries: 'hr_generated_salaries',
 };
 
 // Promoted columns per table (verified 2026-10-22 against the live schema).
@@ -90,6 +106,35 @@ const PROMOTED_COLUMNS = {
   purchase_demands: [ ['status', 'text'], ['date', 'text'], ['department', 'text'] ],
   purchase_orders: [ ['pd_id', 'text'], ['supplier_id', 'text'], ['supplier_name', 'text'], ['status', 'text'], ['date', 'text'] ],
   purchase_invoices: [ ['source_id', 'text'] ],
+  hr_employees: [
+    ['name', 'text'], ['department', 'text'], ['designation', 'text'], ['phone', 'text'],
+    ['email', 'text'], ['basic_salary', 'numeric'], ['allowance', 'numeric'], ['advance', 'numeric'],
+    ['avatar', 'text'], ['status', 'text'],
+  ],
+  hr_uploaded_attendance: [
+    ['employee_id', 'text'], ['employee_code', 'text'], ['date', 'text'], ['status', 'text'], ['department', 'text'],
+  ],
+  hr_leave_requests: [
+    ['employee_id', 'text'], ['employee_name', 'text'], ['status', 'text'], ['leave_type', 'text'],
+    ['start_date', 'text'], ['end_date', 'text'],
+  ],
+  hr_overtime_requests: [
+    ['employee_id', 'text'], ['date', 'text'], ['start_time', 'text'], ['end_time', 'text'],
+    ['hours', 'numeric'], ['status', 'text'], ['attachments', 'json'],
+  ],
+  hr_advance_requests: [ ['employee_id', 'text'], ['status', 'text'] ],
+  hr_loan_requests: [
+    ['employee_id', 'text'], ['department', 'text'], ['date_applied', 'text'], ['repayment_start_date', 'text'],
+    ['type', 'text'], ['term_months', 'numeric'], ['monthly_installment', 'numeric'], ['purpose', 'text'],
+    ['amount', 'numeric'], ['status', 'text'],
+  ],
+  hr_loan_ledger: [
+    ['loan_request_id', 'text'], ['employee_name', 'text'], ['department', 'text'], ['designation', 'text'],
+    ['loan_type', 'text'], ['total_loan_amount', 'numeric'], ['term_months', 'numeric'], ['monthly_installment', 'numeric'],
+    ['repayment_start_date', 'text'], ['next_deduction_date', 'text'], ['paid_amount', 'numeric'],
+    ['remaining_balance', 'numeric'], ['status', 'text'], ['deductions_history', 'json'],
+  ],
+  hr_generated_salaries: [ ['employee_id', 'text'] ],
 };
 
 const camel = (snake) => {
@@ -104,6 +149,38 @@ export const entityRecordKey = (record) => {
   if (record.id !== undefined && record.id !== null && record.id !== '') return String(record.id);
   if (record.value !== undefined && record.value !== null && record.value !== '') return String(record.value);
   return null;
+};
+
+// Phase C Step 5: legacy `hr_uploaded_attendance` records uploaded before ids
+// existed carry neither `id` nor `value` (15 of 20 live records). Their table
+// rows were backfilled with synthetic ids, so the write-through needs a
+// content-derived key for them: `rec-<djb2 hash of the record JSON>`, with a
+// `-2`, `-3`… suffix when the same record repeats within one array pass
+// (`seen` counts occurrences per base key). Editing an id-less record changes
+// its hash, so the diff deletes the old row and inserts the edited record —
+// consistent for every writer (AppContext and the FlashAM terminal). All
+// other entities keep the plain entityRecordKey behavior: records without an
+// id/value stay untracked (key null).
+const FALLBACK_KEY_STATE_KEYS = { hr_uploaded_attendance: true };
+
+const hashRecord = (record) => {
+  const s = JSON.stringify(record) || '';
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+  return (h >>> 0).toString(16);
+};
+
+export const recordKeyWithFallback = (stateKey, record, seen) => {
+  let base = entityRecordKey(record);
+  if (base === null) {
+    if (!FALLBACK_KEY_STATE_KEYS[stateKey]) return null;
+    if (!record || typeof record !== 'object') return null;
+    base = `rec-${hashRecord(record)}`;
+  }
+  if (!(seen instanceof Map)) return base;
+  const n = (seen.get(base) || 0) + 1;
+  seen.set(base, n);
+  return n === 1 ? base : `${base}-${n}`;
 };
 
 const pickPromoted = (record, colName, kind) => {
@@ -131,8 +208,8 @@ const pickPromoted = (record, colName, kind) => {
   return undefined;
 };
 
-export const buildEntityRow = (table, record) => {
-  const id = entityRecordKey(record);
+export const buildEntityRow = (table, record, keyOverride) => {
+  const id = keyOverride !== undefined && keyOverride !== null ? keyOverride : entityRecordKey(record);
   if (id === null) return null;
   const row = { id, data: record, updated_at: new Date().toISOString() };
   (PROMOTED_COLUMNS[table] || []).forEach(([colName, kind]) => {
@@ -176,13 +253,14 @@ const syncEntityDiffNow = async (stateKey, records, snapshot) => {
   if (!table || !Array.isArray(records) || !(snapshot instanceof Map)) return;
   const next = new Map();
   const upserts = [];
+  const seen = new Map();
   records.forEach((record) => {
-    const key = entityRecordKey(record);
+    const key = recordKeyWithFallback(stateKey, record, seen);
     if (key === null) return;
     const json = JSON.stringify(record);
     next.set(key, json);
     if (snapshot.get(key) !== json) {
-      const row = buildEntityRow(table, record);
+      const row = buildEntityRow(table, record, key);
       if (row) upserts.push(row);
     }
   });

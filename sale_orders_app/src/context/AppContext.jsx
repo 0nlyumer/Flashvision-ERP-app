@@ -12,7 +12,7 @@ import {
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { applyTheme } from '../utils/theme';
 import { supabase } from '../utils/supabaseClient';
-import { STEP1_ENTITY_TABLES, loadStep1EntitiesFromTables, syncEntityDiffToTable, entityRecordKey, loadAdminSetupFromTable, syncAdminSetupToTable, loadFGComboConfigFromTable, syncFGComboConfigToTable } from '../utils/entityTables';
+import { STEP1_ENTITY_TABLES, loadStep1EntitiesFromTables, syncEntityDiffToTable, recordKeyWithFallback, loadAdminSetupFromTable, syncAdminSetupToTable, loadFGComboConfigFromTable, syncFGComboConfigToTable } from '../utils/entityTables';
 import { formatLineCode, maxLineCodeNumber } from '../utils/itemCodes';
 import { getInitialFGConfig, saveFGConfig, normalizeFGConfig } from '../utils/fgCombinationUtils';
 import { DEFAULT_CHART_OF_ACCOUNTS } from '../utils/financeEngine';
@@ -1366,8 +1366,9 @@ export const AppProvider = ({ children }) => {
       const seedSnapshots = (source) => {
         Object.keys(STEP1_ENTITY_TABLES).forEach((key) => {
           const snap = new Map();
+          const seen = new Map();
           (Array.isArray(source[key]) ? source[key] : []).forEach((rec) => {
-            const k = entityRecordKey(rec);
+            const k = recordKeyWithFallback(key, rec, seen);
             if (k !== null) snap.set(k, JSON.stringify(rec));
           });
           step1SnapshotsRef.current[key] = snap;
@@ -4778,6 +4779,14 @@ export const AppProvider = ({ children }) => {
   const step4PurchaseDemands = state.purchaseDemands;
   const step4PurchaseOrders = state.purchaseOrders;
   const step4PurchaseInvoices = state.purchaseInvoices;
+  const step5HrEmployees = state.hr_employees_list;
+  const step5HrUploadedAttendance = state.hr_uploaded_attendance;
+  const step5HrLeaveRequests = state.hr_leave_requests;
+  const step5HrOvertimeRequests = state.hr_overtime_requests;
+  const step5HrAdvanceRequests = state.hr_advance_requests;
+  const step5HrLoanRequests = state.hr_loan_requests;
+  const step5HrLoanLedger = state.hr_loan_ledger;
+  const step5HrGeneratedSalaries = state.hr_generated_salaries;
   const adminSetupForSync = state.adminSetup;
   const fgComboConfigForSync = state.fg_combinations_config;
   useEffect(() => {
@@ -4803,9 +4812,17 @@ export const AppProvider = ({ children }) => {
       syncEntityDiffToTable('purchaseDemands', step4PurchaseDemands, step1SnapshotsRef.current.purchaseDemands);
       syncEntityDiffToTable('purchaseOrders', step4PurchaseOrders, step1SnapshotsRef.current.purchaseOrders);
       syncEntityDiffToTable('purchaseInvoices', step4PurchaseInvoices, step1SnapshotsRef.current.purchaseInvoices);
+      syncEntityDiffToTable('hr_employees_list', step5HrEmployees, step1SnapshotsRef.current.hr_employees_list);
+      syncEntityDiffToTable('hr_uploaded_attendance', step5HrUploadedAttendance, step1SnapshotsRef.current.hr_uploaded_attendance);
+      syncEntityDiffToTable('hr_leave_requests', step5HrLeaveRequests, step1SnapshotsRef.current.hr_leave_requests);
+      syncEntityDiffToTable('hr_overtime_requests', step5HrOvertimeRequests, step1SnapshotsRef.current.hr_overtime_requests);
+      syncEntityDiffToTable('hr_advance_requests', step5HrAdvanceRequests, step1SnapshotsRef.current.hr_advance_requests);
+      syncEntityDiffToTable('hr_loan_requests', step5HrLoanRequests, step1SnapshotsRef.current.hr_loan_requests);
+      syncEntityDiffToTable('hr_loan_ledger', step5HrLoanLedger, step1SnapshotsRef.current.hr_loan_ledger);
+      syncEntityDiffToTable('hr_generated_salaries', step5HrGeneratedSalaries, step1SnapshotsRef.current.hr_generated_salaries);
     }, 250);
     return () => clearTimeout(timer);
-  }, [step1Items, step1Customers, step1Suppliers, step1UomList, step1PackingTypesList, step1RawMaterialTypesList, step1ItemCategories, step2ProductionPlans, step2ProductionOutputs, step3SaleOrders, step3Deliveries, step3SalesInvoices, step3Returns, step4Adjustments, step4StockTransfers, step4Grns, step4InwardGatePasses, step4PurchaseDemands, step4PurchaseOrders, step4PurchaseInvoices]);
+  }, [step1Items, step1Customers, step1Suppliers, step1UomList, step1PackingTypesList, step1RawMaterialTypesList, step1ItemCategories, step2ProductionPlans, step2ProductionOutputs, step3SaleOrders, step3Deliveries, step3SalesInvoices, step3Returns, step4Adjustments, step4StockTransfers, step4Grns, step4InwardGatePasses, step4PurchaseDemands, step4PurchaseOrders, step4PurchaseInvoices, step5HrEmployees, step5HrUploadedAttendance, step5HrLeaveRequests, step5HrOvertimeRequests, step5HrAdvanceRequests, step5HrLoanRequests, step5HrLoanLedger, step5HrGeneratedSalaries]);
 
   // PHASE C STEP 3 (addendum): adminSetup — incl. the base currency — is
   // persisted to the app_config table so the selection survives blob

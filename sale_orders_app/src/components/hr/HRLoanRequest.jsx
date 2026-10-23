@@ -1,10 +1,8 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
-import { useNavigate } from 'react-router-dom';
 
 export default function HRLoanRequest({ isMobile }) {
   const { state, setCollection, startRoutingWorkflow, currencySymbol } = useApp();
-  const navigate = useNavigate();
   const currSym = currencySymbol || 'Rs.';
 
   // Employees list from global context
@@ -229,15 +227,7 @@ export default function HRLoanRequest({ isMobile }) {
           <p className="text-xs text-on-surface-variant mt-1">Initiate a loan application with custom repayment start date & document routing.</p>
         </div>
         <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
-          <button 
-            type="button"
-            onClick={() => navigate('/settings/print-settings?docType=hr_loan_request')}
-            className="flex-1 sm:flex-none px-4 py-2 border border-outline-variant rounded-xl font-bold text-xs text-on-surface-variant hover:bg-surface-container-low transition-all flex items-center justify-center gap-2 cursor-pointer"
-          >
-            <span className="material-symbols-outlined text-[18px]">print</span>
-            Print Settings & Customize
-          </button>
-          <button 
+          <button
             type="button"
             onClick={() => triggerToast('Draft saved successfully!')}
             className="flex-1 sm:flex-none px-5 py-2 border border-outline-variant rounded-xl font-bold text-xs text-primary hover:bg-surface-container-low transition-all cursor-pointer"
@@ -688,15 +678,8 @@ export default function HRLoanRequest({ isMobile }) {
               )}
             </div>
 
-            <div className="p-4 bg-surface-container-low/50 border-t border-outline-variant/10 flex justify-between items-center">
-              <button 
-                onClick={() => navigate('/settings/print-settings?docType=hr_loan_request')}
-                className="px-4 py-2 border border-outline-variant rounded-xl text-xs font-bold text-on-surface-variant hover:bg-surface-container-high transition-all flex items-center gap-2 cursor-pointer"
-              >
-                <span className="material-symbols-outlined text-[16px]">print</span>
-                Print Loan Slip
-              </button>
-              <button 
+            <div className="p-4 bg-surface-container-low/50 border-t border-outline-variant/10 flex justify-end items-center">
+              <button
                 onClick={() => setSelectedRequestForDetail(null)}
                 className="bg-primary text-on-primary px-5 py-2 rounded-xl text-xs font-bold hover:bg-primary-container transition-all cursor-pointer"
               >

@@ -552,15 +552,8 @@ export default function HRLoanLedger({ isMobile }) {
             </div>
 
             {/* Modal Footer */}
-            <div className="p-4 bg-surface-container-low/50 border-t border-outline-variant/10 flex justify-between items-center shrink-0">
-              <button 
-                onClick={() => navigate('/settings/print-settings?docType=hr_loan_request')}
-                className="px-4 py-2 border border-outline-variant rounded-xl text-xs font-bold text-on-surface-variant hover:bg-surface-container-high transition-all flex items-center gap-2 cursor-pointer"
-              >
-                <span className="material-symbols-outlined text-[16px]">print</span>
-                Print Ledger Statement
-              </button>
-              <button 
+            <div className="p-4 bg-surface-container-low/50 border-t border-outline-variant/10 flex justify-end items-center shrink-0">
+              <button
                 onClick={() => setSelectedLedgerItem(null)}
                 className="bg-primary text-on-primary px-6 py-2 rounded-xl text-xs font-bold hover:bg-primary-container transition-all cursor-pointer"
               >

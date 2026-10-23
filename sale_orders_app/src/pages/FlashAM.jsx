@@ -3,6 +3,7 @@ import { useApp } from '../context/AppContext';
 import { useDialog } from '../context/DialogContext';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../utils/supabaseClient';
+import { buildEntityRow, recordKeyWithFallback } from '../utils/entityTables';
 import { verifyPassword } from '../utils/securityAuth';
 
 // Audio feedback engine for tactile punch & biometric confirmation
@@ -269,14 +270,77 @@ export default function FlashAM() {
   // ---------------------------------------------------------------------------
   // SUPABASE REALTIME DIRECT DATABASE SYNC
   // ---------------------------------------------------------------------------
+  // ---------------------------------------------------------------------------
+  // PHASE C STEP 5: employees + attendance live in their own tables now
+  // (hr_employees / hr_uploaded_attendance). FlashAM reads and writes ONLY
+  // those tables for HR data. The erp_state blob is still READ for `users`
+  // (not migrated) but is NEVER written from this terminal anymore — the old
+  // whole-blob UPDATEs bypassed the app's sync guard, so a stale terminal
+  // could clobber the entire ERP state.
+  // ---------------------------------------------------------------------------
+  const attendanceSnapshotRef = useRef(new Map());
+
+  const seedAttendanceSnapshot = (list) => {
+    const snap = new Map();
+    const seen = new Map();
+    (Array.isArray(list) ? list : []).forEach((rec) => {
+      const k = recordKeyWithFallback('hr_uploaded_attendance', rec, seen);
+      if (k !== null) snap.set(k, JSON.stringify(rec));
+    });
+    attendanceSnapshotRef.current = snap;
+  };
+
+  const fetchTableList = async (table) => {
+    try {
+      const { data, error } = await supabase.from(table).select('data');
+      if (error || !Array.isArray(data)) return null;
+      return data.map((row) => row?.data).filter((rec) => rec && typeof rec === 'object');
+    } catch (_) {
+      return null;
+    }
+  };
+
+  // Persist a full attendance list into hr_uploaded_attendance by diffing
+  // against the last persisted snapshot: upsert new/changed rows, delete
+  // vanished ones. Throws on write failure so callers can flag sync errors.
+  const persistAttendanceList = async (updatedList) => {
+    const snapshot = attendanceSnapshotRef.current;
+    const next = new Map();
+    const upserts = [];
+    const seen = new Map();
+    (Array.isArray(updatedList) ? updatedList : []).forEach((rec) => {
+      const k = recordKeyWithFallback('hr_uploaded_attendance', rec, seen);
+      if (k === null) return;
+      const json = JSON.stringify(rec);
+      next.set(k, json);
+      if (snapshot.get(k) !== json) {
+        const row = buildEntityRow('hr_uploaded_attendance', rec, k);
+        if (row) upserts.push(row);
+      }
+    });
+    const deletes = [];
+    snapshot.forEach((_, k) => { if (!next.has(k)) deletes.push(k); });
+    if (upserts.length > 0) {
+      const { error } = await supabase.from('hr_uploaded_attendance').upsert(upserts, { onConflict: 'id' });
+      if (error) throw error;
+    }
+    if (deletes.length > 0) {
+      const { error } = await supabase.from('hr_uploaded_attendance').delete().in('id', deletes);
+      if (error) throw error;
+    }
+    attendanceSnapshotRef.current = next;
+  };
+
   const fetchSupabaseData = async (isSilent = false) => {
     if (typeof document !== 'undefined' && document.hidden) return; // Zero egress when tab in background!
     if (!isSilent) setIsLoadingDb(true);
     try {
       const cachedUpdatedAt = localStorage.getItem('flasham_cached_updated_at');
+      const cachedTablesMarker = localStorage.getItem('flasham_cached_tables_marker');
       const hasCachedEmployees = Boolean(localStorage.getItem('flasham_cached_employees'));
 
-      // Check remote updated_at first (only ~50 bytes!)
+      // Probe 1 (tiny): erp_state updated_at — still the freshness signal
+      // for `users`, which are not migrated and are read from the blob.
       const { data: verData, error: verErr } = await supabase
         .from('erp_state')
         .select('updated_at')
@@ -285,44 +349,84 @@ export default function FlashAM() {
 
       if (verErr) throw verErr;
 
-      // If local cache is already up to date, skip downloading full state_data!
-      if (verData?.updated_at && cachedUpdatedAt && verData.updated_at === cachedUpdatedAt && hasCachedEmployees) {
-        console.log('[Egress Guard] Flash AM workforce is already up to date! Skipped ~3MB download.');
+      // Probe 2 (tiny): latest updated_at of the two HR tables — the
+      // freshness signal for employees + attendance since Phase C Step 5.
+      const [empProbe, attProbe] = await Promise.all([
+        supabase.from('hr_employees').select('updated_at').order('updated_at', { ascending: false }).limit(1),
+        supabase.from('hr_uploaded_attendance').select('updated_at').order('updated_at', { ascending: false }).limit(1),
+      ]);
+      const tablesMarker = (!empProbe.error && !attProbe.error)
+        ? `${empProbe.data?.[0]?.updated_at || 'none'}|${attProbe.data?.[0]?.updated_at || 'none'}`
+        : null;
+
+      const usersFresh = Boolean(verData?.updated_at && cachedUpdatedAt && verData.updated_at === cachedUpdatedAt);
+      const hrFresh = Boolean(tablesMarker !== null && cachedTablesMarker === tablesMarker && hasCachedEmployees);
+
+      // If both caches are already up to date, skip the downloads entirely.
+      if (usersFresh && hrFresh) {
+        console.log('[Egress Guard] Flash AM workforce is already up to date! Skipped downloads.');
         setLastSyncTime(new Date().toLocaleTimeString());
         setSyncStatus('synced');
         setIsLoadingDb(false);
         return;
       }
 
-      // Download only when remote has changed or cache is empty
-      const { data, error } = await supabase
-        .from('erp_state')
-        .select('state_data, updated_at')
-        .eq('id', 'main_state')
-        .single();
-
-      if (error) throw error;
-
-      if (data && data.state_data) {
-        if (data.updated_at) {
-          localStorage.setItem('flasham_cached_updated_at', data.updated_at);
+      // HR lists come from their tables (the read source since Step 5).
+      let empsFromTable = null;
+      let attsFromTable = null;
+      if (!hrFresh) {
+        [empsFromTable, attsFromTable] = await Promise.all([
+          fetchTableList('hr_employees'),
+          fetchTableList('hr_uploaded_attendance'),
+        ]);
+        if (Array.isArray(empsFromTable) && empsFromTable.length > 0) {
+          setDbEmployees(empsFromTable);
+          localStorage.setItem('flasham_cached_employees', JSON.stringify(empsFromTable));
         }
-        const sd = data.state_data;
-        if (Array.isArray(sd.hr_employees_list) && sd.hr_employees_list.length > 0) {
-          setDbEmployees(sd.hr_employees_list);
-          localStorage.setItem('flasham_cached_employees', JSON.stringify(sd.hr_employees_list));
+        if (Array.isArray(attsFromTable)) {
+          setDbAttendance(attsFromTable);
+          seedAttendanceSnapshot(attsFromTable);
+          localStorage.setItem('flasham_cached_attendance', JSON.stringify(attsFromTable));
         }
-        if (Array.isArray(sd.hr_uploaded_attendance)) {
-          setDbAttendance(sd.hr_uploaded_attendance);
-          localStorage.setItem('flasham_cached_attendance', JSON.stringify(sd.hr_uploaded_attendance));
+        if (tablesMarker !== null) {
+          localStorage.setItem('flasham_cached_tables_marker', tablesMarker);
         }
-        if (Array.isArray(sd.users) && sd.users.length > 0) {
-          setDbUsers(sd.users);
-          localStorage.setItem('flasham_cached_users', JSON.stringify(sd.users));
-        }
-        setLastSyncTime(new Date().toLocaleTimeString());
-        setSyncStatus('synced');
       }
+
+      // `users` still live in the blob — download it only when it changed,
+      // and use it for users (plus an HR fallback if the tables could not
+      // be read at all).
+      if (!usersFresh) {
+        const { data, error } = await supabase
+          .from('erp_state')
+          .select('state_data, updated_at')
+          .eq('id', 'main_state')
+          .single();
+
+        if (error) throw error;
+
+        if (data && data.state_data) {
+          if (data.updated_at) {
+            localStorage.setItem('flasham_cached_updated_at', data.updated_at);
+          }
+          const sd = data.state_data;
+          if (Array.isArray(sd.users) && sd.users.length > 0) {
+            setDbUsers(sd.users);
+            localStorage.setItem('flasham_cached_users', JSON.stringify(sd.users));
+          }
+          if (empsFromTable === null && Array.isArray(sd.hr_employees_list) && sd.hr_employees_list.length > 0) {
+            setDbEmployees(sd.hr_employees_list);
+            localStorage.setItem('flasham_cached_employees', JSON.stringify(sd.hr_employees_list));
+          }
+          if (attsFromTable === null && Array.isArray(sd.hr_uploaded_attendance)) {
+            setDbAttendance(sd.hr_uploaded_attendance);
+            seedAttendanceSnapshot(sd.hr_uploaded_attendance);
+            localStorage.setItem('flasham_cached_attendance', JSON.stringify(sd.hr_uploaded_attendance));
+          }
+        }
+      }
+      setLastSyncTime(new Date().toLocaleTimeString());
+      setSyncStatus('synced');
     } catch (err) {
       console.warn('Flash AM Supabase fetch warning / quota:', err);
       setSyncStatus('offline');
@@ -332,9 +436,10 @@ export default function FlashAM() {
   };
 
   useEffect(() => {
+    seedAttendanceSnapshot(dbAttendance);
     fetchSupabaseData();
 
-    // Subscribe to real-time changes on erp_state
+    // Realtime: HR lists follow their tables; `users` still follow the blob.
     const channel = supabase
       .channel('flasham_realtime_channel')
       .on(
@@ -343,21 +448,36 @@ export default function FlashAM() {
         (payload) => {
           if (payload.new && payload.new.state_data) {
             const sd = payload.new.state_data;
-            if (Array.isArray(sd.hr_employees_list) && sd.hr_employees_list.length > 0) {
-              setDbEmployees(sd.hr_employees_list);
-              localStorage.setItem('flasham_cached_employees', JSON.stringify(sd.hr_employees_list));
-            }
-            if (Array.isArray(sd.hr_uploaded_attendance)) {
-              setDbAttendance(sd.hr_uploaded_attendance);
-              localStorage.setItem('flasham_cached_attendance', JSON.stringify(sd.hr_uploaded_attendance));
-            }
             if (Array.isArray(sd.users) && sd.users.length > 0) {
               setDbUsers(sd.users);
               localStorage.setItem('flasham_cached_users', JSON.stringify(sd.users));
             }
             setLastSyncTime(new Date().toLocaleTimeString());
             setSyncStatus('synced');
-            if (payload.new && payload.new.updated_at) localStorage.setItem('flasham_cached_updated_at', payload.new.updated_at);
+            if (payload.new.updated_at) localStorage.setItem('flasham_cached_updated_at', payload.new.updated_at);
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'hr_employees' },
+        async () => {
+          const emps = await fetchTableList('hr_employees');
+          if (Array.isArray(emps) && emps.length > 0) {
+            setDbEmployees(emps);
+            localStorage.setItem('flasham_cached_employees', JSON.stringify(emps));
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'hr_uploaded_attendance' },
+        async () => {
+          const atts = await fetchTableList('hr_uploaded_attendance');
+          if (Array.isArray(atts)) {
+            setDbAttendance(atts);
+            seedAttendanceSnapshot(atts);
+            localStorage.setItem('flasham_cached_attendance', JSON.stringify(atts));
           }
         }
       )
@@ -368,7 +488,9 @@ export default function FlashAM() {
     };
   }, []);
 
-  // Save changes directly to Supabase erp_state in real-time (Syncs BOTH uploaded and employees list)
+  // Save changes to the HR tables in real-time (attendance rows + the
+  // attendance maps inside employee records). Phase C Step 5: this terminal
+  // no longer writes the erp_state blob.
   const saveAttendanceToSupabase = async (updatedAttendanceList) => {
     if (!navigator.onLine) {
       setSyncStatus('offline');
@@ -376,21 +498,13 @@ export default function FlashAM() {
     }
     setSyncStatus('saving');
     try {
-      const { data, error: fetchErr } = await supabase
-        .from('erp_state')
-        .select('state_data')
-        .eq('id', 'main_state')
-        .single();
+      // Current employees from their table (the read source since Step 5).
+      const currentEmployees = (await fetchTableList('hr_employees')) || dbEmployees;
 
-      if (fetchErr) throw fetchErr;
-
-      const currentStateData = data?.state_data || {};
-      const currentEmployees = currentStateData.hr_employees_list || [];
-      
       // Synchronize employee attendance records inside hr_employees_list
       const updatedEmployees = currentEmployees.map(emp => {
-        const empRecords = updatedAttendanceList.filter(u => 
-          String(u.employeeId) === String(emp.id) || 
+        const empRecords = updatedAttendanceList.filter(u =>
+          String(u.employeeId) === String(emp.id) ||
           (emp.employeeCode && u.employeeCode === emp.employeeCode) ||
           (u.employeeName && String(u.employeeName).trim().toLowerCase() === String(emp.name).trim().toLowerCase())
         );
@@ -412,21 +526,20 @@ export default function FlashAM() {
         return { ...emp, attendance: updatedAtt };
       });
 
-      const updatedStateData = {
-        ...currentStateData,
-        hr_uploaded_attendance: updatedAttendanceList,
-        hr_employees_list: updatedEmployees
-      };
+      // Persist the attendance list to its table (diffed upserts + deletes).
+      await persistAttendanceList(updatedAttendanceList);
 
-      const { error: updateErr } = await supabase
-        .from('erp_state')
-        .update({
-          state_data: updatedStateData,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', 'main_state');
-
-      if (updateErr) throw updateErr;
+      // Persist only the employee records whose attendance map changed.
+      const changedEmployees = updatedEmployees.filter((emp, i) => JSON.stringify(emp) !== JSON.stringify(currentEmployees[i]));
+      if (changedEmployees.length > 0) {
+        const rows = changedEmployees.map((emp) => buildEntityRow('hr_employees', emp)).filter(Boolean);
+        if (rows.length > 0) {
+          const { error } = await supabase.from('hr_employees').upsert(rows, { onConflict: 'id' });
+          if (error) throw error;
+        }
+        setDbEmployees(updatedEmployees);
+        localStorage.setItem('flasham_cached_employees', JSON.stringify(updatedEmployees));
+      }
 
       setLastSyncTime(new Date().toLocaleTimeString());
       setSyncStatus('synced');
@@ -467,15 +580,7 @@ export default function FlashAM() {
       if (queue.length === 0) return;
 
       setSyncStatus('saving');
-      const { data, error: fetchErr } = await supabase
-        .from('erp_state')
-        .select('state_data')
-        .eq('id', 'main_state')
-        .single();
-
-      if (fetchErr) throw fetchErr;
-
-      let currentAttendance = data?.state_data?.hr_uploaded_attendance || dbAttendance;
+      let currentAttendance = (await fetchTableList('hr_uploaded_attendance')) || dbAttendance;
       
       for (const item of queue) {
         if (item.action === 'PUNCH_IN') {
@@ -532,13 +637,7 @@ export default function FlashAM() {
         }
       }
 
-      await supabase
-        .from('erp_state')
-        .update({
-          state_data: { ...(data?.state_data || {}), hr_uploaded_attendance: currentAttendance },
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', 'main_state');
+      await persistAttendanceList(currentAttendance);
 
       localStorage.removeItem('flasham_pending_queue');
       setPendingQueue([]);
