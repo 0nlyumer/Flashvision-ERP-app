@@ -12,7 +12,7 @@ import {
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { applyTheme } from '../utils/theme';
 import { supabase } from '../utils/supabaseClient';
-import { STEP1_ENTITY_TABLES, loadStep1EntitiesFromTables, syncEntityDiffToTable, recordKeyWithFallback, loadAdminSetupFromTable, syncAdminSetupToTable, loadFGComboConfigFromTable, syncFGComboConfigToTable, loadFlashAmConfigFromTable, syncFlashAmConfigToTable, loadSalaryPrintSettingsFromTable, syncSalaryPrintSettingsToTable, loadPayrollAccountMappingFromTable, syncPayrollAccountMappingToTable, loadCategoryPrefixesFromTable, syncCategoryPrefixesToTable, loadScalarsFromTable, syncScalarsToTable } from '../utils/entityTables';
+import { STEP1_ENTITY_TABLES, loadStep1EntitiesFromTables, syncEntityDiffToTable, recordKeyWithFallback, loadAdminSetupFromTable, syncAdminSetupToTable, loadFGComboConfigFromTable, syncFGComboConfigToTable, loadFlashAmConfigFromTable, syncFlashAmConfigToTable, loadSalaryPrintSettingsFromTable, syncSalaryPrintSettingsToTable, loadPayrollAccountMappingFromTable, syncPayrollAccountMappingToTable, loadCategoryPrefixesFromTable, syncCategoryPrefixesToTable, loadScalarsFromTable, syncScalarsToTable, loadCountersFromTable, syncCountersToTable, loadBatchOutputTypesFromTable, syncBatchOutputTypesToTable } from '../utils/entityTables';
 import { formatLineCode, maxLineCodeNumber } from '../utils/itemCodes';
 import { getInitialFGConfig, saveFGConfig, normalizeFGConfig } from '../utils/fgCombinationUtils';
 import { getInitialFlashAmConfig, normalizeFlashAmConfig } from '../utils/flashAmConfig';
@@ -661,6 +661,10 @@ export const AppProvider = ({ children }) => {
   const categoryPrefixesSnapshotRef = useRef(null);
   const scalarsLoadedRef = useRef(false);
   const scalarsSnapshotRef = useRef(null);
+  const countersLoadedRef = useRef(false);
+  const countersSnapshotRef = useRef(null);
+  const batchOutputTypesLoadedRef = useRef(false);
+  const batchOutputTypesSnapshotRef = useRef(null);
   const lsDebounceRef = useRef({ hr_employees_list: null, hr_uploaded_attendance: null });
 
   const safeLocalStorageSet = (key, value) => {
@@ -1429,6 +1433,8 @@ export const AppProvider = ({ children }) => {
         const payrollMappingFromTable = await loadPayrollAccountMappingFromTable();
         const categoryPrefixesFromTable = await loadCategoryPrefixesFromTable();
         const scalarsFromTable = await loadScalarsFromTable();
+        const countersFromTable = await loadCountersFromTable();
+        const batchOutputTypesFromTable = await loadBatchOutputTypesFromTable();
         setState(prev => {
           const next = { ...prev };
           const seedSource = {};
@@ -1520,6 +1526,23 @@ export const AppProvider = ({ children }) => {
           }
           scalarsSnapshotRef.current = JSON.stringify({ buildVersion: next.buildVersion, productionTarget: next.productionTarget, isGlobalPaginated: next.isGlobalPaginated });
           scalarsLoadedRef.current = true;
+          // PHASE D STEP D1: counters (the global line-code counter) and
+          // batchOutputTypes (production grade definitions) ride in
+          // app_config like the other config — the table copy wins on load.
+          if (countersFromTable) {
+            next.counters = countersFromTable;
+            countersSnapshotRef.current = countersFromTable;
+          } else {
+            countersSnapshotRef.current = prev.counters || null;
+          }
+          countersLoadedRef.current = true;
+          if (batchOutputTypesFromTable) {
+            next.batchOutputTypes = batchOutputTypesFromTable;
+            batchOutputTypesSnapshotRef.current = batchOutputTypesFromTable;
+          } else {
+            batchOutputTypesSnapshotRef.current = prev.batchOutputTypes || null;
+          }
+          batchOutputTypesLoadedRef.current = true;
           seedSnapshots(seedSource);
           return next;
         });
@@ -1541,6 +1564,10 @@ export const AppProvider = ({ children }) => {
           categoryPrefixesLoadedRef.current = true;
           scalarsSnapshotRef.current = JSON.stringify({ buildVersion: prev.buildVersion, productionTarget: prev.productionTarget, isGlobalPaginated: prev.isGlobalPaginated });
           scalarsLoadedRef.current = true;
+          countersSnapshotRef.current = prev.counters || null;
+          countersLoadedRef.current = true;
+          batchOutputTypesSnapshotRef.current = prev.batchOutputTypes || null;
+          batchOutputTypesLoadedRef.current = true;
           return prev;
         });
       } finally {
@@ -4947,12 +4974,19 @@ export const AppProvider = ({ children }) => {
   const step6Binders = state.documentWarehouseBinders;
   const step6GatePassActivities = state.gatePassActivities;
   const step6OtherConsumptions = state.otherConsumptions;
+  const stepDUsers = state.users;
+  const stepDDepartments = state.departments;
+  const stepDBoms = state.boms;
+  const stepDFinishedGoodPhases = state.finishedGoodPhases;
+  const stepDRawMaterialPhases = state.rawMaterialPhases;
   const adminSetupForSync = state.adminSetup;
   const fgComboConfigForSync = state.fg_combinations_config;
   const flashAmConfigForSync = state.flash_am_config;
   const salaryPrintSettingsForSync = state.salary_print_settings;
   const payrollMappingForSync = state.payroll_account_mapping;
   const categoryPrefixesForSync = state.categoryPrefixes;
+  const countersForSync = state.counters;
+  const batchOutputTypesForSync = state.batchOutputTypes;
   const scalarsBundleForSync = { buildVersion: state.buildVersion, lastUpdatedBy: state.lastUpdatedBy, productionTarget: state.productionTarget, isGlobalPaginated: state.isGlobalPaginated };
   const scalarsWatchKey = JSON.stringify({ buildVersion: state.buildVersion, productionTarget: state.productionTarget, isGlobalPaginated: state.isGlobalPaginated });
   useEffect(() => {
@@ -4998,9 +5032,14 @@ export const AppProvider = ({ children }) => {
       syncEntityDiffToTable('documentWarehouseBinders', step6Binders, step1SnapshotsRef.current.documentWarehouseBinders);
       syncEntityDiffToTable('gatePassActivities', step6GatePassActivities, step1SnapshotsRef.current.gatePassActivities);
       syncEntityDiffToTable('otherConsumptions', step6OtherConsumptions, step1SnapshotsRef.current.otherConsumptions);
+      syncEntityDiffToTable('users', stepDUsers, step1SnapshotsRef.current.users);
+      syncEntityDiffToTable('departments', stepDDepartments, step1SnapshotsRef.current.departments);
+      syncEntityDiffToTable('boms', stepDBoms, step1SnapshotsRef.current.boms);
+      syncEntityDiffToTable('finishedGoodPhases', stepDFinishedGoodPhases, step1SnapshotsRef.current.finishedGoodPhases);
+      syncEntityDiffToTable('rawMaterialPhases', stepDRawMaterialPhases, step1SnapshotsRef.current.rawMaterialPhases);
     }, 250);
     return () => clearTimeout(timer);
-  }, [step1Items, step1Customers, step1Suppliers, step1UomList, step1PackingTypesList, step1RawMaterialTypesList, step1ItemCategories, step2ProductionPlans, step2ProductionOutputs, step3SaleOrders, step3Deliveries, step3SalesInvoices, step3Returns, step4Adjustments, step4StockTransfers, step4Grns, step4InwardGatePasses, step4PurchaseDemands, step4PurchaseOrders, step4PurchaseInvoices, step5HrEmployees, step5HrUploadedAttendance, step5HrLeaveRequests, step5HrOvertimeRequests, step5HrAdvanceRequests, step5HrLoanRequests, step5HrLoanLedger, step5HrGeneratedSalaries, step6ChartOfAccounts, step6Vouchers, step6PaymentVouchers, step6Approvals, step6Notifications, step6AuditLogs, step6Chats, step6RoutingRules, step6RoutingTasks, step6Binders, step6GatePassActivities, step6OtherConsumptions]);
+  }, [step1Items, step1Customers, step1Suppliers, step1UomList, step1PackingTypesList, step1RawMaterialTypesList, step1ItemCategories, step2ProductionPlans, step2ProductionOutputs, step3SaleOrders, step3Deliveries, step3SalesInvoices, step3Returns, step4Adjustments, step4StockTransfers, step4Grns, step4InwardGatePasses, step4PurchaseDemands, step4PurchaseOrders, step4PurchaseInvoices, step5HrEmployees, step5HrUploadedAttendance, step5HrLeaveRequests, step5HrOvertimeRequests, step5HrAdvanceRequests, step5HrLoanRequests, step5HrLoanLedger, step5HrGeneratedSalaries, step6ChartOfAccounts, step6Vouchers, step6PaymentVouchers, step6Approvals, step6Notifications, step6AuditLogs, step6Chats, step6RoutingRules, step6RoutingTasks, step6Binders, step6GatePassActivities, step6OtherConsumptions, stepDUsers, stepDDepartments, stepDBoms, stepDFinishedGoodPhases, stepDRawMaterialPhases]);
 
   // PHASE C STEP 3 (addendum): adminSetup — incl. the base currency — is
   // persisted to the app_config table so the selection survives blob
@@ -5102,6 +5141,34 @@ export const AppProvider = ({ children }) => {
     }, 250);
     return () => clearTimeout(timer);
   }, [scalarsWatchKey]);
+
+  // PHASE D STEP D1: counters ride in app_config like categoryPrefixes —
+  // the table copy wins on load; changes write through (debounced). The
+  // line-code counter can no longer be lost or rewound in a blob flip.
+  useEffect(() => {
+    if (!countersLoadedRef.current) return;
+    if (!countersForSync || typeof countersForSync !== 'object' || Array.isArray(countersForSync)) return;
+    if (countersSnapshotRef.current === countersForSync) return;
+    const timer = setTimeout(() => {
+      countersSnapshotRef.current = countersForSync;
+      syncCountersToTable(countersForSync);
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [countersForSync]);
+
+  // PHASE D STEP D1: batchOutputTypes (production grade definitions) ride
+  // in app_config the same way — table copy wins on load, changes write
+  // through (debounced).
+  useEffect(() => {
+    if (!batchOutputTypesLoadedRef.current) return;
+    if (!Array.isArray(batchOutputTypesForSync)) return;
+    if (batchOutputTypesSnapshotRef.current === batchOutputTypesForSync) return;
+    const timer = setTimeout(() => {
+      batchOutputTypesSnapshotRef.current = batchOutputTypesForSync;
+      syncBatchOutputTypesToTable(batchOutputTypesForSync);
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [batchOutputTypesForSync]);
 
   const setCollection = (collection, data) => {
     setState(prev => {

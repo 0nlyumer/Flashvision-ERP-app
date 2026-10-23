@@ -42,6 +42,11 @@
 //   chats                chats
 //   routingRules         routing_rules
 //   routingTasks         routing_tasks
+//   users                users
+//   departments          departments
+//   boms                 boms
+//   finishedGoodPhases   finished_good_phases
+//   rawMaterialPhases    raw_material_phases
 //   documentWarehouseBinders document_warehouse_binders
 //   gatePassActivities   gate_pass_activities
 //   otherConsumptions    other_consumptions
@@ -94,6 +99,11 @@ export const STEP1_ENTITY_TABLES = {
   documentWarehouseBinders: 'document_warehouse_binders',
   gatePassActivities: 'gate_pass_activities',
   otherConsumptions: 'other_consumptions',
+  users: 'users',
+  departments: 'departments',
+  boms: 'boms',
+  finishedGoodPhases: 'finished_good_phases',
+  rawMaterialPhases: 'raw_material_phases',
 };
 
 // Promoted columns per table (verified 2026-10-22 against the live schema;
@@ -190,6 +200,21 @@ const PROMOTED_COLUMNS = {
   document_warehouse_binders: [ ['name', 'text'] ],
   gate_pass_activities: [],
   other_consumptions: [],
+  // PHASE D STEP D1: users / departments / boms / phases were the last
+  // blob-only collections. Live-schema probe (2026-10-23, insert round-trip):
+  // the ONLY extra NOT NULL column among these five tables is
+  // users.username — the remaining entries mirror the Phase B backfill so
+  // the promoted columns stay populated (full_name comes from record.name;
+  // departments.dept_value from record.value).
+  users: [
+    ['username', 'text'], ['name', 'text'], ['role', 'text'],
+    ['permissions', 'json'], ['granular_permissions', 'json'],
+    ['full_name', 'text', 'name'], ['email', 'text'], ['phone', 'text'], ['status', 'text'],
+  ],
+  departments: [ ['name', 'text'], ['label', 'text'], ['dept_value', 'text', 'value'] ],
+  boms: [ ['finished_good_id', 'text'], ['finished_good_name', 'text'], ['status', 'text'] ],
+  finished_good_phases: [ ['label', 'text'], ['title', 'text'], ['type', 'text'], ['enabled', 'boolean'] ],
+  raw_material_phases: [ ['label', 'text'], ['title', 'text'], ['type', 'text'], ['enabled', 'boolean'] ],
 };
 
 const camel = (snake) => {
@@ -577,5 +602,65 @@ export const syncScalarsToTable = async (scalars) => {
     if (error) throw error;
   } catch (err) {
     console.warn('[EntityTables] scalars write-through failed:', err?.message || err);
+  }
+};
+
+// --- counters + batchOutputTypes (app_config) — Phase D Step D1 ------------
+// The last two blob-only leftovers were not collections at all: `counters`
+// (the global ITEM-### line-code counter object) and `batchOutputTypes`
+// (the production grade definitions array). They ride in app_config like
+// the other config, mirroring payrollAccountMapping: the table copy wins
+// on load and changes write through. The blob copies remain as fallback
+// until Phase D Step D3 stops blob writes.
+
+export const loadCountersFromTable = async () => {
+  try {
+    const { data, error } = await supabase
+      .from('app_config')
+      .select('data')
+      .eq('key', 'counters')
+      .maybeSingle();
+    if (error || !data || typeof data.data !== 'object' || data.data === null || Array.isArray(data.data)) return null;
+    return data.data;
+  } catch (_) {
+    return null;
+  }
+};
+
+export const syncCountersToTable = async (counters) => {
+  if (!counters || typeof counters !== 'object' || Array.isArray(counters)) return;
+  try {
+    const { error } = await supabase
+      .from('app_config')
+      .upsert({ key: 'counters', data: counters, updated_at: new Date().toISOString() }, { onConflict: 'key' });
+    if (error) throw error;
+  } catch (err) {
+    console.warn('[EntityTables] counters write-through failed:', err?.message || err);
+  }
+};
+
+export const loadBatchOutputTypesFromTable = async () => {
+  try {
+    const { data, error } = await supabase
+      .from('app_config')
+      .select('data')
+      .eq('key', 'batchOutputTypes')
+      .maybeSingle();
+    if (error || !data || !Array.isArray(data.data)) return null;
+    return data.data;
+  } catch (_) {
+    return null;
+  }
+};
+
+export const syncBatchOutputTypesToTable = async (types) => {
+  if (!Array.isArray(types)) return;
+  try {
+    const { error } = await supabase
+      .from('app_config')
+      .upsert({ key: 'batchOutputTypes', data: types, updated_at: new Date().toISOString() }, { onConflict: 'key' });
+    if (error) throw error;
+  } catch (err) {
+    console.warn('[EntityTables] batchOutputTypes write-through failed:', err?.message || err);
   }
 };
