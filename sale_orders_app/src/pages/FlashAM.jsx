@@ -332,10 +332,13 @@ export default function FlashAM() {
   // ---------------------------------------------------------------------------
   // PHASE C STEP 5: employees + attendance live in their own tables now
   // (hr_employees / hr_uploaded_attendance). FlashAM reads and writes ONLY
-  // those tables for HR data. The erp_state blob is still READ for `users`
-  // (not migrated) but is NEVER written from this terminal anymore — the old
+  // those tables for HR data, and NEVER writes the erp_state blob — the old
   // whole-blob UPDATEs bypassed the app's sync guard, so a stale terminal
   // could clobber the entire ERP state.
+  // PHASE D STEP D3: `users` live in the users table too (D1 caught the
+  // table up and mapped it), so FlashAM reads users from the table. The
+  // erp_state blob is frozen/read-only now; it is only read as a
+  // last-resort fallback when a table read fails outright.
   // ---------------------------------------------------------------------------
   const attendanceSnapshotRef = useRef(new Map());
 
@@ -398,15 +401,17 @@ export default function FlashAM() {
       const cachedTablesMarker = localStorage.getItem('flasham_cached_tables_marker');
       const hasCachedEmployees = Boolean(localStorage.getItem('flasham_cached_employees'));
 
-      // Probe 1 (tiny): erp_state updated_at — still the freshness signal
-      // for `users`, which are not migrated and are read from the blob.
-      const { data: verData, error: verErr } = await supabase
-        .from('erp_state')
+      // Probe 1 (tiny): latest updated_at of the users TABLE — the
+      // freshness signal for `users` since Phase D Step D3 moved them
+      // off the (now frozen, read-only) erp_state blob.
+      const { data: verRows, error: verErr } = await supabase
+        .from('users')
         .select('updated_at')
-        .eq('id', 'main_state')
-        .single();
+        .order('updated_at', { ascending: false })
+        .limit(1);
 
       if (verErr) throw verErr;
+      const verData = { updated_at: verRows?.[0]?.updated_at || null };
 
       // Probe 2 (tiny): latest updated_at of the two HR tables — the
       // freshness signal for employees + attendance since Phase C Step 5.
@@ -452,35 +457,42 @@ export default function FlashAM() {
         }
       }
 
-      // `users` still live in the blob — download it only when it changed,
-      // and use it for users (plus an HR fallback if the tables could not
-      // be read at all).
+      // `users` come from the users TABLE (Phase D Step D3) — download
+      // them only when the probe says they changed. The frozen erp_state
+      // blob is read only as a last-resort fallback when a table read
+      // failed outright (users and/or the HR lists).
       if (!usersFresh) {
-        const { data, error } = await supabase
-          .from('erp_state')
-          .select('state_data, updated_at')
-          .eq('id', 'main_state')
-          .single();
+        const usersFromTable = await fetchTableList('users');
+        if (Array.isArray(usersFromTable) && usersFromTable.length > 0) {
+          setDbUsers(usersFromTable);
+          localStorage.setItem('flasham_cached_users', JSON.stringify(usersFromTable));
+        }
+        if (verData?.updated_at) {
+          localStorage.setItem('flasham_cached_updated_at', verData.updated_at);
+        }
 
-        if (error) throw error;
+        if (usersFromTable === null || empsFromTable === null || attsFromTable === null) {
+          const { data, error } = await supabase
+            .from('erp_state')
+            .select('state_data')
+            .eq('id', 'main_state')
+            .single();
 
-        if (data && data.state_data) {
-          if (data.updated_at) {
-            localStorage.setItem('flasham_cached_updated_at', data.updated_at);
-          }
-          const sd = data.state_data;
-          if (Array.isArray(sd.users) && sd.users.length > 0) {
-            setDbUsers(sd.users);
-            localStorage.setItem('flasham_cached_users', JSON.stringify(sd.users));
-          }
-          if (empsFromTable === null && Array.isArray(sd.hr_employees_list) && sd.hr_employees_list.length > 0) {
-            setDbEmployees(sd.hr_employees_list);
-            localStorage.setItem('flasham_cached_employees', JSON.stringify(sd.hr_employees_list));
-          }
-          if (attsFromTable === null && Array.isArray(sd.hr_uploaded_attendance)) {
-            setDbAttendance(sd.hr_uploaded_attendance);
-            seedAttendanceSnapshot(sd.hr_uploaded_attendance);
-            localStorage.setItem('flasham_cached_attendance', JSON.stringify(sd.hr_uploaded_attendance));
+          if (!error && data && data.state_data) {
+            const sd = data.state_data;
+            if (usersFromTable === null && Array.isArray(sd.users) && sd.users.length > 0) {
+              setDbUsers(sd.users);
+              localStorage.setItem('flasham_cached_users', JSON.stringify(sd.users));
+            }
+            if (empsFromTable === null && Array.isArray(sd.hr_employees_list) && sd.hr_employees_list.length > 0) {
+              setDbEmployees(sd.hr_employees_list);
+              localStorage.setItem('flasham_cached_employees', JSON.stringify(sd.hr_employees_list));
+            }
+            if (attsFromTable === null && Array.isArray(sd.hr_uploaded_attendance)) {
+              setDbAttendance(sd.hr_uploaded_attendance);
+              seedAttendanceSnapshot(sd.hr_uploaded_attendance);
+              localStorage.setItem('flasham_cached_attendance', JSON.stringify(sd.hr_uploaded_attendance));
+            }
           }
         }
       }
@@ -498,23 +510,22 @@ export default function FlashAM() {
     seedAttendanceSnapshot(dbAttendance);
     fetchSupabaseData();
 
-    // Realtime: HR lists follow their tables; `users` still follow the blob.
+    // Realtime: HR lists and `users` all follow their own tables now
+    // (Phase D Step D3 — the erp_state blob is frozen, so the old blob
+    // subscription could never fire again and was replaced by this one).
     const channel = supabase
       .channel('flasham_realtime_channel')
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'erp_state', filter: 'id=eq.main_state' },
-        (payload) => {
-          if (payload.new && payload.new.state_data) {
-            const sd = payload.new.state_data;
-            if (Array.isArray(sd.users) && sd.users.length > 0) {
-              setDbUsers(sd.users);
-              localStorage.setItem('flasham_cached_users', JSON.stringify(sd.users));
-            }
-            setLastSyncTime(new Date().toLocaleTimeString());
-            setSyncStatus('synced');
-            if (payload.new.updated_at) localStorage.setItem('flasham_cached_updated_at', payload.new.updated_at);
+        { event: '*', schema: 'public', table: 'users' },
+        async () => {
+          const users = await fetchTableList('users');
+          if (Array.isArray(users) && users.length > 0) {
+            setDbUsers(users);
+            localStorage.setItem('flasham_cached_users', JSON.stringify(users));
           }
+          setLastSyncTime(new Date().toLocaleTimeString());
+          setSyncStatus('synced');
         }
       )
       .on(

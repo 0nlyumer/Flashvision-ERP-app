@@ -2341,28 +2341,18 @@ export const AppProvider = ({ children }) => {
         setSyncStatus('idle');
         return;
       }
-      syncState.buildVersion = BUILD_VERSION;
-      syncState.lastUpdatedBy = clientId.current;
-      const sanitizedSyncState = JSON.parse(JSON.stringify(syncState));
-
+      // PHASE D STEP D3: erp_state blob writes are STOPPED app-wide. Every
+      // entity and config value persists through its table / app_config
+      // write-through; this path now only runs the standalone-table sync.
+      // The blob row stays in Supabase as a read-only backup, and the blob
+      // version refs (lastSyncedUpdatedAtRef / guardBaseUpdatedAtRef) keep
+      // pointing at the last applied remote version so the (now dormant)
+      // sync guard keeps passing against the frozen row.
       isLocalUpsertInFlight.current = true;
-      const writeTime = new Date().toISOString();
       try {
-          const { error } = await supabase
-            .from('erp_state')
-            .upsert({
-              id: 'main_state',
-              state_data: sanitizedSyncState,
-              updated_at: writeTime
-            });
-          if (error) throw error;
-          
           await syncToStandaloneTables(state);
 
           lastSyncedStateRef.current = currentSyncStateStr;
-          lastSyncedUpdatedAtRef.current = writeTime;
-          guardBaseUpdatedAtRef.current = writeTime;
-          try { localStorage.setItem('fv_last_synced_updated_at', writeTime); } catch (_) {}
           setSyncStatus('idle');
       } catch (err) {
           console.warn("Supabase retry sync write error:", err);
@@ -2496,45 +2486,24 @@ export const AppProvider = ({ children }) => {
         return;
       }
 
-      // Mark the write with our unique client session token
-      syncState.buildVersion = BUILD_VERSION;
-      syncState.lastUpdatedBy = clientId.current;
-
-      // Sanitize to remove any "undefined" properties before writing to database
-      const sanitizedSyncState = JSON.parse(JSON.stringify(syncState));
-
+      // PHASE D STEP D3: erp_state blob writes are STOPPED app-wide (see
+      // triggerSyncWrite). This debounced path now only runs the
+      // standalone-table sync; entities/config persist via their table /
+      // app_config write-through effects, and the blob version refs stay
+      // on the last applied remote version (frozen backup row).
       isLocalUpsertInFlight.current = true;
-      const writeTime = new Date().toISOString();
-      supabase
-        .from('erp_state')
-        .upsert({
-          id: 'main_state',
-          state_data: sanitizedSyncState,
-          updated_at: writeTime
-        })
-        .then(({ error }) => {
-          if (error) {
-            console.warn("Supabase erp_state sync write warning:", error);
-            setSyncStatus('offline_retry');
-          } else {
-            lastSyncedUpdatedAtRef.current = writeTime;
-            guardBaseUpdatedAtRef.current = writeTime;
-            localStorage.setItem('fv_last_synced_updated_at', writeTime);
-            syncToStandaloneTables(state);
-            lastSyncedStateRef.current = currentSyncStateStr;
-            setSyncStatus('idle');
-          }
-          setTimeout(() => {
-            isLocalUpsertInFlight.current = false;
-          }, 500);
-        })
-        .catch((err) => {
-          console.warn("Supabase erp_state sync write catch error:", err);
-          setSyncStatus('slow_retry');
-          setTimeout(() => {
-            isLocalUpsertInFlight.current = false;
-          }, 500);
-        });
+      try {
+        syncToStandaloneTables(state);
+        lastSyncedStateRef.current = currentSyncStateStr;
+        setSyncStatus('idle');
+      } catch (err) {
+        console.warn("Supabase erp_state sync write catch error:", err);
+        setSyncStatus('slow_retry');
+      } finally {
+        setTimeout(() => {
+          isLocalUpsertInFlight.current = false;
+        }, 500);
+      }
     }, 1200);
 
     return () => {
@@ -3694,10 +3663,7 @@ export const AppProvider = ({ children }) => {
   const syncUsersToSupabase = async (nextState) => {
     try {
       if (!(await checkSyncGuard('syncUsersToSupabase'))) return;
-      const syncState = getSanitizedSyncState(nextState);
-      syncState.buildVersion = BUILD_VERSION;
-      syncState.lastUpdatedBy = clientId.current;
-      
+
       const userRows = (nextState.users || []).map(u => ({
         id: String(u.id),
         username: u.username || null,
@@ -3710,19 +3676,16 @@ export const AppProvider = ({ children }) => {
         granular_permissions: u.granularPermissions || {}
       }));
 
-      const writeTime = new Date().toISOString();
+      // PHASE D STEP D3: the erp_state blob leg of this former dual write is
+      // REMOVED — blob writes are stopped app-wide. Users persist through
+      // this users-table upsert (full record incl. `data` rides the entity
+      // write-through diff as well); the blob version refs are left
+      // untouched, pointing at the frozen read-only backup row.
       const results = await Promise.allSettled([
-        supabase.from('erp_state').upsert({
-          id: 'main_state',
-          state_data: JSON.parse(JSON.stringify(syncState)),
-          updated_at: writeTime
-        }),
         userRows.length > 0 ? supabase.from('users').upsert(userRows, { onConflict: 'id' }) : Promise.resolve()
       ]);
-      if (results[0].status === 'fulfilled' && !results[0].value?.error) {
-        lastSyncedUpdatedAtRef.current = writeTime;
-        guardBaseUpdatedAtRef.current = writeTime;
-        try { localStorage.setItem('fv_last_synced_updated_at', writeTime); } catch (_) {}
+      if (results[0].status === 'rejected' || results[0].value?.error) {
+        console.warn("Supabase user permission sync warning:", results[0].status === 'rejected' ? results[0].reason : results[0].value?.error);
       }
     } catch(e) {
       console.warn("Supabase user permission sync error:", e);
