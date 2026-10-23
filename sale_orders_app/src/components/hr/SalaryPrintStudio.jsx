@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { exportDocumentToPdf, exportDocumentToImage, exportDocumentToCsv } from '../../utils/printExportUtils';
 import { normalizeSalaryPrintSettings } from '../../utils/salaryPrintSettings';
 
@@ -192,7 +193,11 @@ export default function SalaryPrintStudio({
 
   if (!isOpen) return null;
 
-  return (
+  // Rendered through a portal to <body> (see the return at the bottom):
+  // inside the HR page tree an animated ancestor becomes the containing
+  // block for `fixed`, which pushed this overlay against the left edge,
+  // clipped behind the sidebar. Same pattern as HRPayslipModal.
+  const studioContent = (
     <div id="fv-salary-print-container" className="fixed inset-0 z-[210] bg-slate-950/70 backdrop-blur-sm flex flex-col overflow-hidden animate-fade-in font-sans">
       {/* Print isolation CSS (UniversalPrintStudioModal pattern) */}
       <style
@@ -467,7 +472,7 @@ export default function SalaryPrintStudio({
         )}
 
         {/* PREVIEW */}
-        <div id="fv-salary-print-pages" ref={printContainerRef} className="flex-1 overflow-y-auto bg-slate-300/50 p-4 md:p-8 space-y-8">
+        <div id="fv-salary-print-pages" ref={printContainerRef} className="flex-1 min-w-0 overflow-y-auto bg-slate-300/50 p-4 md:p-8 space-y-8">
           {pages.map((pageRows, pageIdx) => {
             const isLastPage = pageIdx === pages.length - 1;
             const pageStartIndex = pageIdx * rowsPerPage;
@@ -582,4 +587,6 @@ export default function SalaryPrintStudio({
       </div>
     </div>
   );
+
+  return typeof document !== 'undefined' ? createPortal(studioContent, document.body) : studioContent;
 }
