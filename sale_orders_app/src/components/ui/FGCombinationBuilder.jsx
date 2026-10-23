@@ -10,10 +10,18 @@ import {
   parseRollSizeFromPacking,
   normalizeFGConfig,
   applyAutoSelect,
+  detectTypeToken,
   effectiveMasking,
   FG_MASK_FIELDS
 } from '../../utils/fgCombinationUtils';
-import { findClothItemForFabric, clothStockMeters } from '../../utils/clothRequirement';
+import {
+  findClothItemForFabric,
+  clothStockMeters,
+  listClothItems,
+  comboFromClothItem,
+  reconcileClothSelection,
+  clothItemTypeToken
+} from '../../utils/clothRequirement';
 import FGQuickConfigModal from './FGQuickConfigModal';
 
 export default function FGCombinationBuilder({
@@ -61,7 +69,9 @@ export default function FGCombinationBuilder({
   const [maskOverrides, setMaskOverrides] = useState({});
   const masking = useMemo(() => effectiveMasking(config, maskOverrides), [config, maskOverrides]);
 
-  // Combination selection state
+  // Combination selection state. Fabric is a REAL cloth item from
+  // inventory (RM + rawMaterialType 'Cloth', the Cloth Quality Setup
+  // list): clothItemId is the pick; fabricName/fabricColor derive from it.
   const [combo, setCombo] = useState({
     paperCode: '',
     baseItem: '',
@@ -69,16 +79,40 @@ export default function FGCombinationBuilder({
     layers: '',
     fabricName: '',
     fabricColor: '',
+    clothItemId: '',
     packing: '',
     department: ''
   });
 
-  // Available fabric colors based on selected fabric
+  // Real cloth items from inventory — the Fabric dropdown's options.
+  const clothItems = useMemo(() => listClothItems(state.items || []), [state.items]);
+
+  const selectedClothItem = useMemo(() => {
+    if (!combo.clothItemId) return null;
+    return clothItems.find(i => i.id === combo.clothItemId) || null;
+  }, [clothItems, combo.clothItemId]);
+
+  // When the Gauge/Item carries a known type (DTY/PC/CN...), the Fabric
+  // dropdown narrows to the cloth items of that fabric type; with no type
+  // (or no cloth of that type) it lists every cloth item.
+  const fabricOptions = useMemo(() => {
+    const typeKeys = [
+      ...((config.autoSelect?.typeFabric || []).map(r => r.type)),
+      ...((config.autoSelect?.typePacking || []).map(r => r.type))
+    ];
+    const type = detectTypeToken(combo.baseItem, typeKeys);
+    if (!type) return clothItems;
+    const matching = clothItems.filter(i => clothItemTypeToken(i).toUpperCase() === type);
+    return matching.length > 0 ? matching : clothItems;
+  }, [clothItems, combo.baseItem, config.autoSelect]);
+
+  // Fabric color is fixed by the picked cloth item (its name carries the
+  // color); there is no separate color list anymore.
   const availableFabricColors = useMemo(() => {
-    if (!combo.fabricName) return [];
-    const found = (config.fabrics || []).find(f => f.name === combo.fabricName);
-    return found ? found.colors || [] : [];
-  }, [combo.fabricName, config.fabrics]);
+    if (!selectedClothItem) return [];
+    const { fabricColor } = comboFromClothItem(selectedClothItem);
+    return fabricColor ? [fabricColor] : [];
+  }, [selectedClothItem]);
 
   // Count active attributes
   const activeAttributeCount = useMemo(() => {
@@ -110,11 +144,14 @@ export default function FGCombinationBuilder({
   // color; paper stock shows only when the paper is tracked as an
   // inventory item (never invented when it is not).
   const clothHint = useMemo(() => {
+    if (selectedClothItem) {
+      return { cloth: selectedClothItem, stock: clothStockMeters(selectedClothItem) };
+    }
     if (!combo.fabricName || !combo.fabricColor) return null;
     const cloth = findClothItemForFabric(combo.fabricName, combo.fabricColor, state.items || []);
     if (!cloth) return null;
     return { cloth, stock: clothStockMeters(cloth) };
-  }, [combo.fabricName, combo.fabricColor, state.items]);
+  }, [selectedClothItem, combo.fabricName, combo.fabricColor, state.items]);
 
   const paperHint = useMemo(() => {
     if (!combo.paperCode) return null;
@@ -129,12 +166,25 @@ export default function FGCombinationBuilder({
   const handleSelectField = (field, value) => {
     setCombo(prev => {
       let next = { ...prev, [field]: value };
-      if (field === 'fabricName') {
-        next.fabricColor = ''; // Reset fabric color if fabric changed
-      }
       // Auto-select: type->fabric / type->packing maps + generic rules
       next = applyAutoSelect(next, field, config);
+      // Keep the cloth-item pick coherent with the (possibly auto-set)
+      // fabric type: a unique matching cloth item auto-picks, several
+      // matches leave the exact pick to the Fabric dropdown.
+      next = reconcileClothSelection(next, state.items || []);
       return next;
+    });
+    setIsMatchDropdownOpen(true);
+  };
+
+  // Fabric dropdown pick: a real cloth item. Fabric type + fabric color
+  // both derive from the item itself (its name carries both).
+  const handleSelectCloth = (itemId) => {
+    setCombo(prev => {
+      if (!itemId) return { ...prev, clothItemId: '', fabricName: '', fabricColor: '' };
+      const item = clothItems.find(i => i.id === itemId);
+      if (!item) return prev;
+      return { ...prev, ...comboFromClothItem(item) };
     });
     setIsMatchDropdownOpen(true);
   };
@@ -151,6 +201,7 @@ export default function FGCombinationBuilder({
       layers: '',
       fabricName: '',
       fabricColor: '',
+      clothItemId: '',
       packing: '',
       department: ''
     });
@@ -442,37 +493,38 @@ export default function FGCombinationBuilder({
               </select>
             </div>
 
-            {/* 5. Backing Fabric */}
-            <div className="shrink-0 w-[140px]">
+            {/* 5. Backing Fabric — real cloth items from inventory
+                (RM + rawMaterialType 'Cloth', the Cloth Quality Setup list) */}
+            <div className="shrink-0 w-[150px]">
               <select
-                value={combo.fabricName}
-                onChange={(e) => handleSelectField('fabricName', e.target.value)}
+                value={combo.clothItemId}
+                onChange={(e) => handleSelectCloth(e.target.value)}
                 className={`w-full bg-surface-container-lowest border rounded-lg px-2 py-1.5 text-xs font-bold transition-all focus:ring-2 focus:ring-primary/25 outline-none ${
-                  combo.fabricName ? 'border-primary text-primary bg-primary/5' : 'border-outline-variant/30 text-on-surface'
+                  combo.clothItemId ? 'border-primary text-primary bg-primary/5' : 'border-outline-variant/30 text-on-surface'
                 }`}
-                title={masking.maskFabric ? "Backing Fabric (Masked in title)" : "Backing Substrate Fabric"}
+                title={masking.maskFabric ? "Backing Fabric (Masked in title)" : "Backing cloth item (Inventory → Cloth Quality Setup)"}
               >
                 <option value="">Fabric {masking.maskFabric ? '🔒' : ''} ▾</option>
-                {(config.fabrics || []).map(f => (
-                  <option key={f.id} value={f.name}>
-                    {f.name}
+                {fabricOptions.map(item => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
                   </option>
                 ))}
               </select>
             </div>
 
-            {/* 6. Fabric Color */}
+            {/* 6. Fabric Color — carried by the picked cloth item's name */}
             <div className="shrink-0 w-[125px]">
               <select
                 value={combo.fabricColor}
                 onChange={(e) => handleSelectField('fabricColor', e.target.value)}
-                disabled={!combo.fabricName || availableFabricColors.length === 0}
+                disabled={!selectedClothItem || availableFabricColors.length === 0}
                 className={`w-full bg-surface-container-lowest border rounded-lg px-2 py-1.5 text-xs font-bold transition-all focus:ring-2 focus:ring-primary/25 outline-none disabled:opacity-40 disabled:cursor-not-allowed ${
                   combo.fabricColor ? 'border-primary text-primary bg-primary/5' : 'border-outline-variant/30 text-on-surface'
                 }`}
-                title="Backing Fabric Color"
+                title={masking.maskFabricColor ? "Fabric Color (Masked in title)" : "Backing Fabric Color (from the cloth item)"}
               >
-                <option value="">Fabric Col ▾</option>
+                <option value="">Fabric Col {masking.maskFabricColor ? '🔒' : ''} ▾</option>
                 {availableFabricColors.map((col, idx) => (
                   <option key={idx} value={col}>
                     {col}

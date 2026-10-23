@@ -15,6 +15,106 @@
 
 const FINISHED_ORDER_STATUSES = ['completed', 'delivered', 'cancelled', 'canceled', 'closed'];
 
+/**
+ * The app's cloth registry: exactly the items Cloth Quality Setup lists —
+ * Raw Material items whose rawMaterialType is 'Cloth'. The FG Combo
+ * popup's Fabric choices come from this list (real inventory items, not
+ * config lookup names).
+ */
+export function isClothItem(item) {
+  return !!item
+    && (item.category === 'Raw Material' || item.type === 'Raw Material')
+    && item.rawMaterialType === 'Cloth';
+}
+
+export function listClothItems(items = []) {
+  return (items || []).filter(isClothItem);
+}
+
+// Color words that can close a cloth item name ("PK DTY WHITE" -> WHITE).
+const CLOTH_COLOR_WORDS = new Set([
+  'WHITE', 'BLACK', 'BROWN', 'GREY', 'GRAY', 'GOLDEN', 'CREAM', 'BEIGE',
+  'PINK', 'PURPLE', 'BLUE', 'GREEN', 'RED', 'MEHROON', 'MAROON', 'YELLOW',
+  'ORANGE', 'ZINC', 'NAVY', 'ECRU', 'IVORY', 'TAN', 'OLIVE', 'SILVER'
+]);
+
+const titleCaseWord = (w) => w ? w.charAt(0).toUpperCase() + w.slice(1).toLowerCase() : '';
+
+/**
+ * Derives the builder's fabric + fabric color from a real cloth item.
+ * Cloth names carry fabric type and color in one name ("PK DTY WHITE",
+ * "PC BLACK"): the trailing color word is the fabric color, and the
+ * fabric is the type token just before it (DTY / PC / CN / NYLEX ...),
+ * which is what combinationDetails.fabricName and the type->fabric
+ * auto-select maps have always carried. A name with no color word yields
+ * an empty color; the item is still selectable/linkable by id.
+ */
+export function parseClothItemName(clothItem) {
+  const name = typeof clothItem === 'string' ? clothItem : (clothItem?.name || '');
+  const tokens = String(name || '').trim().toUpperCase().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return { fabricName: '', fabricColor: '' };
+  let fabricColor = '';
+  let rest = tokens;
+  let fabricName = '';
+  if (CLOTH_COLOR_WORDS.has(tokens[tokens.length - 1])) {
+    fabricColor = titleCaseWord(tokens[tokens.length - 1]);
+    rest = tokens.slice(0, -1);
+    for (let i = rest.length - 1; i >= 0; i--) {
+      if (/^[A-Z][A-Z-]*$/.test(rest[i])) { fabricName = rest[i]; break; }
+    }
+  } else if (tokens.length === 1 && /^[A-Z][A-Z-]*$/.test(tokens[0])) {
+    fabricName = tokens[0]; // a bare type name, e.g. an item named just "DTY"
+  }
+  return { fabricName, fabricColor };
+}
+
+/** The fabric type token of a cloth item (DTY / PC / CN ...), '' if none. */
+export function clothItemTypeToken(clothItem) {
+  return parseClothItemName(clothItem).fabricName;
+}
+
+/** Builder combo fragment for a picked cloth item: selection is by item
+ *  id; fabric + fabric color derive from the item itself. */
+export function comboFromClothItem(clothItem) {
+  if (!clothItem) return { clothItemId: '', fabricName: '', fabricColor: '' };
+  const { fabricName, fabricColor } = parseClothItemName(clothItem);
+  return { clothItemId: clothItem.id || '', fabricName, fabricColor };
+}
+
+/**
+ * Keeps the builder's cloth selection coherent after other fields change
+ * (notably the type->fabric auto-select on Gauge/Item):
+ *  - a picked cloth item that still matches the combo's fabric type stays;
+ *  - otherwise, when exactly ONE cloth item carries that fabric type it is
+ *    auto-picked (that pick also fixes the color);
+ *  - when several match, the pick is cleared so the user chooses the exact
+ *    cloth item (and with it the color) in the Fabric dropdown.
+ */
+export function reconcileClothSelection(combo, items = []) {
+  const next = { ...combo };
+  const fabric = String(next.fabricName || '').trim().toUpperCase();
+  if (!fabric) {
+    next.clothItemId = '';
+    return next;
+  }
+  const clothItems = listClothItems(items);
+  const current = next.clothItemId ? clothItems.find(i => i.id === next.clothItemId) : null;
+  if (current && clothItemTypeToken(current).toUpperCase() === fabric) {
+    next.fabricColor = parseClothItemName(current).fabricColor;
+    return next;
+  }
+  const matches = clothItems.filter(i => clothItemTypeToken(i).toUpperCase() === fabric);
+  if (matches.length === 1) {
+    const picked = comboFromClothItem(matches[0]);
+    next.clothItemId = picked.clothItemId;
+    next.fabricColor = picked.fabricColor;
+  } else {
+    next.clothItemId = '';
+    next.fabricColor = '';
+  }
+  return next;
+}
+
 export function isNonWovenText(text) {
   const t = String(text || '').toUpperCase().replace(/[\s_-]+/g, ' ');
   return t.includes('NON WOVEN') || t.includes('NONWOVEN');
@@ -50,17 +150,28 @@ export function findClothItemForFabric(fabricName, fabricColor, items = []) {
   const token = fabricTypeToken(fabricName);
   const color = String(fabricColor || '').trim().toUpperCase();
   if (!token) return null;
-  const candidates = (items || []).filter(i =>
-    i && i.category !== 'Finished Goods' && String(i.name || '').toUpperCase().includes(token)
-  );
-  if (color) {
-    const byColor = candidates.find(i => String(i.name || '').toUpperCase().includes(color));
-    if (byColor) return byColor;
+  const matchInPool = (pool) => {
+    const candidates = (pool || []).filter(i =>
+      i && i.category !== 'Finished Goods' && String(i.name || '').toUpperCase().includes(token)
+    );
+    if (color) {
+      const byColor = candidates.find(i => String(i.name || '').toUpperCase().includes(color));
+      if (byColor) return byColor;
+    }
+    // Exact "<token> <color>" style name or a single candidate for the token
+    const exact = candidates.find(i => String(i.name || '').trim().toUpperCase() === `${token} ${color}`.trim());
+    if (exact) return exact;
+    return candidates.length === 1 ? candidates[0] : null;
+  };
+  // Prefer the real cloth registry (RM items with rawMaterialType 'Cloth',
+  // the Cloth Quality Setup list) whenever such items exist; fall back to
+  // the historical any-non-FG name match when none resolve there.
+  const clothItems = listClothItems(items);
+  if (clothItems.length > 0) {
+    const fromCloth = matchInPool(clothItems);
+    if (fromCloth) return fromCloth;
   }
-  // Exact "<token> <color>" style name or a single candidate for the token
-  const exact = candidates.find(i => String(i.name || '').trim().toUpperCase() === `${token} ${color}`.trim());
-  if (exact) return exact;
-  return candidates.length === 1 ? candidates[0] : null;
+  return matchInPool(items);
 }
 
 /**

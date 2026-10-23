@@ -452,6 +452,10 @@ export function createFinishedGoodFromCombo(combo = {}, stateItems = [], masking
     name: displayName,
     category: 'Finished Goods',
     type: 'Finished Goods',
+    // Backing cloth link: the real cloth item picked in the popup (the
+    // registry's own FG->cloth linkage, read by resolveClothForFG, BOM and
+    // Plan Consumption). Empty when no cloth item was picked.
+    backClothId: combo.clothItemId || '',
     department: assignedDept,
     stockByDepartment: {
       [assignedDept]: 0
@@ -479,6 +483,7 @@ export function createFinishedGoodFromCombo(combo = {}, stateItems = [], masking
       layers: formatLayerShort(combo.layers) || '',
       fabricName: combo.fabricName || '',
       fabricColor: combo.fabricColor || '',
+      clothItemId: combo.clothItemId || '',
       packing: combo.packing || '',
       department: assignedDept,
       createdAt: new Date().toISOString()
