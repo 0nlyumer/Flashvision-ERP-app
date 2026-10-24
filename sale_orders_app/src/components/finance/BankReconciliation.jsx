@@ -16,12 +16,12 @@ export default function BankReconciliation() {
   // Cleared Status Tracking Map: entryId -> boolean
   const [clearedMap, setClearedMap] = useState({});
 
-  // Bank Account Options
+  // Cash & Bank Account Options — generic accounts only (Omer's order,
+  // 2026-10-24): Finance carries NO bank brand names; the chart holds
+  // one 'Cash in Hand' and one generic 'Bank Account'.
   const bankAccounts = [
-    { id: '112010', name: 'HBL Main Operations A/C 0019284', branch: 'Gulberg Industrial Branch, Lahore' },
-    { id: '112020', name: 'Meezan Bank Industrial A/C 099214', branch: 'Islamic Banking Corporate Wing' },
-    { id: '112030', name: 'MCB Foreign Exchange A/C 772109', branch: 'Main Boulevard Branch' },
-    { id: '111010', name: 'Cash in Hand - Factory Floor', branch: 'Factory Vault #1' }
+    { id: '112010', name: 'Bank Account', branch: 'Bank' },
+    { id: '111010', name: 'Cash in Hand', branch: 'Cash' }
   ];
 
   // Base Reconciliation Data

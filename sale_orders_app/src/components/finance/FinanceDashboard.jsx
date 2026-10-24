@@ -92,7 +92,7 @@ export default function FinanceDashboard({ onNavigateTab }) {
           <div className="text-2xl font-headline font-black text-emerald-600">
             {formatMoney(cashAndBank, currencyCode)}
           </div>
-          <span className="text-[11px] text-on-surface-variant block mt-1">HBL, Meezan, MCB & Vault</span>
+          <span className="text-[11px] text-on-surface-variant block mt-1">Cash in Hand & Bank Account</span>
         </div>
 
         {/* Accounts Receivable */}

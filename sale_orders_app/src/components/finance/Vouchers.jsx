@@ -3,6 +3,7 @@ import { useApp } from '../../context/AppContext';
 import { useDialog } from '../../context/DialogContext';
 import ResizableHeader from '../ui/ResizableHeader';
 import { DEFAULT_CHART_OF_ACCOUNTS, getBankAccounts } from '../../utils/financeEngine';
+import { suggestVoucherId as suggestShortVoucherId, nextVoucherNumber, formatVoucherId, voucherCounterKey } from '../../utils/voucherNumbering';
 import { useLocation } from 'react-router-dom';
 
 export default function Vouchers() {
@@ -34,8 +35,9 @@ export default function Vouchers() {
   const activeAccountsList = [...coaAccounts, ...customerAccounts, ...supplierAccounts];
 
   // Bank accounts for BPV/BRV offset selection — resolved from the chart
-  // through the finance engine's resolver (112010 HBL / 112020 Meezan /
-  // 112030 MCB), never a hardcoded UI list.
+  // through the finance engine's resolver (the one generic 'Bank
+  // Account', 112010 — no bank brand names exist in Finance), never a
+  // hardcoded UI list.
   const bankAccountsList = getBankAccounts(coaAccounts);
 
   // Pure real vouchers from ERP state with ZERO dummy fallback entries
@@ -67,17 +69,22 @@ export default function Vouchers() {
   const [sourcePasses, setSourcePasses] = useState([]);
   const [activePreview, setActivePreview] = useState(null); // { type: 'photo' | 'video' | 'doc', url: string }
 
-  // Suggest Voucher ID dynamically
-  const suggestVoucherId = (type) => {
-    if (!type) return '';
-    const year = new Date().getFullYear();
-    const typeVouchers = vouchers.filter(v => v.type === type);
-    const count = typeVouchers.length + 1;
-    const formattedCount = String(count).padStart(4, '0');
-    return `${type}-${year}-${formattedCount}`;
-  };
+  // Suggest Voucher ID dynamically — SHORT per-type series from 001
+  // (JV-001, BPV-001, ...), driven by the server-persisted app_config
+  // counters (utils/voucherNumbering). Existing documents keep their
+  // numbers; only new vouchers get the short format.
+  const suggestVoucherId = (type) => suggestShortVoucherId(state.counters, vouchers, type);
 
   const [voucherId, setVoucherId] = useState('');
+  // While a draft is being edited, its number is locked: the suggestion
+  // effect must never overwrite it (that would save the edit as a NEW
+  // voucher and orphan the draft).
+  const [editingVoucherId, setEditingVoucherId] = useState(null);
+  // Tax is OPTIONAL on every document (Omer's order, 2026-10-24): the
+  // toggle records the choice on the voucher (taxApplied), and the
+  // save/post confirmation always states it, so a user who forgot the
+  // tax is reminded before the voucher is saved.
+  const [taxApplied, setTaxApplied] = useState(false);
   const [defaultCashAccount, setDefaultCashAccount] = useState('');
 
   const location = useLocation();
@@ -117,10 +124,15 @@ export default function Vouchers() {
     }
   }, [location.state]);
 
-  // Update voucher ID when type or vouchers list changes
+  // Update voucher ID when type or vouchers list changes — except while
+  // editing an existing voucher, whose number never changes.
   useEffect(() => {
+    if (editingVoucherId) {
+      setVoucherId(editingVoucherId);
+      return;
+    }
     setVoucherId(suggestVoucherId(voucherType));
-  }, [voucherType, vouchers]);
+  }, [voucherType, vouchers, editingVoucherId]);
 
   // Clear defaultCashAccount ONLY when voucherType changes
   useEffect(() => {
@@ -172,7 +184,9 @@ export default function Vouchers() {
     setReference('');
     setOverallNarration('');
     setLines([{ ...initialLine }, { ...initialLine }]);
+    setEditingVoucherId(null);
     setVoucherId(suggestVoucherId(voucherType));
+    setTaxApplied(false);
     setVoucherPhotos([]);
     setVoucherVideos([]);
     setVoucherDocs([]);
@@ -207,9 +221,25 @@ export default function Vouchers() {
       return;
     }
 
+    // Number allocation: an existing voucher being edited keeps its
+    // number; a NEW voucher takes the next short number for its type at
+    // save time (never the stale on-screen suggestion), and the
+    // persisted counter advances with it — unique even under rapid
+    // consecutive creation.
+    const isExistingVoucher = vouchers.some(v => v.id === voucherId);
+    let finalVoucherId = voucherId;
+    let nextCounterValue = null;
+    if (!isExistingVoucher) {
+      nextCounterValue = nextVoucherNumber(state.counters, vouchers, voucherType);
+      finalVoucherId = formatVoucherId(voucherType, nextCounterValue);
+    }
+
     const title = isPost ? "Post Voucher" : "Save Draft";
     const status = isPost ? "Posted" : "Draft";
-    const confirmMsg = `Are you sure you want to ${isPost ? 'post and authorize' : 'save as draft'} Voucher ${voucherId}?`;
+    // The confirmation always states the tax choice (tax is optional
+    // per document) so a user who forgot to apply tax is reminded
+    // before saving — flip the Tax toggle on the form to change it.
+    const confirmMsg = `Are you sure you want to ${isPost ? 'post and authorize' : 'save as draft'} Voucher ${finalVoucherId}?\n\nTax on this voucher: ${taxApplied ? 'APPLIED' : 'NOT APPLIED'} (use the Tax toggle on the form to change this before saving).`;
 
     const proceed = await appConfirm(
       confirmMsg,
@@ -240,7 +270,7 @@ export default function Vouchers() {
         const offsetLine = {
           accountId: defaultCashAccount,
           accountName: cashAccName,
-          narration: `Offset ${offsetKind} credit for voucher ${voucherId}`,
+          narration: `Offset ${offsetKind} credit for voucher ${finalVoucherId}`,
           debit: 0,
           credit: sumDebit
         };
@@ -250,7 +280,7 @@ export default function Vouchers() {
         const offsetLine = {
           accountId: defaultCashAccount,
           accountName: cashAccName,
-          narration: `Offset ${offsetKind} debit for voucher ${voucherId}`,
+          narration: `Offset ${offsetKind} debit for voucher ${finalVoucherId}`,
           debit: sumCredit,
           credit: 0
         };
@@ -260,12 +290,13 @@ export default function Vouchers() {
     }
 
     const newVoucher = {
-      id: voucherId,
+      id: finalVoucherId,
       date: voucherDate,
       type: voucherType,
       reference,
       narration: overallNarration,
       status,
+      taxApplied,
       totalDebit: finalTotalDebit,
       totalCredit: finalTotalCredit,
       lines: finalLines,
@@ -274,8 +305,17 @@ export default function Vouchers() {
       documents: voucherDocs
     };
 
-    const updatedVouchers = [newVoucher, ...vouchers.filter(v => v.id !== voucherId)];
+    const updatedVouchers = [newVoucher, ...vouchers.filter(v => v.id !== finalVoucherId)];
     setCollection('vouchers', updatedVouchers);
+
+    // Persist the advanced per-type counter (app_config write-through) —
+    // only for newly allocated numbers, never for edits.
+    if (nextCounterValue !== null) {
+      setCollection('counters', {
+        ...(state.counters || {}),
+        [voucherCounterKey(voucherType)]: nextCounterValue
+      });
+    }
 
     // Tag linked gate passes in activities feed
     if (sourcePasses && sourcePasses.length > 0) {
@@ -285,7 +325,7 @@ export default function Vouchers() {
         if (gpIds.includes(gp.id)) {
           return {
             ...gp,
-            linkedVoucherId: voucherId
+            linkedVoucherId: finalVoucherId
           };
         }
         return gp;
@@ -293,7 +333,7 @@ export default function Vouchers() {
       setCollection('gatePassActivities', updatedGPs);
     }
 
-    appAlert(`Voucher ${voucherId} has been successfully ${isPost ? 'posted' : 'saved as draft'}.`);
+    appAlert(`Voucher ${finalVoucherId} has been successfully ${isPost ? 'posted' : 'saved as draft'}.`);
     
     if (isPost) {
       handlePrint(newVoucher);
@@ -355,10 +395,12 @@ export default function Vouchers() {
   // Edit Draft Voucher handler
   const handleEditDraft = (voucher) => {
     setVoucherType(voucher.type);
+    setEditingVoucherId(voucher.id);
     setVoucherId(voucher.id);
     setVoucherDate(voucher.date);
     setReference(voucher.reference || '');
     setOverallNarration(voucher.narration || '');
+    setTaxApplied(!!voucher.taxApplied);
     setLines(voucher.lines.map(l => ({
       accountId: l.accountId,
       narration: l.narration || '',
@@ -614,6 +656,27 @@ export default function Vouchers() {
                 />
               </div>
             )}
+          </div>
+
+          {/* Tax option — tax is optional per document; the choice is
+              stored on the voucher (taxApplied) and restated in the
+              save/post confirmation. */}
+          <div className="px-6 py-3 border-b border-outline-variant/15 bg-surface-container-low/10 flex items-center justify-between gap-4">
+            <div className="flex items-center gap-2 text-on-surface-variant">
+              <span className="material-symbols-outlined text-[18px] text-primary">receipt_long</span>
+              <span className="text-[11px] font-bold uppercase tracking-widest">Tax on this Voucher</span>
+              <span className="text-[11px] font-medium normal-case tracking-normal">(optional — if tax lines apply to this voucher, mark it applied; the save confirmation will remind you)</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setTaxApplied(prev => !prev)}
+              className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors cursor-pointer ${taxApplied ? 'bg-primary' : 'bg-outline-variant/50'}`}
+              role="switch"
+              aria-checked={taxApplied}
+              title="Toggle tax applied on this voucher"
+            >
+              <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${taxApplied ? 'translate-x-5' : 'translate-x-0.5'}`}></span>
+            </button>
           </div>
 
           {/* Grouped Gate Pass Entries cards or standard lines table */}

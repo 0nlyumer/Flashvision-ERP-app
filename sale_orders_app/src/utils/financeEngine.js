@@ -4,10 +4,11 @@ import { resolvePayrollAccountCode } from './payrollAccountMapping';
 // Universal filter for legacy mock/dummy invoice & voucher identifiers.
 // ONLY ids that no live document generator can produce belong here:
 // the writers number their first real documents PINV-7801… (Purchase
-// Invoice), INV-8901… (Sales Invoice) and JV-<year>-0001 / CPV-<year>-0002
-// (Vouchers), so those ids must never be treated as dummy — an earlier
-// version of this set silently swallowed the first real PIs/SIs/vouchers
-// from the GL. 'PV-*' and 'VOUCH-*' are legacy seed-only ids.
+// Invoice), INV-8901… (Sales Invoice) and JV-001 / CPV-001… (Vouchers —
+// short per-type series since 2026-10-24; before that JV-<year>-0001),
+// so those ids must never be treated as dummy — an earlier version of
+// this set silently swallowed the first real PIs/SIs/vouchers from the
+// GL. 'PV-*' and 'VOUCH-*' are legacy seed-only ids.
 const DUMMY_IDS = new Set([
   'PV-001', 'PV-002', 'PV-003', 'PV-004',
   'VOUCH-1001', 'VOUCH-1002', 'VOUCH-1003', 'VOUCH-1004'
@@ -19,6 +20,14 @@ export const isDummyFinancialRecord = (item) => {
   const ref = item.invoiceId || item.reference || '';
   return DUMMY_IDS.has(id) || DUMMY_IDS.has(ref);
 };
+
+// Draft documents NEVER post (Omer's order, 2026-10-24): a voucher,
+// sales invoice or purchase invoice saved with status 'Draft' has no
+// GL, ledger, aging or tax-register effect anywhere. It posts only when
+// the user posts it (status leaves 'Draft'). Every consumer of the
+// derived ledger filters through this one predicate so the rule holds
+// consistently, not just in one report.
+export const isDraftFinancialRecord = (item) => !!item && item.status === 'Draft';
 /**
  * FlashVision Synthetic Leather ERP - Enterprise Finance Engine
  * Benchmarked against ERPNext & SAP Accounting Standard
@@ -47,13 +56,17 @@ export const formatMoney = (val, currencyCode = 'PKR') => {
 
 // ----------------------------------------------------------------------------
 // CASH & BANK ACCOUNT RESOLUTION (single source of truth)
-// The chart's cash-in-hand accounts are 111010/111020 and its bank accounts
-// are 112010 (HBL), 112020 (Meezan), 112030 (MCB). UI pickers (e.g. the
-// Vouchers screen's BPV/BRV bank selector) must resolve bank accounts
-// through here instead of hardcoding their own lists.
+// The chart's cash-in-hand accounts are 111010 ('Cash in Hand') / 111020
+// (petty cash) and its ONE generic bank account is 112010 ('Bank
+// Account'). There are NO bank brand names anywhere in Finance (Omer's
+// order, 2026-10-24 — the business has no banking relationships in this
+// system; the old brand-named accounts were invented by the app itself).
+// UI pickers (e.g. the Vouchers screen's BPV/BRV bank selector) must
+// resolve bank accounts through here instead of hardcoding their own
+// lists.
 // ----------------------------------------------------------------------------
 export const CASH_ACCOUNT_IDS = ['111010', '111020'];
-export const BANK_ACCOUNT_IDS = ['112010', '112020', '112030'];
+export const BANK_ACCOUNT_IDS = ['112010'];
 export const CASH_AND_BANK_ACCOUNT_IDS = [...CASH_ACCOUNT_IDS, ...BANK_ACCOUNT_IDS];
 
 export const isBankAccountId = (accountId) => BANK_ACCOUNT_IDS.includes(accountId);
@@ -71,11 +84,9 @@ export const DEFAULT_CHART_OF_ACCOUNTS = [
   // 100000 - ASSETS
   { id: '100000', code: '100000', name: 'Application of Funds (Assets)', rootType: 'Asset', category: 'Root', isGroup: true, parentId: null, isDebitNormal: true },
   { id: '110000', code: '110000', name: 'Current Assets', rootType: 'Asset', category: 'Current Asset', isGroup: true, parentId: '100000', isDebitNormal: true },
-  { id: '111010', code: '111010', name: 'Cash in Hand - Factory Floor', rootType: 'Asset', category: 'Current Asset', isGroup: false, parentId: '110000', isDebitNormal: true, openingDebit: 0, openingCredit: 0 },
+  { id: '111010', code: '111010', name: 'Cash in Hand', rootType: 'Asset', category: 'Current Asset', isGroup: false, parentId: '110000', isDebitNormal: true, openingDebit: 0, openingCredit: 0 },
   { id: '111020', code: '111020', name: 'Petty Cash - Head Office & Admin', rootType: 'Asset', category: 'Current Asset', isGroup: false, parentId: '110000', isDebitNormal: true, openingDebit: 0, openingCredit: 0 },
-  { id: '112010', code: '112010', name: 'HBL Main Operations A/C 0019284', rootType: 'Asset', category: 'Current Asset', isGroup: false, parentId: '110000', isDebitNormal: true, openingDebit: 0, openingCredit: 0 },
-  { id: '112020', code: '112020', name: 'Meezan Bank Industrial A/C 099214', rootType: 'Asset', category: 'Current Asset', isGroup: false, parentId: '110000', isDebitNormal: true, openingDebit: 0, openingCredit: 0 },
-  { id: '112030', code: '112030', name: 'MCB Foreign Exchange A/C 772109', rootType: 'Asset', category: 'Current Asset', isGroup: false, parentId: '110000', isDebitNormal: true, openingDebit: 0, openingCredit: 0 },
+  { id: '112010', code: '112010', name: 'Bank Account', rootType: 'Asset', category: 'Current Asset', isGroup: false, parentId: '110000', isDebitNormal: true, openingDebit: 0, openingCredit: 0 },
   { id: '113010', code: '113010', name: 'Accounts Receivable (Debtors Control)', rootType: 'Asset', category: 'Current Asset', isGroup: false, parentId: '110000', isDebitNormal: true, openingDebit: 0, openingCredit: 0 },
   { id: '114010', code: '114010', name: 'Stock in Hand - PVC & PU Resins', rootType: 'Asset', category: 'Current Asset', isGroup: false, parentId: '110000', isDebitNormal: true, openingDebit: 0, openingCredit: 0 },
   { id: '114020', code: '114020', name: 'Stock in Hand - Backing Fabric & Scrim', rootType: 'Asset', category: 'Current Asset', isGroup: false, parentId: '110000', isDebitNormal: true, openingDebit: 0, openingCredit: 0 },
@@ -85,7 +96,9 @@ export const DEFAULT_CHART_OF_ACCOUNTS = [
   { id: '115010', code: '115010', name: 'Advances to Chemical & Raw Material Suppliers', rootType: 'Asset', category: 'Current Asset', isGroup: false, parentId: '110000', isDebitNormal: true, openingDebit: 0, openingCredit: 0 },
   { id: '116010', code: '116010', name: 'Sales Tax Input / Claimable (FBR)', rootType: 'Asset', category: 'Current Asset', isGroup: false, parentId: '110000', isDebitNormal: true, openingDebit: 0, openingCredit: 0 },
   { id: '116020', code: '116020', name: 'Advance Income Tax Deducted (Sec 147/236)', rootType: 'Asset', category: 'Current Asset', isGroup: false, parentId: '110000', isDebitNormal: true, openingDebit: 0, openingCredit: 0 },
-  
+  { id: '117010', code: '117010', name: 'Employee Advances', rootType: 'Asset', category: 'Current Asset', isGroup: false, parentId: '110000', isDebitNormal: true, openingDebit: 0, openingCredit: 0 },
+  { id: '117020', code: '117020', name: 'Employee Loans', rootType: 'Asset', category: 'Current Asset', isGroup: false, parentId: '110000', isDebitNormal: true, openingDebit: 0, openingCredit: 0 },
+
   { id: '120000', code: '120000', name: 'Non-Current / Fixed Assets', rootType: 'Asset', category: 'Fixed Asset', isGroup: true, parentId: '100000', isDebitNormal: true },
   { id: '121010', code: '121010', name: 'Synthetic Leather Coating & Foaming Line', rootType: 'Asset', category: 'Fixed Asset', isGroup: false, parentId: '120000', isDebitNormal: true, openingDebit: 0, openingCredit: 0 },
   { id: '121020', code: '121020', name: 'Coagulation & Wet Treatment Facility', rootType: 'Asset', category: 'Fixed Asset', isGroup: false, parentId: '120000', isDebitNormal: true, openingDebit: 0, openingCredit: 0 },
@@ -104,7 +117,8 @@ export const DEFAULT_CHART_OF_ACCOUNTS = [
   { id: '214010', code: '214010', name: 'Accrued Factory Wages & Admin Salaries', rootType: 'Liability', category: 'Current Liability', isGroup: false, parentId: '210000', isDebitNormal: false, openingDebit: 0, openingCredit: 0 },
   { id: '215010', code: '215010', name: 'Customer Advances & Booking Deposits', rootType: 'Liability', category: 'Current Liability', isGroup: false, parentId: '210000', isDebitNormal: false, openingDebit: 0, openingCredit: 0 },
   { id: '216010', code: '216010', name: 'Accrued Electricity (LESCO/K-Electric) & Gas Bills', rootType: 'Liability', category: 'Current Liability', isGroup: false, parentId: '210000', isDebitNormal: false, openingDebit: 0, openingCredit: 0 },
-  
+  { id: '217010', code: '217010', name: 'Salary Payable', rootType: 'Liability', category: 'Current Liability', isGroup: false, parentId: '210000', isDebitNormal: false, openingDebit: 0, openingCredit: 0 },
+
   { id: '220000', code: '220000', name: 'Non-Current Liabilities', rootType: 'Liability', category: 'Non-Current Liability', isGroup: true, parentId: '200000', isDebitNormal: false },
   { id: '221010', code: '221010', name: 'Long-Term Industrial Expansion Facility', rootType: 'Liability', category: 'Non-Current Liability', isGroup: false, parentId: '220000', isDebitNormal: false, openingDebit: 0, openingCredit: 0 },
   { id: '222010', code: '222010', name: 'Directors Subordinated Loan', rootType: 'Liability', category: 'Non-Current Liability', isGroup: false, parentId: '220000', isDebitNormal: false, openingDebit: 0, openingCredit: 0 },
@@ -125,6 +139,9 @@ export const DEFAULT_CHART_OF_ACCOUNTS = [
   { id: '420000', code: '420000', name: 'Other Non-Operating Income', rootType: 'Income', category: 'Other Income', isGroup: true, parentId: '400000', isDebitNormal: false },
   { id: '421010', code: '421010', name: 'Scrap Sales - Trimmings & Offcut Rolls', rootType: 'Income', category: 'Other Income', isGroup: false, parentId: '420000', isDebitNormal: false, openingDebit: 0, openingCredit: 0 },
   { id: '422010', code: '422010', name: 'Gain on Foreign Currency Revaluation', rootType: 'Income', category: 'Other Income', isGroup: false, parentId: '420000', isDebitNormal: false, openingDebit: 0, openingCredit: 0 },
+  { id: '423010', code: '423010', name: 'Fines Recovery', rootType: 'Income', category: 'Other Income', isGroup: false, parentId: '420000', isDebitNormal: false, openingDebit: 0, openingCredit: 0 },
+  { id: '423020', code: '423020', name: 'Late Coming Deductions', rootType: 'Income', category: 'Other Income', isGroup: false, parentId: '420000', isDebitNormal: false, openingDebit: 0, openingCredit: 0 },
+  { id: '423030', code: '423030', name: 'Loan Recovery', rootType: 'Income', category: 'Other Income', isGroup: false, parentId: '420000', isDebitNormal: false, openingDebit: 0, openingCredit: 0 },
 
   // 500000 - EXPENSES
   { id: '500000', code: '500000', name: 'Expenses', rootType: 'Expense', category: 'Root', isGroup: true, parentId: null, isDebitNormal: true },
@@ -136,6 +153,9 @@ export const DEFAULT_CHART_OF_ACCOUNTS = [
   { id: '513010', code: '513010', name: 'High-Tension Industrial Electricity & Gas', rootType: 'Expense', category: 'COGS', isGroup: false, parentId: '510000', isDebitNormal: true, openingDebit: 0, openingCredit: 0 },
   { id: '514010', code: '514010', name: 'Release Paper Wear & Line Roll Consumables', rootType: 'Expense', category: 'COGS', isGroup: false, parentId: '510000', isDebitNormal: true, openingDebit: 0, openingCredit: 0 },
   { id: '515010', code: '515010', name: 'Packaging, Polythene Tube & Core Spools', rootType: 'Expense', category: 'COGS', isGroup: false, parentId: '510000', isDebitNormal: true, openingDebit: 0, openingCredit: 0 },
+  { id: '516010', code: '516010', name: 'Basic Salary Expense', rootType: 'Expense', category: 'COGS', isGroup: false, parentId: '510000', isDebitNormal: true, openingDebit: 0, openingCredit: 0 },
+  { id: '516020', code: '516020', name: 'Overtime Wages', rootType: 'Expense', category: 'COGS', isGroup: false, parentId: '510000', isDebitNormal: true, openingDebit: 0, openingCredit: 0 },
+  { id: '516030', code: '516030', name: 'Staff Allowances', rootType: 'Expense', category: 'COGS', isGroup: false, parentId: '510000', isDebitNormal: true, openingDebit: 0, openingCredit: 0 },
 
   { id: '520000', code: '520000', name: 'Operating & Admin Expenses', rootType: 'Expense', category: 'Operating Expense', isGroup: true, parentId: '500000', isDebitNormal: true },
   { id: '521010', code: '521010', name: 'Executive & Admin Management Salaries', rootType: 'Expense', category: 'Operating Expense', isGroup: false, parentId: '520000', isDebitNormal: true, openingDebit: 0, openingCredit: 0 },
@@ -172,14 +192,16 @@ export const generateGeneralLedger = (state = {}, filters = {}) => {
   const accountMap = new Map();
   chart.forEach(acc => accountMap.set(acc.id || acc.code, acc));
 
-  // Purely actual ERP transactions - ZERO dummy records
-  const salesInvoices = (Array.isArray(state.salesInvoices) ? state.salesInvoices : []).filter(x => !isDummyFinancialRecord(x));
-  const purchaseInvoices = (Array.isArray(state.purchaseInvoices) ? state.purchaseInvoices : []).filter(x => !isDummyFinancialRecord(x));
-  
+  // Purely actual ERP transactions - ZERO dummy records. Draft documents
+  // are excluded everywhere (see isDraftFinancialRecord): a draft posts
+  // only when the user posts it.
+  const salesInvoices = (Array.isArray(state.salesInvoices) ? state.salesInvoices : []).filter(x => !isDummyFinancialRecord(x) && !isDraftFinancialRecord(x));
+  const purchaseInvoices = (Array.isArray(state.purchaseInvoices) ? state.purchaseInvoices : []).filter(x => !isDummyFinancialRecord(x) && !isDraftFinancialRecord(x));
+
   // Vouchers can be in state.vouchers or state.paymentVouchers
   const rawVouchers = (Array.isArray(state.vouchers) && state.vouchers.length > 0
     ? state.vouchers
-    : (Array.isArray(state.paymentVouchers) ? state.paymentVouchers : [])).filter(x => !isDummyFinancialRecord(x));
+    : (Array.isArray(state.paymentVouchers) ? state.paymentVouchers : [])).filter(x => !isDummyFinancialRecord(x) && !isDraftFinancialRecord(x));
 
   const returns = Array.isArray(state.returns) ? state.returns : [];
   const hrSalaries = Array.isArray(state.hr_generated_salaries) ? state.hr_generated_salaries : [];
@@ -195,7 +217,10 @@ export const generateGeneralLedger = (state = {}, filters = {}) => {
     const custName = inv.customerName || 'Customer';
     const grandTotal = round2(inv.grandTotal || 0);
     const subtotal = round2(inv.subtotal || (grandTotal - (inv.tax || 0)));
-    const tax = round2(inv.tax || (grandTotal - subtotal));
+    // Tax is optional per document (taxApplied flag, 2026-10-24): when
+    // the user chose not to apply tax, no tax leg posts — even if a stale
+    // tax figure rides on the record.
+    const tax = inv.taxApplied === false ? 0 : round2(inv.tax || (grandTotal - subtotal));
 
     if (grandTotal > 0 || subtotal > 0) {
       // Entry 1: Debit Debtors / Accounts Receivable (113010)
@@ -260,7 +285,8 @@ export const generateGeneralLedger = (state = {}, filters = {}) => {
     const vendorName = pinv.vendorName || 'Supplier';
     const grandTotal = round2(pinv.grandTotal || 0);
     const subtotal = round2(pinv.subtotal || (grandTotal - (pinv.tax || 0)));
-    const tax = round2(pinv.tax || (grandTotal - subtotal));
+    // Tax optional per document — see the sales-invoice note above.
+    const tax = pinv.taxApplied === false ? 0 : round2(pinv.tax || (grandTotal - subtotal));
 
     if (grandTotal > 0 || subtotal > 0) {
       // Entry 1: Debit Raw Materials / Cost (511010)
@@ -362,7 +388,7 @@ export const generateGeneralLedger = (state = {}, filters = {}) => {
             voucherNo: vId,
             sourceDocId: vId,
             accountId: '112010',
-            accountName: accountMap.get('112010')?.name || 'HBL Main Operations A/C 0019284',
+            accountName: accountMap.get('112010')?.name || 'Bank Account',
             party: v.receivedFrom || v.party || v.customerName || 'Customer',
             partyType: 'Customer',
             costCenter,
@@ -409,7 +435,7 @@ export const generateGeneralLedger = (state = {}, filters = {}) => {
             voucherNo: vId,
             sourceDocId: vId,
             accountId: '112010',
-            accountName: accountMap.get('112010')?.name || 'HBL Main Operations A/C 0019284',
+            accountName: accountMap.get('112010')?.name || 'Bank Account',
             party: v.paidTo || v.party || v.vendorName || 'Supplier',
             partyType: 'Supplier',
             costCenter,
@@ -469,23 +495,48 @@ export const generateGeneralLedger = (state = {}, filters = {}) => {
   // E. Actual HR Generated Salaries -> Post to GL
   // Accounts resolve through the HR Payroll Account Mapping
   // (state.payroll_account_mapping — persisted in app_config under key
-  // 'payrollAccountMapping', maintained in HR Settings): each payroll
-  // component posts to its mapped GL account, and every unmapped category
-  // falls back EXACTLY to the historical hardcoded accounts (expense
-  // Dr 512010 / bank Cr 112010), so with no mapping saved the resolved
-  // accounts — and the legacy entries below — are unchanged. The mapping
-  // screen defines no bank/credit category, so the disbursement credit
-  // stays on the historical bank account.
+  // 'payrollAccountMapping', maintained in HR Settings) using Omer's
+  // category set (2026-10-24): the earnings (Basic Salary / Overtime /
+  // Allowance) are DEBITED to their mapped expense accounts; every
+  // deduction is CREDITED to its own mapped recovery account (Fines,
+  // Late Coming Deduction, Loan Deduction — an advance recovery credits
+  // Employee Advances); the NET is CREDITED to Salary Payable — and,
+  // because salary here is paid in CASH at generation (a paid-mark flow
+  // is a separate pending decision), the same posting immediately
+  // DEBITS Salary Payable and CREDITS Cash in Hand, so Salary Payable
+  // returns to zero and the cash effect matches the payment exactly.
+  // Unmapped categories fall back to the seeded payroll accounts below.
   const payrollMappings = Array.isArray(state.payroll_account_mapping) ? state.payroll_account_mapping : [];
-  const SALARY_EXPENSE_FALLBACK = '512010';
-  const SALARY_BANK_ACCOUNT = '112010';
+  const PAYROLL_FALLBACK_CODES = {
+    base_salary: '516010',
+    overtime_pay: '516020',
+    special_allowance: '516030',
+    advance: '117010',
+    loan: '117020',
+    fines: '423010',
+    late_deduction: '423020',
+    loan_deduction: '423030',
+    salary_payable: '217010'
+  };
+  const SALARY_CASH_ACCOUNT = '111010'; // Cash in Hand — salary is paid in cash, never via a bank
   const PAYROLL_FALLBACK_NAMES = {
     '512010': 'Direct Factory Labor & Overtime Wages',
-    '112010': 'HBL Main Operations A/C 0019284',
+    '516010': 'Basic Salary Expense',
+    '516020': 'Overtime Wages',
+    '516030': 'Staff Allowances',
+    '117010': 'Employee Advances',
+    '117020': 'Employee Loans',
+    '423010': 'Fines Recovery',
+    '423020': 'Late Coming Deductions',
+    '423030': 'Loan Recovery',
+    '217010': 'Salary Payable',
+    '111010': 'Cash in Hand',
     '214010': 'Accrued Factory Wages & Admin Salaries'
   };
   const payrollAccountName = (code) => accountMap.get(code)?.name || PAYROLL_FALLBACK_NAMES[code] || code;
-  const salaryExpenseAccount = resolvePayrollAccountCode(payrollMappings, 'base_salary', SALARY_EXPENSE_FALLBACK);
+  const payrollAccountFor = (categoryId) => resolvePayrollAccountCode(payrollMappings, categoryId, PAYROLL_FALLBACK_CODES[categoryId]);
+  const salaryExpenseAccount = payrollAccountFor('base_salary');
+  const salaryPayableAccount = payrollAccountFor('salary_payable');
   const pushPayrollEntry = ({ date, voucherNo, accountId, party, costCenter, narration, debit, credit }) => {
     rawEntries.push({
       id: `GLE-${seq++}`,
@@ -504,6 +555,29 @@ export const generateGeneralLedger = (state = {}, filters = {}) => {
     });
   };
 
+  // The net-payable + immediate cash-payment legs shared by every salary
+  // posting path: Cr Salary Payable (the liability is recognised), then
+  // Dr Salary Payable / Cr Cash in Hand (it is paid in cash at once), so
+  // the payable self-clears to zero and cash reflects the payment.
+  const pushPayableAndCashLegs = ({ date, voucherNo, party, net }) => {
+    if (!(net > 0)) return;
+    pushPayrollEntry({
+      date, voucherNo, accountId: salaryPayableAccount, party,
+      costCenter: 'CC-ADMIN-07', narration: `Net salary payable to ${party}`,
+      credit: net
+    });
+    pushPayrollEntry({
+      date, voucherNo, accountId: salaryPayableAccount, party,
+      costCenter: 'CC-ADMIN-07', narration: `Salary paid in cash to ${party}`,
+      debit: net
+    });
+    pushPayrollEntry({
+      date, voucherNo, accountId: SALARY_CASH_ACCOUNT, party,
+      costCenter: 'CC-ADMIN-07', narration: `Net payroll paid in cash to ${party}`,
+      credit: net
+    });
+  };
+
   hrSalaries.forEach(sal => {
     // Month records — the shape HRSalaryGeneration actually saves on
     // finalize: { month, division, status, generatedAt, records: [...] }.
@@ -517,55 +591,52 @@ export const generateGeneralLedger = (state = {}, filters = {}) => {
         const empName = row.employeeName || 'Staff Payroll';
         const net = round2(row.netSalary || 0);
         const components = [
-          { categoryId: 'base_salary', label: 'Base Salary', amount: round2(row.earnedBasicSalary ?? row.basicSalary ?? 0) },
-          { categoryId: 'overtime_pay', label: 'Overtime Pay', amount: round2(row.overtime || 0) },
-          { categoryId: 'special_allowance', label: 'Special Allowances', amount: round2(row.allowance || 0) }
+          { categoryId: 'base_salary', label: 'Basic Salary', amount: round2(row.earnedBasicSalary ?? row.basicSalary ?? 0) },
+          { categoryId: 'overtime_pay', label: 'Overtime', amount: round2(row.overtime || 0) },
+          { categoryId: 'special_allowance', label: 'Allowance', amount: round2(row.allowance || 0) }
         ].filter(c => c.amount > 0);
         const gross = round2(components.reduce((s, c) => s + c.amount, 0));
-        const deductionsTotal = round2((Number(row.lateDeduction) || 0) + (Number(row.absents) || 0) + (Number(row.fine) || 0) + (Number(row.loan) || 0) + (Number(row.advanceAmount) || 0));
-        const deductionsAccount = resolvePayrollAccountCode(payrollMappings, 'deductions', '');
-        const componentAccounts = components.map(c => resolvePayrollAccountCode(payrollMappings, c.categoryId, SALARY_EXPENSE_FALLBACK));
-        // Split posting only when the mapping actually routes money
-        // somewhere non-default AND the row's components reconcile
-        // exactly with its net (gross - deductions = net).
-        const splitRouted = componentAccounts.some(code => code !== SALARY_EXPENSE_FALLBACK) || (deductionsAccount !== '' && deductionsTotal > 0);
+        // Deduction parts, itemised per Omer's category set. NOTE:
+        // row.absents is deliberately NOT a deduction part — absent days
+        // are already unpaid inside earnedBasicSalary (it is computed
+        // from payable days only), so counting them again double-charges
+        // the employee; the old lumped total that included them is why
+        // rows almost never reconciled and fell back to net-only posting.
+        const deductionParts = [
+          { categoryId: 'fines', label: 'Fines', amount: round2(Number(row.fine) || 0) },
+          { categoryId: 'late_deduction', label: 'Late Coming Deduction', amount: round2(Number(row.lateDeduction) || 0) },
+          { categoryId: 'loan_deduction', label: 'Loan Deduction', amount: round2(Number(row.loan) || 0) },
+          { categoryId: 'advance', label: 'Advance Recovery', amount: round2(Number(row.advanceAmount) || 0) }
+        ].filter(p => p.amount > 0);
+        const deductionsTotal = round2(deductionParts.reduce((s, p) => s + p.amount, 0));
         const reconciles = round2(gross - deductionsTotal) === net;
-        if (gross > 0 && splitRouted && reconciles) {
-          components.forEach((c, i) => {
+        if (gross > 0 && reconciles) {
+          components.forEach(c => {
             pushPayrollEntry({
-              date: salDate, voucherNo: salId, accountId: componentAccounts[i], party: empName,
+              date: salDate, voucherNo: salId, accountId: payrollAccountFor(c.categoryId), party: empName,
               costCenter: 'CC-DRY-01',
-              narration: c.categoryId === 'base_salary' ? `Monthly salary disbursement for ${empName}` : `${c.label} for ${empName}`,
+              narration: c.categoryId === 'base_salary' ? `Monthly salary for ${empName}` : `${c.label} for ${empName}`,
               debit: c.amount
             });
           });
-          if (deductionsAccount !== '' && deductionsTotal > 0) {
+          deductionParts.forEach(p => {
             pushPayrollEntry({
-              date: salDate, voucherNo: salId, accountId: deductionsAccount, party: empName,
-              costCenter: 'CC-ADMIN-07', narration: `Payroll deductions for ${empName}`,
-              credit: deductionsTotal
+              date: salDate, voucherNo: salId, accountId: payrollAccountFor(p.categoryId), party: empName,
+              costCenter: 'CC-ADMIN-07', narration: `${p.label} for ${empName}`,
+              credit: p.amount
             });
-          }
-          if (net > 0) {
-            pushPayrollEntry({
-              date: salDate, voucherNo: salId, accountId: SALARY_BANK_ACCOUNT, party: empName,
-              costCenter: 'CC-ADMIN-07', narration: `Net payroll paid via HBL Direct Transfer`,
-              credit: net
-            });
-          }
+          });
+          pushPayableAndCashLegs({ date: salDate, voucherNo: salId, party: empName, net });
         } else if (net > 0) {
-          // Unmapped (or non-reconciling) rows keep the historical single
-          // net posting, per employee.
+          // Non-reconciling rows (e.g. a net clamped at zero upstream, or
+          // legacy component gaps) keep a single balanced net posting
+          // through Salary Payable, per employee.
           pushPayrollEntry({
             date: salDate, voucherNo: salId, accountId: salaryExpenseAccount, party: empName,
-            costCenter: 'CC-DRY-01', narration: `Monthly salary disbursement for ${empName}`,
+            costCenter: 'CC-DRY-01', narration: `Monthly salary for ${empName}`,
             debit: net
           });
-          pushPayrollEntry({
-            date: salDate, voucherNo: salId, accountId: SALARY_BANK_ACCOUNT, party: empName,
-            costCenter: 'CC-ADMIN-07', narration: `Net payroll paid via HBL Direct Transfer`,
-            credit: net
-          });
+          pushPayableAndCashLegs({ date: salDate, voucherNo: salId, party: empName, net });
         }
       });
       return;
@@ -581,17 +652,11 @@ export const generateGeneralLedger = (state = {}, filters = {}) => {
         date: salDate, voucherNo: salId, accountId: salaryExpenseAccount,
         party: sal.employeeName || 'Staff Payroll',
         costCenter: 'CC-DRY-01',
-        narration: `Monthly salary disbursement for ${sal.employeeName || 'Staff'}`,
+        narration: `Monthly salary for ${sal.employeeName || 'Staff'}`,
         debit: netSal
       });
 
-      pushPayrollEntry({
-        date: salDate, voucherNo: salId, accountId: SALARY_BANK_ACCOUNT,
-        party: sal.employeeName || 'Staff Payroll',
-        costCenter: 'CC-ADMIN-07',
-        narration: `Net payroll paid via HBL Direct Transfer`,
-        credit: netSal
-      });
+      pushPayableAndCashLegs({ date: salDate, voucherNo: salId, party: sal.employeeName || 'Staff Payroll', net: netSal });
     }
   });
 
@@ -1008,7 +1073,7 @@ export const generateCashFlow = (state = {}, fromDate = null, toDate = null) => 
 // 8. ACCOUNTS RECEIVABLE & CUSTOMER AGING ANALYSIS (100% Real Invoices & Customers)
 // ----------------------------------------------------------------------------
 export const generateARAging = (state = {}) => {
-  const salesInvoices = (Array.isArray(state.salesInvoices) ? state.salesInvoices : []).filter(x => !isDummyFinancialRecord(x));
+  const salesInvoices = (Array.isArray(state.salesInvoices) ? state.salesInvoices : []).filter(x => !isDummyFinancialRecord(x) && !isDraftFinancialRecord(x));
   const rawCustomers = Array.isArray(state.customers) ? state.customers : [];
 
   const customerMap = new Map();
@@ -1104,7 +1169,7 @@ export const generateARAging = (state = {}) => {
 // 9. ACCOUNTS PAYABLE & SUPPLIER AGING ANALYSIS (100% Real Bills & Vendors)
 // ----------------------------------------------------------------------------
 export const generateAPAging = (state = {}) => {
-  const purchaseInvoices = (Array.isArray(state.purchaseInvoices) ? state.purchaseInvoices : []).filter(x => !isDummyFinancialRecord(x));
+  const purchaseInvoices = (Array.isArray(state.purchaseInvoices) ? state.purchaseInvoices : []).filter(x => !isDummyFinancialRecord(x) && !isDraftFinancialRecord(x));
   const rawSuppliers = Array.isArray(state.suppliers) ? state.suppliers : [];
 
   const vendorMap = new Map();
@@ -1198,9 +1263,11 @@ export const generateAPAging = (state = {}) => {
 // 10. TAXATION & WITHHOLDING TAX REGISTERS (100% Real Invoices)
 // ----------------------------------------------------------------------------
 export const generateTaxRegisters = (state = {}) => {
-  const salesInvoices = Array.isArray(state.salesInvoices) ? state.salesInvoices : [];
-  const purchaseInvoices = Array.isArray(state.purchaseInvoices) ? state.purchaseInvoices : [];
-  const rawVouchers = Array.isArray(state.vouchers) ? state.vouchers : (Array.isArray(state.paymentVouchers) ? state.paymentVouchers : []);
+  // Draft documents never post (2026-10-24), and documents saved with
+  // tax not applied (taxApplied === false) carry no tax in the register.
+  const salesInvoices = (Array.isArray(state.salesInvoices) ? state.salesInvoices : []).filter(x => !isDraftFinancialRecord(x));
+  const purchaseInvoices = (Array.isArray(state.purchaseInvoices) ? state.purchaseInvoices : []).filter(x => !isDraftFinancialRecord(x));
+  const rawVouchers = (Array.isArray(state.vouchers) ? state.vouchers : (Array.isArray(state.paymentVouchers) ? state.paymentVouchers : [])).filter(x => !isDraftFinancialRecord(x));
 
   const outputRegister = salesInvoices.map(inv => ({
     id: inv.id,
@@ -1208,8 +1275,8 @@ export const generateTaxRegisters = (state = {}) => {
     partyName: inv.customerName || 'Customer',
     taxId: inv.strn || 'STRN-Registered',
     taxableValue: round2(inv.subtotal || (inv.grandTotal - (inv.tax || 0))),
-    taxRate: '18%',
-    taxAmount: round2(inv.tax || 0),
+    taxRate: '17%',
+    taxAmount: inv.taxApplied === false ? 0 : round2(inv.tax || 0),
     invoiceTotal: round2(inv.grandTotal || 0)
   }));
 
@@ -1221,8 +1288,8 @@ export const generateTaxRegisters = (state = {}) => {
     partyName: pinv.vendorName || 'Supplier',
     taxId: pinv.strn || 'STRN-Vendor',
     taxableValue: round2(pinv.subtotal || (pinv.grandTotal - (pinv.tax || 0))),
-    taxRate: '18%',
-    taxAmount: round2(pinv.tax || 0),
+    taxRate: '17%',
+    taxAmount: pinv.taxApplied === false ? 0 : round2(pinv.tax || 0),
     invoiceTotal: round2(pinv.grandTotal || 0)
   }));
 

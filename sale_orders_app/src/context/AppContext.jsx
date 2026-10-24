@@ -973,10 +973,11 @@ export const AppProvider = ({ children }) => {
         }
         // Clean legacy dummy invoices and vouchers if present in state.
         // ONLY ids no live generator can produce: the writers number their
-        // first real documents PINV-7801…, INV-8901…, JV-<year>-0001 and
-        // CPV-<year>-0002, so those ids must never be purged here — an
-        // earlier version of this set deleted the first real PIs/SIs/
-        // vouchers from state on app load. 'PV-*'/'VOUCH-*' are seed-only.
+        // first real documents PINV-7801…, INV-8901… and JV-001 / CPV-001…
+        // (short per-type voucher series since 2026-10-24), so those ids
+        // must never be purged here — an earlier version of this set
+        // deleted the first real PIs/SIs/vouchers from state on app load.
+        // 'PV-*'/'VOUCH-*' are seed-only.
         const dummyBadIds = new Set(['PV-001','PV-002','PV-003','PV-004','VOUCH-1001','VOUCH-1002','VOUCH-1003','VOUCH-1004']);
         const isLegacyDummy = x => {
           if (!x) return false;
@@ -4539,18 +4540,49 @@ export const AppProvider = ({ children }) => {
   });
 
   const addSalesInvoice = (invoice) => {
+    // Draft invoices (Omer's order, 2026-10-24) are saved ONLY: the
+    // delivery challan stays un-invoiced (so it remains available), and
+    // the finance engine excludes drafts from GL/AR entirely. Posting the
+    // draft later (postSalesInvoice) runs the normal flow.
+    const isDraft = invoice.status === 'Draft';
     setState(prev => {
-      const nextDeliveries = (prev.deliveries || []).map(d =>
-        d.id === invoice.deliveryId ? { ...d, isInvoiced: true } : d
-      );
+      const nextDeliveries = isDraft
+        ? (prev.deliveries || [])
+        : (prev.deliveries || []).map(d =>
+            d.id === invoice.deliveryId ? { ...d, isInvoiced: true } : d
+          );
       return {
         ...prev,
         deliveries: nextDeliveries,
         salesInvoices: [invoice, ...(prev.salesInvoices || [])]
       };
     });
-    addNotification('Sales Invoice Generated', `Invoice ${invoice.id} for ${invoice.customerName} has been generated.`, 'success');
-    addAuditLog('Generate Sales Invoice', 'Finance', `Generated sales invoice ${invoice.id} against Delivery Challan ${invoice.deliveryId}.`, 'Success', state.currentUser?.name || 'Admin');
+    addNotification(isDraft ? 'Sales Invoice Draft Saved' : 'Sales Invoice Generated', `Invoice ${invoice.id} for ${invoice.customerName} has been ${isDraft ? 'saved as draft' : 'generated'}.`, 'success');
+    addAuditLog(isDraft ? 'Save Sales Invoice Draft' : 'Generate Sales Invoice', 'Finance', `${isDraft ? 'Saved draft sales invoice' : 'Generated sales invoice'} ${invoice.id} against Delivery Challan ${invoice.deliveryId}.`, 'Success', state.currentUser?.name || 'Admin');
+  };
+
+  // Post a draft sales invoice: flips it to the posted status ('Settled',
+  // the status the create flow uses) and marks its delivery challan
+  // invoiced — from here the derived GL/AR pick it up exactly like a
+  // freshly generated invoice.
+  const postSalesInvoice = (invoiceId) => {
+    const current = (state.salesInvoices || []).find(inv => inv.id === invoiceId);
+    if (!current || current.status !== 'Draft') return;
+    setState(prev => {
+      const invoice = (prev.salesInvoices || []).find(inv => inv.id === invoiceId);
+      if (!invoice || invoice.status !== 'Draft') return prev;
+      return {
+        ...prev,
+        deliveries: (prev.deliveries || []).map(d =>
+          d.id === invoice.deliveryId ? { ...d, isInvoiced: true } : d
+        ),
+        salesInvoices: (prev.salesInvoices || []).map(inv =>
+          inv.id === invoiceId ? { ...inv, status: 'Settled' } : inv
+        )
+      };
+    });
+    addNotification('Sales Invoice Posted', `Invoice ${invoiceId} has been posted.`, 'success');
+    addAuditLog('Post Sales Invoice', 'Finance', `Posted draft sales invoice ${invoiceId}.`, 'Success', state.currentUser?.name || 'Admin');
   };
 
   const addPurchaseInvoice = (invoice) => {
@@ -4612,9 +4644,20 @@ export const AppProvider = ({ children }) => {
       const original = (prev.salesInvoices || []).find(inv => inv.id === invoiceId);
       let nextDeliveries = prev.deliveries || [];
       if (original && original.deliveryId !== updatedInvoice.deliveryId) {
-        nextDeliveries = nextDeliveries.map(d =>
-          d.id === original.deliveryId ? { ...d, isInvoiced: false } : d
-        );
+        // Delivery flags follow posting state: a draft never holds its
+        // challan as invoiced; a posted invoice always does.
+        if (original.status !== 'Draft') {
+          nextDeliveries = nextDeliveries.map(d =>
+            d.id === original.deliveryId ? { ...d, isInvoiced: false } : d
+          );
+        }
+        if (updatedInvoice.status !== 'Draft') {
+          nextDeliveries = nextDeliveries.map(d =>
+            d.id === updatedInvoice.deliveryId ? { ...d, isInvoiced: true } : d
+          );
+        }
+      } else if (original && original.status === 'Draft' && updatedInvoice.status !== 'Draft') {
+        // Same challan, draft being posted through an edit.
         nextDeliveries = nextDeliveries.map(d =>
           d.id === updatedInvoice.deliveryId ? { ...d, isInvoiced: true } : d
         );
@@ -5819,6 +5862,7 @@ export const AppProvider = ({ children }) => {
       addDelivery,
       deleteDelivery,
       addSalesInvoice,
+      postSalesInvoice,
       updateSalesInvoice,
       deleteSalesInvoice,
       addPurchaseInvoice,

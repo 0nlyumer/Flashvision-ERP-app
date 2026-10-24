@@ -5,7 +5,7 @@ import ResizableHeader from '../ui/ResizableHeader';
 
 // Sales Invoice History module matching professional Stitch templates
 export default function SalesInvoiceHistory({ onViewCreate }) {
-  const { state, updateSalesInvoice, deleteSalesInvoice } = useApp();
+  const { state, updateSalesInvoice, deleteSalesInvoice, postSalesInvoice } = useApp();
   const { appConfirm, appAlert } = useDialog();
   const currencyCode = state.adminSetup?.baseCurrency ? state.adminSetup.baseCurrency.split(' ')[0] : 'PKR';
   const currencySymbol = state.adminSetup?.baseCurrency ? (state.adminSetup.baseCurrency.match(/\(([^)]+)\)/)?.[1] || '$') : '$';
@@ -314,6 +314,22 @@ export default function SalesInvoiceHistory({ onViewCreate }) {
     setEditInvoice(null);
   };
 
+  // Post a draft invoice: runs the normal flow (status -> Settled, its
+  // delivery challan is marked invoiced, and the derived GL/AR pick the
+  // invoice up). Drafts have no ledger effect until this is clicked.
+  const handlePostClick = async (invoice) => {
+    const proceed = await appConfirm(
+      `Post invoice ${invoice.id}?\n\nGrand Total: ${currencyCode} ${invoice.grandTotal?.toLocaleString(undefined, { minimumFractionDigits: 2 })}\nSales Tax (17%): ${invoice.taxApplied === false ? 'NOT APPLIED' : 'APPLIED'}\n\nPosting moves this invoice into the ledger and marks Delivery Challan ${invoice.deliveryId} as invoiced.`,
+      "Post Draft Invoice",
+      "Post Invoice",
+      "Cancel"
+    );
+
+    if (proceed) {
+      postSalesInvoice(invoice.id);
+    }
+  };
+
   // Delete invoice action click trigger
   const handleDeleteClick = async (invoice) => {
     if (hasPaymentVoucher(invoice.id)) {
@@ -446,6 +462,15 @@ export default function SalesInvoiceHistory({ onViewCreate }) {
                     {visibleColumns.actions && (
                       <td className="px-6 py-4 text-sm text-center">
                         <div className="flex justify-center gap-1.5">
+                          {invoice.status === 'Draft' && (
+                            <button
+                              onClick={() => handlePostClick(invoice)}
+                              className="px-2.5 py-1.5 bg-emerald-600 text-white hover:bg-emerald-700 rounded-lg transition-colors cursor-pointer text-[11px] font-bold"
+                              title="Post this draft invoice to the ledger"
+                            >
+                              Post
+                            </button>
+                          )}
                           <button
                             onClick={() => setSelectedInvoice(invoice)}
                             className="p-1.5 text-on-surface-variant hover:text-primary hover:bg-surface-container rounded-lg transition-colors cursor-pointer"

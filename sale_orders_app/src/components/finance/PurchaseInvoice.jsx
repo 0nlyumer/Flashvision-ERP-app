@@ -14,6 +14,11 @@ export default function PurchaseInvoice() {
   const [selectedDocId, setSelectedDocId] = useState('');
   const [remarks, setRemarks] = useState('');
   const [customRates, setCustomRates] = useState({});
+  // Tax is OPTIONAL per document (Omer's order, 2026-10-24): the toggle
+  // drives the tax leg; the choice is stored on the invoice
+  // (taxApplied) and restated in the posting confirmation so a user who
+  // forgot the tax is reminded before posting.
+  const [taxApplied, setTaxApplied] = useState(true);
 
   // View mode switcher: 'create' aur 'history' views ko toggle karne ke liye
   const [viewMode, setViewMode] = useState('create');
@@ -76,7 +81,7 @@ export default function PurchaseInvoice() {
     });
   }
 
-  const tax = subtotal * 0.17;
+  const tax = taxApplied ? subtotal * 0.17 : 0;
   const withholdingTax = 0.00;
   const grandTotal = subtotal + tax + withholdingTax;
 
@@ -85,7 +90,7 @@ export default function PurchaseInvoice() {
     if (!selectedDoc) return;
 
     const proceed = await appConfirm(
-      `Are you sure you want to generate a purchase invoice for ${sourceType} ${selectedDocId}?\nGrand Total: ${currencyCode} ${grandTotal.toLocaleString()}`,
+      `Are you sure you want to generate a purchase invoice for ${sourceType} ${selectedDocId}?\nGrand Total: ${currencyCode} ${grandTotal.toLocaleString()}\n\nSales Tax (17%): ${taxApplied ? `APPLIED — ${currencyCode} ${tax.toLocaleString()}` : 'NOT APPLIED'} (use the Tax toggle on the form to change this before posting).`,
       "Confirm Posting Invoice",
       "Post Invoice",
       "Cancel"
@@ -104,6 +109,7 @@ export default function PurchaseInvoice() {
       vendorId: selectedDoc.supplierId || 'VND-99201-P',
       subtotal,
       tax,
+      taxApplied,
       grandTotal,
       status: 'Posted',
       remarks,
@@ -123,6 +129,7 @@ export default function PurchaseInvoice() {
     // Form resetting
     setSelectedDocId('');
     setRemarks('');
+    setTaxApplied(true);
   };
 
   if (viewMode === 'history') {
@@ -369,8 +376,20 @@ export default function PurchaseInvoice() {
                 <span className="text-lg font-semibold tracking-tight">{currencyCode} {subtotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
               </div>
               <div className="flex justify-between items-center">
-                <span className="text-sm font-medium opacity-80">Sales Tax (17.00%)</span>
-                <span className="text-lg font-semibold tracking-tight">{currencyCode} {tax.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                <span className="text-sm font-medium opacity-80 flex items-center gap-2">
+                  Sales Tax (17.00%)
+                  <button
+                    type="button"
+                    onClick={() => setTaxApplied(prev => !prev)}
+                    className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors cursor-pointer ${taxApplied ? 'bg-white/90' : 'bg-white/25'}`}
+                    role="switch"
+                    aria-checked={taxApplied}
+                    title="Toggle sales tax on this invoice (tax is optional per document)"
+                  >
+                    <span className={`inline-block h-4 w-4 transform rounded-full shadow transition-transform ${taxApplied ? 'translate-x-4 bg-primary' : 'translate-x-0.5 bg-white'}`}></span>
+                  </button>
+                </span>
+                <span className="text-lg font-semibold tracking-tight">{taxApplied ? `${currencyCode} ${tax.toLocaleString(undefined, { minimumFractionDigits: 2 })}` : 'Not Applied'}</span>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-sm font-medium opacity-80">Withholding Tax (0.00%)</span>

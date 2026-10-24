@@ -14,6 +14,11 @@ export default function SalesInvoice() {
   const [selectedDcId, setSelectedDcId] = useState('');
   const [remarks, setRemarks] = useState('');
   const [discounts, setDiscounts] = useState({}); // Stores discount percentage per item index
+  // Tax is OPTIONAL per document (Omer's order, 2026-10-24): the toggle
+  // drives the tax leg; the choice is stored on the invoice
+  // (taxApplied) and restated in the save/post confirmation so a user
+  // who forgot the tax is reminded before saving.
+  const [taxApplied, setTaxApplied] = useState(true);
   
   // View mode switcher: 'create' aur 'history' views ko toggle karne ke liye
   const [viewMode, setViewMode] = useState('create');
@@ -69,15 +74,47 @@ export default function SalesInvoice() {
     });
   }
 
-  const salesTax = subtotal * 0.17;
+  const salesTax = taxApplied ? subtotal * 0.17 : 0;
   const grandTotal = subtotal + salesTax;
+
+  const buildInvoice = (invoiceId, status) => ({
+    id: invoiceId,
+    date: new Date().toISOString(),
+    deliveryId: selectedDc.id,
+    customerName: selectedDc.customerName,
+    customerId: selectedDc.customerId,
+    subtotal,
+    tax: salesTax,
+    taxApplied,
+    grandTotal,
+    status,
+    remarks,
+    items: itemsList.map(it => ({
+      itemCode: it.itemCode,
+      productName: it.productName,
+      stockType: it.stockType || null,
+      quantity: parseFloat(it.dispatchedQty || it.qty) || 1,
+      unitPrice: it.unitPrice,
+      discountPercent: it.discountPercent,
+      discountAmount: it.discountAmount,
+      subtotal: it.subtotal,
+      uom: it.uom || 'Units'
+    }))
+  });
+
+  const resetInvoiceForm = () => {
+    setSelectedDcId('');
+    setRemarks('');
+    setDiscounts({});
+    setTaxApplied(true);
+  };
 
   // Invoice generator action click handler
   const handleGenerateInvoice = async () => {
     if (!selectedDc) return;
 
     const proceed = await appConfirm(
-      `Are you sure you want to generate a sales invoice for Delivery Challan ${selectedDcId}?\nGrand Total: ${currencyCode} ${grandTotal.toLocaleString()}`,
+      `Are you sure you want to generate a sales invoice for Delivery Challan ${selectedDcId}?\nGrand Total: ${currencyCode} ${grandTotal.toLocaleString()}\n\nSales Tax (17%): ${taxApplied ? `APPLIED — ${currencyCode} ${salesTax.toLocaleString()}` : 'NOT APPLIED'} (use the Tax toggle on the form to change this before generating).`,
       "Confirm Invoice Generation",
       "Generate Invoice",
       "Cancel"
@@ -87,37 +124,35 @@ export default function SalesInvoice() {
 
     const invoiceId = 'INV-' + (8900 + (state.salesInvoices || []).length + 1);
 
-    const newInvoice = {
-      id: invoiceId,
-      date: new Date().toISOString(),
-      deliveryId: selectedDc.id,
-      customerName: selectedDc.customerName,
-      customerId: selectedDc.customerId,
-      subtotal,
-      tax: salesTax,
-      grandTotal,
-      status: 'Settled',
-      remarks,
-      items: itemsList.map(it => ({
-        itemCode: it.itemCode,
-        productName: it.productName,
-        stockType: it.stockType || null,
-        quantity: parseFloat(it.dispatchedQty || it.qty) || 1,
-        unitPrice: it.unitPrice,
-        discountPercent: it.discountPercent,
-        discountAmount: it.discountAmount,
-        subtotal: it.subtotal,
-        uom: it.uom || 'Units'
-      }))
-    };
-
     // Global context dispatch aur state save
-    addSalesInvoice(newInvoice);
+    addSalesInvoice(buildInvoice(invoiceId, 'Settled'));
 
     // Form settings clear/reset code
-    setSelectedDcId('');
-    setRemarks('');
-    setDiscounts({});
+    resetInvoiceForm();
+  };
+
+  // Save Draft handler (Omer's order, 2026-10-24 — this button previously
+  // had NO handler): saves the invoice with Draft status. A draft has no
+  // GL posting, no stock movement and no AR effect, and its delivery
+  // challan stays un-invoiced; it can be posted later from Invoice
+  // History, which runs the normal flow.
+  const handleSaveDraft = async () => {
+    if (!selectedDc) return;
+
+    const proceed = await appConfirm(
+      `Save this sales invoice for Delivery Challan ${selectedDcId} as a DRAFT?\nGrand Total: ${currencyCode} ${grandTotal.toLocaleString()}\n\nSales Tax (17%): ${taxApplied ? `APPLIED — ${currencyCode} ${salesTax.toLocaleString()}` : 'NOT APPLIED'} (use the Tax toggle on the form to change this before saving).\n\nDrafts do not post to the ledger — post it from Invoice History when ready.`,
+      "Save Draft Invoice",
+      "Save Draft",
+      "Cancel"
+    );
+
+    if (!proceed) return;
+
+    const invoiceId = 'INV-' + (8900 + (state.salesInvoices || []).length + 1);
+
+    addSalesInvoice(buildInvoice(invoiceId, 'Draft'));
+
+    resetInvoiceForm();
   };
 
   if (viewMode === 'history') {
@@ -363,8 +398,20 @@ export default function SalesInvoice() {
                   <span className="text-sm font-bold text-on-surface">{currencyCode} {subtotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                 </div>
                 <div className="flex justify-between items-center">
-                  <span className="text-sm font-medium text-on-surface-variant">Sales Tax (17%)</span>
-                  <span className="text-sm font-bold text-on-surface">{currencyCode} {salesTax.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                  <span className="text-sm font-medium text-on-surface-variant flex items-center gap-2">
+                    Sales Tax (17%)
+                    <button
+                      type="button"
+                      onClick={() => setTaxApplied(prev => !prev)}
+                      className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors cursor-pointer ${taxApplied ? 'bg-primary' : 'bg-outline-variant/50'}`}
+                      role="switch"
+                      aria-checked={taxApplied}
+                      title="Toggle sales tax on this invoice (tax is optional per document)"
+                    >
+                      <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${taxApplied ? 'translate-x-4' : 'translate-x-0.5'}`}></span>
+                    </button>
+                  </span>
+                  <span className="text-sm font-bold text-on-surface">{taxApplied ? `${currencyCode} ${salesTax.toLocaleString(undefined, { minimumFractionDigits: 2 })}` : 'Not Applied'}</span>
                 </div>
                 <div className="h-px bg-outline-variant/30 my-2"></div>
                 <div className="flex justify-between items-end">
@@ -385,7 +432,10 @@ export default function SalesInvoice() {
                   <span className="material-symbols-outlined">receipt</span>
                   Generate Sales Invoice
                 </button>
-                <button className="w-full bg-secondary-container text-on-secondary-container py-3.5 rounded-xl font-bold text-sm hover:bg-secondary-container/80 transition-all active:scale-95 cursor-pointer">
+                <button
+                  onClick={handleSaveDraft}
+                  className="w-full bg-secondary-container text-on-secondary-container py-3.5 rounded-xl font-bold text-sm hover:bg-secondary-container/80 transition-all active:scale-95 cursor-pointer"
+                >
                   Save Draft
                 </button>
               </div>

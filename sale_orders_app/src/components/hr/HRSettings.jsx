@@ -2,6 +2,7 @@ import { getEffectiveDutyHours, getEffectiveOvertimeMultiplier } from '../../uti
 import React, { useState, useEffect, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import PayrollAccountMapping from './PayrollAccountMapping';
+import { normalizePayrollMappings } from '../../utils/payrollAccountMapping';
 import SalaryAllowanceConfig from './SalaryAllowanceConfig';
 import FlashAMConfig from './FlashAMConfig';
 
@@ -10,6 +11,10 @@ import FlashAMConfig from './FlashAMConfig';
 export default function HRSettings({ isMobile }) {
   const { state, setCollection } = useApp();
   const employees = state?.hr_employees_list || [];
+  // The Payroll Account Mapping card shows the EXACT live category count
+  // from the mapping data (Omer's order, 2026-10-24 — it previously said
+  // a hardcoded '12 Categories' that matched nothing).
+  const payrollCategoryCount = normalizePayrollMappings(state?.payroll_account_mapping).length;
   const [designations, setDesignations] = useState(() => {
     try {
       const saved = localStorage.getItem('hr_designations_config');
@@ -1033,7 +1038,7 @@ export default function HRSettings({ isMobile }) {
                 
                 <div className="mt-4 pt-4 border-t border-outline-variant/10 flex items-center justify-between relative z-10 text-[10px] uppercase tracking-wider font-bold">
                   <span className="text-secondary font-body">GL Sync Active</span>
-                  <span className="text-on-surface-variant font-body">12 Categories</span>
+                  <span className="text-on-surface-variant font-body">{payrollCategoryCount} Categories</span>
                 </div>
               </div>
 

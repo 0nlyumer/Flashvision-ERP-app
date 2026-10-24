@@ -65,15 +65,18 @@ export default function PayrollAccountMapping({ isMobile, onBack }) {
   const linkPercentage = totalCategories ? Math.round((mappedCount / totalCategories) * 100) : 0;
 
   // Handle Back Click with Unsaved Changes Guard
-  const handleBackGuard = () => {
+  // NOTE (bug fix, 2026-10-24): appConfirm is the promise API
+  // appConfirm(message, title, options) -> Promise<boolean>. This screen
+  // previously called it callback-style with (title, message, callback)
+  // — the callback was swallowed as the `options` argument and never
+  // ran, which is exactly why category DELETE appeared to do nothing.
+  const handleBackGuard = async () => {
     if (hasUnsavedChanges) {
-      appConfirm(
-        'Unsaved Changes Warning',
+      const ok = await appConfirm(
         'You have unsaved changes in Payroll Account Mapping. Are you sure you want to leave without saving?',
-        () => {
-          if (onBack) onBack();
-        }
+        'Unsaved Changes Warning'
       );
+      if (ok && onBack) onBack();
     } else {
       if (onBack) onBack();
     }
@@ -95,17 +98,17 @@ export default function PayrollAccountMapping({ isMobile, onBack }) {
     }));
   };
 
-  // Delete Category Handler
-  const handleDeleteCategory = (id, categoryName) => {
-    appConfirm(
-      'Delete Payroll Category',
+  // Delete Category Handler (fixed 2026-10-24 — see the appConfirm note
+  // on handleBackGuard above; the delete callback never fired before).
+  const handleDeleteCategory = async (id, categoryName) => {
+    const ok = await appConfirm(
       `Are you sure you want to delete category "${categoryName}"? This action requires applying changes to save.`,
-      () => {
-        setMappings(prev => prev.filter(m => m.id !== id));
-        setHasUnsavedChanges(true);
-        showTopPill(`Category "${categoryName}" deleted`, 'info');
-      }
+      'Delete Payroll Category'
     );
+    if (!ok) return;
+    setMappings(prev => prev.filter(m => m.id !== id));
+    setHasUnsavedChanges(true);
+    showTopPill(`Category "${categoryName}" deleted`, { type: 'info' });
   };
 
   // Add New Category Handler
@@ -129,7 +132,7 @@ export default function PayrollAccountMapping({ isMobile, onBack }) {
     setHasUnsavedChanges(true);
     setNewCat({ category: '', description: '', account: '' });
     setShowAddModal(false);
-    showTopPill(`Category "${newItem.category}" Added`, 'success');
+    showTopPill(`Category "${newItem.category}" Added`, { type: 'success' });
   };
 
   // Test Integration Handler
@@ -138,9 +141,9 @@ export default function PayrollAccountMapping({ isMobile, onBack }) {
     setTimeout(() => {
       hideLoading();
       if (missingCount > 0) {
-        showTopPill(`Integration Test Alert • ${missingCount} category unmapped`, 'warning');
+        showTopPill(`Integration Test Alert • ${missingCount} category unmapped`, { type: 'warning' });
       } else {
-        showTopPill('Integration Test Passed • 100% Mapped to Ledger', 'success');
+        showTopPill('Integration Test Passed • 100% Mapped to Ledger', { type: 'success' });
       }
     }, 1200);
   };
@@ -153,7 +156,7 @@ export default function PayrollAccountMapping({ isMobile, onBack }) {
     setHasUnsavedChanges(false);
     setTimeout(() => {
       hideLoading();
-      showTopPill('Payroll Mappings Saved • Ledger Rules Updated', 'success');
+      showTopPill('Payroll Mappings Saved • Ledger Rules Updated', { type: 'success' });
     }, 900);
   };
 
@@ -375,7 +378,7 @@ export default function PayrollAccountMapping({ isMobile, onBack }) {
                       <div className="flex items-center justify-end gap-1">
                         <button 
                           onClick={() => {
-                            showTopPill(`Category "${item.category}" options`, 'info');
+                            showTopPill(`Category "${item.category}" options`, { type: 'info' });
                           }}
                           className="text-on-surface-variant/40 hover:text-primary transition-colors p-2 rounded-full hover:bg-surface-container cursor-pointer"
                           title="Configure Category"
