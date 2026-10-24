@@ -1301,13 +1301,25 @@ export const generateTaxRegisters = (state = {}) => {
         if (l.accountId === '213010' || (l.accountName && l.accountName.toLowerCase().includes('withholding'))) {
           const amt = round2(l.credit || l.debit || 0);
           if (amt > 0) {
+            // EXACT values first (Omer, 2026-10-24): the voucher WHT line
+            // now captures the real gross amount (and rate) at entry time
+            // and stores them on the line (grossAmount / whtRate in the
+            // voucher's data JSON) — the register reads those stored
+            // values verbatim, never an estimate.
+            const storedGross = Number(l.grossAmount) > 0 ? round2(Number(l.grossAmount)) : null;
+            const storedRate = Number(l.whtRate) > 0 ? Number(l.whtRate) : null;
             whtRegister.push({
               id: `WHT-${v.id}`,
               date: v.date,
               party: v.party || v.paidTo || l.accountName,
               section: 'Sec 153 Withholding',
-              grossAmount: amt * 20, // estimated gross
-              rate: '5.0%',
+              // LEGACY FALLBACK ONLY: lines saved before gross capture
+              // existed carry no stored grossAmount; for those (and only
+              // those) fall back to the old estimate (WHT x 20 at 5%) and
+              // flag the row via grossEstimated so the UI can mark it.
+              grossAmount: storedGross !== null ? storedGross : amt * 20,
+              grossEstimated: storedGross === null,
+              rate: storedRate !== null ? `${storedRate}%` : '5.0%',
               whtAmount: amt,
               cprNo: v.reference || 'Pending Deposit',
               status: 'Deducted'

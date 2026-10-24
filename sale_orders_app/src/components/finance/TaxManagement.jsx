@@ -287,7 +287,7 @@ export default function TaxManagement() {
                     <td className="py-3 px-4 font-mono text-on-surface-variant">{new Date(r.date).toLocaleDateString()}</td>
                     <td className="py-3 px-4 font-bold text-on-surface">{r.party}</td>
                     <td className="py-3 px-4 font-medium text-on-surface-variant">{r.section}</td>
-                    <td className="py-3 px-4 text-right font-mono text-on-surface">{formatMoney(r.grossAmount, '')}</td>
+                    <td className="py-3 px-4 text-right font-mono text-on-surface">{formatMoney(r.grossAmount, '')}{r.grossEstimated ? <span className="ml-1 text-[9px] font-bold uppercase text-amber-600" title="Legacy line saved before exact gross capture existed — shown as the old estimate">(est.)</span> : null}</td>
                     <td className="py-3 px-4 text-center font-bold text-purple-600">{r.rate}</td>
                     <td className="py-3 px-4 text-right font-mono font-black text-purple-700">{formatMoney(r.whtAmount, '')}</td>
                     <td className="py-3 px-4 font-mono font-bold text-on-surface-variant">{r.cprNo}</td>
@@ -354,7 +354,7 @@ export default function TaxManagement() {
                 </div>
                 <div>
                   <span className="text-[10px] uppercase font-bold text-on-surface-variant block">Gross Transaction Value</span>
-                  <span className="font-mono font-bold text-on-surface">{formatMoney(selectedCert.grossAmount, currencyCode)}</span>
+                  <span className="font-mono font-bold text-on-surface">{formatMoney(selectedCert.grossAmount, currencyCode)}{selectedCert.grossEstimated ? ' (est.)' : ''}</span>
                 </div>
                 <div>
                   <span className="text-[10px] uppercase font-bold text-on-surface-variant block">Tax Deducted & Deposited</span>

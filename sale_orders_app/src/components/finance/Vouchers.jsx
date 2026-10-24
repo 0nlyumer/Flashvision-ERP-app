@@ -60,8 +60,22 @@ export default function Vouchers() {
   const [reference, setReference] = useState('');
   const [overallNarration, setOverallNarration] = useState('');
 
-  // Initial line template
-  const initialLine = { accountId: '', narration: '', debit: 0, credit: 0 };
+  // Initial line template. grossAmount / whtRate are only meaningful on a
+  // Withholding Tax line (account 213010) — they capture the REAL gross
+  // transaction amount and rate at entry time so the Tax & Withholding
+  // register shows exact figures instead of an estimate (Omer, 2026-10-24).
+  const initialLine = { accountId: '', narration: '', debit: 0, credit: 0, grossAmount: 0, whtRate: 0 };
+
+  // A line is a WHT line when its account is the WHT Payable account
+  // (213010) or any account whose name says Withholding — the same rule
+  // generateTaxRegisters uses to build the WHT register.
+  const isWhtLine = (line) => {
+    if (!line || !line.accountId) return false;
+    if (line.accountId === '213010') return true;
+    const acc = activeAccountsList.find(a => a.id === line.accountId);
+    const nm = (acc?.name || line.accountName || '').toLowerCase();
+    return nm.includes('withholding');
+  };
   const [lines, setLines] = useState([{ ...initialLine }, { ...initialLine }]);
   const [voucherPhotos, setVoucherPhotos] = useState([]);
   const [voucherVideos, setVoucherVideos] = useState([]);
@@ -142,7 +156,9 @@ export default function Vouchers() {
   // Handle Input Changes on lines
   const handleLineChange = (index, field, value) => {
     const updated = [...lines];
-    if (field === 'debit' || field === 'credit') {
+    if (field === 'grossAmount' || field === 'whtRate') {
+      updated[index][field] = parseFloat(value) || 0;
+    } else if (field === 'debit' || field === 'credit') {
       const numVal = parseFloat(value) || 0;
       updated[index][field] = numVal;
       // Mutually exclusive: if debit is positive, credit is 0, and vice versa
@@ -405,7 +421,10 @@ export default function Vouchers() {
       accountId: l.accountId,
       narration: l.narration || '',
       debit: l.debit || 0,
-      credit: l.credit || 0
+      credit: l.credit || 0,
+      // WHT exact-capture fields must survive the edit round-trip too.
+      grossAmount: l.grossAmount || 0,
+      whtRate: l.whtRate || 0
     })));
     setViewMode('create');
   };
@@ -810,6 +829,33 @@ export default function Vouchers() {
                         )}
                       </div>
                     </div>
+
+                    {/* WHT exact figures — only when this entry's account is the Withholding Tax account */}
+                    {isWhtLine(line) && (
+                      <div className="flex flex-wrap items-center gap-3 pt-1">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-purple-700">Withholding Tax — exact figures for the WHT register:</span>
+                        <label className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">
+                          Gross Amount ({currencyCode})
+                          <input
+                            type="number"
+                            value={line.grossAmount === 0 ? '' : line.grossAmount}
+                            onChange={(e) => handleLineChange(i, 'grossAmount', e.target.value)}
+                            placeholder="0"
+                            className="w-36 px-3 py-2 bg-surface-container-low border border-purple-300/50 rounded-xl text-xs font-bold text-on-surface focus:ring-2 focus:ring-purple-500/20 outline-none text-right"
+                          />
+                        </label>
+                        <label className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">
+                          WHT Rate %
+                          <input
+                            type="number"
+                            value={line.whtRate === 0 ? '' : line.whtRate}
+                            onChange={(e) => handleLineChange(i, 'whtRate', e.target.value)}
+                            placeholder="0"
+                            className="w-20 px-3 py-2 bg-surface-container-low border border-purple-300/50 rounded-xl text-xs font-bold text-on-surface focus:ring-2 focus:ring-purple-500/20 outline-none text-right"
+                          />
+                        </label>
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -839,7 +885,8 @@ export default function Vouchers() {
                   </thead>
                   <tbody className="divide-y divide-outline-variant/10 text-sm">
                     {lines.map((line, index) => (
-                      <tr key={index} className="hover:bg-surface-container-low/30 transition-colors group">
+                      <React.Fragment key={index}>
+                      <tr className="hover:bg-surface-container-low/30 transition-colors group">
                         <td className="p-4 text-center font-bold text-on-surface-variant/40">{index + 1}</td>
                         <td className="p-2">
                           <select
@@ -908,6 +955,37 @@ export default function Vouchers() {
                           )}
                         </td>
                       </tr>
+                      {isWhtLine(line) && (
+                        <tr className="bg-purple-500/5">
+                          <td></td>
+                          <td colSpan={isOffsetType ? 4 : 5} className="p-2">
+                            <div className="flex flex-wrap items-center gap-3">
+                              <span className="text-[10px] font-black uppercase tracking-wider text-purple-700">Withholding Tax — exact figures for the WHT register:</span>
+                              <label className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">
+                                Gross Amount ({currencyCode})
+                                <input
+                                  type="number"
+                                  value={line.grossAmount === 0 ? '' : line.grossAmount}
+                                  onChange={(e) => handleLineChange(index, 'grossAmount', e.target.value)}
+                                  placeholder="0"
+                                  className="w-36 text-right px-3 py-1.5 bg-surface-container-lowest border border-purple-300/50 rounded-xl text-on-surface font-bold text-xs focus:border-purple-500 outline-none"
+                                />
+                              </label>
+                              <label className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">
+                                WHT Rate %
+                                <input
+                                  type="number"
+                                  value={line.whtRate === 0 ? '' : line.whtRate}
+                                  onChange={(e) => handleLineChange(index, 'whtRate', e.target.value)}
+                                  placeholder="0"
+                                  className="w-20 text-right px-3 py-1.5 bg-surface-container-lowest border border-purple-300/50 rounded-xl text-on-surface font-bold text-xs focus:border-purple-500 outline-none"
+                                />
+                              </label>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                      </React.Fragment>
                     ))}
                   </tbody>
                 </table>

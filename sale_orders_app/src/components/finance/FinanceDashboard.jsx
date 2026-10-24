@@ -31,7 +31,7 @@ export default function FinanceDashboard({ onNavigateTab }) {
   };
 
   return (
-    <div className="flex-1 w-full max-w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 flex flex-col gap-6">
+    <div className="flex-1 min-h-full w-full max-w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 flex flex-col gap-6">
       {/* Page Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
         <div>
@@ -156,8 +156,10 @@ export default function FinanceDashboard({ onNavigateTab }) {
         </div>
       </div>
 
-      {/* 3. RECENT TRANSACTIONS STREAM */}
-      <div className="bg-surface-container-lowest rounded-2xl border border-outline-variant/10 shadow-sm p-6 space-y-4">
+      {/* 3. RECENT TRANSACTIONS STREAM — grows to fill the remaining
+          vertical space so the cockpit never leaves a dead white gap
+          under the cards (Omer, 2026-10-24). */}
+      <div className="bg-surface-container-lowest rounded-2xl border border-outline-variant/10 shadow-sm p-6 space-y-4 flex-1 flex flex-col min-h-[320px]">
         <div className="flex justify-between items-center border-b border-outline-variant/10 pb-3">
           <div>
             <h3 className="text-base font-headline font-black text-on-surface">Recent General Ledger Activity</h3>
@@ -166,7 +168,7 @@ export default function FinanceDashboard({ onNavigateTab }) {
           <span className="text-xs font-bold text-primary">Live Posting Stream</span>
         </div>
 
-        <div className="overflow-x-auto">
+        <div className="overflow-auto flex-1">
           <table className="w-full text-left text-xs border-collapse">
             <thead>
               <tr className="bg-surface-container-low text-on-surface-variant text-[11px] font-bold uppercase tracking-wider">
