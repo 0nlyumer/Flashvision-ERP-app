@@ -1,3 +1,47 @@
+// Single source of truth for font stacks. The first 16 are Google Fonts
+// loaded in index.html; the 8 "famous" fonts (Omer, 2026-10-24) are
+// system fonts — no webfont download needed, with metric-compatible
+// fallbacks where they exist (Carlito for Calibri).
+export const FONT_STACKS = {
+  inter: '"Inter", sans-serif',
+  roboto: '"Roboto", sans-serif',
+  outfit: '"Outfit", sans-serif',
+  manrope: '"Manrope", sans-serif',
+  poppins: '"Poppins", sans-serif',
+  montserrat: '"Montserrat", sans-serif',
+  opensans: '"Open Sans", sans-serif',
+  lato: '"Lato", sans-serif',
+  nunito: '"Nunito", sans-serif',
+  rubik: '"Rubik", sans-serif',
+  worksans: '"Work Sans", sans-serif',
+  dmsans: '"DM Sans", sans-serif',
+  plusjakarta: '"Plus Jakarta Sans", sans-serif',
+  ibmplex: '"IBM Plex Sans", sans-serif',
+  sourcesans: '"Source Sans 3", sans-serif',
+  figtree: '"Figtree", sans-serif',
+  calibri: '"Calibri", "Carlito", sans-serif',
+  arial: 'Arial, "Helvetica Neue", sans-serif',
+  verdana: 'Verdana, Geneva, sans-serif',
+  tahoma: 'Tahoma, Geneva, sans-serif',
+  timesnewroman: '"Times New Roman", Times, serif',
+  georgia: 'Georgia, serif',
+  trebuchet: '"Trebuchet MS", sans-serif',
+  segoeui: '"Segoe UI", sans-serif',
+};
+
+export const FONT_SIZE_OPTIONS = [14, 15, 16, 17, 18];
+export const DEFAULT_FONT_SIZE = 16;
+
+export const resolveFontStack = (fontStyle) => FONT_STACKS[fontStyle] || FONT_STACKS.inter;
+
+// Only the offered sizes are honoured; anything else (incl. old saved
+// settings without a size) falls back to the browser default 16, so
+// existing users see zero change until they pick a size.
+export const resolveFontSizePx = (settings = {}) => {
+  const n = Number(settings.fontSize);
+  return FONT_SIZE_OPTIONS.includes(n) ? n : DEFAULT_FONT_SIZE;
+};
+
 let lastAppliedKey = null;
 
 export const applyTheme = (settings = {}) => {
@@ -80,27 +124,14 @@ export const applyTheme = (settings = {}) => {
   root.style.setProperty('--color-on-primary-container', activeColor.onPrimaryContainer);
 
   // 3. Typography
-  const fonts = {
-    inter: '"Inter", sans-serif',
-    roboto: '"Roboto", sans-serif',
-    outfit: '"Outfit", sans-serif',
-    manrope: '"Manrope", sans-serif',
-    poppins: '"Poppins", sans-serif',
-    montserrat: '"Montserrat", sans-serif',
-    opensans: '"Open Sans", sans-serif',
-    lato: '"Lato", sans-serif',
-    nunito: '"Nunito", sans-serif',
-    rubik: '"Rubik", sans-serif',
-    worksans: '"Work Sans", sans-serif',
-    dmsans: '"DM Sans", sans-serif',
-    plusjakarta: '"Plus Jakarta Sans", sans-serif',
-    ibmplex: '"IBM Plex Sans", sans-serif',
-    sourcesans: '"Source Sans 3", sans-serif',
-    figtree: '"Figtree", sans-serif',
-  };
-  const selectedFont = fonts[settings.fontStyle] || fonts.inter;
+  const selectedFont = resolveFontStack(settings.fontStyle);
   root.style.setProperty('--font-body', selectedFont);
   root.style.setProperty('--font-headline', selectedFont);
+
+  // 3b. Base font size (root px; Tailwind rem sizes scale with it).
+  // webScale (DisplaySettings transform scale) is a separate mechanism and
+  // is never touched here. Missing/invalid size => browser default 16.
+  root.style.setProperty('font-size', resolveFontSizePx(settings) + 'px');
 
   // 4. Border Radius
   const radius = {

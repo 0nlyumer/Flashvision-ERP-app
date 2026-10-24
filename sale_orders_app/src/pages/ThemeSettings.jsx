@@ -1,14 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import Layout from '../components/Layout';
 import { useApp } from '../context/AppContext';
+import { FONT_STACKS, DEFAULT_FONT_SIZE } from '../utils/theme';
 
 export default function ThemeSettings() {
   const { state, updateThemeSettings } = useApp();
-  const currentTheme = state?.themeSettings || { colorMode: 'dark', primaryColor: 'tradingview', fontStyle: 'inter', borderRadius: 'rounded' };
+  const currentTheme = state?.themeSettings || { colorMode: 'dark', primaryColor: 'tradingview', fontStyle: 'inter', fontSize: DEFAULT_FONT_SIZE, borderRadius: 'rounded' };
 
   const [colorMode, setColorMode] = useState(currentTheme.colorMode || 'dark');
   const [primaryColor, setPrimaryColor] = useState(currentTheme.primaryColor || 'tradingview');
   const [fontStyle, setFontStyle] = useState(currentTheme.fontStyle || 'inter');
+  const [fontSize, setFontSize] = useState(currentTheme.fontSize || DEFAULT_FONT_SIZE);
   const [borderRadius, setBorderRadius] = useState(currentTheme.borderRadius || 'rounded');
   const [appliedNotification, setAppliedNotification] = useState(false);
 
@@ -17,6 +19,7 @@ export default function ThemeSettings() {
       setColorMode(state.themeSettings.colorMode || 'dark');
       setPrimaryColor(state.themeSettings.primaryColor || 'tradingview');
       setFontStyle(state.themeSettings.fontStyle || 'inter');
+      setFontSize(state.themeSettings.fontSize || DEFAULT_FONT_SIZE);
       setBorderRadius(state.themeSettings.borderRadius || 'rounded');
     }
   }, [state?.themeSettings]);
@@ -29,7 +32,7 @@ export default function ThemeSettings() {
 
   const handleApplyTheme = () => {
     triggerMorph();
-    updateThemeSettings({ colorMode, primaryColor, fontStyle, borderRadius });
+    updateThemeSettings({ colorMode, primaryColor, fontStyle, fontSize, borderRadius });
     setAppliedNotification(true);
     setTimeout(() => setAppliedNotification(false), 3000);
   };
@@ -37,31 +40,37 @@ export default function ThemeSettings() {
   const handleColorModeChange = (mode) => {
     triggerMorph();
     setColorMode(mode);
-    updateThemeSettings({ colorMode: mode, primaryColor, fontStyle, borderRadius });
+    updateThemeSettings({ colorMode: mode, primaryColor, fontStyle, fontSize, borderRadius });
   };
 
   const handlePrimaryColorChange = (colorId) => {
     triggerMorph();
     setPrimaryColor(colorId);
-    updateThemeSettings({ colorMode, primaryColor: colorId, fontStyle, borderRadius });
+    updateThemeSettings({ colorMode, primaryColor: colorId, fontStyle, fontSize, borderRadius });
   };
 
   const handleFontStyleChange = (fontId) => {
     setFontStyle(fontId);
-    updateThemeSettings({ colorMode, primaryColor, fontStyle: fontId, borderRadius });
+    updateThemeSettings({ colorMode, primaryColor, fontStyle: fontId, fontSize, borderRadius });
+  };
+
+  const handleFontSizeChange = (size) => {
+    setFontSize(size);
+    updateThemeSettings({ colorMode, primaryColor, fontStyle, fontSize: size, borderRadius });
   };
 
   const handleBorderRadiusChange = (radiusId) => {
     setBorderRadius(radiusId);
-    updateThemeSettings({ colorMode, primaryColor, fontStyle, borderRadius: radiusId });
+    updateThemeSettings({ colorMode, primaryColor, fontStyle, fontSize, borderRadius: radiusId });
   };
 
   const handleReset = () => {
     triggerMorph();
-    const defaults = { colorMode: 'dark', primaryColor: 'tradingview', fontStyle: 'inter', borderRadius: 'rounded' };
+    const defaults = { colorMode: 'dark', primaryColor: 'tradingview', fontStyle: 'inter', fontSize: DEFAULT_FONT_SIZE, borderRadius: 'rounded' };
     setColorMode(defaults.colorMode);
     setPrimaryColor(defaults.primaryColor);
     setFontStyle(defaults.fontStyle);
+    setFontSize(defaults.fontSize);
     setBorderRadius(defaults.borderRadius);
     updateThemeSettings(defaults);
     setAppliedNotification(true);
@@ -94,6 +103,22 @@ export default function ThemeSettings() {
     { id: 'ibmplex', label: 'IBM Plex Sans (Industrial Tech)', desc: 'Engineered corporate neutrality with sharp clarity' },
     { id: 'sourcesans', label: 'Source Sans 3 (Classic UI)', desc: 'Adobe-designed workhorse for enterprise interfaces' },
     { id: 'figtree', label: 'Figtree (Friendly Clean)', desc: 'Lighthearted, clear contemporary geometric sans' },
+    { id: 'calibri', label: 'Calibri (Excel Default)', desc: 'Microsoft Office default — soft, rounded, highly readable' },
+    { id: 'arial', label: 'Arial (Universal Classic)', desc: 'The everywhere standard — neutral and dependable' },
+    { id: 'verdana', label: 'Verdana (Wide & Clear)', desc: 'Extra-wide letterforms built for screen legibility' },
+    { id: 'tahoma', label: 'Tahoma (Compact Classic)', desc: 'Tight, crisp Windows classic for dense data' },
+    { id: 'timesnewroman', label: 'Times New Roman (Formal Serif)', desc: 'Classic print serif for formal documents' },
+    { id: 'georgia', label: 'Georgia (Elegant Serif)', desc: 'Sturdy screen serif with a warm, editorial feel' },
+    { id: 'trebuchet', label: 'Trebuchet MS (Humanist Sans)', desc: 'Friendly humanist sans with distinctive letterforms' },
+    { id: 'segoeui', label: 'Segoe UI (Windows Modern)', desc: 'Microsoft modern UI default — clean and light' },
+  ];
+
+  const fontSizeOptions = [
+    { size: 14, label: 'Small' },
+    { size: 15, label: 'Compact' },
+    { size: 16, label: 'Default' },
+    { size: 17, label: 'Large' },
+    { size: 18, label: 'Extra Large' },
   ];
 
   const radiusOptions = [
@@ -237,10 +262,34 @@ export default function ThemeSettings() {
                                 className={`flex items-center justify-between p-3.5 rounded-xl border transition-all text-left cursor-pointer ${fontStyle === font.id ? 'border-primary/80 bg-primary/10 shadow-sm' : 'border-outline-variant/20 hover:border-outline-variant/40 bg-surface-container-low/50'}`}
                             >
                                 <div>
-                                  <span className={`text-sm font-bold block ${fontStyle === font.id ? 'text-primary' : 'text-on-surface'}`}>{font.label}</span>
+                                  <span className={`text-sm font-bold block ${fontStyle === font.id ? 'text-primary' : 'text-on-surface'}`} style={{ fontFamily: FONT_STACKS[font.id] }}>{font.label}</span>
                                   <span className="text-[11px] text-on-surface-variant">{font.desc}</span>
                                 </div>
                                 {fontStyle === font.id && <span className="material-symbols-outlined text-primary text-[20px]">check_circle</span>}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
+                {/* Font Size */}
+                <div className="bg-surface-container-low/40 backdrop-blur-xl rounded-[28px] border border-outline-variant/20 p-7 shadow-lg shadow-black/5">
+                    <h2 className="text-base font-bold text-on-surface mb-1.5 flex items-center gap-2 font-headline">
+                        <span className="material-symbols-outlined text-primary text-[20px]">format_size</span>
+                        Font Size
+                    </h2>
+                    <p className="text-xs text-on-surface-variant mb-5">Base text size for the whole app (display scale is separate and untouched).</p>
+
+                    <div className="grid grid-cols-5 gap-3">
+                        {fontSizeOptions.map(opt => (
+                            <button
+                                key={opt.size}
+                                type="button"
+                                onClick={() => handleFontSizeChange(opt.size)}
+                                className={`flex flex-col items-center gap-1.5 p-3.5 rounded-xl border transition-all cursor-pointer ${fontSize === opt.size ? 'border-primary/80 bg-primary/10' : 'border-outline-variant/20 hover:border-outline-variant/40 bg-surface-container-low/50'}`}
+                            >
+                                <span className={`font-bold ${fontSize === opt.size ? 'text-primary' : 'text-on-surface'}`} style={{ fontSize: `${opt.size}px`, fontFamily: FONT_STACKS[fontStyle] }}>Aa</span>
+                                <span className={`text-[11px] font-bold ${fontSize === opt.size ? 'text-primary' : 'text-on-surface-variant'}`}>{opt.size}px</span>
+                                <span className="text-[10px] text-on-surface-variant">{opt.label}</span>
                             </button>
                         ))}
                     </div>

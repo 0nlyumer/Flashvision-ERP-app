@@ -137,6 +137,7 @@ const initialMockState = {
     colorMode: 'light',
     primaryColor: 'indigo',
     fontStyle: 'inter',
+    fontSize: 16,
     borderRadius: 'rounded'
   },
   displaySettings: {
@@ -2553,6 +2554,7 @@ export const AppProvider = ({ children }) => {
           colorMode: 'light',
           primaryColor: 'indigo',
           fontStyle: 'inter',
+          fontSize: 16,
           borderRadius: 'rounded'
         };
       } catch (e) {
@@ -2624,6 +2626,7 @@ export const AppProvider = ({ children }) => {
               colorMode: 'light',
               primaryColor: 'indigo',
               fontStyle: 'inter',
+              fontSize: 16,
               borderRadius: 'rounded'
             });
             assignIfDiff('displaySettings', sData.displaySettings || {
