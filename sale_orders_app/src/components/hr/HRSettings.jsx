@@ -152,6 +152,18 @@ export default function HRSettings({ isMobile }) {
     return state.hr_employees_list || [];
   };
 
+  // Department headcount is computed LIVE from linked employees. Department
+  // records carry no stored headcount field, so the old grid-card footer
+  // summed d.headcount (undefined) and rendered NaN. This is the single
+  // counting rule for the grid footer AND the per-department cards below,
+  // so the footer always equals the sum of the cards — never NaN, and 0
+  // where a department genuinely has no linked employees.
+  const getDepartmentHeadcount = (deptName) => {
+    if (!deptName) return 0;
+    const target = deptName.toLowerCase();
+    return getActiveEmployees().filter(e => e.department && e.department.toLowerCase() === target).length;
+  };
+
   // Interactive toggle states
   const [permissions, setPermissions] = useState({
     payroll: true,
@@ -946,8 +958,8 @@ export default function HRSettings({ isMobile }) {
                 </div>
                 
                 <div className="mt-4 pt-4 border-t border-outline-variant/10 flex items-center justify-between relative z-10 text-[10px] uppercase tracking-wider font-bold">
-                  <span className="text-primary font-body">{departments.length} Active Divisions</span>
-                  <span className="text-on-surface-variant font-body">{departments.reduce((sum, d) => sum + d.headcount, 0)} Headcount</span>
+                  <span className="text-primary font-body">{departments.length} Active Departments</span>
+                  <span className="text-on-surface-variant font-body">{departments.reduce((sum, d) => sum + getDepartmentHeadcount(d.name), 0)} Headcount</span>
                 </div>
               </div>
 
@@ -1376,10 +1388,7 @@ export default function HRSettings({ isMobile }) {
           </div>
         ) : (
           filteredDepts.map(dept => {
-            const deptEmployees = getActiveEmployees().filter(e => 
-              e.department && e.department.toLowerCase() === dept.name.toLowerCase()
-            );
-            const dynamicHeadcount = deptEmployees.length;
+            const dynamicHeadcount = getDepartmentHeadcount(dept.name);
             
             const managerNames = (dept.managers || [])
               .map(id => employees.find(e => e.id === id)?.name || id)
@@ -1891,7 +1900,7 @@ export default function HRSettings({ isMobile }) {
             <div className="space-y-2">
               {departments.map(dept => {
                 const managerNames = (dept.managers || []).map(id => employees.find(e => e.id === id)?.name || id).join(', ') || 'None';
-                const headcount = getActiveEmployees().filter(e => e.department && e.department.toLowerCase() === dept.name.toLowerCase()).length;
+                const headcount = getDepartmentHeadcount(dept.name);
                 return (
                   <div key={dept.id} className="flex justify-between items-center bg-surface-container-low/60 p-3 rounded-xl border border-outline-variant/5">
                     <div className="flex flex-col gap-0.5">
