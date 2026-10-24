@@ -1259,9 +1259,12 @@ export const generateAPAging = (state = {}) => {
 export const generateTaxRegisters = (state = {}) => {
   // Draft documents never post (2026-10-24), and documents saved with
   // tax not applied (taxApplied === false) carry no tax in the register.
-  const salesInvoices = (Array.isArray(state.salesInvoices) ? state.salesInvoices : []).filter(x => !isDraftFinancialRecord(x));
-  const purchaseInvoices = (Array.isArray(state.purchaseInvoices) ? state.purchaseInvoices : []).filter(x => !isDraftFinancialRecord(x));
-  const rawVouchers = (Array.isArray(state.vouchers) ? state.vouchers : (Array.isArray(state.paymentVouchers) ? state.paymentVouchers : [])).filter(x => !isDraftFinancialRecord(x));
+  // Legacy dummy records are excluded here exactly as in every other
+  // engine consumer (GL / aging), so the tax registers can never pick
+  // up a mock document the rest of Finance ignores.
+  const salesInvoices = (Array.isArray(state.salesInvoices) ? state.salesInvoices : []).filter(x => !isDummyFinancialRecord(x) && !isDraftFinancialRecord(x));
+  const purchaseInvoices = (Array.isArray(state.purchaseInvoices) ? state.purchaseInvoices : []).filter(x => !isDummyFinancialRecord(x) && !isDraftFinancialRecord(x));
+  const rawVouchers = (Array.isArray(state.vouchers) ? state.vouchers : (Array.isArray(state.paymentVouchers) ? state.paymentVouchers : [])).filter(x => !isDummyFinancialRecord(x) && !isDraftFinancialRecord(x));
 
   const outputRegister = salesInvoices.map(inv => ({
     id: inv.id,
