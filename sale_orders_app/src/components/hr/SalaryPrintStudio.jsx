@@ -1,6 +1,8 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { exportDocumentToPdf, exportDocumentToImage, exportDocumentToCsv } from '../../utils/printExportUtils';
+import { exportDocumentToPdf, exportDocumentToImage, exportDocumentToCsv, buildDocumentPdfBlob, buildDocumentPngBlob, buildCsvBlob } from '../../utils/printExportUtils';
+import PrintSendModal from '../ui/PrintSendModal';
+import { resolveMargins, MARGIN_PRESETS, SCALE_MODES } from '../../utils/printDesign';
 import { normalizeSalaryPrintSettings } from '../../utils/salaryPrintSettings';
 
 // Salary Generation — Print Studio (HR Prints phase)
@@ -49,6 +51,7 @@ export default function SalaryPrintStudio({
   const printContainerRef = useRef(null);
   const [settingsOpen, setSettingsOpen] = useState(initialSettingsOpen);
   const [exporting, setExporting] = useState(null);
+  const [sendOpen, setSendOpen] = useState(false);
   const [draft, setDraft] = useState(() => normalizeSalaryPrintSettings(settings));
 
   // Re-seed the draft every time the popup opens so it always starts from
@@ -154,6 +157,27 @@ export default function SalaryPrintStudio({
     if (onNotify) onNotify('✅ Salary print settings saved to database.');
   };
 
+  const salaryCsv = () => {
+    const csvCols = columns.map((c) => ({ key: c.id, label: c.label }));
+    const totalsRow = {};
+    columns.forEach((col, i) => {
+      if (i === 0) totalsRow[col.id] = 'TOTALS';
+      else if (col.numeric) totalsRow[col.id] = col.id === 'payableDays' || col.id === 'otHours' || col.id === 'lateComingHours' ? safeNum(totals[col.id]).toFixed(1) : safeNum(totals[col.id]).toFixed(2);
+      else totalsRow[col.id] = '';
+    });
+    return { csvCols, csvRows: [...rows, totalsRow] };
+  };
+
+  const makeSendFile = async (format) => {
+    if (format === 'pdf') return buildDocumentPdfBlob(printContainerRef.current, { paperSize: 'a4', orientation });
+    if (format === 'png') return buildDocumentPngBlob(printContainerRef.current, 3);
+    if (format === 'csv') {
+      const { csvCols, csvRows } = salaryCsv();
+      return buildCsvBlob(csvCols, csvRows);
+    }
+    return null;
+  };
+
   // --- Exports ---------------------------------------------------------------
   const handleExportCsv = () => {
     if (rows.length === 0) { if (onNotify) onNotify('⚠️ No records to export in CSV.'); return; }
@@ -199,7 +223,7 @@ export default function SalaryPrintStudio({
   // block for `fixed`, which pushed this overlay against the left edge,
   // clipped behind the sidebar. Same pattern as HRPayslipModal.
   const studioContent = (
-    <div id="fv-salary-print-container" className="fixed inset-0 z-[210] bg-slate-950/70 backdrop-blur-sm flex flex-col overflow-hidden animate-fade-in font-sans">
+    <div id="fv-salary-print-container" className="fixed inset-0 z-[210] bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-2 md:p-4 animate-fade-in font-sans">
       {/* Print isolation CSS (UniversalPrintStudioModal pattern) */}
       <style
         dangerouslySetInnerHTML={{
@@ -223,12 +247,16 @@ export default function SalaryPrintStudio({
                 overflow: hidden !important;
               }
               .salary-print-page:last-child { page-break-after: auto !important; break-after: auto !important; }
+              #fv-salary-print-container .fv-salary-frame { display: block !important; width: auto !important; height: auto !important; max-width: none !important; border: none !important; box-shadow: none !important; border-radius: 0 !important; overflow: visible !important; }
+              #fv-salary-print-container .fv-salary-body { display: block !important; overflow: visible !important; }
+              ${draft.scaleMode === 'actual' ? `.salary-print-page { height: auto !important; min-height: ${paper.height} !important; overflow: visible !important; page-break-after: auto !important; break-after: auto !important; }` : ''}
               * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
             }
           `
         }}
       />
 
+      <div className="fv-salary-frame bg-white w-[92vw] h-[92vh] max-w-[1600px] rounded-3xl shadow-2xl border border-slate-300/60 overflow-hidden flex flex-col">
       {/* TOP TOOLBAR (light) */}
       <div className="no-print w-full bg-white border-b border-slate-200 px-4 md:px-6 py-3 flex flex-wrap items-center justify-between gap-3 shrink-0 shadow-sm z-20">
         <div className="flex items-center gap-3">
@@ -310,6 +338,15 @@ export default function SalaryPrintStudio({
 
           <button
             type="button"
+            onClick={() => setSendOpen(true)}
+            className="px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold transition-all flex items-center gap-1.5 shadow-md shadow-sky-600/20 cursor-pointer"
+          >
+            <span className="material-symbols-outlined text-base">send</span>
+            Send
+          </button>
+
+          <button
+            type="button"
             onClick={() => window.print()}
             className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition-all flex items-center gap-1.5 shadow-md shadow-blue-600/20 cursor-pointer"
           >
@@ -328,7 +365,7 @@ export default function SalaryPrintStudio({
       </div>
 
       {/* BODY: settings panel + preview */}
-      <div className="flex-1 w-full flex flex-col lg:flex-row overflow-hidden relative">
+      <div className="fv-salary-body flex-1 w-full flex flex-col lg:flex-row overflow-hidden relative">
         {/* SETTINGS PANEL (gear) */}
         {settingsOpen && (
           <div className="no-print w-full lg:w-[360px] bg-white border-r border-slate-200 flex flex-col shrink-0 overflow-y-auto shadow-xl z-10 p-4 space-y-5 text-xs text-slate-700">
@@ -381,6 +418,45 @@ export default function SalaryPrintStudio({
                   >
                     <option value="landscape">Landscape</option>
                     <option value="portrait">Portrait</option>
+                  </select>
+                </label>
+                <label className="block">
+                  <span className="font-semibold text-slate-600">Margins</span>
+                  <select
+                    value={draft.marginPreset || 'default'}
+                    onChange={(e) => patchDraft({ marginPreset: e.target.value })}
+                    className="mt-1 w-full h-9 px-2 rounded-lg border border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 text-xs font-medium cursor-pointer"
+                  >
+                    {Object.entries(MARGIN_PRESETS).map(([id, preset]) => (
+                      <option key={id} value={id}>{preset.label}{preset.top ? ` (${preset.top})` : ''}</option>
+                    ))}
+                  </select>
+                </label>
+                {draft.marginPreset === 'custom' && (
+                  <div className="grid grid-cols-2 gap-2">
+                    {['marginTop', 'marginRight', 'marginBottom', 'marginLeft'].map((k) => (
+                      <label key={k} className="block">
+                        <span className="font-semibold text-slate-600">{k.replace('margin', '')}</span>
+                        <input
+                          type="text"
+                          value={draft[k] || '10mm'}
+                          onChange={(e) => patchDraft({ [k]: e.target.value })}
+                          className="mt-1 w-full h-9 px-3 rounded-lg border border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 text-xs font-medium font-mono"
+                        />
+                      </label>
+                    ))}
+                  </div>
+                )}
+                <label className="block">
+                  <span className="font-semibold text-slate-600">Scaling</span>
+                  <select
+                    value={draft.scaleMode || 'fill'}
+                    onChange={(e) => patchDraft({ scaleMode: e.target.value })}
+                    className="mt-1 w-full h-9 px-2 rounded-lg border border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 text-xs font-medium cursor-pointer"
+                  >
+                    {SCALE_MODES.map((m) => (
+                      <option key={m.id} value={m.id}>{m.label}</option>
+                    ))}
                   </select>
                 </label>
                 <label className="block">
@@ -481,7 +557,7 @@ export default function SalaryPrintStudio({
               <div
                 key={pageIdx}
                 className="salary-print-page print-preview-page mx-auto bg-white shadow-2xl flex flex-col"
-                style={{ width: paper.width, minHeight: paper.height, padding: '10mm', color: '#111827', fontFamily: 'Arial, sans-serif' }}
+                style={{ width: paper.width, height: draft.scaleMode === 'actual' ? 'auto' : paper.height, minHeight: paper.height, padding: `${resolveMargins(draft).top} ${resolveMargins(draft).right} ${resolveMargins(draft).bottom} ${resolveMargins(draft).left}`, color: '#111827', fontFamily: 'Arial, sans-serif', overflow: draft.scaleMode === 'actual' ? 'visible' : 'hidden' }}
               >
                 {/* Header (first page only) */}
                 {pageIdx === 0 && (
@@ -591,6 +667,17 @@ export default function SalaryPrintStudio({
           })}
         </div>
       </div>
+      </div>
+      {sendOpen && (
+        <PrintSendModal
+          open={sendOpen}
+          onClose={() => setSendOpen(false)}
+          documentTitle="Salary Statement"
+          filenameBase={filenameBase}
+          makeFile={makeSendFile}
+          csvAvailable={rows.length > 0}
+        />
+      )}
     </div>
   );
 

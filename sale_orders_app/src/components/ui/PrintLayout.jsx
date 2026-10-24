@@ -1,6 +1,7 @@
 import React from 'react';
 import { useApp } from '../../context/AppContext';
 import { DEFAULT_DOCUMENT_SCHEMAS, DEFAULT_LAYOUT_SETTINGS } from '../../utils/printSchemaRegistry';
+import { resolveMargins } from '../../utils/printDesign';
 
 export default function PrintLayout({
   documentTitle,
@@ -38,13 +39,16 @@ export default function PrintLayout({
 
   const layoutConfig = savedLocalConfig || printSettings.documentLayouts?.[activeDocType] || fallbackSchema;
 
-  // Layout Properties
+  // Layout Properties — sheet model (2026-10-24): @page margin is 0 and
+  // the margins live as padding on this sheet, so the on-screen layout and
+  // the browser print output are the same sheet.
   const orientation = layoutConfig.orientation || 'portrait';
   const paperSize = layoutConfig.paperSize || 'A4';
-  const marginTop = layoutConfig.marginTop || '15mm';
-  const marginBottom = layoutConfig.marginBottom || '15mm';
-  const marginLeft = layoutConfig.marginLeft || '15mm';
-  const marginRight = layoutConfig.marginRight || '15mm';
+  const margins = resolveMargins(layoutConfig);
+  const bandColor = layoutConfig.bandColor || '#4338ca';
+  const bandColor2 = layoutConfig.bandColor2 || layoutConfig.bandColor || '#4f46e5';
+  const bandTextColor = layoutConfig.bandTextColor || '#ffffff';
+  const headerAlign = layoutConfig.headerAlign || 'left';
 
   const fontFamily = layoutConfig.fontFamily || 'Inter';
   const primaryColor = layoutConfig.primaryColor || '#004277';
@@ -81,7 +85,7 @@ export default function PrintLayout({
       @media print {
         @page {
           size: ${paperSize} ${orientation} !important;
-          margin: ${marginTop} ${marginRight} ${marginBottom} ${marginLeft} !important;
+          margin: 0 !important;
         }
         body {
           -webkit-print-color-adjust: exact !important;
@@ -132,8 +136,112 @@ export default function PrintLayout({
     return css;
   };
 
+
+  // Meta-Grid header (approved family, 2026-10-24): party | company | meta
+  // grid, then the accent title band. Alignment follows Print Settings.
+  const metaEntries = [
+    ...(date ? [{ label: 'Date', value: date }] : []),
+    ...extraMeta
+  ];
+  const metaCellInner = (
+    <div style={{ padding: '10px 14px', minWidth: '180px' }}>
+      {metaEntries.map((meta, i) => (
+        <div key={i} style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', padding: '4px 0', borderTop: i > 0 ? '1px solid #dde0ea' : 'none' }}>
+          <span style={{ fontSize: '10px', fontWeight: 600, letterSpacing: '1px', color: '#71748c', textTransform: 'uppercase' }}>{meta.label}</span>
+          <span style={{ fontSize: '12px', fontWeight: 700, color: '#1b1e2e', textAlign: 'right' }}>{meta.value}</span>
+        </div>
+      ))}
+      {documentId && (
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', padding: '4px 0', borderTop: metaEntries.length > 0 ? '1px solid #dde0ea' : 'none' }}>
+          <span style={{ fontSize: '10px', fontWeight: 600, letterSpacing: '1px', color: '#71748c', textTransform: 'uppercase' }}>Document No</span>
+          <span style={{ fontSize: '12px', fontWeight: 700, color: '#1b1e2e', fontFamily: 'monospace' }}>{documentId}</span>
+        </div>
+      )}
+    </div>
+  );
+  const partyCell = finalParty ? (
+    <div style={{ width: '33%', padding: '12px 14px' }}>
+      <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '1.6px', color: bandColor, textTransform: 'uppercase', marginBottom: '5px' }}>Party / Customer</div>
+      <div style={{ fontSize: '16px', fontWeight: 700, lineHeight: 1.25, color: '#1b1e2e' }}>{finalParty}</div>
+    </div>
+  ) : null;
+  const companyCell = (
+    <div style={{ width: finalParty ? '34%' : '58%', padding: '12px 14px', borderLeft: finalParty ? '1px solid #dde0ea' : 'none' }}>
+      <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '1.6px', color: bandColor, textTransform: 'uppercase', marginBottom: '5px' }}>Company</div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+        {showHeaderLogo && <img src={logoUrl} alt="Logo" style={{ height: '44px', objectFit: 'contain' }} />}
+        <div style={{ fontSize: '18px', fontWeight: 800, letterSpacing: '.4px', lineHeight: 1.2, color: '#1b1e2e' }}>{companyName}</div>
+      </div>
+      {showHeaderDetails && address && <div style={{ fontSize: '11px', color: '#71748c', lineHeight: 1.45, marginTop: '4px' }}>{address}</div>}
+      {showHeaderDetails && (phone || email) && (
+        <div style={{ fontSize: '11px', color: '#71748c', marginTop: '4px', display: 'flex', gap: '12px' }}>
+          {phone && <span>Tel: {phone}</span>}
+          {email && <span>Email: {email}</span>}
+        </div>
+      )}
+    </div>
+  );
+  const metaWrap = (
+    <div style={{ borderLeft: '1px solid #dde0ea', display: 'flex', flex: 1 }}>
+      {metaCellInner}
+    </div>
+  );
+  const gridCells = [partyCell, companyCell, metaWrap].filter(Boolean);
+  const orderedCells = headerAlign === 'right' ? [...gridCells].reverse() : gridCells;
+  const titleBand = (
+    <div
+      style={{
+        marginTop: '10px', background: `linear-gradient(90deg, ${bandColor}, ${bandColor2})`, color: bandTextColor,
+        borderRadius: '6px', padding: '9px 16px', display: 'flex',
+        justifyContent: headerAlign === 'center' ? 'center' : 'space-between', alignItems: 'center', gap: '12px',
+        printColorAdjust: 'exact', WebkitPrintColorAdjust: 'exact'
+      }}
+    >
+      <div style={{ fontSize: '17px', fontWeight: 700, letterSpacing: '3px', textAlign: headerAlign === 'center' ? 'center' : 'left' }}>
+        {(documentTitle || activeDocType.replace(/_/g, ' ').toUpperCase())}
+      </div>
+      {documentId && headerAlign !== 'center' && (
+        <div style={{ fontSize: '11px', fontWeight: 600, letterSpacing: '1.6px', textTransform: 'uppercase', opacity: 0.9 }}>{documentId}</div>
+      )}
+    </div>
+  );
+
+  const headerJsx = (
+    <>
+      {!hideMetaBlock && headerAlign === 'center' ? (
+        <div style={{ border: '1px solid #dde0ea', borderRadius: '8px', padding: '12px 14px', textAlign: 'center', marginBottom: '6px' }}>
+          <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '1.6px', color: bandColor, textTransform: 'uppercase', marginBottom: '5px' }}>Company</div>
+          <div style={{ fontSize: '18px', fontWeight: 800, color: '#1b1e2e' }}>{companyName}</div>
+          {showHeaderDetails && address && <div style={{ fontSize: '11px', color: '#71748c', marginTop: '4px' }}>{address}</div>}
+          {finalParty && <div style={{ marginTop: '8px', fontSize: '14px', fontWeight: 700, color: '#1b1e2e' }}>{finalParty}</div>}
+          {metaEntries.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: '4px 20px', marginTop: '8px' }}>
+              {metaEntries.map((m, i) => (
+                <span key={i} style={{ fontSize: '12px', color: '#1b1e2e' }}>
+                  <span style={{ fontSize: '10px', fontWeight: 600, letterSpacing: '1px', color: '#71748c', textTransform: 'uppercase' }}>{m.label}: </span>
+                  <strong>{m.value}</strong>
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : (
+        !hideMetaBlock && (
+          <div style={{ display: 'flex', border: '1px solid #dde0ea', borderRadius: '8px', overflow: 'hidden', marginBottom: '6px' }}>
+            {orderedCells}
+          </div>
+        )
+      )}
+      {titleBand}
+      <div style={{ height: '18px' }} />
+    </>
+  );
+
   return (
-    <div className="w-full bg-white text-slate-900 p-0 m-0 font-sans print-layout-wrapper" style={{ fontFamily }}>
+    <div
+      className="w-full bg-white text-slate-900 m-0 font-sans print-layout-wrapper"
+      style={{ fontFamily, padding: `${margins.top} ${margins.right} ${margins.bottom} ${margins.left}` }}
+    >
       <style dangerouslySetInnerHTML={{ __html: generateDynamicStyles() }} />
 
       <table className="w-full border-collapse print-wrapper-table">
@@ -141,60 +249,7 @@ export default function PrintLayout({
           <thead>
             <tr>
               <td>
-                <div className="flex justify-between items-start border-b-[3px] border-slate-900 pb-4 mb-6">
-                  <div className="flex items-center gap-4 max-w-[50%]">
-                    {showHeaderLogo && <img src={logoUrl} alt="Logo" className="h-14 object-contain" />}
-                    {showHeaderDetails && (
-                      <div className="flex flex-col">
-                        <h1 className="text-xl font-black uppercase tracking-tight" style={{ color: primaryColor }}>
-                          {companyName}
-                        </h1>
-                        {address && <p className="text-xs text-slate-600 leading-tight mt-1">{address}</p>}
-                        <div className="text-xs text-slate-600 mt-1 flex gap-3">
-                          {phone && <span>Tel: {phone}</span>}
-                          {email && <span>Email: {email}</span>}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                  <div className="text-right">
-                    <h2 className="text-2xl font-black uppercase tracking-widest text-slate-900">
-                      {documentTitle || activeDocType.replace(/_/g, ' ').toUpperCase()}
-                    </h2>
-                    {documentId && (
-                      <span className="inline-block mt-1 px-2.5 py-0.5 rounded bg-slate-100 font-mono text-xs font-bold text-slate-700">
-                        {documentId}
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                {!hideMetaBlock && (
-                  <div className="grid grid-cols-2 gap-4 mb-6 border border-slate-200 p-4 rounded-xl text-xs">
-                    <div>
-                      {finalParty && (
-                        <div>
-                          <span className="text-[10px] uppercase font-bold text-slate-400 block">Party / Customer:</span>
-                          <span className="font-bold text-sm text-slate-800">{finalParty}</span>
-                        </div>
-                      )}
-                    </div>
-                    <div className="text-right flex flex-col justify-end gap-1">
-                      {date && (
-                        <div>
-                          <span className="text-[10px] uppercase font-bold text-slate-400">Date: </span>
-                          <span className="font-mono font-bold">{date}</span>
-                        </div>
-                      )}
-                      {extraMeta.map((meta, i) => (
-                        <div key={i}>
-                          <span className="text-[10px] uppercase font-bold text-slate-400">{meta.label}: </span>
-                          <span className="font-bold">{meta.value}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
+                {headerJsx}
               </td>
             </tr>
           </thead>

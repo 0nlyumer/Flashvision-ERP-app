@@ -2,6 +2,8 @@ import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useDialog } from '../../context/DialogContext';
 import ResizableHeader from '../ui/ResizableHeader';
+import UniversalPrintStudioModal from '../ui/UniversalPrintStudioModal';
+import { buildConsumptionPrintRecord } from '../../utils/printDesign';
 
 export default function ConsumptionHistory({ onEdit }) {
     const { state, setCollection, setState, currencySymbol } = useApp();
@@ -17,6 +19,7 @@ export default function ConsumptionHistory({ onEdit }) {
 
     const [activeDropdown, setActiveDropdown] = useState(null);
     const [viewModalData, setViewModalData] = useState(null);
+    const [printTarget, setPrintTarget] = useState(null); // { plan, itemCode? }
 
     // Build data
     const allPlans = state.productionPlans || [];
@@ -306,14 +309,14 @@ export default function ConsumptionHistory({ onEdit }) {
                                                         >
                                                             <span className="material-symbols-outlined text-[18px]">edit</span> Edit
                                                         </button>
-                                                        <button 
-                                                            onClick={() => { setActiveDropdown(null); window.print(); }}
+                                                        <button
+                                                            onClick={() => { setActiveDropdown(null); setPrintTarget({ plan: row, itemCode: null }); }}
                                                             className="w-full text-left px-4 py-2 hover:bg-surface-container text-sm font-medium flex items-center gap-2"
                                                         >
                                                             <span className="material-symbols-outlined text-[18px]">print</span> Print
                                                         </button>
                                                         <div className="my-1 border-t border-outline-variant/10"></div>
-                                                        <button 
+                                                        <button
                                                             onClick={() => handleDeletePlan(row)}
                                                             className="w-full text-left px-4 py-2 hover:bg-error/10 text-error text-sm font-medium flex items-center gap-2"
                                                         >
@@ -358,14 +361,14 @@ export default function ConsumptionHistory({ onEdit }) {
                                                         >
                                                             <span className="material-symbols-outlined text-[18px]">edit</span> Edit Plan
                                                         </button>
-                                                        <button 
-                                                            onClick={() => { setActiveDropdown(null); window.print(); }}
+                                                        <button
+                                                            onClick={() => { setActiveDropdown(null); setPrintTarget({ plan: row.planRef, itemCode: row.itemCode }); }}
                                                             className="w-full text-left px-4 py-2 hover:bg-surface-container text-sm font-medium flex items-center gap-2"
                                                         >
                                                             <span className="material-symbols-outlined text-[18px]">print</span> Print
                                                         </button>
                                                         <div className="my-1 border-t border-outline-variant/10"></div>
-                                                        <button 
+                                                        <button
                                                             onClick={() => handleDeleteItem(row.planId, row.itemCode)}
                                                             className="w-full text-left px-4 py-2 hover:bg-error/10 text-error text-sm font-medium flex items-center gap-2"
                                                         >
@@ -389,6 +392,16 @@ export default function ConsumptionHistory({ onEdit }) {
                     </tbody>
                 </table>
             </div>
+
+            {/* Consumption Print (Universal Print Studio) */}
+            {printTarget && (
+                <UniversalPrintStudioModal
+                    isOpen={!!printTarget}
+                    onClose={() => setPrintTarget(null)}
+                    documentType="consumption_history"
+                    documentData={buildConsumptionPrintRecord(printTarget.plan, state, printTarget.itemCode)}
+                />
+            )}
 
             {/* View Modal */}
             {viewModalData && (

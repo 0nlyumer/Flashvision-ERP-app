@@ -14,6 +14,12 @@ export const DEFAULT_SALARY_PRINT_SETTINGS = {
   slogan: 'Monthly Salary Statement',
   orientation: 'landscape', // Salary statements default to Landscape (Omer's spec)
   rowsPerPage: 25,
+  marginPreset: 'default', // 'default' | 'minimum' | 'low' | 'custom' (print family, 2026-10-24)
+  marginTop: '10mm',
+  marginRight: '10mm',
+  marginBottom: '10mm',
+  marginLeft: '10mm',
+  scaleMode: 'fill', // 'fill' | 'fit' | 'actual'
   signatureAlign: 'spread', // 'spread' | 'left' | 'center' | 'right'
   signatures: [
     { key: 'sig_prepared', label: 'Prepared By' },
@@ -64,6 +70,12 @@ export function normalizeSalaryPrintSettings(raw) {
     slogan: toStr(parsed.slogan, d.slogan),
     orientation: parsed.orientation === 'portrait' ? 'portrait' : 'landscape',
     rowsPerPage: Math.min(200, Math.max(1, Math.round(toNum(parsed.rowsPerPage, d.rowsPerPage)))),
+    marginPreset: ['default', 'minimum', 'low', 'custom'].includes(parsed.marginPreset) ? parsed.marginPreset : d.marginPreset,
+    marginTop: toStr(parsed.marginTop, d.marginTop),
+    marginRight: toStr(parsed.marginRight, d.marginRight),
+    marginBottom: toStr(parsed.marginBottom, d.marginBottom),
+    marginLeft: toStr(parsed.marginLeft, d.marginLeft),
+    scaleMode: ['fill', 'fit', 'actual'].includes(parsed.scaleMode) ? parsed.scaleMode : d.scaleMode,
     signatureAlign: ['spread', 'left', 'center', 'right'].includes(parsed.signatureAlign)
       ? parsed.signatureAlign
       : d.signatureAlign,

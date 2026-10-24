@@ -826,6 +826,128 @@ export default function PrintSettings() {
                     ))}
                   </div>
                 </div>
+
+                {/* Approved print family (2026-10-24): header alignment, title
+                    band + totals colors, margin presets, scaling, phases. */}
+                <div>
+                  <label className="text-xs font-bold text-slate-700 block mb-2">Header Block Alignment</label>
+                  <div className="flex gap-2">
+                    {['left', 'center', 'right'].map((a) => (
+                      <button
+                        key={a}
+                        onClick={() => updateActiveLayout({ headerAlign: a })}
+                        className={`flex-1 py-2 rounded-xl border text-xs font-bold capitalize transition-all ${activeLayout.headerAlign === a ? 'bg-blue-600 text-white border-blue-600' : 'bg-slate-50 border-slate-200 text-slate-600 hover:border-slate-300'}`}
+                      >
+                        {a}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2">
+                  <div>
+                    <label className="text-xs font-bold text-slate-700 block mb-1">Title Band Start</label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="color"
+                        value={activeLayout.bandColor || '#4338ca'}
+                        onChange={(e) => updateActiveLayout({ bandColor: e.target.value })}
+                        className="w-9 h-9 rounded-lg border border-slate-300 cursor-pointer shrink-0"
+                      />
+                      <input
+                        value={activeLayout.bandColor || '#4338ca'}
+                        onChange={(e) => updateActiveLayout({ bandColor: e.target.value })}
+                        className="w-full bg-slate-50 border border-slate-300 rounded-xl px-2 py-2 text-xs font-mono font-bold text-slate-800"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-slate-700 block mb-1">Title Band End</label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="color"
+                        value={activeLayout.bandColor2 || '#4f46e5'}
+                        onChange={(e) => updateActiveLayout({ bandColor2: e.target.value })}
+                        className="w-9 h-9 rounded-lg border border-slate-300 cursor-pointer shrink-0"
+                      />
+                      <input
+                        value={activeLayout.bandColor2 || '#4f46e5'}
+                        onChange={(e) => updateActiveLayout({ bandColor2: e.target.value })}
+                        className="w-full bg-slate-50 border border-slate-300 rounded-xl px-2 py-2 text-xs font-mono font-bold text-slate-800"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-slate-700 block mb-1">Totals Bar</label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="color"
+                        value={activeLayout.totalsColor || '#232946'}
+                        onChange={(e) => updateActiveLayout({ totalsColor: e.target.value })}
+                        className="w-9 h-9 rounded-lg border border-slate-300 cursor-pointer shrink-0"
+                      />
+                      <input
+                        value={activeLayout.totalsColor || '#232946'}
+                        onChange={(e) => updateActiveLayout({ totalsColor: e.target.value })}
+                        className="w-full bg-slate-50 border border-slate-300 rounded-xl px-2 py-2 text-xs font-mono font-bold text-slate-800"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-slate-700 block mb-1">Margin Preset</label>
+                  <select
+                    value={activeLayout.marginPreset || 'default'}
+                    onChange={(e) => updateActiveLayout({ marginPreset: e.target.value })}
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-800"
+                  >
+                    <option value="default">Default (12mm)</option>
+                    <option value="minimum">Minimum (5mm)</option>
+                    <option value="low">Low (8mm)</option>
+                    <option value="custom">Custom</option>
+                  </select>
+                  {activeLayout.marginPreset === 'custom' && (
+                    <div className="grid grid-cols-2 gap-2 mt-2">
+                      {['marginTop', 'marginRight', 'marginBottom', 'marginLeft'].map((k) => (
+                        <label key={k} className="block">
+                          <span className="text-[10px] font-bold text-slate-500">{k.replace('margin', '')}</span>
+                          <input
+                            value={activeLayout[k] || '12mm'}
+                            onChange={(e) => updateActiveLayout({ [k]: e.target.value })}
+                            className="w-full mt-0.5 bg-slate-50 border border-slate-300 rounded-xl px-2 py-2 text-xs font-mono font-bold text-slate-800"
+                          />
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-slate-700 block mb-1">Scaling (Excel-style)</label>
+                  <select
+                    value={activeLayout.scaleMode || 'fill'}
+                    onChange={(e) => updateActiveLayout({ scaleMode: e.target.value })}
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-800"
+                  >
+                    <option value="fill">Fill Page</option>
+                    <option value="fit">Fit to Page (shrink only)</option>
+                    <option value="actual">Actual Size (100%)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-slate-700 block mb-1">Phases Per Row (BOM / Consumption prints)</label>
+                  <input
+                    type="number"
+                    min={2}
+                    max={6}
+                    value={activeLayout.phasesPerRow || 4}
+                    onChange={(e) => updateActiveLayout({ phasesPerRow: parseInt(e.target.value) || 4 })}
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-800"
+                  />
+                  <p className="text-[10px] text-slate-400 mt-1">Extra phases wrap to the next panel row — never squeezed. Only applies to BOM / Consumption prints.</p>
+                </div>
               </div>
             )}
 

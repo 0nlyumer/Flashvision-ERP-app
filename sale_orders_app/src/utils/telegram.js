@@ -6,12 +6,13 @@
 // app_config at runtime and hands the token only to the Telegram Bot API
 // URL inside sendTelegramMessage — nowhere else.
 //
-// SENDING IS HARD-GATED OFF: sendTelegramMessage refuses to make any
-// network call while config.enabled is false (the live value today), and
-// there is currently NO caller wired to it — no automatic trigger, no
-// Chat-module path, no send button. dryRunTelegramSend builds the exact
-// payload without any network call and is the only verification allowed
-// until the owner explicitly enables sending.
+// SENDING IS HARD-GATED: both send entry points refuse to make any
+// network call while config.enabled is false (the live value today).
+// sendTelegramMessage still has NO caller. sendTelegramFile's ONLY caller
+// is the print popups' SEND flow (user picks ERP users + format and sends
+// the rendered document) — there is no automatic trigger and no other
+// path. dryRunTelegramSend builds the exact payload without any network
+// call and remains available for verification.
 
 import { supabase } from './supabaseClient';
 
@@ -80,6 +81,45 @@ export const dryRunTelegramSend = ({ config, chatId, text, document } = {}) => {
   }
   const { method, payload } = buildTelegramSendPayload({ chatId, text, document });
   return { sent: false, wouldSend: true, method, payload };
+};
+
+// --- File send for the print SEND flow (2026-10-24) -------------------------
+// The print popups' SEND button is the ONLY caller of this function: a user
+// explicitly picks ERP users + a format (PDF / CSV / high-quality PNG) and
+// the rendered document file is uploaded to those users on Telegram. Same
+// hard gate as sendTelegramMessage (config.enabled must be true, token read
+// from app_config at call time, never logged/returned). Files go through
+// sendDocument (multipart) so PNGs arrive uncompressed at full resolution.
+export const sendTelegramFile = async ({ config, chatId, blob, filename, caption } = {}) => {
+  if (!config || config.enabled !== true) {
+    return { ok: false, sent: false, reason: 'telegram_disabled' };
+  }
+  if (!config.token) {
+    return { ok: false, sent: false, reason: 'telegram_not_configured' };
+  }
+  if (!isValidTelegramChatId(chatId)) {
+    return { ok: false, sent: false, reason: 'invalid_chat_id' };
+  }
+  if (!blob) {
+    return { ok: false, sent: false, reason: 'file_build_failed' };
+  }
+  try {
+    const form = new FormData();
+    form.append('chat_id', String(chatId).trim());
+    form.append('document', blob, filename || 'document');
+    if (caption) form.append('caption', caption);
+    const response = await fetch(
+      `https://api.telegram.org/bot${config.token}/sendDocument`,
+      { method: 'POST', body: form }
+    );
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || result.ok !== true) {
+      return { ok: false, sent: false, reason: 'telegram_api_error' };
+    }
+    return { ok: true, sent: true, method: 'sendDocument' };
+  } catch (_) {
+    return { ok: false, sent: false, reason: 'telegram_network_error' };
+  }
 };
 
 // The ONLY live-send entry point. Hard gate first: while enabled is not

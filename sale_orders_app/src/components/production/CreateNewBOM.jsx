@@ -2,6 +2,8 @@ import FGCombinationBuilder from "../ui/FGCombinationBuilder";
 import React, { useState, useRef, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useDialog } from '../../context/DialogContext';
+import UniversalPrintStudioModal from '../ui/UniversalPrintStudioModal';
+import { buildBomPrintRecord } from '../../utils/printDesign';
 
 export default function CreateNewBOM({ onClose, initialBom, isViewOnly = false }) {
   const { state, setCollection, setDirty, isDirty } = useApp();
@@ -20,6 +22,7 @@ export default function CreateNewBOM({ onClose, initialBom, isViewOnly = false }
 
   const [batchSize, setBatchSize] = useState('');
   const [clothWeight, setClothWeight] = useState('');
+  const [printOpen, setPrintOpen] = useState(false);
   
   const genericMaterials = rawMaterials.filter(rm => {
       const type = rm.rawMaterialType?.toLowerCase() || '';
@@ -247,9 +250,17 @@ export default function CreateNewBOM({ onClose, initialBom, isViewOnly = false }
                 <span className="material-symbols-outlined text-[20px]">check</span> Save Configuration
             </button>
           ) : (
-            <button onClick={() => window.print()} className="px-6 py-3 rounded-xl font-semibold bg-secondary/10 text-secondary hover:bg-secondary/20 shadow-sm flex items-center gap-2 transition-transform hover:scale-[1.02] print:hidden">
+            <button onClick={() => setPrintOpen(true)} className="px-6 py-3 rounded-xl font-semibold bg-secondary/10 text-secondary hover:bg-secondary/20 shadow-sm flex items-center gap-2 transition-transform hover:scale-[1.02] print:hidden">
                 <span className="material-symbols-outlined text-[20px]">print</span> Print BOM
             </button>
+          )}
+          {printOpen && initialBom && (
+            <UniversalPrintStudioModal
+              isOpen={printOpen}
+              onClose={() => setPrintOpen(false)}
+              documentType="bom_master"
+              documentData={buildBomPrintRecord(initialBom, state)}
+            />
           )}
       </div>
 

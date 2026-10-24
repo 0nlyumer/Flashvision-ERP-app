@@ -13,9 +13,11 @@ export const SYSTEM_DOCUMENTS = [
   // 1. OMS Module
   { id: 'sale_order', name: 'Sale Order', module: 'oms', icon: 'shopping_basket', code: 'SO' },
   { id: 'planning_history', name: 'Planning History', module: 'oms', icon: 'event_note', code: 'PLN' },
+  { id: 'pending_orders', name: 'Orders Report (Pending / All)', module: 'oms', icon: 'list_alt', code: 'ORD' },
 
   // 2. Production Module
   { id: 'bom_master', name: 'BOM Master', module: 'production', icon: 'account_tree', code: 'BOM' },
+  { id: 'production_plan', name: 'Production Plan', module: 'production', icon: 'event_note', code: 'PLN' },
   { id: 'batch_closing_history', name: 'Batch Closing History', module: 'production', icon: 'fact_check', code: 'BCH' },
   { id: 'stock_receiving_history', name: 'Stock Receiving History', module: 'production', icon: 'move_to_inbox', code: 'SRH' },
   { id: 'consumption_history', name: 'Consumption History', module: 'production', icon: 'history_edu', code: 'CSH' },
@@ -78,6 +80,22 @@ export const DEFAULT_LAYOUT_SETTINGS = {
   marginBottom: '15mm',
   marginLeft: '15mm',
   marginRight: '15mm',
+
+  // Approved print family (2026-10-24): title band + totals colors, header
+  // block alignment, margin presets, Excel-style scaling, phase-matrix and
+  // grouped-report options. All changeable per document in Print Settings.
+  bandColor: '#4338ca',
+  bandColor2: '#4f46e5',
+  bandTextColor: '#ffffff',
+  totalsColor: '#232946',
+  headerAlign: 'left', // 'left' | 'center' | 'right'
+  marginPreset: 'default', // 'default' | 'minimum' | 'low' | 'custom'
+  scaleMode: 'fill', // 'fill' | 'fit' | 'actual'
+  phasesPerRow: 4, // phase-matrix documents (BOM / Consumption)
+  phaseRowHeight: 'natural', // 'natural' | 'equal'
+  showPhaseTotals: true,
+  groupBy: 'customer', // grouped reports (Orders Report): 'customer' | 'status' | 'none'
+  goldenTotalRow: false, // plan-format golden total row (Production Plan)
 
   showHeaderLogo: true,
   showHeaderDetails: true,
@@ -149,8 +167,68 @@ export const DEFAULT_DOCUMENT_SCHEMAS = {
     ]
   },
 
+  production_plan: {
+    // Sheet-based plan format (approved): landscape, ORDER (M) before STATUS,
+    // dark title band, golden total row, 'Production & Planning Division'.
+    ...DEFAULT_LAYOUT_SETTINGS,
+    orientation: 'landscape',
+    bandColor: '#232946',
+    bandColor2: '#232946',
+    tableHeaderBgColor: '#232946',
+    primaryColor: '#232946',
+    goldenTotalRow: true,
+    firstPageRows: 16,
+    continuationPageRows: 20,
+    headerFields: [
+      { key: 'plan_id', label: 'Plan ID', enabled: true, width: 'span-1' },
+      { key: 'date', label: 'Plan Date', enabled: true, width: 'span-1' },
+      { key: 'status', label: 'Status', enabled: true, width: 'span-1' },
+      { key: 'created_by', label: 'Created By', enabled: true, width: 'span-1' }
+    ],
+    gridColumns: [
+      { key: 'sr_no', label: 'SR.NO', enabled: true, width: '7%', align: 'center' },
+      { key: 'order_date', label: 'ORDER DATE', enabled: true, width: '12%', align: 'center' },
+      { key: 'customer_name', label: 'CUSTOMER NAME', enabled: true, width: '20%', align: 'left' },
+      { key: 'item_name', label: 'ITEM NAME', enabled: true, width: '38%', align: 'left' },
+      { key: 'order_m', label: 'ORDER (M)', enabled: true, width: '11%', align: 'right', total: true },
+      { key: 'status', label: 'STATUS', enabled: true, width: '12%', align: 'center' }
+    ],
+    signatures: []
+  },
+
+  pending_orders: {
+    // OMS Orders Report — pending-orders format, landscape by default,
+    // grouping (customer / status / none) chosen inside the print popup.
+    ...DEFAULT_LAYOUT_SETTINGS,
+    orientation: 'landscape',
+    firstPageRows: 18,
+    continuationPageRows: 24,
+    groupBy: 'customer',
+    headerFields: [
+      { key: 'report_date', label: 'Report Date', enabled: true, width: 'span-1' },
+      { key: 'status_filter', label: 'Status Filter', enabled: true, width: 'span-1' },
+      { key: 'total_orders', label: 'Total Orders', enabled: true, width: 'span-1' },
+      { key: 'total_meters', label: 'Total Meters', enabled: true, width: 'span-1' }
+    ],
+    gridColumns: [
+      { key: 'sr_no', label: 'SR.NO', enabled: true, width: '6%', align: 'center' },
+      { key: 'order_date', label: 'ORDER DATE', enabled: true, width: '10%', align: 'center' },
+      { key: 'order_id', label: 'ORDER #', enabled: true, width: '10%', align: 'left' },
+      { key: 'customer_name', label: 'CUSTOMER NAME', enabled: true, width: '18%', align: 'left' },
+      { key: 'item_name', label: 'ITEM NAME', enabled: true, width: '30%', align: 'left' },
+      { key: 'order_m', label: 'ORDER (M)', enabled: true, width: '10%', align: 'right', total: true },
+      { key: 'produced_m', label: 'PRODUCED (M)', enabled: true, width: '9%', align: 'right', total: true },
+      { key: 'status', label: 'STATUS', enabled: true, width: '7%', align: 'center' }
+    ],
+    signatures: [
+      { key: 'sig_prepared', label: 'Prepared By', size: '1/3', type: 'text' },
+      { key: 'sig_approved', label: 'Approved By', size: '1/3', type: 'text' }
+    ]
+  },
+
   bom_master: {
     ...DEFAULT_LAYOUT_SETTINGS,
+    orientation: 'landscape',
     headerFields: [
       { key: 'bom_code', label: 'BOM Code', enabled: true, width: 'span-1' },
       { key: 'bom_name', label: 'BOM Name', enabled: true, width: 'span-2' },
@@ -206,6 +284,7 @@ export const DEFAULT_DOCUMENT_SCHEMAS = {
 
   consumption_history: {
     ...DEFAULT_LAYOUT_SETTINGS,
+    orientation: 'landscape',
     headerFields: [
       { key: 'log_id', label: 'Log #', enabled: true, width: 'span-1' },
       { key: 'date', label: 'Date', enabled: true, width: 'span-1' },
@@ -860,6 +939,40 @@ export function getMockPreviewData(docType) {
           { serial_no: '3', item_code: 'RM-CB-080', item_name: 'Cotton Blend 80g Fabric', qty: 2000, uom: 'Meters', rate: 3.5, discount: '2%', sub_total: 6860.0 }
         ],
         totals: { subtotal: 25610.0, tax: 4609.8, discount: 1250.0, grandTotal: 28969.8 }
+      };
+
+    case 'production_plan':
+      return {
+        header: {
+          ...commonHeader,
+          plan_id: 'PLN-2026-0142',
+          date: '2026-10-26',
+          status: 'In Process',
+          created_by: 'System Admin'
+        },
+        items: [
+          { sr_no: 1, order_date: '24/10/2026', customer_name: 'NADEEM LEATHER STORE', item_name: '170 PK DTY BLACK (BLACK)', order_m: 1500, status: 'PENDING' },
+          { sr_no: 2, order_date: '22/10/2026', customer_name: 'IMRAN LEATHER', item_name: '106 SHINE MISMA REGULAR BROWN (PC BLACK)', order_m: 1000, status: 'PENDING' },
+          { sr_no: 3, order_date: '22/10/2026', customer_name: 'IMRAN LEATHER', item_name: '106 S PK COLLAR CREAM (PC WHITE)', order_m: 1000, status: 'IN PROCESS' }
+        ],
+        totals: { order_m: 3500 }
+      };
+
+    case 'pending_orders':
+      return {
+        header: {
+          ...commonHeader,
+          report_date: '24/10/2026',
+          status_filter: 'Pending',
+          total_orders: 3,
+          total_meters: '4,500'
+        },
+        items: [
+          { sr_no: 1, order_date: '24/10/2026', order_id: 'SO-011', customer_name: 'NADEEM LEATHER STORE', item_name: '170 PK DTY BLACK (BLACK)', order_m: 2000, produced_m: 0, status: 'PENDING', _group: 'NADEEM LEATHER STORE' },
+          { sr_no: 2, order_date: '24/10/2026', order_id: 'SO-012', customer_name: 'NADEEM LEATHER STORE', item_name: '170 PK DTY NO:10 PINK (WHITE)', order_m: 2000, produced_m: 0, status: 'PENDING', _group: 'NADEEM LEATHER STORE' },
+          { sr_no: 3, order_date: '23/10/2026', order_id: 'SO-009', customer_name: 'IMRAN LEATHER', item_name: '106 SHINE MISMA REGULAR BLACK (PC BLACK)', order_m: 500, produced_m: 0, status: 'PENDING', _group: 'IMRAN LEATHER' }
+        ],
+        totals: { order_m: 4500, produced_m: 0 }
       };
 
     case 'planning_history':

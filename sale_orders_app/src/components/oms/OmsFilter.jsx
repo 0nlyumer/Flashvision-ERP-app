@@ -2,6 +2,7 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import ResizableHeader from '../ui/ResizableHeader';
 import GlobalPagination from '../ui/GlobalPagination';
+import UniversalPrintStudioModal from '../ui/UniversalPrintStudioModal';
 
 export default function OmsFilter({ pendingItems = [], customers = [] }) {
     const { state, toggleGlobalPagination, updateSaleOrderItemStatus, setCollection } = useApp();
@@ -28,6 +29,7 @@ export default function OmsFilter({ pendingItems = [], customers = [] }) {
     };
 
     const [showStatusModal, setShowStatusModal] = useState(false);
+    const [printOpen, setPrintOpen] = useState(false);
     const [newStatusName, setNewStatusName] = useState('');
     const [newStatusColor, setNewStatusColor] = useState('#3b82f6');
     const [isAddingStockItem, setIsAddingStockItem] = useState(false);
@@ -333,6 +335,78 @@ export default function OmsFilter({ pendingItems = [], customers = [] }) {
         return itemsToProcess;
     }, [pendingItems, customers, searchTerm, statusFilter, customerFilter, activeFilter, viewMode, colFilters, state.productionOutputs, state.saleOrders, sortOrder, acknowledgedCautionItems]);
 
+    // Orders Report print rows: the same search / status / customer /
+    // column-filter pipeline as the on-screen list, but always item rows
+    // (never the order-grouped view) so the print mirrors the item list.
+    const printItems = useMemo(() => {
+        let itemsToProcess = [...pendingItems];
+        itemsToProcess = itemsToProcess.map(item => ({
+            ...item,
+            customerName: customers.find(c => c.id === item.customerId)?.name || item.customer || 'Unknown',
+            completedDate: getCompletedDate(item),
+            remaining: parseInt(item.quantity) - parseInt(item.producedQty || 0),
+            dateFormatted: new Date(item.date).toLocaleDateString()
+        }));
+        if (searchTerm) {
+            const lowerSearch = searchTerm.toLowerCase();
+            itemsToProcess = itemsToProcess.filter(item =>
+                (item.orderId && item.orderId.toLowerCase().includes(lowerSearch)) ||
+                (item.itemCode && item.itemCode.toLowerCase().includes(lowerSearch)) ||
+                (item.productName && item.productName.toLowerCase().includes(lowerSearch))
+            );
+        }
+        if (statusFilter !== 'All Statuses') {
+            itemsToProcess = itemsToProcess.filter(item => item.status === statusFilter);
+        }
+        if (customerFilter !== 'All Customers') {
+            itemsToProcess = itemsToProcess.filter(item => item.customerName === customerFilter);
+        }
+        Object.keys(colFilters).forEach(colId => {
+            const selectedVals = colFilters[colId];
+            if (selectedVals.length > 0) {
+                itemsToProcess = itemsToProcess.filter(item => {
+                    let val = item[colId];
+                    if (colId === 'remaining') val = item.remaining;
+                    if (colId === 'date') val = item.dateFormatted;
+                    return selectedVals.includes(String(val));
+                });
+            }
+        });
+        if (activeFilter === 'By Customer') {
+            itemsToProcess.sort((a, b) => sortOrder === 'asc' ? a.customerName.localeCompare(b.customerName) : b.customerName.localeCompare(a.customerName));
+        } else {
+            itemsToProcess.sort((a, b) => sortOrder === 'asc' ? new Date(a.date) - new Date(b.date) : new Date(b.date) - new Date(a.date));
+        }
+        return itemsToProcess;
+    }, [pendingItems, customers, searchTerm, statusFilter, customerFilter, activeFilter, colFilters, sortOrder]);
+
+    const printRecord = useMemo(() => {
+        const items = printItems.map((item, idx) => ({
+            sr_no: idx + 1,
+            order_date: item.date ? new Date(item.date).toLocaleDateString('en-GB') : '',
+            order_id: item.orderId || item.itemCode || '',
+            customer_name: item.customerName || 'Unknown',
+            item_name: item.productName || item.itemCode || '',
+            order_m: Number(item.quantity || 0),
+            produced_m: Number(item.producedQty || 0),
+            status: item.status || '',
+            _group: item.customerName || 'Unknown'
+        }));
+        return {
+            header: {
+                report_date: new Date().toLocaleDateString('en-GB'),
+                status_filter: statusFilter,
+                total_orders: items.length,
+                total_meters: items.reduce((s, it) => s + (it.order_m || 0), 0).toLocaleString()
+            },
+            items,
+            totals: {
+                order_m: items.reduce((s, it) => s + (it.order_m || 0), 0),
+                produced_m: items.reduce((s, it) => s + (it.produced_m || 0), 0)
+            }
+        };
+    }, [printItems, statusFilter]);
+
     const getUniqueValues = (colId) => {
         let itemsToProcess = [...pendingItems];
 
@@ -575,6 +649,13 @@ export default function OmsFilter({ pendingItems = [], customers = [] }) {
                             className={`px-5 py-2 rounded-full text-sm font-semibold transition-colors ${viewMode === 'order' ? 'bg-primary text-on-primary shadow-sm' : 'text-on-surface-variant hover:bg-surface-container-low'}`}
                         >Sale Order-wise</button>
                     </div>
+                    <button
+                        onClick={() => setPrintOpen(true)}
+                        className="px-5 py-2 rounded-full text-sm font-semibold bg-secondary/10 text-secondary hover:bg-secondary/20 shadow-sm border border-outline-variant/15 flex items-center gap-2"
+                    >
+                        <span className="material-symbols-outlined text-base">print</span>
+                        Print Orders Report
+                    </button>
                 </div>
             </div>
 
@@ -1168,6 +1249,14 @@ export default function OmsFilter({ pendingItems = [], customers = [] }) {
                         </div>
                     </div>
                 </div>
+            )}
+            {printOpen && (
+                <UniversalPrintStudioModal
+                    isOpen={printOpen}
+                    onClose={() => setPrintOpen(false)}
+                    documentType="pending_orders"
+                    documentData={printRecord}
+                />
             )}
         </div>
     );

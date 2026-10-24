@@ -13,8 +13,13 @@ import {
 import {
   exportDocumentToPdf,
   exportDocumentToImage,
-  exportDocumentToCsv
+  exportDocumentToCsv,
+  buildDocumentPdfBlob,
+  buildDocumentPngBlob,
+  buildCsvBlob
 } from '../../utils/printExportUtils';
+import PrintStudioShell from './PrintStudioShell';
+import { resolveMargins, amountInWords, fmtQty } from '../../utils/printDesign';
 
 const PAPER_DIMENSIONS = {
   A4: { width: '210mm', minHeight: '297mm', label: 'A4 (210 × 297 mm)' },
@@ -44,6 +49,16 @@ const BRAND_PALETTES = [
   { name: 'Warm Charcoal', primary: '#27272a', bg: '#27272a', text: '#ffffff' }
 ];
 
+// Approved design tokens (from the signed-off samples)
+const DESIGN = {
+  ink: '#1b1e2e',
+  dark: '#232946',
+  muted: '#71748c',
+  line: '#dde0ea',
+  zebra: '#f6f7fb',
+  soft: '#eef0f8'
+};
+
 const FONT_OPTIONS = [
   { id: 'Inter', name: 'Inter (Modern Clean)' },
   { id: 'Roboto', name: 'Roboto (Enterprise)' },
@@ -64,6 +79,267 @@ const FONT_OPTIONS = [
   { id: 'Figtree', name: 'Figtree' }
 ];
 
+// ---------------------------------------------------------------------------
+// Approved Meta-Grid sheet header: party | company/division | meta rows,
+// with the accent title band under it. headerAlign left/center/right is a
+// Print Settings option (Omer, 2026-10-24).
+// ---------------------------------------------------------------------------
+function MetaGridHeader({ layout, companyName, companyLegal, companyAddress, party, metaRows, docTitle, docSub, planVariant }) {
+  const band = `linear-gradient(90deg, ${layout.bandColor || '#4338ca'}, ${layout.bandColor2 || layout.bandColor || '#4f46e5'})`;
+  const align = layout.headerAlign || 'left';
+  const accent = layout.bandColor || '#4338ca';
+
+  const companyBlock = (centered = false) => (
+    <div style={{ textAlign: centered ? 'center' : 'left' }}>
+      <div style={{ fontSize: '6.5pt', fontWeight: 700, letterSpacing: '1.6px', color: accent, textTransform: 'uppercase', marginBottom: '1.4mm' }}>
+        {planVariant ? 'Division' : 'Company'}
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '3mm', justifyContent: centered ? 'center' : 'flex-start' }}>
+        {planVariant && (
+          <div style={{ width: '11mm', height: '9mm', border: '1.6px solid #232946', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 900, fontSize: '11pt', color: '#232946', flexShrink: 0 }}>
+            AJ
+          </div>
+        )}
+        <div style={{ fontSize: '13.5pt', fontWeight: 800, letterSpacing: '.4px', lineHeight: 1.2, color: DESIGN.ink }}>{companyName}</div>
+      </div>
+      {planVariant && (
+        <div style={{ fontSize: '8pt', color: DESIGN.muted, marginTop: '0.8mm' }}>Production &amp; Planning Division</div>
+      )}
+      {companyLegal && (
+        <div style={{ fontSize: '7.5pt', color: DESIGN.muted, lineHeight: 1.45, marginTop: '1mm' }}>{companyLegal}</div>
+      )}
+      {!planVariant && layout.showHeaderDetails !== false && companyAddress && (
+        <div style={{ fontSize: '7.5pt', color: DESIGN.muted, lineHeight: 1.45, marginTop: '1mm' }}>{companyAddress}</div>
+      )}
+    </div>
+  );
+
+  const metaCell = (width) => (
+    <div style={{ width, padding: '2.6mm 4mm' }}>
+      {metaRows.map((row, i) => (
+        <div
+          key={i}
+          style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'baseline',
+            padding: '1.1mm 0', borderTop: i > 0 ? `1px solid ${DESIGN.line}` : 'none'
+          }}
+        >
+          <span style={{ fontSize: '7pt', fontWeight: 600, letterSpacing: '1.1px', color: DESIGN.muted, textTransform: 'uppercase' }}>{row.label}</span>
+          <span style={{ fontSize: '9.5pt', fontWeight: row.strong ? 800 : 600, fontVariantNumeric: 'tabular-nums', color: DESIGN.ink }}>{row.value}</span>
+        </div>
+      ))}
+    </div>
+  );
+
+  const bandEl = (
+    <div
+      style={{
+        marginTop: '3mm', background: band, color: layout.bandTextColor || '#fff', borderRadius: '6px',
+        padding: '2.4mm 4.5mm', display: 'flex', justifyContent: align === 'center' ? 'center' : 'space-between',
+        alignItems: 'center', gap: '4mm', printColorAdjust: 'exact', WebkitPrintColorAdjust: 'exact'
+      }}
+    >
+      <div style={{ fontSize: '13pt', fontWeight: 700, letterSpacing: '3.5px', textAlign: align === 'center' ? 'center' : 'left' }}>{docTitle}</div>
+      {docSub && align !== 'center' && (
+        <div style={{ fontSize: '7.5pt', fontWeight: 600, letterSpacing: '1.6px', textTransform: 'uppercase', opacity: 0.9 }}>{docSub}</div>
+      )}
+    </div>
+  );
+
+  if (align === 'center') {
+    return (
+      <>
+        <div style={{ border: `1px solid ${DESIGN.line}`, borderRadius: '8px', padding: '3mm 4mm', textAlign: 'center' }}>
+          {companyBlock(true)}
+          {party && (
+            <div style={{ marginTop: '2mm', fontSize: '10pt', fontWeight: 700, color: DESIGN.ink }}>
+              <span style={{ fontSize: '6.5pt', fontWeight: 700, letterSpacing: '1.6px', color: accent, textTransform: 'uppercase', display: 'block' }}>{party.label}</span>
+              {party.value}
+            </div>
+          )}
+          {metaRows.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: '1mm 6mm', marginTop: '2mm' }}>
+              {metaRows.map((row, i) => (
+                <span key={i} style={{ fontSize: '8.5pt', color: DESIGN.ink }}>
+                  <span style={{ fontSize: '7pt', fontWeight: 600, letterSpacing: '1px', color: DESIGN.muted, textTransform: 'uppercase' }}>{row.label}: </span>
+                  <strong>{row.value}</strong>
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+        {bandEl}
+      </>
+    );
+  }
+
+  const cells = [];
+  if (party) {
+    cells.push(
+      <div key="party" style={{ width: '33%', padding: '3.2mm 4mm 3.4mm' }}>
+        <div style={{ fontSize: '6.5pt', fontWeight: 700, letterSpacing: '1.6px', color: accent, textTransform: 'uppercase', marginBottom: '1.4mm' }}>{party.label}</div>
+        <div style={{ fontSize: '12.5pt', fontWeight: 700, lineHeight: 1.25, color: DESIGN.ink }}>{party.value}</div>
+      </div>
+    );
+  }
+  cells.push(
+    <div key="company" style={{ width: party ? '34%' : '58%', padding: '3.2mm 4mm 3.4mm', borderLeft: party ? `1px solid ${DESIGN.line}` : 'none' }}>
+      {companyBlock(false)}
+    </div>
+  );
+  if (metaRows.length > 0) {
+    cells.push(
+      <div key="meta" style={{ borderLeft: `1px solid ${DESIGN.line}`, display: 'flex' }}>
+        {metaCell(party ? '33%' : '42%')}
+      </div>
+    );
+  }
+  const ordered = align === 'right' ? [...cells].reverse() : cells;
+
+  return (
+    <>
+      <div style={{ display: 'flex', border: `1px solid ${DESIGN.line}`, borderRadius: '8px', overflow: 'hidden' }}>
+        {ordered}
+      </div>
+      {bandEl}
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Phase-Matrix sheet (BOM / Consumption): slim header + title band, then
+// item sections whose phase panels flow side-by-side and wrap to the next
+// panel row (phasesPerRow, default 4) — never squeezed. Phase totals live
+// inside the panels; there is deliberately NO category grand total.
+// ---------------------------------------------------------------------------
+function PhaseMatrixSheet({ record, layout, companyName, companyLegal, margins, paperWidth, paperHeight, pageIdx = 0, pageCount = 1 }) {
+  const perRow = Math.max(2, Math.min(6, Number(layout.phasesPerRow) || 4));
+  const gapMm = 3.5;
+  const basis = `calc((100% - ${(perRow - 1) * gapMm}mm) / ${perRow})`;
+  const band = `linear-gradient(90deg, ${layout.bandColor || '#4338ca'}, ${layout.bandColor2 || layout.bandColor || '#4f46e5'})`;
+  const align = layout.headerAlign || 'left';
+
+  return (
+    <div
+      className="bg-white text-slate-900 shadow-2xl relative print-preview-page"
+      style={{
+        width: paperWidth,
+        minHeight: paperHeight,
+        maxWidth: paperWidth,
+        fontFamily: layout.fontFamily || 'Inter',
+        padding: `${margins.top} ${margins.right} ${margins.bottom} ${margins.left}`,
+        color: DESIGN.ink,
+        display: 'flex',
+        flexDirection: 'column'
+      }}
+    >
+      <div className="no-print absolute top-2 right-2 bg-slate-900/80 text-white text-[9px] font-mono px-2 py-0.5 rounded shadow pointer-events-none">
+        Page {pageIdx + 1} of {pageCount}
+      </div>
+
+      <MetaGridHeader
+        layout={layout}
+        companyName={companyName}
+        companyLegal={companyLegal}
+        companyAddress=""
+        party={null}
+        metaRows={(record.metaRows || []).map((r) => ({ label: r.key, value: r.value, strong: r.key.toLowerCase().includes('id') }))}
+        docTitle={record.docTitle}
+        docSub={record.docSub}
+      />
+
+      {(record.sections || []).map((section, sIdx) => (
+        <div key={sIdx} style={{ marginTop: sIdx === 0 ? '1mm' : '3mm' }}>
+          {section.name && (
+            <div
+              style={{
+                marginTop: '2mm', background: DESIGN.soft, border: `1px solid ${DESIGN.line}`,
+                borderLeft: `3.5px solid ${layout.bandColor || '#4f46e5'}`, borderRadius: '6px',
+                padding: '1.3mm 4mm', display: 'flex', justifyContent: 'space-between', alignItems: 'baseline'
+              }}
+            >
+              <div style={{ fontSize: '9.5pt', fontWeight: 800, letterSpacing: '.4px' }}>
+                {section.code && <span style={{ color: layout.bandColor2 || '#4338ca' }}>{section.code} · </span>}
+                {section.name}
+              </div>
+              {section.qtyLabel && (
+                <div style={{ fontSize: '8.5pt', fontWeight: 700, color: '#3c4060', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{section.qtyLabel}</div>
+              )}
+            </div>
+          )}
+
+          <div
+            style={{
+              display: 'flex', gap: `${gapMm}mm`, flexWrap: 'wrap', marginTop: '2.5mm',
+              alignItems: layout.phaseRowHeight === 'equal' ? 'stretch' : 'flex-start'
+            }}
+          >
+            {(section.phases || []).map((phase, pIdx) => (
+              <div
+                key={pIdx}
+                style={{
+                  flex: `0 0 ${basis}`, border: `1px solid ${DESIGN.line}`, borderRadius: '8px',
+                  overflow: 'hidden', breakInside: 'avoid', pageBreakInside: 'avoid',
+                  display: 'flex', flexDirection: 'column'
+                }}
+              >
+                <div style={{ background: layout.tableHeaderBgColor || DESIGN.dark, color: layout.tableHeaderTextColor || '#fff', padding: '1.8mm 3mm 2mm', printColorAdjust: 'exact', WebkitPrintColorAdjust: 'exact' }}>
+                  <div style={{ fontSize: '6.3pt', fontWeight: 700, letterSpacing: '1.8px', textTransform: 'uppercase', opacity: 0.75 }}>
+                    Phase {pIdx + 1}
+                  </div>
+                  <div style={{ fontSize: '9.5pt', fontWeight: 700, lineHeight: 1.25, marginTop: '.4mm' }}>{phase.name}</div>
+                </div>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr>
+                      <th style={{ background: DESIGN.soft, color: '#3c4060', fontSize: '6.8pt', fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', padding: '1.4mm 3mm', textAlign: 'left' }}>Raw Material</th>
+                      <th style={{ background: DESIGN.soft, color: '#3c4060', fontSize: '6.8pt', fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', padding: '1.4mm 3mm', textAlign: 'right', whiteSpace: 'nowrap' }}>{record.qtyColumnLabel || 'Qty'}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(phase.rows || []).map((row, rIdx) => (
+                      <tr key={rIdx} style={{ background: rIdx % 2 === 1 ? DESIGN.zebra : '#fff' }}>
+                        <td style={{ fontSize: '8.6pt', fontWeight: 600, padding: '1.3mm 3mm', borderTop: `1px solid ${DESIGN.line}`, verticalAlign: 'middle' }}>{row.name}</td>
+                        <td style={{ fontSize: '8.6pt', padding: '1.3mm 3mm', borderTop: `1px solid ${DESIGN.line}`, textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+                          {fmtQty(row.qty)} {row.uom}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  {layout.showPhaseTotals !== false && (phase.totals || []).length > 0 && (
+                    <tfoot>
+                      <tr>
+                        <td style={{ fontSize: '8.6pt', fontWeight: 700, padding: '1.4mm 3mm', borderTop: `2px solid ${layout.tableHeaderBgColor || DESIGN.dark}`, background: DESIGN.soft }}>Phase Total</td>
+                        <td style={{ fontSize: '8.6pt', fontWeight: 700, padding: '1.4mm 3mm', borderTop: `2px solid ${layout.tableHeaderBgColor || DESIGN.dark}`, background: DESIGN.soft, textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+                          {phase.totals.map((t) => `${fmtQty(t.qty)} ${t.uom}`).join(' · ')}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  )}
+                </table>
+              </div>
+            ))}
+            {(section.phases || []).length === 0 && (
+              <p style={{ fontSize: '9pt', color: DESIGN.muted, fontStyle: 'italic', padding: '2mm 0' }}>No phase data recorded for this item.</p>
+            )}
+          </div>
+        </div>
+      ))}
+
+      <div style={{ marginTop: 'auto', paddingTop: '6mm', textAlign: align === 'left' ? 'center' : align, fontSize: '7pt', letterSpacing: '1.2px', color: '#a2a6ba', textTransform: 'uppercase' }}>
+        Powered by Flashvision
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Main modal component (part 2): layout load/discovery/save/reset (same
+// persistence contract as before — Supabase print_layout_settings +
+// localStorage + AppContext), the settings toolbox, Meta-Grid table pages
+// with group rows + column totals + words strip + signatures, the
+// phase-matrix branch, exports, and the SEND wiring through PrintStudioShell.
+// ---------------------------------------------------------------------------
 export default function UniversalPrintStudioModal({
   isOpen,
   onClose,
@@ -75,41 +351,38 @@ export default function UniversalPrintStudioModal({
   const { state, setCollection } = useApp() || {};
   const { appAlert } = useDialog() || {};
   const printContainerRef = useRef(null);
+  const pageRefs = useRef([]);
 
-  // Active navigation tab
-  const [activeTab, setActiveTab] = useState('pagination'); // 'pagination' | 'columns' | 'header' | 'branding' | 'signatures'
+  const [activeTab, setActiveTab] = useState('pagination');
   const [saving, setSaving] = useState(false);
-  const [exporting, setExporting] = useState(null); // 'pdf' | 'img' | 'csv' | null
+  const [exporting, setExporting] = useState(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [fitScales, setFitScales] = useState([]);
 
-  // Company Global Metadata
   const companyName = state?.adminSetup?.companyName || 'FLASHVISION';
-  const companyLogo = state?.adminSetup?.logo || state?.adminSetup?.logoUrl || '';
   const companyAddress = state?.adminSetup?.address || 'Plot 42-B, Industrial Zone Phase III, Karachi, Pakistan';
-  const companyPhone = state?.adminSetup?.phone || '+92-21-34567890';
-  const companyEmail = state?.adminSetup?.email || 'operations@flashvision.com';
 
-  // 1. Resolve Document Record (Real Document passed in OR fetched from State OR Mock)
+  // 1. Resolve document record: explicit data > state sample > mock.
   const resolvedRecord = useMemo(() => {
-    if (documentData && typeof documentData === 'object') {
-      return documentData;
-    }
+    if (documentData && typeof documentData === 'object') return documentData;
     const fromState = getSampleRecordFromState ? getSampleRecordFromState(documentType, state) : null;
     if (fromState) return fromState;
     return getMockPreviewData(documentType);
   }, [documentData, documentType, state]);
 
-  // 2. Load Stored Layout Configuration
-  const [layoutConfig, setLayoutConfig] = useState(() => {
+  const isPhaseDoc = resolvedRecord?.renderMode === 'phase_matrix'
+    || documentType === 'bom_master' || documentType === 'consumption_history';
+  const isPlanDoc = documentType === 'production_plan';
+  const isPendingDoc = documentType === 'pending_orders';
+
+  // 2. Load stored layout configuration (defaults + schema + saved).
+  const buildInitialLayout = (record) => {
     const defaultSchema = DEFAULT_DOCUMENT_SCHEMAS[documentType] || DEFAULT_LAYOUT_SETTINGS;
-    const localSaved = (() => {
-      try {
-        const item = localStorage.getItem(`fv_print_layout_${documentType}`);
-        return item ? JSON.parse(item) : null;
-      } catch (e) {
-        return null;
-      }
-    })();
+    let localSaved = null;
+    try {
+      const item = localStorage.getItem(`fv_print_layout_${documentType}`);
+      localSaved = item ? JSON.parse(item) : null;
+    } catch (e) { localSaved = null; }
     const stateLayout = state?.adminSetup?.printSettings?.documentLayouts?.[documentType];
     const initial = {
       ...DEFAULT_LAYOUT_SETTINGS,
@@ -117,31 +390,23 @@ export default function UniversalPrintStudioModal({
       ...(stateLayout || {}),
       ...(localSaved || {})
     };
-    return discoverDocumentSchema(documentType, resolvedRecord, initial, state);
-  });
+    return discoverDocumentSchema(documentType, record, initial, state);
+  };
 
-  // Re-run discovery if documentType or record changes
+  const [layoutConfig, setLayoutConfig] = useState(() => buildInitialLayout(resolvedRecord));
+
+  // Re-run discovery ONLY when the document itself changes — never on
+  // unrelated state updates, so in-popup edits are never wiped mid-edit.
+  const appliedKeyRef = useRef(null);
   useEffect(() => {
-    const defaultSchema = DEFAULT_DOCUMENT_SCHEMAS[documentType] || DEFAULT_LAYOUT_SETTINGS;
-    const localSaved = (() => {
-      try {
-        const item = localStorage.getItem(`fv_print_layout_${documentType}`);
-        return item ? JSON.parse(item) : null;
-      } catch (e) {
-        return null;
-      }
-    })();
-    const stateLayout = state?.adminSetup?.printSettings?.documentLayouts?.[documentType];
-    const merged = {
-      ...DEFAULT_LAYOUT_SETTINGS,
-      ...defaultSchema,
-      ...(stateLayout || {}),
-      ...(localSaved || {})
-    };
-    setLayoutConfig(discoverDocumentSchema(documentType, resolvedRecord, merged, state));
-  }, [documentType, resolvedRecord, state]);
+    const key = `${documentType}::${resolvedRecord?.id || resolvedRecord?.so_number || ''}`;
+    if (appliedKeyRef.current === key) return;
+    appliedKeyRef.current = key;
+    setLayoutConfig(buildInitialLayout(resolvedRecord));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [documentType, resolvedRecord]);
 
-  // 3. Extract Line Items and Totals from Record
+  // 3. Line items.
   const resolvedLineItems = useMemo(() => {
     if (!resolvedRecord) return [];
     if (Array.isArray(resolvedRecord.items)) return resolvedRecord.items;
@@ -152,57 +417,30 @@ export default function UniversalPrintStudioModal({
     return [];
   }, [resolvedRecord]);
 
-  // 4. Multi-Page Chunking Engine (The user's key requirement)
-  const pages = useMemo(() => {
-    const items = resolvedLineItems || [];
-    const firstPageLimit = Math.max(1, Number(layoutConfig.firstPageRows || 8));
-    const continuationLimit = Math.max(1, Number(layoutConfig.continuationPageRows || 14));
+  const updateLayout = (keyOrFn, val) => {
+    setLayoutConfig((prev) => {
+      if (typeof keyOrFn === 'function') return keyOrFn(prev);
+      return { ...prev, [keyOrFn]: val };
+    });
+  };
 
-    if (items.length === 0) return [[]];
-
-    const chunks = [];
-    const copy = [...items];
-
-    // Page 1
-    chunks.push(copy.splice(0, firstPageLimit));
-
-    // Subsequent pages
-    while (copy.length > 0) {
-      chunks.push(copy.splice(0, continuationLimit));
-    }
-
-    return chunks;
-  }, [resolvedLineItems, layoutConfig.firstPageRows, layoutConfig.continuationPageRows]);
-
-  // Value Resolver for Column Data
   const getCellValue = (colKey, item, index = 0) => {
     if (!item) return '---';
-    if (colKey === 'serial_no' || colKey === 'sr' || colKey === 'sr_no') {
-      return String(index + 1).padStart(2, '0');
-    }
+    if (colKey === 'serial_no' || colKey === 'sr' || colKey === 'sr_no') return String(index + 1).padStart(2, '0');
     if (item[colKey] !== undefined && item[colKey] !== null) {
       const val = item[colKey];
       return typeof val === 'number' ? val.toLocaleString() : String(val);
     }
-    // Aliases
     if (colKey === 'item_name' || colKey === 'product_name' || colKey === 'description') {
       return item.name || item.itemName || item.productName || item.description || '---';
     }
     if (colKey === 'item_code' || colKey === 'sku' || colKey === 'code') {
       return item.itemCode || item.code || item.sku || '---';
     }
-    if (colKey === 'qty' || colKey === 'quantity') {
-      return String(item.quantity ?? item.qty ?? '0');
-    }
-    if (colKey === 'rolls' || colKey === 'roll_qty') {
-      return String(item.rolls || item.rollQty || item.rollsCount || '-');
-    }
-    if (colKey === 'uom' || colKey === 'unit') {
-      return item.uom || item.unit || 'Mtr';
-    }
-    if (colKey === 'rate' || colKey === 'price') {
-      return Number(item.price || item.rate || 0).toLocaleString();
-    }
+    if (colKey === 'qty' || colKey === 'quantity') return String(item.quantity ?? item.qty ?? '0');
+    if (colKey === 'rolls' || colKey === 'roll_qty') return String(item.rolls || item.rollQty || item.rollsCount || '-');
+    if (colKey === 'uom' || colKey === 'unit') return item.uom || item.unit || 'Mtr';
+    if (colKey === 'rate' || colKey === 'price') return Number(item.price || item.rate || 0).toLocaleString();
     if (colKey === 'sub_total' || colKey === 'total') {
       if (item.sub_total !== undefined) return Number(item.sub_total).toLocaleString();
       const q = Number(item.quantity || item.qty || 0);
@@ -213,22 +451,36 @@ export default function UniversalPrintStudioModal({
     return item[colKey] !== undefined ? String(item[colKey]) : '---';
   };
 
-  // Header Field Resolver
+  const numericValue = (colKey, item) => {
+    if (!item) return 0;
+    const direct = item[colKey];
+    if (typeof direct === 'number') return direct;
+    if (colKey === 'sub_total' || colKey === 'total') {
+      if (typeof item.sub_total === 'number') return item.sub_total;
+      const q = Number(item.quantity || item.qty || 0);
+      const r = Number(item.price || item.rate || 0);
+      const d = Number(item.discount || 0);
+      return q * r - d;
+    }
+    if (colKey === 'qty' || colKey === 'quantity') return Number(item.quantity ?? item.qty ?? 0);
+    if (colKey === 'rate' || colKey === 'price') return Number(item.price ?? item.rate ?? 0);
+    const n = Number(direct);
+    return Number.isFinite(n) ? n : 0;
+  };
+
   const getHeaderFieldValue = (fieldKey) => {
     if (!resolvedRecord) return '---';
-    // Direct match
     if (resolvedRecord[fieldKey] !== undefined && resolvedRecord[fieldKey] !== null) {
       const val = resolvedRecord[fieldKey];
       if (fieldKey === 'date' || fieldKey.includes('_date')) {
-        return new Date(val).toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' });
+        const d = new Date(val);
+        return Number.isNaN(d.getTime()) ? String(val) : d.toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' });
       }
       return String(val);
     }
-    // Nested header
     if (resolvedRecord.header && resolvedRecord.header[fieldKey] !== undefined) {
       return String(resolvedRecord.header[fieldKey]);
     }
-    // Customer
     if (fieldKey === 'customer' || fieldKey === 'customer_name' || fieldKey === 'party_name') {
       if (resolvedRecord.customerName) return resolvedRecord.customerName;
       if (resolvedRecord.customerId) {
@@ -246,115 +498,68 @@ export default function UniversalPrintStudioModal({
     return '---';
   };
 
-  // Updaters
-  const updateLayout = (keyOrFn, val) => {
-    setLayoutConfig((prev) => {
-      if (typeof keyOrFn === 'function') return keyOrFn(prev);
-      return { ...prev, [keyOrFn]: val };
-    });
-  };
-
-  // Column Manipulations
+  // Column / header-field / signature manipulations (same as before).
   const toggleColumn = (idx) => {
     const nextCols = [...(layoutConfig.gridColumns || [])];
     nextCols[idx] = { ...nextCols[idx], enabled: !nextCols[idx].enabled };
     updateLayout('gridColumns', nextCols);
   };
-
   const moveColumn = (idx, direction) => {
     const nextCols = [...(layoutConfig.gridColumns || [])];
     const targetIdx = idx + direction;
     if (targetIdx < 0 || targetIdx >= nextCols.length) return;
-    const temp = nextCols[idx];
-    nextCols[idx] = nextCols[targetIdx];
-    nextCols[targetIdx] = temp;
+    const temp = nextCols[idx]; nextCols[idx] = nextCols[targetIdx]; nextCols[targetIdx] = temp;
     updateLayout('gridColumns', nextCols);
   };
-
   const updateColumnProp = (idx, prop, value) => {
     const nextCols = [...(layoutConfig.gridColumns || [])];
     nextCols[idx] = { ...nextCols[idx], [prop]: value };
     updateLayout('gridColumns', nextCols);
   };
-
   const addCustomColumn = () => {
     const nextCols = [...(layoutConfig.gridColumns || [])];
-    const key = `custom_${Date.now().toString().slice(-4)}`;
-    nextCols.push({
-      key,
-      label: 'New Column',
-      enabled: true,
-      width: '15%',
-      align: 'left'
-    });
+    nextCols.push({ key: `custom_${Date.now().toString().slice(-4)}`, label: 'New Column', enabled: true, width: '15%', align: 'left' });
     updateLayout('gridColumns', nextCols);
   };
-
-  // Header Field Manipulations
   const toggleHeaderField = (idx) => {
     const nextFields = [...(layoutConfig.headerFields || [])];
     nextFields[idx] = { ...nextFields[idx], enabled: !nextFields[idx].enabled };
     updateLayout('headerFields', nextFields);
   };
-
   const updateHeaderFieldProp = (idx, prop, value) => {
     const nextFields = [...(layoutConfig.headerFields || [])];
     nextFields[idx] = { ...nextFields[idx], [prop]: value };
     updateLayout('headerFields', nextFields);
   };
-
-  // Signatures Manipulations
   const addSignatureBlock = () => {
     const sigs = [...(layoutConfig.signatures || [])];
-    sigs.push({
-      key: `sig_${Date.now().toString().slice(-4)}`,
-      label: 'Authorized Signatory',
-      size: '1/3',
-      type: 'text'
-    });
+    sigs.push({ key: `sig_${Date.now().toString().slice(-4)}`, label: 'Authorized Signatory', size: '1/3', type: 'text' });
     updateLayout('signatures', sigs);
   };
-
   const removeSignatureBlock = (idx) => {
     const sigs = [...(layoutConfig.signatures || [])];
     sigs.splice(idx, 1);
     updateLayout('signatures', sigs);
   };
-
   const updateSignatureProp = (idx, prop, value) => {
     const sigs = [...(layoutConfig.signatures || [])];
     sigs[idx] = { ...sigs[idx], [prop]: value };
     updateLayout('signatures', sigs);
   };
 
-  // SAVE Layout permanently to Supabase + LocalStorage + AppContext
   const handleSaveLayout = async () => {
     setSaving(true);
     try {
-      // 1. Supabase print_layout_settings
       await supabase.from('print_layout_settings').upsert(
-        {
-          tenant_id: 'default_tenant',
-          document_type: documentType,
-          layout_config: layoutConfig,
-          updated_at: new Date().toISOString()
-        },
+        { tenant_id: 'default_tenant', document_type: documentType, layout_config: layoutConfig, updated_at: new Date().toISOString() },
         { onConflict: 'tenant_id,document_type' }
       );
-
-      // 2. LocalStorage
       localStorage.setItem(`fv_print_layout_${documentType}`, JSON.stringify(layoutConfig));
-
-      // 3. AppContext
       if (setCollection) {
         const cur = state?.adminSetup?.printSettings || {};
         const layouts = { ...(cur.documentLayouts || {}), [documentType]: layoutConfig };
-        setCollection('adminSetup', {
-          ...(state?.adminSetup || {}),
-          printSettings: { ...cur, documentLayouts: layouts }
-        });
+        setCollection('adminSetup', { ...(state?.adminSetup || {}), printSettings: { ...cur, documentLayouts: layouts } });
       }
-
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
       if (onApplied) onApplied(layoutConfig);
@@ -366,7 +571,6 @@ export default function UniversalPrintStudioModal({
     }
   };
 
-  // Reset to default factory schema
   const handleResetDefaults = () => {
     const defaultSchema = DEFAULT_DOCUMENT_SCHEMAS[documentType] || DEFAULT_LAYOUT_SETTINGS;
     setLayoutConfig(defaultSchema);
@@ -374,1028 +578,651 @@ export default function UniversalPrintStudioModal({
     appAlert?.('Layout reset to default preset.');
   };
 
-  // Export Handlers
-  const handleDownloadPdf = async () => {
-    setExporting('pdf');
-    const docNo = resolvedRecord?.id || resolvedRecord?.so_number || resolvedRecord?.dcNumber || 'Document';
-    const filename = `${documentType.toUpperCase()}_${docNo}.pdf`;
-    await exportDocumentToPdf(printContainerRef.current, filename, {
-      paperSize: layoutConfig.paperSize,
-      orientation: layoutConfig.orientation
+  // 4. Display rows: regrouped when groupBy is set (pending_orders report),
+  // otherwise the plain item list. Group rows carry _isGroup markers.
+  const activeCols = useMemo(
+    () => (layoutConfig.gridColumns || []).filter((c) => c.enabled !== false),
+    [layoutConfig.gridColumns]
+  );
+
+  const displayRows = useMemo(() => {
+    const groupBy = layoutConfig.groupBy || 'none';
+    if (!isPendingDoc || groupBy === 'none') return resolvedLineItems;
+    const keyOf = (item) => (groupBy === 'status' ? (item.status || '—') : (item.customer_name || item.customerName || item._group || '—'));
+    const groups = [];
+    const byKey = new Map();
+    resolvedLineItems.forEach((item) => {
+      const k = keyOf(item);
+      if (!byKey.has(k)) { byKey.set(k, []); groups.push(k); }
+      byKey.get(k).push(item);
     });
-    setExporting(null);
-  };
+    const out = [];
+    groups.forEach((k) => {
+      const items = byKey.get(k);
+      const sums = {};
+      activeCols.forEach((c) => { if (c.total) sums[c.key] = items.reduce((s, it) => s + numericValue(c.key, it), 0); });
+      out.push({ _isGroup: true, _group: k, _count: items.length, _sums: sums });
+      out.push(...items);
+    });
+    return out;
+  }, [isPendingDoc, layoutConfig.groupBy, resolvedLineItems, activeCols]);
 
-  const handleDownloadImage = async () => {
-    setExporting('img');
-    const docNo = resolvedRecord?.id || resolvedRecord?.so_number || resolvedRecord?.dcNumber || 'Document';
-    const filename = `${documentType.toUpperCase()}_${docNo}.png`;
-    await exportDocumentToImage(printContainerRef.current, filename);
-    setExporting(null);
-  };
+  // 5. Multi-page chunking over display rows.
+  const pages = useMemo(() => {
+    if (isPhaseDoc) return [[]];
+    const items = displayRows || [];
+    const firstPageLimit = Math.max(1, Number(layoutConfig.firstPageRows || 8));
+    const continuationLimit = Math.max(1, Number(layoutConfig.continuationPageRows || 14));
+    if (items.length === 0) return [[]];
+    const chunks = [];
+    const copy = [...items];
+    chunks.push(copy.splice(0, firstPageLimit));
+    while (copy.length > 0) chunks.push(copy.splice(0, continuationLimit));
+    return chunks;
+  }, [displayRows, isPhaseDoc, layoutConfig.firstPageRows, layoutConfig.continuationPageRows]);
 
-  const handleExportCsv = () => {
-    setExporting('csv');
-    const docNo = resolvedRecord?.id || resolvedRecord?.so_number || resolvedRecord?.dcNumber || 'Document';
-    const filename = `${documentType.toUpperCase()}_${docNo}.csv`;
-    const activeCols = (layoutConfig.gridColumns || []).filter((c) => c.enabled !== false);
-    exportDocumentToCsv(activeCols, resolvedLineItems, filename);
-    setExporting(null);
-  };
+  const columnTotals = useMemo(() => {
+    const totals = {};
+    activeCols.forEach((c) => {
+      if (c.total) totals[c.key] = resolvedLineItems.reduce((s, it) => s + numericValue(c.key, it), 0);
+    });
+    return totals;
+  }, [activeCols, resolvedLineItems]);
 
-  const handlePrintNow = () => {
-    window.print();
-  };
-
-  if (!isOpen) return null;
-
+  // Paper + margins + scaling.
   const currentPaper = PAPER_DIMENSIONS[layoutConfig.paperSize] || PAPER_DIMENSIONS.A4;
   const isLandscape = layoutConfig.orientation === 'landscape';
   const paperWidth = isLandscape ? currentPaper.minHeight : currentPaper.width;
   const paperHeight = isLandscape ? currentPaper.width : currentPaper.minHeight;
+  const margins = resolveMargins(layoutConfig);
+  const scaleMode = layoutConfig.scaleMode || 'fill';
 
   const docTitleDisplay =
     documentTitle ||
     SYSTEM_DOCUMENTS.find((d) => d.id === documentType)?.name ||
     documentType.replace(/_/g, ' ').toUpperCase();
 
-  return (
-    <div className="fixed inset-0 z-[200] bg-slate-950/85 backdrop-blur-md flex flex-col items-center justify-between overflow-hidden animate-fade-in font-sans">
-      {/* Dynamic Print CSS for isolation */}
-      <style
-        dangerouslySetInnerHTML={{
-          __html: `
-            @media print {
-              @page {
-                size: ${paperWidth} ${paperHeight} !important;
-                margin: 0 !important;
-              }
-              body {
-                margin: 0 !important;
-                padding: 0 !important;
-                background: #ffffff !important;
-              }
-              body > *:not(#fv-print-studio-container) {
-                display: none !important;
-              }
-              #fv-print-studio-container, #fv-print-studio-container * {
-                visibility: visible !important;
-              }
-              #fv-print-studio-container {
-                position: static !important;
-                display: block !important;
-                padding: 0 !important;
-                margin: 0 !important;
-              }
-              .no-print {
-                display: none !important;
-              }
-              .print-preview-page {
-                box-shadow: none !important;
-                border: none !important;
-                margin: 0 !important;
-                padding: ${layoutConfig.marginTop || '12mm'} ${layoutConfig.marginRight || '12mm'} ${layoutConfig.marginBottom || '12mm'} ${layoutConfig.marginLeft || '12mm'} !important;
-                width: ${paperWidth} !important;
-                height: ${paperHeight} !important;
-                page-break-after: always !important;
-                break-after: page !important;
-              }
-            }
-          `
-        }}
-      />
+  const docNo = resolvedRecord?.id || resolvedRecord?.so_number || resolvedRecord?.dcNumber || resolvedRecord?.header?.plan_id || 'Document';
+  const filenameBase = `${documentType.toUpperCase()}_${docNo}`;
 
-      {/* TOP CONTROL TOOLBAR */}
-      <div className="no-print w-full bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-4 md:px-6 py-3.5 flex flex-wrap items-center justify-between gap-3 shrink-0 shadow-lg z-20">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 flex items-center justify-center font-bold">
-            <span className="material-symbols-outlined text-xl">palette</span>
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-sm font-extrabold text-slate-900 dark:text-white tracking-tight">{docTitleDisplay}</h2>
-              <span className="px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 text-[10px] font-mono font-bold uppercase">
-                {currentPaper.label}
-              </span>
-            </div>
-            <p className="text-[11px] text-slate-500 dark:text-slate-400">
-              Universal Print Studio • Total Rows: <strong className="text-slate-900 dark:text-white">{resolvedLineItems.length}</strong> •{' '}
-              Pages: <strong className="text-slate-900 dark:text-white">{pages.length}</strong>
-            </p>
-          </div>
-        </div>
+  // Header meta: enabled header fields, with the customer field lifted out
+  // as the party block (Meta-Grid pattern from the approved samples).
+  const headerFields = (layoutConfig.headerFields || []).filter((f) => f.enabled !== false);
+  const partyField = headerFields.find((f) => ['customer', 'customer_name', 'party_name'].includes(f.key));
+  const party = partyField && getHeaderFieldValue(partyField.key) !== '---'
+    ? { label: partyField.label || 'Customer', value: getHeaderFieldValue(partyField.key) }
+    : null;
+  const metaRows = headerFields
+    .filter((f) => f !== partyField)
+    .map((f) => ({ label: f.label || f.key, value: getHeaderFieldValue(f.key) }));
 
-        {/* Action Buttons */}
-        <div className="flex items-center gap-2 flex-wrap">
-          <button
-            type="button"
-            onClick={handleExportCsv}
-            disabled={exporting !== null}
-            className="px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-700 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-            title="Export Line Items into CSV Spreadsheet"
-          >
-            <span className="material-symbols-outlined text-base text-emerald-400">table_view</span>
-            Export CSV
-          </button>
+  // Fit-to-page: measure each page's content and shrink (never enlarge).
+  useEffect(() => {
+    if (scaleMode !== 'fit') { setFitScales([]); return; }
+    const raf = requestAnimationFrame(() => {
+      const next = pageRefs.current.map((el) => {
+        if (!el) return 1;
+        const inner = el.querySelector('[data-fit-content]');
+        if (!inner) return 1;
+        const avail = el.clientHeight
+          - parseFloat(getComputedStyle(el).paddingTop || 0)
+          - parseFloat(getComputedStyle(el).paddingBottom || 0);
+        const content = inner.scrollHeight;
+        if (content <= 0 || avail <= 0) return 1;
+        return Math.min(1, avail / content);
+      });
+      setFitScales((prev) => (
+        prev.length === next.length && prev.every((v, i) => Math.abs(v - next[i]) < 0.001) ? prev : next
+      ));
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [scaleMode, pages, layoutConfig, paperWidth, paperHeight]);
 
-          <button
-            type="button"
-            onClick={handleDownloadImage}
-            disabled={exporting !== null}
-            className="px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-700 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-            title="Download High-Resolution PNG Image"
-          >
-            <span className="material-symbols-outlined text-base text-amber-400">image</span>
-            Save Image
-          </button>
+  // Exports (shell bottom bar) + SEND file builder (shared by both).
+  const flattenedPhaseRows = useMemo(() => {
+    if (!isPhaseDoc) return [];
+    const rows = [];
+    (resolvedRecord.sections || []).forEach((section) => {
+      (section.phases || []).forEach((phase) => {
+        (phase.rows || []).forEach((row) => {
+          rows.push({ section: section.name || section.code || '', phase: phase.name || '', material: row.name || '', qty: row.qty, uom: row.uom || '' });
+        });
+      });
+    });
+    return rows;
+  }, [isPhaseDoc, resolvedRecord]);
 
-          <button
-            type="button"
-            onClick={handleDownloadPdf}
-            disabled={exporting !== null}
-            className="px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-700 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-            title="Generate and Download Vector PDF"
-          >
-            <span className="material-symbols-outlined text-base text-red-400">picture_as_pdf</span>
-            Download PDF
-          </button>
+  const makeSendFile = async (format) => {
+    const el = printContainerRef.current;
+    if (format === 'pdf') {
+      return buildDocumentPdfBlob(el, { paperSize: layoutConfig.paperSize, orientation: layoutConfig.orientation });
+    }
+    if (format === 'png') {
+      return buildDocumentPngBlob(el, 3);
+    }
+    if (format === 'csv') {
+      if (isPhaseDoc) {
+        return buildCsvBlob(
+          [
+            { key: 'section', label: 'Item', enabled: true },
+            { key: 'phase', label: 'Phase', enabled: true },
+            { key: 'material', label: 'Raw Material', enabled: true },
+            { key: 'qty', label: 'Qty', enabled: true },
+            { key: 'uom', label: 'UOM', enabled: true }
+          ],
+          flattenedPhaseRows
+        );
+      }
+      return buildCsvBlob(activeCols, resolvedLineItems);
+    }
+    return null;
+  };
 
-          <button
-            type="button"
-            onClick={handleSaveLayout}
-            disabled={saving}
-            className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all flex items-center gap-1.5 shadow-md shadow-emerald-900/20 cursor-pointer disabled:opacity-50"
-            title="Save custom layout as permanent ERP default"
-          >
-            <span className="material-symbols-outlined text-base">{saveSuccess ? 'check_circle' : 'save'}</span>
-            {saveSuccess ? 'Saved Default!' : saving ? 'Saving...' : 'Save Default'}
-          </button>
+  const downloadBlob = (blob, filename) => {
+    if (!blob) { appAlert?.('Could not build this file.'); return; }
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  };
 
-          <button
-            type="button"
-            onClick={handlePrintNow}
-            className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition-all flex items-center gap-1.5 shadow-md shadow-blue-900/30 cursor-pointer"
-          >
-            <span className="material-symbols-outlined text-base">print</span>
-            Print Now
-          </button>
+  const handleDownloadPdf = async () => {
+    setExporting('pdf');
+    try {
+      const blob = await buildDocumentPdfBlob(printContainerRef.current, { paperSize: layoutConfig.paperSize, orientation: layoutConfig.orientation });
+      downloadBlob(blob, `${filenameBase}.pdf`);
+    } finally { setExporting(null); }
+  };
+  const handleDownloadImage = async () => {
+    setExporting('img');
+    try {
+      const blob = await buildDocumentPngBlob(printContainerRef.current, 3);
+      downloadBlob(blob, `${filenameBase}.png`);
+    } finally { setExporting(null); }
+  };
+  const handleExportCsv = () => {
+    setExporting('csv');
+    try {
+      if (isPhaseDoc) {
+        downloadBlob(buildCsvBlob(
+          [
+            { key: 'section', label: 'Item', enabled: true },
+            { key: 'phase', label: 'Phase', enabled: true },
+            { key: 'material', label: 'Raw Material', enabled: true },
+            { key: 'qty', label: 'Qty', enabled: true },
+            { key: 'uom', label: 'UOM', enabled: true }
+          ],
+          flattenedPhaseRows
+        ), `${filenameBase}.csv`);
+      } else {
+        exportDocumentToCsv(activeCols, resolvedLineItems, `${filenameBase}.csv`);
+      }
+    } finally { setExporting(null); }
+  };
+  const handlePrintNow = () => { window.print(); };
 
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all ml-1 cursor-pointer"
-          >
-            <span className="material-symbols-outlined text-lg">close</span>
-          </button>
-        </div>
+  if (!isOpen) return null;
+
+  // Phase-matrix print CSS: long sheets flow to further printed pages
+  // instead of being clipped at one page height.
+  const extraPrintCss = (isPhaseDoc || scaleMode === 'actual')
+    ? `.print-preview-page { height: auto !important; min-height: ${paperHeight} !important; overflow: visible !important; page-break-after: auto !important; break-after: auto !important; }`
+    : '';
+
+  // ---- Settings toolbox (left column inside the shell frame) ----
+  const tabBtn = (id, label, icon) => (
+    <button
+      key={id}
+      type="button"
+      onClick={() => setActiveTab(id)}
+      className={`px-3 py-2 rounded-xl transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer text-xs font-bold ${activeTab === id ? 'bg-blue-600 text-white shadow' : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200/70 dark:hover:bg-slate-800/60'}`}
+    >
+      <span className="material-symbols-outlined text-sm">{icon}</span>
+      {label}
+    </button>
+  );
+
+  const settingsPanel = (
+    <div className="no-print w-full lg:w-[400px] xl:w-[440px] bg-white dark:bg-slate-900 border-b lg:border-b-0 lg:border-r border-slate-200 dark:border-slate-800 flex flex-col shrink-0 overflow-hidden z-10">
+      <div className="flex items-center border-b border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-950/60 p-1.5 gap-1 overflow-x-auto">
+        {tabBtn('pagination', 'Pages & Rows', 'auto_stories')}
+        {!isPhaseDoc && tabBtn('columns', `Columns (${activeCols.length})`, 'view_column')}
+        {!isPhaseDoc && tabBtn('header', 'Header Fields', 'badge')}
+        {tabBtn('branding', 'Style & Theme', 'style')}
+        {!isPhaseDoc && tabBtn('signatures', 'Footer & Sigs', 'draw')}
+        {isPhaseDoc && tabBtn('phases', 'Phases', 'view_module')}
+        {isPendingDoc && tabBtn('report', 'Report', 'summarize')}
       </div>
 
-      {/* MAIN BODY: SPLIT VIEW (LEFT TOOLBOX DRAWER + RIGHT LIVE PREVIEW) */}
-      <div className="flex-1 w-full flex flex-col lg:flex-row overflow-hidden relative">
-        {/* ============================================================== */}
-        {/* LEFT TOOLBOX & INSPECTOR DRAWER                                */}
-        {/* ============================================================== */}
-        <div className="no-print w-full lg:w-[420px] xl:w-[460px] bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col shrink-0 overflow-hidden shadow-2xl z-10">
-          {/* Tab Navigation */}
-          <div className="flex items-center border-b border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-950/60 p-1.5 gap-1 overflow-x-auto text-xs font-bold">
-            <button
-              onClick={() => setActiveTab('pagination')}
-              className={`px-3 py-2 rounded-xl transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-                activeTab === 'pagination'
-                  ? 'bg-blue-600 text-white shadow'
-                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200/70 dark:hover:bg-slate-800/60'
-              }`}
-            >
-              <span className="material-symbols-outlined text-sm">auto_stories</span>
-              Pages & Rows
-            </button>
-            <button
-              onClick={() => setActiveTab('columns')}
-              className={`px-3 py-2 rounded-xl transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-                activeTab === 'columns'
-                  ? 'bg-blue-600 text-white shadow'
-                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200/70 dark:hover:bg-slate-800/60'
-              }`}
-            >
-              <span className="material-symbols-outlined text-sm">view_column</span>
-              Columns ({layoutConfig.gridColumns?.filter((c) => c.enabled !== false).length})
-            </button>
-            <button
-              onClick={() => setActiveTab('header')}
-              className={`px-3 py-2 rounded-xl transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-                activeTab === 'header'
-                  ? 'bg-blue-600 text-white shadow'
-                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200/70 dark:hover:bg-slate-800/60'
-              }`}
-            >
-              <span className="material-symbols-outlined text-sm">badge</span>
-              Header Fields
-            </button>
-            <button
-              onClick={() => setActiveTab('branding')}
-              className={`px-3 py-2 rounded-xl transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-                activeTab === 'branding'
-                  ? 'bg-blue-600 text-white shadow'
-                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200/70 dark:hover:bg-slate-800/60'
-              }`}
-            >
-              <span className="material-symbols-outlined text-sm">style</span>
-              Style & Theme
-            </button>
-            <button
-              onClick={() => setActiveTab('signatures')}
-              className={`px-3 py-2 rounded-xl transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-                activeTab === 'signatures'
-                  ? 'bg-blue-600 text-white shadow'
-                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200/70 dark:hover:bg-slate-800/60'
-              }`}
-            >
-              <span className="material-symbols-outlined text-sm">draw</span>
-              Footer & Sigs
-            </button>
-          </div>
-
-          {/* Tab Content Container */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-4 text-xs text-slate-600 dark:text-slate-300">
-            {/* ------------------------------------------------------------ */}
-            {/* TAB 1: PAGINATION & ROWS PER PAGE ENGINE                     */}
-            {/* ------------------------------------------------------------ */}
-            {activeTab === 'pagination' && (
-              <div className="space-y-4 animate-fade-in">
-                <div className="bg-slate-50 dark:bg-slate-950/70 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-3">
-                  <h3 className="font-bold text-slate-900 dark:text-white text-xs flex items-center gap-2">
-                    <span className="material-symbols-outlined text-blue-500 dark:text-blue-400 text-base">pageview</span>
-                    Multi-Page Splitting & Row Limits
-                  </h3>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                    Control exactly how many data rows appear on the 1st page versus continuation pages (Page 2, 3...).
-                  </p>
-
-                  {/* Rows on Page 1 */}
-                  <div>
-                    <div className="flex justify-between items-center mb-1">
-                      <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-300">Rows on First Page (Page 1):</label>
-                      <span className="font-mono text-blue-600 dark:text-blue-400 font-bold">{layoutConfig.firstPageRows || 8} rows</span>
-                    </div>
-                    <input
-                      type="range"
-                      min="2"
-                      max="25"
-                      value={layoutConfig.firstPageRows || 8}
-                      onChange={(e) => updateLayout('firstPageRows', parseInt(e.target.value))}
-                      className="w-full accent-blue-500 cursor-pointer"
-                    />
-                    <div className="flex justify-between text-[9px] text-slate-500">
-                      <span>2 (More header room)</span>
-                      <span>15 (Compact)</span>
-                    </div>
-                  </div>
-
-                  {/* Rows on Subsequent Pages */}
-                  <div>
-                    <div className="flex justify-between items-center mb-1">
-                      <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-300">Rows on Continuation Pages (Page 2+):</label>
-                      <span className="font-mono text-blue-600 dark:text-blue-400 font-bold">{layoutConfig.continuationPageRows || 14} rows</span>
-                    </div>
-                    <input
-                      type="range"
-                      min="4"
-                      max="35"
-                      value={layoutConfig.continuationPageRows || 14}
-                      onChange={(e) => updateLayout('continuationPageRows', parseInt(e.target.value))}
-                      className="w-full accent-blue-500 cursor-pointer"
-                    />
-                    <div className="flex justify-between text-[9px] text-slate-500">
-                      <span>4</span>
-                      <span>35 (Maximum density)</span>
-                    </div>
-                  </div>
-
-                  {/* Live Distribution Status */}
-                  <div className="p-2.5 rounded-xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900/50 text-[11px] text-blue-800 dark:text-blue-200">
-                    <div className="font-bold flex items-center gap-1.5">
-                      <span className="material-symbols-outlined text-sm text-blue-500 dark:text-blue-400">info</span>
-                      Active Layout Distribution:
-                    </div>
-                    <div className="mt-1 space-y-0.5 text-[10px] text-slate-600 dark:text-slate-300">
-                      {pages.map((pItems, idx) => (
-                        <div key={idx} className="flex justify-between">
-                          <span>Page {idx + 1}:</span>
-                          <strong className="text-slate-900 dark:text-white">{pItems.length} rows</strong>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
+      <div className="flex-1 overflow-y-auto p-4 space-y-4 text-xs text-slate-600 dark:text-slate-300">
+        {activeTab === 'pagination' && (
+          <div className="space-y-4">
+            <div className="bg-slate-50 dark:bg-slate-950/70 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-3">
+              <h3 className="font-bold text-slate-900 dark:text-white text-xs">Multi-Page Splitting &amp; Row Limits</h3>
+              <div>
+                <div className="flex justify-between mb-1">
+                  <label className="text-[11px] font-semibold">Rows on First Page:</label>
+                  <span className="font-mono text-blue-600 font-bold">{layoutConfig.firstPageRows || 8} rows</span>
                 </div>
-
-                {/* Repeat Controls */}
-                <div className="bg-slate-50 dark:bg-slate-950/70 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-3">
-                  <h3 className="font-bold text-slate-900 dark:text-white text-xs flex items-center gap-2">
-                    <span className="material-symbols-outlined text-blue-500 dark:text-blue-400 text-base">repeat</span>
-                    Page Repetition Rules
-                  </h3>
-
-                  <label className="flex items-center justify-between p-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800/60">
-                    <span className="text-[11px] text-slate-700 dark:text-slate-200 font-medium">Repeat Table Header Row on Each Page</span>
-                    <input
-                      type="checkbox"
-                      checked={layoutConfig.repeatTableHeader !== false}
-                      onChange={(e) => updateLayout('repeatTableHeader', e.target.checked)}
-                      className="w-4 h-4 rounded accent-blue-500"
-                    />
-                  </label>
-
-                  <label className="flex items-center justify-between p-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800/60">
-                    <span className="text-[11px] text-slate-700 dark:text-slate-200 font-medium">Repeat Document Header / Logo on Page 2+</span>
-                    <input
-                      type="checkbox"
-                      checked={layoutConfig.repeatHeader === true}
-                      onChange={(e) => updateLayout('repeatHeader', e.target.checked)}
-                      className="w-4 h-4 rounded accent-blue-500"
-                    />
-                  </label>
-
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-300 mb-1">Totals & Summary Placement:</label>
-                    <select
-                      value={layoutConfig.totalsPosition || 'last_page'}
-                      onChange={(e) => updateLayout('totalsPosition', e.target.value)}
-                      className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-800 rounded-xl p-2 text-xs text-slate-900 dark:text-white"
-                    >
-                      <option value="last_page">Last Page Only (Recommended Standard)</option>
-                      <option value="every_page">Bottom of Every Page</option>
-                    </select>
-                  </div>
-                </div>
-
-                {/* Paper Sizing */}
-                <div className="bg-slate-50 dark:bg-slate-950/70 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-3">
-                  <h3 className="font-bold text-slate-900 dark:text-white text-xs flex items-center gap-2">
-                    <span className="material-symbols-outlined text-blue-500 dark:text-blue-400 text-base">crop_free</span>
-                    Paper Size & Orientation
-                  </h3>
-
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">Paper Format:</label>
-                      <select
-                        value={layoutConfig.paperSize || 'A4'}
-                        onChange={(e) => updateLayout('paperSize', e.target.value)}
-                        className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-800 rounded-xl p-2 text-xs text-slate-900 dark:text-white"
-                      >
-                        <option value="A4">A4 (210 × 297 mm)</option>
-                        <option value="Letter">Letter (8.5 × 11 in)</option>
-                        <option value="Thermal">Thermal POS (80 mm)</option>
-                        <option value="A5">A5 (148 × 210 mm)</option>
-                        <option value="Legal">Legal (8.5 × 14 in)</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">Orientation:</label>
-                      <select
-                        value={layoutConfig.orientation || 'portrait'}
-                        onChange={(e) => updateLayout('orientation', e.target.value)}
-                        className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-800 rounded-xl p-2 text-xs text-slate-900 dark:text-white"
-                      >
-                        <option value="portrait">Portrait</option>
-                        <option value="landscape">Landscape</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  {/* Margins */}
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">Document Margins:</label>
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <span className="text-[10px] text-slate-500">Top / Bottom:</span>
-                        <input
-                          type="text"
-                          value={layoutConfig.marginTop || '12mm'}
-                          onChange={(e) => {
-                            updateLayout('marginTop', e.target.value);
-                            updateLayout('marginBottom', e.target.value);
-                          }}
-                          className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-800 rounded-lg p-1.5 text-xs text-slate-900 dark:text-white"
-                        />
-                      </div>
-                      <div>
-                        <span className="text-[10px] text-slate-500">Left / Right:</span>
-                        <input
-                          type="text"
-                          value={layoutConfig.marginLeft || '12mm'}
-                          onChange={(e) => {
-                            updateLayout('marginLeft', e.target.value);
-                            updateLayout('marginRight', e.target.value);
-                          }}
-                          className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-800 rounded-lg p-1.5 text-xs text-slate-900 dark:text-white"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
+                <input type="range" min="2" max="25" value={layoutConfig.firstPageRows || 8} onChange={(e) => updateLayout('firstPageRows', parseInt(e.target.value))} className="w-full accent-blue-500 cursor-pointer" />
               </div>
-            )}
-
-            {/* ------------------------------------------------------------ */}
-            {/* TAB 2: COLUMNS ENGINE (Show/Hide, Move, Reorder, Width)      */}
-            {/* ------------------------------------------------------------ */}
-            {activeTab === 'columns' && (
-              <div className="space-y-3 animate-fade-in">
-                <div className="flex justify-between items-center">
-                  <span className="text-xs font-bold text-slate-900 dark:text-white">Table Columns Editor</span>
-                  <button
-                    type="button"
-                    onClick={addCustomColumn}
-                    className="px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-bold transition-all flex items-center gap-1 cursor-pointer"
-                  >
-                    <span className="material-symbols-outlined text-xs">add</span> Add Column
-                  </button>
+              <div>
+                <div className="flex justify-between mb-1">
+                  <label className="text-[11px] font-semibold">Rows on Continuation Pages:</label>
+                  <span className="font-mono text-blue-600 font-bold">{layoutConfig.continuationPageRows || 14} rows</span>
                 </div>
-
-                <div className="space-y-2">
-                  {(layoutConfig.gridColumns || []).map((col, idx) => (
-                    <div
-                      key={col.key || idx}
-                      className={`p-2.5 rounded-xl border transition-all ${
-                        col.enabled !== false
-                          ? 'bg-white dark:bg-slate-950/80 border-slate-200 dark:border-slate-800'
-                          : 'bg-slate-50 dark:bg-slate-950/30 border-slate-200/60 dark:border-slate-800/40 opacity-60'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between gap-2 mb-2">
-                        <div className="flex items-center gap-2 flex-1">
-                          <input
-                            type="checkbox"
-                            checked={col.enabled !== false}
-                            onChange={() => toggleColumn(idx)}
-                            className="w-4 h-4 rounded accent-blue-500 cursor-pointer"
-                          />
-                          <input
-                            type="text"
-                            value={col.label || col.key}
-                            onChange={(e) => updateColumnProp(idx, 'label', e.target.value)}
-                            className="bg-transparent border-b border-transparent focus:border-blue-500 text-xs font-bold text-slate-900 dark:text-white px-1 py-0.5 outline-none flex-1"
-                          />
-                        </div>
-
-                        {/* Reorder Buttons */}
-                        <div className="flex items-center gap-1 shrink-0">
-                          <button
-                            type="button"
-                            disabled={idx === 0}
-                            onClick={() => moveColumn(idx, -1)}
-                            className="p-1 rounded bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 disabled:opacity-30 text-slate-600 dark:text-slate-300"
-                            title="Move Up / Left"
-                          >
-                            <span className="material-symbols-outlined text-xs">arrow_upward</span>
-                          </button>
-                          <button
-                            type="button"
-                            disabled={idx === (layoutConfig.gridColumns || []).length - 1}
-                            onClick={() => moveColumn(idx, 1)}
-                            className="p-1 rounded bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 disabled:opacity-30 text-slate-600 dark:text-slate-300"
-                            title="Move Down / Right"
-                          >
-                            <span className="material-symbols-outlined text-xs">arrow_downward</span>
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Width & Alignment */}
-                      <div className="grid grid-cols-2 gap-2 text-[10px]">
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-slate-500">Width:</span>
-                          <input
-                            type="text"
-                            value={col.width || '15%'}
-                            onChange={(e) => updateColumnProp(idx, 'width', e.target.value)}
-                            className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-800 rounded px-1.5 py-0.5 text-slate-900 dark:text-white w-14 text-center font-mono"
-                          />
-                        </div>
-
-                        <div className="flex items-center justify-end gap-1">
-                          {['left', 'center', 'right'].map((align) => (
-                            <button
-                              key={align}
-                              type="button"
-                              onClick={() => updateColumnProp(idx, 'align', align)}
-                              className={`p-1 rounded text-xs ${
-                                (col.align || 'left') === align
-                                  ? 'bg-blue-600 text-white font-bold'
-                                  : 'bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
-                              }`}
-                            >
-                              <span className="material-symbols-outlined text-[12px]">
-                                format_align_${align}
-                              </span>
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                <input type="range" min="4" max="35" value={layoutConfig.continuationPageRows || 14} onChange={(e) => updateLayout('continuationPageRows', parseInt(e.target.value))} className="w-full accent-blue-500 cursor-pointer" />
               </div>
-            )}
-
-            {/* ------------------------------------------------------------ */}
-            {/* TAB 3: HEADER FIELDS & DOCUMENT METADATA                     */}
-            {/* ------------------------------------------------------------ */}
-            {activeTab === 'header' && (
-              <div className="space-y-3 animate-fade-in">
-                <span className="text-xs font-bold text-slate-900 dark:text-white block">Document Header Fields & Badges</span>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                  Toggle which fields appear in the document header block (Customer, Order #, Dates, Address, etc.).
-                </p>
-
-                <div className="space-y-2">
-                  {(layoutConfig.headerFields || []).map((field, idx) => (
-                    <div
-                      key={field.key || idx}
-                      className={`p-2.5 rounded-xl border flex items-center justify-between gap-2 ${
-                        field.enabled !== false
-                          ? 'bg-white dark:bg-slate-950/80 border-slate-200 dark:border-slate-800'
-                          : 'bg-slate-50 dark:bg-slate-950/30 border-slate-200/60 dark:border-slate-800/40 opacity-60'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2 flex-1">
-                        <input
-                          type="checkbox"
-                          checked={field.enabled !== false}
-                          onChange={() => toggleHeaderField(idx)}
-                          className="w-4 h-4 rounded accent-blue-500 cursor-pointer"
-                        />
-                        <input
-                          type="text"
-                          value={field.label || field.key}
-                          onChange={(e) => updateHeaderFieldProp(idx, 'label', e.target.value)}
-                          className="bg-transparent border-b border-transparent focus:border-blue-500 text-xs font-bold text-slate-900 dark:text-white px-1 py-0.5 outline-none flex-1"
-                        />
-                      </div>
-
-                      <select
-                        value={field.width || 'span-1'}
-                        onChange={(e) => updateHeaderFieldProp(idx, 'width', e.target.value)}
-                        className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-800 rounded px-2 py-1 text-[10px] text-slate-700 dark:text-slate-300"
-                      >
-                        <option value="span-1">1 Col</option>
-                        <option value="span-2">2 Cols</option>
-                        <option value="span-3">Full Width</option>
-                      </select>
-                    </div>
-                  ))}
-                </div>
+              <div className="p-2.5 rounded-xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900/50 text-[11px]">
+                <div className="font-bold">Active Layout Distribution:</div>
+                {pages.map((pItems, idx) => (
+                  <div key={idx} className="flex justify-between"><span>Page {idx + 1}:</span><strong>{pItems.length} rows</strong></div>
+                ))}
               </div>
-            )}
+            </div>
 
-            {/* ------------------------------------------------------------ */}
-            {/* TAB 4: BRANDING, THEMES & TYPOGRAPHY                         */}
-            {/* ------------------------------------------------------------ */}
-            {activeTab === 'branding' && (
-              <div className="space-y-4 animate-fade-in">
-                {/* Header Theme */}
-                <div>
-                  <label className="block text-xs font-bold text-slate-900 dark:text-white mb-1.5">Header Layout Style:</label>
-                  <div className="grid grid-cols-1 gap-1.5">
-                    {HEADER_THEMES.map((theme) => (
-                      <button
-                        key={theme.id}
-                        type="button"
-                        onClick={() => updateLayout('headerTheme', theme.id)}
-                        className={`p-2.5 rounded-xl border text-left text-xs font-medium transition-all flex items-center justify-between ${
-                          (layoutConfig.headerTheme || 'classic_split') === theme.id
-                            ? 'bg-blue-600/15 border-blue-500 text-blue-700 dark:text-white font-bold'
-                            : 'bg-white dark:bg-slate-950/60 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-900'
-                        }`}
-                      >
-                        <span>{theme.name}</span>
-                        {(layoutConfig.headerTheme || 'classic_split') === theme.id && (
-                          <span className="material-symbols-outlined text-sm text-blue-500 dark:text-blue-400">check</span>
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Primary Brand Color */}
-                <div>
-                  <label className="block text-xs font-bold text-slate-900 dark:text-white mb-1.5">Accent & Table Header Color:</label>
-                  <div className="grid grid-cols-3 gap-2">
-                    {BRAND_PALETTES.map((pal) => (
-                      <button
-                        key={pal.name}
-                        type="button"
-                        onClick={() => {
-                          updateLayout('primaryColor', pal.primary);
-                          updateLayout('tableHeaderBgColor', pal.bg);
-                        }}
-                        className="p-2 rounded-xl border border-slate-300 dark:border-slate-800 flex items-center gap-2 text-[10px] hover:border-slate-400 dark:hover:border-slate-600 transition-all text-left"
-                      >
-                        <span className="w-4 h-4 rounded-full shrink-0 shadow-sm" style={{ backgroundColor: pal.primary }} />
-                        <span className="truncate">{pal.name}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Typography */}
+            <div className="bg-slate-50 dark:bg-slate-950/70 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-3">
+              <h3 className="font-bold text-slate-900 dark:text-white text-xs">Page Repetition &amp; Totals</h3>
+              <label className="flex items-center justify-between p-2 rounded-xl bg-white dark:bg-slate-900 border cursor-pointer">
+                <span className="text-[11px] font-medium">Repeat Table Header Row on Each Page</span>
+                <input type="checkbox" checked={layoutConfig.repeatTableHeader !== false} onChange={(e) => updateLayout('repeatTableHeader', e.target.checked)} className="accent-blue-500" />
+              </label>
+              <label className="flex items-center justify-between p-2 rounded-xl bg-white dark:bg-slate-900 border cursor-pointer">
+                <span className="text-[11px] font-medium">Repeat Document Header on Each Page</span>
+                <input type="checkbox" checked={layoutConfig.repeatHeader === true} onChange={(e) => updateLayout('repeatHeader', e.target.checked)} className="accent-blue-500" />
+              </label>
+              <label className="flex items-center justify-between gap-2">
+                <span className="text-[11px] font-medium">Totals Position</span>
+                <select value={layoutConfig.totalsPosition || 'last_page'} onChange={(e) => updateLayout('totalsPosition', e.target.value)} className="bg-white dark:bg-slate-900 border rounded-lg px-2 py-1.5 text-[11px] font-bold cursor-pointer">
+                  <option value="last_page">Last Page Only</option>
+                  <option value="every_page">Every Page</option>
+                </select>
+              </label>
+              <label className="flex items-center justify-between gap-2">
+                <span className="text-[11px] font-medium">Paper Format</span>
+                <select value={layoutConfig.paperSize || 'A4'} onChange={(e) => updateLayout('paperSize', e.target.value)} className="bg-white dark:bg-slate-900 border rounded-lg px-2 py-1.5 text-[11px] font-bold cursor-pointer">
+                  {Object.keys(PAPER_DIMENSIONS).map((k) => (<option key={k} value={k}>{PAPER_DIMENSIONS[k].label}</option>))}
+                </select>
+              </label>
+              {layoutConfig.marginPreset === 'custom' && (
                 <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">Font Family:</label>
-                    <select
-                      value={layoutConfig.fontFamily || 'Inter'}
-                      onChange={(e) => updateLayout('fontFamily', e.target.value)}
-                      className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-800 rounded-xl p-2 text-xs text-slate-900 dark:text-white"
-                    >
-                      {FONT_OPTIONS.map((f) => (
-                        <option key={f.id} value={f.id}>
-                          {f.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">Body Text Size:</label>
-                    <select
-                      value={layoutConfig.bodyFontSize || '11px'}
-                      onChange={(e) => updateLayout('bodyFontSize', e.target.value)}
-                      className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-800 rounded-xl p-2 text-xs text-slate-900 dark:text-white"
-                    >
-                      <option value="9px">9px (Micro Dense)</option>
-                      <option value="10px">10px (Compact)</option>
-                      <option value="11px">11px (Standard)</option>
-                      <option value="12px">12px (Spacious)</option>
-                    </select>
-                  </div>
+                  {['marginTop', 'marginRight', 'marginBottom', 'marginLeft'].map((k) => (
+                    <label key={k} className="flex items-center gap-1 text-[11px] font-medium">
+                      {k.replace('margin', '')}
+                      <input value={layoutConfig[k] || '12mm'} onChange={(e) => updateLayout(k, e.target.value)} className="w-full bg-white dark:bg-slate-900 border rounded-lg px-2 py-1.5 font-mono text-[11px]" />
+                    </label>
+                  ))}
                 </div>
-
-                {/* Company Logo & Address toggles */}
-                <div className="space-y-2 pt-2 border-t border-slate-200 dark:border-slate-800">
-                  <label className="flex items-center justify-between p-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 cursor-pointer">
-                    <span className="text-[11px] text-slate-700 dark:text-slate-200">Show Company Logo</span>
-                    <input
-                      type="checkbox"
-                      checked={layoutConfig.showHeaderLogo !== false}
-                      onChange={(e) => updateLayout('showHeaderLogo', e.target.checked)}
-                      className="w-4 h-4 rounded accent-blue-500"
-                    />
-                  </label>
-
-                  <label className="flex items-center justify-between p-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 cursor-pointer">
-                    <span className="text-[11px] text-slate-700 dark:text-slate-200">Show Address & Contact Info</span>
-                    <input
-                      type="checkbox"
-                      checked={layoutConfig.showHeaderDetails !== false}
-                      onChange={(e) => updateLayout('showHeaderDetails', e.target.checked)}
-                      className="w-4 h-4 rounded accent-blue-500"
-                    />
-                  </label>
-                </div>
-              </div>
-            )}
-
-            {/* ------------------------------------------------------------ */}
-            {/* TAB 5: FOOTERS, SIGNATURES & TERMS                           */}
-            {/* ------------------------------------------------------------ */}
-            {activeTab === 'signatures' && (
-              <div className="space-y-4 animate-fade-in">
-                {/* Signatures Manager */}
-                <div className="space-y-3">
-                  <div className="flex justify-between items-center">
-                    <span className="text-xs font-bold text-slate-900 dark:text-white">Signature Blocks</span>
-                    <button
-                      type="button"
-                      onClick={addSignatureBlock}
-                      className="px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-bold transition-all flex items-center gap-1 cursor-pointer"
-                    >
-                      <span className="material-symbols-outlined text-xs">add</span> Add Signature
-                    </button>
-                  </div>
-
-                  <div className="space-y-2">
-                    {(layoutConfig.signatures || []).map((sig, idx) => (
-                      <div key={sig.key || idx} className="p-2.5 rounded-xl bg-white dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 space-y-2">
-                        <div className="flex items-center justify-between gap-2">
-                          <input
-                            type="text"
-                            value={sig.label || 'Signature'}
-                            onChange={(e) => updateSignatureProp(idx, 'label', e.target.value)}
-                            className="bg-transparent border-b border-transparent focus:border-blue-500 text-xs font-bold text-slate-900 dark:text-white px-1 py-0.5 outline-none flex-1"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => removeSignatureBlock(idx)}
-                            className="text-slate-500 hover:text-red-400 p-1"
-                          >
-                            <span className="material-symbols-outlined text-sm">delete</span>
-                          </button>
-                        </div>
-
-                        <div className="flex items-center justify-between text-[10px]">
-                          <select
-                            value={sig.type || 'text'}
-                            onChange={(e) => updateSignatureProp(idx, 'type', e.target.value)}
-                            className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-800 rounded px-2 py-1 text-slate-700 dark:text-slate-300"
-                          >
-                            <option value="text">Signature Line</option>
-                            <option value="stamp">Official Stamp Box</option>
-                          </select>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Terms and Conditions */}
-                <div className="space-y-2 pt-2 border-t border-slate-200 dark:border-slate-800">
-                  <label className="block text-xs font-bold text-slate-900 dark:text-white">Terms & Conditions:</label>
-                  <textarea
-                    rows={3}
-                    value={layoutConfig.termsConditions || ''}
-                    onChange={(e) => updateLayout('termsConditions', e.target.value)}
-                    className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-xl p-2.5 text-xs text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500"
-                  />
-                </div>
-
-                {/* Custom Footer Text */}
-                <div className="space-y-2">
-                  <label className="block text-xs font-bold text-slate-900 dark:text-white">Custom Computer-Generated Footer:</label>
-                  <input
-                    type="text"
-                    value={layoutConfig.customFooterText || ''}
-                    onChange={(e) => updateLayout('customFooterText', e.target.value)}
-                    className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-xl p-2.5 text-xs text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500"
-                  />
-                </div>
-              </div>
-            )}
-
-            {/* RESET BUTTON */}
-            <div className="pt-4 border-t border-slate-200 dark:border-slate-800">
-              <button
-                type="button"
-                onClick={handleResetDefaults}
-                className="w-full py-2.5 rounded-xl border border-slate-300 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800/80 text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 text-xs font-bold transition-all flex items-center justify-center gap-1.5"
-              >
-                <span className="material-symbols-outlined text-sm">restart_alt</span>
-                Reset to Default Preset
-              </button>
+              )}
+              <p className="text-[10px] text-slate-400">Orientation, margins and scaling live in the top toolbar; custom margin values are edited here.</p>
             </div>
           </div>
-        </div>
+        )}
 
-        {/* ============================================================== */}
-        {/* RIGHT LIVE PRINT PREVIEW (DIGITAL TWIN MULTI-PAGE RENDERER)   */}
-        {/* ============================================================== */}
-        <div className="flex-1 bg-slate-300/70 dark:bg-slate-950/95 overflow-y-auto p-4 md:p-8 flex flex-col items-center gap-8 relative select-none">
-          <div
-            id="fv-print-studio-container"
-            ref={printContainerRef}
-            className="flex flex-col gap-8 items-center w-full"
-          >
-            {pages.map((pageItems, pageIdx) => {
-              const isFirstPage = pageIdx === 0;
-              const isLastPage = pageIdx === pages.length - 1;
-              const activeGridCols = (layoutConfig.gridColumns || []).filter((c) => c.enabled !== false);
-              const activeHeaderFields = (layoutConfig.headerFields || []).filter((f) => f.enabled !== false);
-
-              const shouldShowHeader = isFirstPage || layoutConfig.repeatHeader === true;
-              const shouldShowTotals = layoutConfig.totalsPosition === 'every_page' || isLastPage;
-
-              return (
-                <div
-                  key={pageIdx}
-                  className="bg-white text-slate-900 shadow-2xl rounded-none relative transition-all duration-200 overflow-hidden print-preview-page flex flex-col"
-                  style={{
-                    width: paperWidth,
-                    minHeight: paperHeight,
-                    maxWidth: paperWidth,
-                    fontFamily: layoutConfig.fontFamily || 'Inter',
-                    fontSize: layoutConfig.bodyFontSize || '11px',
-                    padding: `${layoutConfig.marginTop || '12mm'} ${layoutConfig.marginRight || '12mm'} ${layoutConfig.marginBottom || '12mm'} ${layoutConfig.marginLeft || '12mm'}`
-                  }}
-                >
-                  {/* Page Badge (Screen only) */}
-                  <div className="no-print absolute top-2 right-2 bg-slate-900/80 text-white text-[9px] font-mono px-2 py-0.5 rounded shadow pointer-events-none">
-                    Page {pageIdx + 1} of {pages.length}
-                  </div>
-
-                  {/* 1. DOCUMENT HEADER (Logo, Company Identity, Document Title) */}
-                  {shouldShowHeader && (
-                    <div className="border-b-2 border-slate-900 pb-3 mb-4">
-                      <div className="flex justify-between items-start gap-4">
-                        {/* Company Left */}
-                        <div className="flex items-center gap-3 max-w-[60%]">
-                          {layoutConfig.showHeaderLogo !== false && (
-                            companyLogo ? (
-                              <img src={companyLogo} alt="Logo" className="h-12 object-contain" />
-                            ) : (
-                              <div className="w-12 h-12 bg-slate-100 border border-dashed border-slate-300 rounded flex flex-col items-center justify-center text-[8px] text-slate-400 font-bold shrink-0">
-                                LOGO
-                              </div>
-                            )
-                          )}
-                          <div>
-                            <h1
-                              className="text-lg font-black uppercase tracking-tight leading-none"
-                              style={{ color: layoutConfig.primaryColor || '#004277' }}
-                            >
-                              {companyName}
-                            </h1>
-                            {layoutConfig.showHeaderDetails !== false && (
-                              <p className="text-[10px] text-slate-500 leading-tight mt-1">
-                                {companyAddress} • Tel: {companyPhone}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Document Title Right */}
-                        <div className="text-right">
-                          <h2 className="text-xl font-black uppercase tracking-wider text-slate-900">
-                            {docTitleDisplay}
-                          </h2>
-                          <div className="inline-block mt-1 px-2 py-0.5 rounded bg-slate-100 font-mono text-xs font-bold text-slate-800 border border-slate-200">
-                            {resolvedRecord?.id || resolvedRecord?.so_number || resolvedRecord?.dcNumber || 'DOC-OFFICIAL'}
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Header Fields Grid (Party, Date, Reference etc.) */}
-                      {activeHeaderFields.length > 0 && (
-                        <div className="grid grid-cols-3 gap-2 mt-3 pt-3 border-t border-slate-100 text-[10px]">
-                          {activeHeaderFields.map((field) => {
-                            const val = getHeaderFieldValue(field.key);
-                            const spanClass = field.width === 'span-3' ? 'col-span-3' : field.width === 'span-2' ? 'col-span-2' : 'col-span-1';
-                            return (
-                              <div key={field.key} className={`${spanClass} flex flex-col`}>
-                                <span className="text-[9px] uppercase font-bold text-slate-400">
-                                  {field.label}:
-                                </span>
-                                <span className="font-bold text-slate-800 truncate">{val}</span>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* 2. TABLE GRID */}
-                  <div className="flex-1 w-full overflow-hidden">
-                    <table className="w-full border-collapse text-left" style={{ fontSize: layoutConfig.bodyFontSize || '11px' }}>
-                      {/* Table Header (Repeatable) */}
-                      {(isFirstPage || layoutConfig.repeatTableHeader !== false) && (
-                        <thead>
-                          <tr
-                            style={{
-                              backgroundColor: layoutConfig.tableHeaderBgColor || layoutConfig.primaryColor || '#004277',
-                              color: layoutConfig.tableHeaderTextColor || '#ffffff'
-                            }}
-                          >
-                            {activeGridCols.map((col) => (
-                              <th
-                                key={col.key}
-                                className={`py-1.5 px-2 font-bold uppercase text-[9px] tracking-wider border border-slate-200/40 ${
-                                  col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left'
-                                }`}
-                                style={{ width: col.width || 'auto' }}
-                              >
-                                {String(col.label || col.key).replace('($)', `(${state?.adminSetup?.baseCurrency?.match(/\(([^)]+)\)/)?.[1] || '$'})`)}
-                              </th>
-                            ))}
-                          </tr>
-                        </thead>
-                      )}
-
-                      {/* Table Rows */}
-                      <tbody>
-                        {pageItems.length > 0 ? (
-                          pageItems.map((item, itemIdx) => {
-                            const absoluteIndex =
-                              pages.slice(0, pageIdx).reduce((acc, p) => acc + p.length, 0) + itemIdx;
-                            return (
-                              <tr key={absoluteIndex} className="border-b border-slate-200/60 hover:bg-slate-50/50">
-                                {activeGridCols.map((col) => {
-                                  const cellVal = getCellValue(col.key, item, absoluteIndex);
-                                  return (
-                                    <td
-                                      key={col.key}
-                                      className={`py-1.5 px-2 border-r border-l border-slate-200/50 text-slate-800 ${
-                                        col.align === 'right' ? 'text-right font-mono' : col.align === 'center' ? 'text-center' : 'text-left'
-                                      }`}
-                                    >
-                                      {cellVal}
-                                    </td>
-                                  );
-                                })}
-                              </tr>
-                            );
-                          })
-                        ) : (
-                          <tr>
-                            <td colSpan={activeGridCols.length} className="text-center py-6 text-slate-400 italic">
-                              No line items available in this document.
-                            </td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  {/* 3. TOTALS & SUMMARY BLOCK */}
-                  {shouldShowTotals && resolvedRecord?.totals && (
-                    <div className="mt-3 flex justify-end">
-                      <div
-                        className="p-2.5 rounded-lg border border-slate-300 text-xs text-right space-y-1"
-                        style={{
-                          width: layoutConfig.totalsStyle?.width || '35%',
-                          backgroundColor: layoutConfig.totalsStyle?.bgColor || '#f8fafc'
-                        }}
-                      >
-                        {resolvedRecord.totals.subtotal !== undefined && (
-                          <div className="flex justify-between text-[10px] text-slate-600">
-                            <span>Subtotal:</span>
-                            <span className="font-mono font-bold">
-                              {Number(resolvedRecord.totals.subtotal).toLocaleString()}
-                            </span>
-                          </div>
-                        )}
-                        {resolvedRecord.totals.tax !== undefined && (
-                          <div className="flex justify-between text-[10px] text-slate-600">
-                            <span>Tax / GST:</span>
-                            <span className="font-mono font-bold">
-                              {Number(resolvedRecord.totals.tax).toLocaleString()}
-                            </span>
-                          </div>
-                        )}
-                        {resolvedRecord.totals.discount !== undefined && (
-                          <div className="flex justify-between text-[10px] text-slate-600">
-                            <span>Discount:</span>
-                            <span className="font-mono font-bold">
-                              {Number(resolvedRecord.totals.discount).toLocaleString()}
-                            </span>
-                          </div>
-                        )}
-                        {resolvedRecord.totals.grandTotal !== undefined && (
-                          <div className="flex justify-between font-bold text-xs pt-1 border-t border-slate-300 text-slate-900">
-                            <span>Grand Total:</span>
-                            <span className="font-mono">
-                              {Number(resolvedRecord.totals.grandTotal).toLocaleString()}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* 4. FOOTER: TERMS & CONDITIONS + SIGNATURES */}
-                  <div className="mt-auto pt-3 border-t border-slate-200">
-                    {/* Terms & Conditions */}
-                    {layoutConfig.termsConditions && (
-                      <div className="text-[9px] text-slate-500 mb-3 whitespace-pre-line leading-tight">
-                        <strong className="text-slate-700">Terms & Conditions: </strong>
-                        {layoutConfig.termsConditions}
-                      </div>
-                    )}
-
-                    {/* Signatures */}
-                    {(layoutConfig.signatures || []).length > 0 && (
-                      <div className="flex justify-between items-end gap-4 my-2 pt-4">
-                        {layoutConfig.signatures.map((sig) => (
-                          <div key={sig.key} className="flex-1 flex flex-col items-center">
-                            {sig.type === 'stamp' ? (
-                              <div className="w-24 h-12 border border-dashed border-slate-300 rounded mb-1 flex items-center justify-center text-[8px] text-slate-400">
-                                OFFICIAL STAMP
-                              </div>
-                            ) : (
-                              <div className="w-full border-t border-slate-800 mb-1" />
-                            )}
-                            <span className="text-[9px] font-bold uppercase tracking-wider text-slate-700 text-center">
-                              {sig.label}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* Computer Generated Disclaimer */}
-                    <div className="flex justify-between items-center text-[8px] text-slate-400 pt-2 border-t border-slate-100">
-                      <span>{layoutConfig.customFooterText || 'Computer Generated Document'}</span>
-                      <span>
-                        Page {pageIdx + 1} of {pages.length}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+        {activeTab === 'columns' && !isPhaseDoc && (
+          <div className="space-y-2">
+            {(layoutConfig.gridColumns || []).map((col, idx) => (
+              <div key={idx} className="flex items-center gap-2 p-2.5 rounded-xl bg-slate-50 dark:bg-slate-950/70 border">
+                <input type="checkbox" checked={col.enabled !== false} onChange={() => toggleColumn(idx)} className="accent-blue-500" />
+                <input value={col.label} onChange={(e) => updateColumnProp(idx, 'label', e.target.value)} className="flex-1 min-w-0 bg-white dark:bg-slate-900 border rounded-lg px-2 py-1 text-[11px] font-bold" />
+                <select value={col.align || 'left'} onChange={(e) => updateColumnProp(idx, 'align', e.target.value)} className="bg-white dark:bg-slate-900 border rounded-lg px-1 py-1 text-[11px] cursor-pointer">
+                  <option value="left">Left</option><option value="center">Center</option><option value="right">Right</option>
+                </select>
+                <button type="button" onClick={() => moveColumn(idx, -1)} disabled={idx === 0} className="px-1.5 py-1 rounded-lg bg-slate-200 dark:bg-slate-800 text-[11px] font-bold disabled:opacity-40 cursor-pointer">↑</button>
+                <button type="button" onClick={() => moveColumn(idx, 1)} disabled={idx === (layoutConfig.gridColumns || []).length - 1} className="px-1.5 py-1 rounded-lg bg-slate-200 dark:bg-slate-800 text-[11px] font-bold disabled:opacity-40 cursor-pointer">↓</button>
+                <label className="flex items-center gap-1 text-[10px] font-bold" title="Show column total">
+                  Σ<input type="checkbox" checked={col.total === true} onChange={(e) => updateColumnProp(idx, 'total', e.target.checked)} className="accent-blue-500" />
+                </label>
+              </div>
+            ))}
+            <button type="button" onClick={addCustomColumn} className="w-full py-2 rounded-xl bg-blue-600 text-white text-[11px] font-bold cursor-pointer">+ Add Custom Column</button>
           </div>
-        </div>
+        )}
+
+        {activeTab === 'header' && !isPhaseDoc && (
+          <div className="space-y-2">
+            {(layoutConfig.headerFields || []).map((field, idx) => (
+              <div key={idx} className="flex items-center gap-2 p-2.5 rounded-xl bg-slate-50 dark:bg-slate-950/70 border">
+                <input type="checkbox" checked={field.enabled !== false} onChange={() => toggleHeaderField(idx)} className="accent-blue-500" />
+                <input value={field.label} onChange={(e) => updateHeaderFieldProp(idx, 'label', e.target.value)} className="flex-1 min-w-0 bg-white dark:bg-slate-900 border rounded-lg px-2 py-1 text-[11px] font-bold" />
+                <span className="font-mono text-[10px] text-slate-400">{field.key}</span>
+              </div>
+            ))}
+            <label className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-slate-950/70 border cursor-pointer">
+              <span className="text-[11px] font-medium">Show Company Address in Header</span>
+              <input type="checkbox" checked={layoutConfig.showHeaderDetails !== false} onChange={(e) => updateLayout('showHeaderDetails', e.target.checked)} className="accent-blue-500" />
+            </label>
+          </div>
+        )}
+
+        {activeTab === 'branding' && (
+          <div className="space-y-3">
+            <div className="bg-slate-50 dark:bg-slate-950/70 p-3.5 rounded-2xl border space-y-3">
+              <h3 className="font-bold text-slate-900 dark:text-white text-xs">Header Band &amp; Alignment</h3>
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-medium w-24 shrink-0">Band Start</span>
+                <input type="color" value={layoutConfig.bandColor || '#4338ca'} onChange={(e) => updateLayout('bandColor', e.target.value)} className="w-10 h-8 rounded cursor-pointer" />
+                <input value={layoutConfig.bandColor || '#4338ca'} onChange={(e) => updateLayout('bandColor', e.target.value)} className="flex-1 bg-white dark:bg-slate-900 border rounded-lg px-2 py-1.5 font-mono text-[11px]" />
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-medium w-24 shrink-0">Band End</span>
+                <input type="color" value={layoutConfig.bandColor2 || '#4f46e5'} onChange={(e) => updateLayout('bandColor2', e.target.value)} className="w-10 h-8 rounded cursor-pointer" />
+                <input value={layoutConfig.bandColor2 || '#4f46e5'} onChange={(e) => updateLayout('bandColor2', e.target.value)} className="flex-1 bg-white dark:bg-slate-900 border rounded-lg px-2 py-1.5 font-mono text-[11px]" />
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-medium w-24 shrink-0">Totals Bar</span>
+                <input type="color" value={layoutConfig.totalsColor || '#232946'} onChange={(e) => updateLayout('totalsColor', e.target.value)} className="w-10 h-8 rounded cursor-pointer" />
+                <input value={layoutConfig.totalsColor || '#232946'} onChange={(e) => updateLayout('totalsColor', e.target.value)} className="flex-1 bg-white dark:bg-slate-900 border rounded-lg px-2 py-1.5 font-mono text-[11px]" />
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-[11px] font-medium w-24 shrink-0">Presets</span>
+                {BRAND_PALETTES.map((p) => (
+                  <button key={p.name} type="button" title={p.name} onClick={() => { updateLayout('bandColor', p.primary); updateLayout('bandColor2', p.primary); }} className="w-7 h-7 rounded-full border-2 border-white shadow cursor-pointer" style={{ background: p.primary }} />
+                ))}
+              </div>
+              <div>
+                <span className="text-[11px] font-medium block mb-1">Header Block Alignment</span>
+                <div className="flex gap-1.5">
+                  {['left', 'center', 'right'].map((a) => (
+                    <button key={a} type="button" onClick={() => updateLayout('headerAlign', a)} className={`flex-1 py-1.5 rounded-lg text-[11px] font-bold capitalize cursor-pointer ${layoutConfig.headerAlign === a ? 'bg-blue-600 text-white' : 'bg-slate-200 dark:bg-slate-800'}`}>{a}</button>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="bg-slate-50 dark:bg-slate-950/70 p-3.5 rounded-2xl border space-y-3">
+              <h3 className="font-bold text-slate-900 dark:text-white text-xs">Theme &amp; Type</h3>
+              <label className="flex items-center justify-between gap-2">
+                <span className="text-[11px] font-medium">Header Theme</span>
+                <select value={layoutConfig.headerTheme || 'classic_split'} onChange={(e) => updateLayout('headerTheme', e.target.value)} className="bg-white dark:bg-slate-900 border rounded-lg px-2 py-1.5 text-[11px] font-bold cursor-pointer">
+                  {HEADER_THEMES.map((t) => (<option key={t.id} value={t.id}>{t.name}</option>))}
+                </select>
+              </label>
+              <label className="flex items-center justify-between gap-2">
+                <span className="text-[11px] font-medium">Font Family</span>
+                <select value={layoutConfig.fontFamily || 'Inter'} onChange={(e) => updateLayout('fontFamily', e.target.value)} className="bg-white dark:bg-slate-900 border rounded-lg px-2 py-1.5 text-[11px] font-bold cursor-pointer">
+                  {FONT_OPTIONS.map((f) => (<option key={f.id} value={f.id}>{f.name}</option>))}
+                </select>
+              </label>
+              <label className="flex items-center justify-between gap-2">
+                <span className="text-[11px] font-medium">Body Font Size</span>
+                <input value={layoutConfig.bodyFontSize || '11px'} onChange={(e) => updateLayout('bodyFontSize', e.target.value)} className="w-24 bg-white dark:bg-slate-900 border rounded-lg px-2 py-1.5 font-mono text-[11px]" />
+              </label>
+              <label className="flex items-center justify-between p-2 rounded-xl bg-white dark:bg-slate-900 border cursor-pointer">
+                <span className="text-[11px] font-medium">Show Header Logo</span>
+                <input type="checkbox" checked={layoutConfig.showHeaderLogo !== false} onChange={(e) => updateLayout('showHeaderLogo', e.target.checked)} className="accent-blue-500" />
+              </label>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'signatures' && !isPhaseDoc && (
+          <div className="space-y-2">
+            {(layoutConfig.signatures || []).map((sig, idx) => (
+              <div key={idx} className="flex items-center gap-2 p-2.5 rounded-xl bg-slate-50 dark:bg-slate-950/70 border">
+                <input value={sig.label} onChange={(e) => updateSignatureProp(idx, 'label', e.target.value)} className="flex-1 min-w-0 bg-white dark:bg-slate-900 border rounded-lg px-2 py-1 text-[11px] font-bold" />
+                <button type="button" onClick={() => removeSignatureBlock(idx)} className="px-2 py-1 rounded-lg bg-red-100 text-red-700 text-[11px] font-bold cursor-pointer">Remove</button>
+              </div>
+            ))}
+            <button type="button" onClick={addSignatureBlock} className="w-full py-2 rounded-xl bg-blue-600 text-white text-[11px] font-bold cursor-pointer">+ Add Signature</button>
+            <label className="block">
+              <span className="text-[11px] font-medium">Terms &amp; Conditions</span>
+              <textarea value={layoutConfig.termsConditions || ''} onChange={(e) => updateLayout('termsConditions', e.target.value)} rows={3} className="w-full mt-1 bg-white dark:bg-slate-900 border rounded-xl px-2 py-1.5 text-[11px]" />
+            </label>
+            <label className="block">
+              <span className="text-[11px] font-medium">Custom Footer Text</span>
+              <input value={layoutConfig.customFooterText || ''} onChange={(e) => updateLayout('customFooterText', e.target.value)} className="w-full mt-1 bg-white dark:bg-slate-900 border rounded-xl px-2 py-1.5 text-[11px]" />
+            </label>
+          </div>
+        )}
+
+        {activeTab === 'phases' && isPhaseDoc && (
+          <div className="space-y-3">
+            <div className="bg-slate-50 dark:bg-slate-950/70 p-3.5 rounded-2xl border space-y-3">
+              <h3 className="font-bold text-slate-900 dark:text-white text-xs">Phase Panels — This Print Only</h3>
+              <div>
+                <div className="flex justify-between mb-1">
+                  <label className="text-[11px] font-semibold">Phases Per Row:</label>
+                  <span className="font-mono text-blue-600 font-bold">{layoutConfig.phasesPerRow || 4}</span>
+                </div>
+                <input type="range" min="2" max="6" value={layoutConfig.phasesPerRow || 4} onChange={(e) => updateLayout('phasesPerRow', parseInt(e.target.value))} className="w-full accent-blue-500 cursor-pointer" />
+                <p className="text-[10px] text-slate-400">Extra phases wrap to the next panel row — never squeezed.</p>
+              </div>
+              <label className="flex items-center justify-between gap-2">
+                <span className="text-[11px] font-medium">Panel Row Height</span>
+                <select value={layoutConfig.phaseRowHeight || 'natural'} onChange={(e) => updateLayout('phaseRowHeight', e.target.value)} className="bg-white dark:bg-slate-900 border rounded-lg px-2 py-1.5 text-[11px] font-bold cursor-pointer">
+                  <option value="natural">Natural (each panel its own height)</option>
+                  <option value="equal">Equal (panels stretch to row height)</option>
+                </select>
+              </label>
+              <label className="flex items-center justify-between p-2 rounded-xl bg-white dark:bg-slate-900 border cursor-pointer">
+                <span className="text-[11px] font-medium">Show Phase Totals Inside Panels</span>
+                <input type="checkbox" checked={layoutConfig.showPhaseTotals !== false} onChange={(e) => updateLayout('showPhaseTotals', e.target.checked)} className="accent-blue-500" />
+              </label>
+              <p className="text-[10px] text-slate-400">There is deliberately no category grand total on BOM / Consumption prints — phase totals inside the panels are enough.</p>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'report' && isPendingDoc && (
+          <div className="space-y-3">
+            <div className="bg-slate-50 dark:bg-slate-950/70 p-3.5 rounded-2xl border space-y-3">
+              <h3 className="font-bold text-slate-900 dark:text-white text-xs">Orders Report Grouping</h3>
+              <label className="flex items-center justify-between gap-2">
+                <span className="text-[11px] font-medium">Group Rows By</span>
+                <select value={layoutConfig.groupBy || 'customer'} onChange={(e) => updateLayout('groupBy', e.target.value)} className="bg-white dark:bg-slate-900 border rounded-lg px-2 py-1.5 text-[11px] font-bold cursor-pointer">
+                  <option value="customer">Customer</option>
+                  <option value="status">Status</option>
+                  <option value="none">No Grouping</option>
+                </select>
+              </label>
+              <p className="text-[10px] text-slate-400">Group header rows show the order count and the summed ORDER (M) / PRODUCED (M) for that group. The status filter itself is chosen on the Order Management screen before opening this print.</p>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="border-t border-slate-200 dark:border-slate-800 p-3 flex items-center gap-2">
+        <button type="button" onClick={handleSaveLayout} disabled={saving} className="flex-1 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold cursor-pointer disabled:opacity-50">
+          {saveSuccess ? 'Saved Default!' : saving ? 'Saving...' : 'Save as Default'}
+        </button>
+        <button type="button" onClick={handleResetDefaults} className="px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border text-xs font-bold cursor-pointer">Reset</button>
       </div>
     </div>
+  );
+
+  // ---- Page rendering ----
+  const phaseDocTitle = documentType === 'consumption_history' ? 'CONSUMPTION' : documentType === 'bom_master' ? 'BILL OF MATERIALS' : docTitleDisplay;
+  const phaseRecord = isPhaseDoc
+    ? { ...resolvedRecord, docTitle: phaseDocTitle, docSub: resolvedRecord.docSub || '' }
+    : null;
+
+  const renderTablePage = (pageItems, pageIdx) => {
+    const isLastPage = pageIdx === pages.length - 1;
+    const showTotals = layoutConfig.totalsPosition === 'every_page' || isLastPage;
+    const showHeader = pageIdx === 0 || layoutConfig.repeatHeader === true;
+    const fitScale = scaleMode === 'fit' ? (fitScales[pageIdx] ?? 1) : 1;
+    const grandTotal = resolvedRecord?.totals?.grandTotal;
+    const totalsBarBg = layoutConfig.goldenTotalRow ? '#fbbf24' : (layoutConfig.totalsColor || '#232946');
+    const totalsBarText = layoutConfig.goldenTotalRow ? '#232946' : '#ffffff';
+    let runningItems = 0;
+    pages.slice(0, pageIdx).forEach((pg) => { runningItems += pg.filter((r) => !r._isGroup).length; });
+
+    return (
+      <div
+        key={pageIdx}
+        ref={(el) => { pageRefs.current[pageIdx] = el; }}
+        className="bg-white text-slate-900 shadow-2xl relative print-preview-page"
+        style={{
+          width: paperWidth,
+          height: scaleMode === 'actual' ? 'auto' : paperHeight,
+          minHeight: paperHeight,
+          maxWidth: paperWidth,
+          fontFamily: layoutConfig.fontFamily || 'Inter',
+          padding: `${margins.top} ${margins.right} ${margins.bottom} ${margins.left}`,
+          color: DESIGN.ink,
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: scaleMode === 'actual' ? 'visible' : 'hidden'
+        }}
+      >
+        <div className="no-print absolute top-2 right-2 bg-slate-900/80 text-white text-[9px] font-mono px-2 py-0.5 rounded shadow pointer-events-none">
+          Page {pageIdx + 1} of {pages.length}
+        </div>
+        <div data-fit-content style={{ transform: fitScale !== 1 ? `scale(${fitScale})` : undefined, transformOrigin: 'top left', display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+          {showHeader && (
+            <MetaGridHeader
+              layout={layoutConfig}
+              companyName={isPlanDoc ? 'AJ SYNTHETIC' : companyName}
+              companyLegal={isPlanDoc ? 'AJ Synthetic Leather & Footwear Industries Pvt. Limited' : ''}
+              companyAddress={isPlanDoc ? '' : companyAddress}
+              party={party}
+              metaRows={metaRows}
+              docTitle={docTitleDisplay}
+              docSub={isPlanDoc ? 'ORDER LIST' : null}
+              planVariant={isPlanDoc}
+            />
+          )}
+
+          <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '3mm' }}>
+            <thead>
+              <tr>
+                {activeCols.map((col, ci) => (
+                  <th key={ci} style={{ background: layoutConfig.tableHeaderBgColor || DESIGN.dark, color: layoutConfig.tableHeaderTextColor || '#fff', fontSize: '7pt', fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', padding: '2mm 2.5mm', textAlign: col.align || 'left', width: col.width, printColorAdjust: 'exact', WebkitPrintColorAdjust: 'exact' }}>
+                    {col.label}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {pageItems.map((row, rIdx) => {
+                if (row._isGroup) {
+                  return (
+                    <tr key={rIdx}>
+                      <td colSpan={Math.max(1, activeCols.length)} style={{ background: DESIGN.soft, borderTop: `1px solid ${DESIGN.line}`, borderBottom: `1px solid ${DESIGN.line}`, padding: '1.8mm 3mm', fontSize: '8.6pt', fontWeight: 800, color: DESIGN.ink }}>
+                        {row._group}
+                        <span style={{ fontWeight: 600, color: DESIGN.muted, marginLeft: '3mm' }}>
+                          {row._count} order{row._count === 1 ? '' : 's'}
+                          {activeCols.filter((c) => c.total).map((c) => ` · ${c.label}: ${Number(row._sums[c.key] || 0).toLocaleString()}`).join('')}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                }
+                runningItems += 1;
+                const itemNo = runningItems;
+                return (
+                  <tr key={rIdx} style={{ background: rIdx % 2 === 1 ? DESIGN.zebra : '#fff' }}>
+                    {activeCols.map((col, ci) => {
+                      let val;
+                      if (['serial_no', 'sr', 'sr_no'].includes(col.key) && (row[col.key] === undefined || row[col.key] === null)) {
+                        val = String(itemNo).padStart(2, '0');
+                      } else {
+                        val = getCellValue(col.key, row, itemNo - 1);
+                      }
+                      return (
+                        <td key={ci} style={{ fontSize: '8.8pt', padding: '1.6mm 2.5mm', borderTop: `1px solid ${DESIGN.line}`, textAlign: col.align || 'left', fontVariantNumeric: 'tabular-nums', fontWeight: col.total ? 700 : 400 }}>
+                          {val}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })}
+              {pageItems.length === 0 && (
+                <tr><td colSpan={Math.max(1, activeCols.length)} style={{ padding: '4mm', textAlign: 'center', color: DESIGN.muted, fontStyle: 'italic', fontSize: '9pt' }}>No rows to display.</td></tr>
+              )}
+            </tbody>
+            {showTotals && activeCols.some((c) => c.total) && (
+              <tfoot>
+                <tr>
+                  {activeCols.map((col, ci) => (
+                    <td key={ci} style={{ background: totalsBarBg, color: totalsBarText, fontSize: '9pt', fontWeight: 800, padding: '2.2mm 2.5mm', borderTop: `2px solid ${totalsBarBg}`, textAlign: col.align || 'left', fontVariantNumeric: 'tabular-nums', printColorAdjust: 'exact', WebkitPrintColorAdjust: 'exact' }}>
+                      {col.total ? Number(columnTotals[col.key] || 0).toLocaleString() : (ci === 0 ? 'TOTAL' : '')}
+                    </td>
+                  ))}
+                </tr>
+              </tfoot>
+            )}
+          </table>
+
+          {showTotals && grandTotal !== undefined && grandTotal !== null && (
+            <div style={{ marginTop: '2.5mm', border: `1px solid ${DESIGN.line}`, borderRadius: '6px', padding: '2.2mm 4mm', display: 'flex', justifyContent: 'space-between', gap: '4mm', background: '#fff' }}>
+              <span style={{ fontSize: '8.5pt', fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', color: DESIGN.muted }}>Amount in Words</span>
+              <span style={{ fontSize: '9.5pt', fontWeight: 700, textAlign: 'right' }}>Rupees {amountInWords(grandTotal)} Only</span>
+            </div>
+          )}
+
+          {isLastPage && layoutConfig.termsConditions && (
+            <div style={{ marginTop: '3mm', fontSize: '8pt', color: DESIGN.muted, lineHeight: 1.5 }}>
+              <strong>Terms &amp; Conditions: </strong>{layoutConfig.termsConditions}
+            </div>
+          )}
+
+          {isLastPage && (layoutConfig.signatures || []).length > 0 && (
+            <div style={{ display: 'flex', gap: '8mm', marginTop: '8mm' }}>
+              {(layoutConfig.signatures || []).map((sig, si) => (
+                <div key={si} style={{ flex: 1, textAlign: 'center' }}>
+                  <div style={{ borderTop: `1.5px solid ${DESIGN.ink}`, paddingTop: '1.5mm', fontSize: '8.5pt', fontWeight: 700 }}>{sig.label}</div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div style={{ marginTop: 'auto', paddingTop: '4mm', display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', fontSize: '7pt', letterSpacing: '1.2px', color: '#a2a6ba', textTransform: 'uppercase' }}>
+            <span>{layoutConfig.customFooterText || 'Powered by Flashvision'}</span>
+            {layoutConfig.showPageNumbers !== false && <span>Page {pageIdx + 1} of {pages.length}</span>}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <PrintStudioShell
+      onClose={onClose}
+      title={docTitleDisplay}
+      subtitle={`Universal Print Studio • Rows: ${resolvedLineItems.length} • Pages: ${isPhaseDoc ? 1 : pages.length}`}
+      paperLabel={currentPaper.label}
+      paperWidth={paperWidth}
+      paperHeight={paperHeight}
+      orientation={layoutConfig.orientation || 'portrait'}
+      onOrientationChange={(v) => updateLayout('orientation', v)}
+      marginPreset={layoutConfig.marginPreset || 'default'}
+      onMarginPresetChange={(v) => updateLayout('marginPreset', v)}
+      scaleMode={scaleMode}
+      onScaleModeChange={(v) => updateLayout('scaleMode', v)}
+      onPrint={handlePrintNow}
+      onExportCsv={handleExportCsv}
+      onExportImage={handleDownloadImage}
+      onExportPdf={handleDownloadPdf}
+      exporting={exporting}
+      sendConfig={{
+        documentTitle: docTitleDisplay,
+        filenameBase,
+        makeFile: makeSendFile,
+        csvAvailable: isPhaseDoc ? flattenedPhaseRows.length > 0 : resolvedLineItems.length > 0
+      }}
+      settingsPanel={settingsPanel}
+      extraPrintCss={extraPrintCss}
+    >
+      <div ref={printContainerRef} className="flex flex-col gap-8 items-center w-full">
+        {isPhaseDoc ? (
+          <PhaseMatrixSheet
+            record={phaseRecord}
+            layout={layoutConfig}
+            companyName="AJ SYNTHETIC"
+            companyLegal="AJ Synthetic Leather & Footwear Industries Pvt. Limited"
+            margins={margins}
+            paperWidth={paperWidth}
+            paperHeight={paperHeight}
+            pageIdx={0}
+            pageCount={1}
+          />
+        ) : (
+          pages.map((pageItems, pageIdx) => renderTablePage(pageItems, pageIdx))
+        )}
+      </div>
+    </PrintStudioShell>
   );
 }

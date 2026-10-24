@@ -2,22 +2,45 @@ import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useDialog } from '../../context/DialogContext';
 import ResizableHeader from '../ui/ResizableHeader';
-import PrintLayout from '../ui/PrintLayout';
+import UniversalPrintStudioModal from '../ui/UniversalPrintStudioModal';
 import GlobalPagination from '../ui/GlobalPagination';
 
 export default function OmsHistory({ completedRuns = [], onEditPlan }) {
     const { state, setCollection, updateSaleOrderItemStatus } = useApp();
     const { appConfirm, appAlert } = useDialog();
     const [viewPlan, setViewPlan] = useState(null);
+    const [printPlan, setPrintPlan] = useState(null);
     const [currentPage, setCurrentPage] = useState(1);
     const [searchTerm, setSearchTerm] = useState('');
     const itemsPerPage = 20;
 
+    // Sheet-based plan print (approved format): ORDER (M) before STATUS,
+    // golden total row, 'Production & Planning Division' banner — rendered
+    // by the Universal Print Studio (documentType production_plan).
     const handlePrint = (plan) => {
-        setViewPlan(plan);
-        setTimeout(() => {
-            window.print();
-        }, 100);
+        setPrintPlan(plan);
+    };
+
+    const buildPlanPrintRecord = (plan) => {
+        const items = (plan.items || []).map((item, idx) => ({
+            sr_no: idx + 1,
+            order_date: item.orderDate ? new Date(item.orderDate).toLocaleDateString('en-GB') : (plan.date ? new Date(plan.date).toLocaleDateString('en-GB') : ''),
+            customer_name: item.customerName || item.customer || 'Unknown',
+            item_name: item.productName || item.itemCode || '',
+            order_m: Number(item.quantity || item.outputQty || 0),
+            status: item.status || plan.status || 'PENDING'
+        }));
+        return {
+            id: plan.id,
+            header: {
+                plan_id: plan.id,
+                date: plan.date ? new Date(plan.date).toLocaleDateString('en-GB') : '',
+                status: plan.status || '',
+                created_by: plan.createdBy || 'System Admin'
+            },
+            items,
+            totals: { order_m: items.reduce((s, it) => s + (it.order_m || 0), 0) }
+        };
     };
 
     const handleDelete = async (planId) => {
@@ -308,55 +331,14 @@ export default function OmsHistory({ completedRuns = [], onEditPlan }) {
                 </div>
             )}
 
-            {/* Print-Only DOM */}
-            {viewPlan && (
-                <div className="hidden print:block w-full">
-                    <PrintLayout
-                        documentTitle="Production Plan Document"
-                        documentId={viewPlan.id}
-                        date={viewPlan.date}
-                        disclaimerKey="production"
-                        extraMeta={[
-                            { label: 'Status', value: viewPlan.status },
-                            { label: 'Created By', value: viewPlan.createdBy || 'System Admin' },
-                            { label: 'Total Items', value: viewPlan.items ? viewPlan.items.length.toString() : '0' }
-                        ]}
-                    >
-                        <table className="w-full text-left border-collapse mt-6">
-                            <thead>
-                                <tr className="border-b-2 border-outline-variant/30 text-on-surface-variant">
-                                    <th className="py-3 px-2 text-[10px] font-extrabold uppercase tracking-widest">Sale Order</th>
-                                    <th className="py-3 px-2 text-[10px] font-extrabold uppercase tracking-widest">Customer</th>
-                                    <th className="py-3 px-2 text-[10px] font-extrabold uppercase tracking-widest">Item</th>
-                                    <th className="py-3 px-2 text-[10px] font-extrabold uppercase tracking-widest text-right">Order Qty</th>
-                                    <th className="py-3 px-2 text-[10px] font-extrabold uppercase tracking-widest text-right">Prod Target</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-outline-variant/10">
-                                {viewPlan.items && viewPlan.items.map((item, idx) => (
-                                    <tr key={idx}>
-                                        <td className="py-4 px-2 font-bold text-sm">{item.orderId}</td>
-                                        <td className="py-4 px-2 text-sm font-medium">{item.customerName || item.customer || 'Unknown'}</td>
-                                        <td className="py-4 px-2 text-sm font-medium">
-                                            {item.productName} <br />
-                                            <span className="text-xs font-mono text-outline">{item.itemCode}</span>
-                                        </td>
-                                        <td className="py-4 px-2 text-sm font-bold text-right text-on-surface-variant">{item.quantity}m</td>
-                                        <td className="py-4 px-2 text-sm font-bold text-right">{item.outputQty || 0}m</td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                            <tfoot>
-                                <tr className="border-t-2 border-outline-variant/30">
-                                    <th colSpan="4" className="py-4 px-2 text-right text-[11px] font-extrabold uppercase tracking-widest text-on-surface-variant">Total Production Target:</th>
-                                    <th className="py-4 px-2 text-right text-lg font-black text-on-surface">
-                                        {viewPlan.items ? viewPlan.items.reduce((acc, i) => acc + parseInt(i.outputQty || 0), 0) : 0}m
-                                    </th>
-                                </tr>
-                            </tfoot>
-                        </table>
-                    </PrintLayout>
-                </div>
+            {/* Production Plan Print (Universal Print Studio) */}
+            {printPlan && (
+                <UniversalPrintStudioModal
+                    isOpen={!!printPlan}
+                    onClose={() => setPrintPlan(null)}
+                    documentType="production_plan"
+                    documentData={buildPlanPrintRecord(printPlan)}
+                />
             )}
 
         </div>
