@@ -20,6 +20,20 @@ export default function ConsumptionHistory({ onEdit }) {
     const [activeDropdown, setActiveDropdown] = useState(null);
     const [viewModalData, setViewModalData] = useState(null);
     const [printTarget, setPrintTarget] = useState(null); // { plan, itemCode? }
+    const [printRecord, setPrintRecord] = useState(null);
+
+    // Build the print record ONCE at click time (a snapshot) instead of
+    // rebuilding it inline on every render while the studio is open.
+    const openPrint = (plan, itemCode) => {
+        try {
+            setPrintRecord(buildConsumptionPrintRecord(plan, state, itemCode));
+            setPrintTarget({ plan, itemCode });
+        } catch (e) {
+            console.error('Consumption print failed:', e);
+            appAlert('Could not build the consumption print: ' + (e?.message || e));
+        }
+    };
+    const closePrint = () => { setPrintTarget(null); setPrintRecord(null); };
 
     // Build data
     const allPlans = state.productionPlans || [];
@@ -310,7 +324,7 @@ export default function ConsumptionHistory({ onEdit }) {
                                                             <span className="material-symbols-outlined text-[18px]">edit</span> Edit
                                                         </button>
                                                         <button
-                                                            onClick={() => { setActiveDropdown(null); setPrintTarget({ plan: row, itemCode: null }); }}
+                                                            onClick={() => { setActiveDropdown(null); openPrint(row, null); }}
                                                             className="w-full text-left px-4 py-2 hover:bg-surface-container text-sm font-medium flex items-center gap-2"
                                                         >
                                                             <span className="material-symbols-outlined text-[18px]">print</span> Print
@@ -362,7 +376,7 @@ export default function ConsumptionHistory({ onEdit }) {
                                                             <span className="material-symbols-outlined text-[18px]">edit</span> Edit Plan
                                                         </button>
                                                         <button
-                                                            onClick={() => { setActiveDropdown(null); setPrintTarget({ plan: row.planRef, itemCode: row.itemCode }); }}
+                                                            onClick={() => { setActiveDropdown(null); openPrint(row.planRef, row.itemCode); }}
                                                             className="w-full text-left px-4 py-2 hover:bg-surface-container text-sm font-medium flex items-center gap-2"
                                                         >
                                                             <span className="material-symbols-outlined text-[18px]">print</span> Print
@@ -394,12 +408,12 @@ export default function ConsumptionHistory({ onEdit }) {
             </div>
 
             {/* Consumption Print (Universal Print Studio) */}
-            {printTarget && (
+            {printTarget && printRecord && (
                 <UniversalPrintStudioModal
-                    isOpen={!!printTarget}
-                    onClose={() => setPrintTarget(null)}
+                    isOpen
+                    onClose={closePrint}
                     documentType="consumption_history"
-                    documentData={buildConsumptionPrintRecord(printTarget.plan, state, printTarget.itemCode)}
+                    documentData={printRecord}
                 />
             )}
 

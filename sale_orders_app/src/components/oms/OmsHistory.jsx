@@ -10,6 +10,7 @@ export default function OmsHistory({ completedRuns = [], onEditPlan }) {
     const { appConfirm, appAlert } = useDialog();
     const [viewPlan, setViewPlan] = useState(null);
     const [printPlan, setPrintPlan] = useState(null);
+    const [printRecord, setPrintRecord] = useState(null);
     const [currentPage, setCurrentPage] = useState(1);
     const [searchTerm, setSearchTerm] = useState('');
     const itemsPerPage = 20;
@@ -18,8 +19,17 @@ export default function OmsHistory({ completedRuns = [], onEditPlan }) {
     // golden total row, 'Production & Planning Division' banner — rendered
     // by the Universal Print Studio (documentType production_plan).
     const handlePrint = (plan) => {
-        setPrintPlan(plan);
+        // Build the print record ONCE at click time (a snapshot) instead of
+        // rebuilding it inline on every render while the studio is open.
+        try {
+            setPrintRecord(buildPlanPrintRecord(plan));
+            setPrintPlan(plan);
+        } catch (e) {
+            console.error('Plan print failed:', e);
+            appAlert('Could not build the plan print: ' + (e?.message || e));
+        }
     };
+    const closePrint = () => { setPrintPlan(null); setPrintRecord(null); };
 
     const buildPlanPrintRecord = (plan) => {
         const items = (plan.items || []).map((item, idx) => ({
@@ -332,12 +342,12 @@ export default function OmsHistory({ completedRuns = [], onEditPlan }) {
             )}
 
             {/* Production Plan Print (Universal Print Studio) */}
-            {printPlan && (
+            {printPlan && printRecord && (
                 <UniversalPrintStudioModal
-                    isOpen={!!printPlan}
-                    onClose={() => setPrintPlan(null)}
+                    isOpen
+                    onClose={closePrint}
                     documentType="production_plan"
-                    documentData={buildPlanPrintRecord(printPlan)}
+                    documentData={printRecord}
                 />
             )}
 

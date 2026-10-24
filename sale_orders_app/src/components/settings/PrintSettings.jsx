@@ -81,7 +81,6 @@ export default function PrintSettings() {
 
   const [saving, setSaving] = useState(false);
   const [showSaveSuccess, setShowSaveSuccess] = useState(false);
-  const [showPrintPreview, setShowPrintPreview] = useState(false);
   const [showStudioModal, setShowStudioModal] = useState(false);
 
 
@@ -437,7 +436,7 @@ export default function PrintSettings() {
         {/* Global Actions */}
         <div className="flex items-center gap-3 w-full md:w-auto justify-end">
           <button
-            onClick={() => setShowPrintPreview(true)}
+            onClick={() => setShowStudioModal(true)}
             className="px-4 py-2.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition-all flex items-center gap-2 shadow-sm"
           >
             <span className="material-symbols-outlined text-base">visibility</span>

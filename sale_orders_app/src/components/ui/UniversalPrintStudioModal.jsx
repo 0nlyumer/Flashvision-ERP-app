@@ -340,7 +340,7 @@ function PhaseMatrixSheet({ record, layout, companyName, companyLegal, margins, 
 // with group rows + column totals + words strip + signatures, the
 // phase-matrix branch, exports, and the SEND wiring through PrintStudioShell.
 // ---------------------------------------------------------------------------
-export default function UniversalPrintStudioModal({
+function UniversalPrintStudioModalInner({
   isOpen,
   onClose,
   documentType = 'sale_order',
@@ -1224,5 +1224,67 @@ export default function UniversalPrintStudioModal({
         )}
       </div>
     </PrintStudioShell>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Error boundary (2026-10-24 entry-point fix): if anything in the studio's
+// render throws (bad saved layout, unexpected record shape), the user must
+// SEE the failure with a way out — never a silently dead screen / vanished
+// popup, which is how the dead Print BOM entry point presented itself.
+// ---------------------------------------------------------------------------
+class PrintStudioErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { error: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { error };
+  }
+  componentDidCatch(error, info) {
+    console.error('[PrintStudio] render failed:', error, info);
+  }
+  render() {
+    if (this.state.error) {
+      const { onClose } = this.props;
+      return (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 300, background: 'rgba(2,6,23,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px', fontFamily: 'Inter, sans-serif' }}>
+          <div style={{ background: '#fff', color: '#0f172a', borderRadius: '16px', maxWidth: '480px', width: '100%', padding: '24px', boxShadow: '0 25px 50px rgba(0,0,0,0.4)' }}>
+            <h3 style={{ fontSize: '16px', fontWeight: 800, margin: '0 0 8px' }}>Print preview could not be opened</h3>
+            <p style={{ fontSize: '13px', color: '#475569', margin: '0 0 6px' }}>
+              Something in this document&apos;s print data or saved layout failed to render. Your data is safe — nothing was changed.
+            </p>
+            <p style={{ fontSize: '12px', color: '#b91c1c', fontFamily: 'monospace', margin: '0 0 18px', wordBreak: 'break-word' }}>
+              {String(this.state.error?.message || this.state.error)}
+            </p>
+            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                onClick={() => this.setState({ error: null })}
+                style={{ padding: '8px 14px', borderRadius: '10px', border: '1px solid #cbd5e1', background: '#f1f5f9', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}
+              >
+                Try Again
+              </button>
+              <button
+                type="button"
+                onClick={() => { this.setState({ error: null }); onClose?.(); }}
+                style={{ padding: '8px 14px', borderRadius: '10px', border: 'none', background: '#2563eb', color: '#fff', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+export default function UniversalPrintStudioModal(props) {
+  return (
+    <PrintStudioErrorBoundary onClose={props.onClose}>
+      <UniversalPrintStudioModalInner {...props} />
+    </PrintStudioErrorBoundary>
   );
 }

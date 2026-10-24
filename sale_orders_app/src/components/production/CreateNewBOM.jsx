@@ -22,7 +22,19 @@ export default function CreateNewBOM({ onClose, initialBom, isViewOnly = false }
 
   const [batchSize, setBatchSize] = useState('');
   const [clothWeight, setClothWeight] = useState('');
-  const [printOpen, setPrintOpen] = useState(false);
+  const [printRecord, setPrintRecord] = useState(null);
+
+  // Build the print record ONCE at click time (a snapshot). Building it
+  // inline during render recreated the record object on every re-render
+  // and fed the studio a churning documentData identity.
+  const handlePrintBom = () => {
+    try {
+      setPrintRecord(buildBomPrintRecord(initialBom, state));
+    } catch (e) {
+      console.error('Print BOM failed:', e);
+      appAlert('Could not build the BOM print: ' + (e?.message || e));
+    }
+  };
   
   const genericMaterials = rawMaterials.filter(rm => {
       const type = rm.rawMaterialType?.toLowerCase() || '';
@@ -250,16 +262,16 @@ export default function CreateNewBOM({ onClose, initialBom, isViewOnly = false }
                 <span className="material-symbols-outlined text-[20px]">check</span> Save Configuration
             </button>
           ) : (
-            <button onClick={() => setPrintOpen(true)} className="px-6 py-3 rounded-xl font-semibold bg-secondary/10 text-secondary hover:bg-secondary/20 shadow-sm flex items-center gap-2 transition-transform hover:scale-[1.02] print:hidden">
+            <button onClick={handlePrintBom} className="px-6 py-3 rounded-xl font-semibold bg-secondary/10 text-secondary hover:bg-secondary/20 shadow-sm flex items-center gap-2 transition-transform hover:scale-[1.02] print:hidden">
                 <span className="material-symbols-outlined text-[20px]">print</span> Print BOM
             </button>
           )}
-          {printOpen && initialBom && (
+          {printRecord && (
             <UniversalPrintStudioModal
-              isOpen={printOpen}
-              onClose={() => setPrintOpen(false)}
+              isOpen
+              onClose={() => setPrintRecord(null)}
               documentType="bom_master"
-              documentData={buildBomPrintRecord(initialBom, state)}
+              documentData={printRecord}
             />
           )}
       </div>

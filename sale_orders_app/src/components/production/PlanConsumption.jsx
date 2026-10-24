@@ -11,7 +11,22 @@ export default function PlanConsumption({ plan, onClose }) {
   const fileInputRef = useRef(null);
 
   const [consumptionData, setConsumptionData] = useState({});
-  const [printOpen, setPrintOpen] = useState(false);
+  const [printRecord, setPrintRecord] = useState(null);
+
+  // Build the print record ONCE at click time (a snapshot of the currently
+  // edited consumption if any, else the saved one) instead of rebuilding
+  // it inline on every render while the studio is open.
+  const handlePrintConsumption = () => {
+    try {
+      setPrintRecord(buildConsumptionPrintRecord(
+        { ...plan, consumptions: Object.keys(consumptionData).length > 0 ? consumptionData : (plan.consumptions || {}) },
+        state
+      ));
+    } catch (e) {
+      console.error('Print Consumption failed:', e);
+      appAlert('Could not build the consumption print: ' + (e?.message || e));
+    }
+  };
   const [addSelections, setAddSelections] = useState({});
   const [manualModeItems, setManualModeItems] = useState({});
   const [draggedRow, setDraggedRow] = useState(null);
@@ -783,19 +798,16 @@ export default function PlanConsumption({ plan, onClose }) {
                   <span className="material-symbols-outlined text-sm">save</span>
                   Record Consumption
               </button>
-              <button onClick={() => setPrintOpen(true)} className="flex items-center gap-2 px-6 py-3 rounded-lg bg-surface-container-highest text-on-surface font-label font-semibold hover:bg-surface-dim transition-colors shadow-sm">
+              <button onClick={handlePrintConsumption} className="flex items-center gap-2 px-6 py-3 rounded-lg bg-surface-container-highest text-on-surface font-label font-semibold hover:bg-surface-dim transition-colors shadow-sm">
                   <span className="material-symbols-outlined text-sm">print</span>
                   Print Consumption
               </button>
-              {printOpen && (
+              {printRecord && (
                 <UniversalPrintStudioModal
-                  isOpen={printOpen}
-                  onClose={() => setPrintOpen(false)}
+                  isOpen
+                  onClose={() => setPrintRecord(null)}
                   documentType="consumption_history"
-                  documentData={buildConsumptionPrintRecord(
-                    { ...plan, consumptions: Object.keys(consumptionData).length > 0 ? consumptionData : (plan.consumptions || {}) },
-                    state
-                  )}
+                  documentData={printRecord}
                 />
               )}
           </div>
