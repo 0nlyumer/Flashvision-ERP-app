@@ -30,8 +30,18 @@ export default function FinanceDashboard({ onNavigateTab }) {
     window.print();
   };
 
+  // Cockpit height refinement (Omer, 2026-10-24): the ~10% dead band under
+  // the GL panel was the Layout content wrapper's bottom padding (p-6 =
+  // 24px, lg:p-8 = 32px) PLUS this root's own py-6 bottom (24px) = 56px of
+  // white between panel and footer. This root now has pb-0 and its height
+  // reaches THROUGH the wrapper padding (calc 100% + wrapper bottom
+  // padding, shrink-0 so flex never shrinks it back), so the GL panel ends
+  // flush on the footer top edge — only the footer's own strip remains.
+  // Scoped to this page only: Layout wrapper, footer and every other
+  // finance tab are untouched; the height chain ancestors carry no
+  // overflow-hidden, so the extension paints visibly.
   return (
-    <div className="flex-1 min-h-0 w-full max-w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 flex flex-col gap-6">
+    <div className="shrink-0 min-h-0 w-full max-w-full mx-auto px-4 sm:px-6 lg:px-8 pt-6 pb-0 flex flex-col gap-6 h-[calc(100%+24px)] lg:h-[calc(100%+32px)]">
       {/* Page Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
         <div>
