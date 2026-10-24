@@ -194,7 +194,20 @@ export default function HRSettings({ isMobile }) {
   const [divisions, setDivisions] = useState(() => {
     try {
       const saved = localStorage.getItem('hr_divisions_config');
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          // Spelling alignment (Omer, 2026-10-24): stored division
+          // descriptions saved before this fix may carry 'footware' —
+          // normalize to 'Footwear' on load; the persist effect below
+          // writes the corrected config back through the normal save
+          // path. printFullName values are preserved exactly.
+          return parsed.map((d) => (d && typeof d.description === 'string'
+            ? { ...d, description: d.description.replace(/footware/gi, 'Footwear') }
+            : d));
+        }
+        return parsed;
+      }
       return [
         { id: 1, name: 'AJ Synthetic', code: 'AJS', description: 'AJ Synthetic Core Division', head: '', printFullName: 'AJ Synthetic Leather & Footwear Industries Pvt. Limited' },
         { id: 2, name: 'AAA', code: 'AAA', description: 'AAA Operations Wing', head: '', printFullName: '' }

@@ -111,7 +111,7 @@ export default function HRPayslipModal({ isOpen, onClose, slip }) {
                   AJ SYNTHETIC
                 </h1>
                 <p className="text-[11px] text-slate-500 font-medium">
-                  Payroll Audit Division • {slip.printFullName || 'AJ Synthetic Leather & footware Industries Pvt. Limited'}
+                  Payroll Audit Division • {slip.printFullName || 'AJ Synthetic Leather & Footwear Industries Pvt. Limited'}
                 </p>
               </div>
             </div>
@@ -358,7 +358,7 @@ export default function HRPayslipModal({ isOpen, onClose, slip }) {
 
           {/* 7. Footer */}
           <div className="pt-3 border-t border-slate-200 flex justify-between items-center text-[10px] text-slate-500 font-medium">
-            <span>AJ Synthetic Leather &amp; footware Industries Pvt. Limited • Confidential Pay Sheet</span>
+            <span>AJ Synthetic Leather &amp; Footwear Industries Pvt. Limited • Confidential Pay Sheet</span>
             <span className="font-headline font-black text-slate-800 tracking-wider">POWERED BY FLASHVISION</span>
             <span>Page 1 of 1</span>
           </div>

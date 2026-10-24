@@ -2159,14 +2159,18 @@ export default function HRSalaryGeneration({ isMobile }) {
       {/* SALARY PRINT STUDIO (HR Prints): big preview popup built  */}
       {/* from the live screen state — visible columns + totals     */}
       {/* ========================================================= */}
+      {/* For All Divisions: divisionName stays the 'All Divisions' label
+          (audit line + meta row); the automatic header line 1 is the
+          company name, passed via divisionPrintName (Omer, 2026-10-24 —
+          company name must never leak into the DIVISION label). */}
       <SalaryPrintStudio
         isOpen={isSalaryPrintOpen}
         onClose={() => setIsSalaryPrintOpen(false)}
         initialSettingsOpen={salaryPrintSettingsOpen}
         columns={visibleColumns}
         rows={filteredList}
-        divisionName={selectedDivision !== 'ALL' ? selectedDivision : (state.adminSetup?.companyName || 'All Divisions')}
-        divisionPrintName={selectedDivision !== 'ALL' ? getDivisionPrintFullName(selectedDivision) : ''}
+        divisionName={selectedDivision !== 'ALL' ? selectedDivision : 'All Divisions'}
+        divisionPrintName={selectedDivision !== 'ALL' ? getDivisionPrintFullName(selectedDivision) : (state.adminSetup?.companyName || 'FLASHVISION')}
         periodLabel={payrollPeriod ? getPeriodLabel(payrollPeriod) : ''}
         periodKey={payrollPeriod}
         currencySymbol={currSym}
