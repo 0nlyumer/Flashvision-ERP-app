@@ -7,6 +7,7 @@ import ProductionTargetWidget from './ProductionTargetWidget';
 import ProductionItemsWidget from './ProductionItemsWidget';
 import WorkingDaysWidget from './WorkingDaysWidget';
 import AppIconWidget from './widgets/AppIconWidget';
+import ModuleStatWidget from './ModuleStatWidget';
 
 import { useApp } from '../../context/AppContext';
 
@@ -30,66 +31,64 @@ export const WidgetRegistry = {
     component: ProductionTargetWidget,
     defaultWidth: 6,
     defaultHeight: 4,
+    module: 'productionPlanning',
+    hint: "This month's production output against the monthly target, with progress."
   },
   'production_items': {
     name: 'Total Completed Items',
     component: ProductionItemsWidget,
     defaultWidth: 3,
     defaultHeight: 4,
+    module: 'productionPlanning',
+    hint: "Items completed in this month's production plans."
   },
   'working_days': {
     name: 'Working Days',
     component: WorkingDaysWidget,
     defaultWidth: 3,
     defaultHeight: 4,
+    module: 'productionPlanning',
+    hint: "Days with production plans this month."
   },
   'delivery_kpi': {
     name: 'Delivery KPI',
     component: DeliveryWidget,
     defaultWidth: 12,
     defaultHeight: 4,
+    module: 'delivery',
+    hint: "Total dispatches, pending challans and completed orders in one widget."
   },
   'shortcuts': {
     name: 'Quick Shortcuts',
     component: ShortcutsWidget,
     defaultWidth: 4,
     defaultHeight: 4,
+    module: 'dashboard',
+    hint: "Quick links to the main modules."
   },
   'todo_list': {
     name: 'Task Board',
     component: TodoListWidget,
     defaultWidth: 4,
     defaultHeight: 6,
+    module: 'dashboard',
+    hint: "Your personal task board."
   },
   'calendar': {
     name: 'Calendar',
     component: CalendarWidget,
     defaultWidth: 4,
     defaultHeight: 6,
-  },
-  'sales_stats': {
-    name: 'Sales Overview',
-    component: () => <PlaceholderWidget name="Sales Stats Widget" />,
-    defaultWidth: 6,
-    defaultHeight: 4,
-  },
-  'production_flow': {
-    name: 'Production Flow',
-    component: () => <PlaceholderWidget name="Production Flow Widget" />,
-    defaultWidth: 8,
-    defaultHeight: 6,
-  },
-  'notifications': {
-    name: 'Recent Activity',
-    component: () => <PlaceholderWidget name="Notifications List" />,
-    defaultWidth: 4,
-    defaultHeight: 6,
+    module: 'dashboard',
+    hint: "Monthly calendar view."
   },
   'bom_calculator': {
     name: 'BOM Calculator',
     component: AppIconWidget,
     defaultWidth: 2,
     defaultHeight: 2,
+    module: 'dashboard',
+    hint: "Shortcut tile that opens the BOM Calculator.",
     appConfig: {
       title: 'BOM Calculator',
       icon: 'calculate',
@@ -101,6 +100,8 @@ export const WidgetRegistry = {
     component: AppIconWidget,
     defaultWidth: 2,
     defaultHeight: 2,
+    module: 'dashboard',
+    hint: "Shortcut tile that opens E-Files.",
     appConfig: {
       title: 'E-Files',
       icon: 'shelves',
@@ -112,6 +113,14 @@ export const WidgetRegistry = {
     component: AppIconWidget,
     defaultWidth: 2,
     defaultHeight: 2,
+    module: 'dashboard',
+    hint: "A single app shortcut tile."
+  },
+  'module_stat': {
+    name: 'Module Stat',
+    component: ModuleStatWidget,
+    defaultWidth: 3,
+    defaultHeight: 3
   }
 };
 

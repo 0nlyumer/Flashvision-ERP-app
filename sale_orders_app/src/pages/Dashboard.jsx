@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Responsive, WidthProvider } from 'react-grid-layout/legacy';
 import 'react-grid-layout/css/styles.css';
@@ -6,6 +6,7 @@ import 'react-resizable/css/styles.css';
 import Layout from '../components/Layout';
 import { useApp } from '../context/AppContext';
 import { WidgetRegistry, getWidgetComponent } from '../components/dashboard/WidgetRegistry';
+import { WIDGET_MODULES, MODULE_STAT_WIDGETS } from '../components/dashboard/moduleWidgetDefs';
 import ProductionHistoryModal from '../components/dashboard/ProductionHistoryModal';
 import DocumentWarehouse from './DocumentWarehouse';
 const ResponsiveGridLayout = WidthProvider(Responsive);
@@ -22,13 +23,60 @@ const getWidgetTypeFromId = (id) => {
 };
 
 export default function Dashboard() {
-  const { state, updateDashboardLayout, updateDashboardBackground } = useApp();
+  const { state, updateDashboardLayout, updateDashboardBackground, hasPermission } = useApp();
   const [isEditMode, setIsEditMode] = useState(false);
   const [showAddWidget, setShowAddWidget] = useState(false);
   const [historyModalOpen, setHistoryModalOpen] = useState(false);
   const [historyType, setHistoryType] = useState('target');
   
   const [currentLayout, setCurrentLayout] = useState(state.dashboardLayout || []);
+
+  // Filter modules based on user permissions
+  const permittedModules = useMemo(() => {
+    return WIDGET_MODULES.filter(m => (typeof hasPermission === 'function' ? hasPermission(m.key) : true));
+  }, [hasPermission]);
+
+  const [selectedModuleKey, setSelectedModuleKey] = useState(null);
+
+  const activeModuleKey = (selectedModuleKey && permittedModules.some(m => m.key === selectedModuleKey))
+    ? selectedModuleKey
+    : (permittedModules[0]?.key || 'dashboard');
+
+  // Selected module's widgets (registry widgets + module stat widgets)
+  const currentModuleWidgets = useMemo(() => {
+    if (!activeModuleKey) return [];
+
+    // Existing registry widgets whose module === activeModuleKey (excluding 'module_stat')
+    const registryWidgets = Object.entries(WidgetRegistry)
+      .filter(([key, def]) => key !== 'module_stat' && def.module === activeModuleKey)
+      .map(([key, def]) => ({
+        id: key,
+        key: key,
+        isStat: false,
+        name: def.name,
+        hint: def.hint || '',
+        icon: def.appConfig?.icon || (key === 'delivery_kpi' ? 'local_shipping' : key === 'calendar' ? 'calendar_month' : key === 'todo_list' ? 'checklist' : key === 'shortcuts' ? 'hub' : 'widgets'),
+        defaultWidth: def.defaultWidth,
+        defaultHeight: def.defaultHeight,
+        appConfig: def.appConfig
+      }));
+
+    // Stat widgets from MODULE_STAT_WIDGETS whose module === activeModuleKey
+    const statWidgets = Object.values(MODULE_STAT_WIDGETS)
+      .filter(def => def.module === activeModuleKey)
+      .map(def => ({
+        id: def.id,
+        key: def.id,
+        isStat: true,
+        name: def.name,
+        hint: def.hint || '',
+        icon: def.icon,
+        defaultWidth: def.defaultWidth || 3,
+        defaultHeight: def.defaultHeight || 3
+      }));
+
+    return [...registryWidgets, ...statWidgets];
+  }, [activeModuleKey]);
 
   // Subnav configuration for Dashboard module
   const tabs = [
@@ -87,28 +135,61 @@ export default function Dashboard() {
     setIsEditMode(!isEditMode);
   };
 
-  const handleAddWidget = (widgetType) => {
-     const widgetMeta = WidgetRegistry[widgetType];
-     if (!widgetMeta) return;
-     
-     const newWidget = {
-       i: `${widgetType}_${Date.now()}`,
-       x: 0,
-       y: Infinity, // Add to bottom
-       w: widgetMeta.defaultWidth,
-       h: widgetMeta.defaultHeight,
-       type: widgetType,
-       static: false,
-       ...(widgetMeta.appConfig || {})
-     };
-     
-     const newLayout = [...currentLayout, newWidget];
-     updateDashboardLayout(newLayout);
-     setShowAddWidget(false);
+  const handleToggleWidget = (widget) => {
+    if (widget.isStat) {
+      const existing = currentLayout.find(l => l.type === 'module_stat' && l.widgetId === widget.id);
+      if (existing) {
+        // Remove
+        const newLayout = currentLayout.filter(w => w.i !== existing.i);
+        setCurrentLayout(newLayout);
+        updateDashboardLayout(newLayout);
+      } else {
+        // Add stat widget
+        const def = MODULE_STAT_WIDGETS[widget.id] || widget;
+        const newItem = {
+          i: `module_stat_${widget.id}_${Date.now()}`,
+          x: 0,
+          y: Infinity,
+          w: def.defaultWidth || 3,
+          h: def.defaultHeight || 3,
+          type: 'module_stat',
+          widgetId: widget.id,
+          static: false
+        };
+        const newLayout = [...currentLayout, newItem];
+        setCurrentLayout(newLayout);
+        updateDashboardLayout(newLayout);
+      }
+    } else {
+      const existing = currentLayout.find(l => l.type === widget.key);
+      if (existing) {
+        // Remove
+        const newLayout = currentLayout.filter(w => w.i !== existing.i);
+        setCurrentLayout(newLayout);
+        updateDashboardLayout(newLayout);
+      } else {
+        // Add existing registry widget
+        const widgetMeta = WidgetRegistry[widget.key] || widget;
+        const newWidget = {
+          i: `${widget.key}_${Date.now()}`,
+          x: 0,
+          y: Infinity,
+          w: widgetMeta.defaultWidth,
+          h: widgetMeta.defaultHeight,
+          type: widget.key,
+          static: false,
+          ...(widgetMeta.appConfig || {})
+        };
+        const newLayout = [...currentLayout, newWidget];
+        setCurrentLayout(newLayout);
+        updateDashboardLayout(newLayout);
+      }
+    }
   };
 
   const handleRemoveWidget = (id) => {
      const newLayout = currentLayout.filter(w => w.i !== id);
+     setCurrentLayout(newLayout);
      updateDashboardLayout(newLayout);
   };
 
@@ -224,31 +305,106 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Add Widget Modal */}
+      {/* Add Widgets Modal */}
       {showAddWidget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-fade-in">
-          <div className="bg-surface-container-lowest w-full max-w-lg rounded-[32px] p-6 shadow-2xl animate-slide-up">
-            <div className="flex justify-between items-center mb-6">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-fade-in p-4">
+          <div className="bg-surface-container-lowest w-full max-w-2xl rounded-[32px] p-6 shadow-2xl animate-slide-up flex flex-col max-h-[85vh]">
+            <div className="flex justify-between items-center mb-5 shrink-0">
               <h2 className="text-xl font-bold text-on-surface flex items-center gap-2">
-                  <span className="material-symbols-outlined text-primary">extension</span>
-                  Widget Catalog
+                <span className="material-symbols-outlined text-primary">extension</span>
+                Add Widgets
               </h2>
-              <button onClick={() => setShowAddWidget(false)} className="w-8 h-8 flex items-center justify-center rounded-full bg-surface-container-high text-on-surface-variant hover:text-on-surface transition-colors">
-                 <span className="material-symbols-outlined text-[20px]">close</span>
+              <button 
+                onClick={() => setShowAddWidget(false)} 
+                className="w-8 h-8 flex items-center justify-center rounded-full bg-surface-container-high text-on-surface-variant hover:text-on-surface transition-colors"
+              >
+                <span className="material-symbols-outlined text-[20px]">close</span>
               </button>
             </div>
-            <div className="grid grid-cols-2 gap-4 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">
-               {Object.entries(WidgetRegistry).map(([key, widget]) => (
-                 <div key={key} className="border border-outline-variant/30 rounded-2xl p-4 flex flex-col gap-3 hover:border-primary hover:bg-primary/5 transition-colors cursor-pointer group" onClick={() => handleAddWidget(key)}>
-                    <div className="w-10 h-10 rounded-xl bg-surface-container text-on-surface-variant flex items-center justify-center group-hover:bg-primary group-hover:text-white transition-colors">
-                       <span className="material-symbols-outlined text-xl">widgets</span>
-                    </div>
-                    <div>
-                        <p className="text-sm font-bold text-on-surface">{widget.name}</p>
-                        <p className="text-[10px] text-on-surface-variant mt-1">Add to dashboard</p>
-                    </div>
-                 </div>
-               ))}
+
+            {/* Top section: MODULE NAMES list */}
+            <div className="flex flex-wrap gap-2 pb-3 border-b border-outline-variant/15 mb-4 shrink-0">
+              {permittedModules.map(mod => {
+                const isSelected = mod.key === activeModuleKey;
+                return (
+                  <button
+                    key={mod.key}
+                    type="button"
+                    onClick={() => setSelectedModuleKey(mod.key)}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                      isSelected
+                        ? 'bg-primary text-white shadow-sm'
+                        : 'bg-surface-container-low text-on-surface-variant hover:text-on-surface hover:bg-surface-container'
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-[18px]">{mod.icon}</span>
+                    <span>{mod.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Scrollable body: selected module's widgets */}
+            <div className="max-h-[70vh] overflow-y-auto pr-1 custom-scrollbar flex-1">
+              {currentModuleWidgets.length === 0 ? (
+                <div className="py-12 text-center text-on-surface-variant text-sm">
+                  <p>Is module ke liye abhi koi widget nahi hai.</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {currentModuleWidgets.map(widget => {
+                    const isAdded = widget.isStat
+                      ? currentLayout.some(l => l.type === 'module_stat' && l.widgetId === widget.id)
+                      : currentLayout.some(l => l.type === widget.key);
+                    return (
+                      <div
+                        key={widget.id}
+                        className="border border-outline-variant/20 rounded-2xl p-3.5 flex items-center justify-between gap-3 bg-surface-container-lowest hover:border-outline-variant/40 transition-colors"
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="w-10 h-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                            <span className="material-symbols-outlined text-xl">{widget.icon || 'widgets'}</span>
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-sm font-bold text-on-surface truncate">{widget.name}</p>
+                            {widget.hint && (
+                              <p className="text-xs text-on-surface-variant/80 mt-0.5 line-clamp-2">{widget.hint}</p>
+                            )}
+                          </div>
+                        </div>
+                        <div className="shrink-0">
+                          {isAdded ? (
+                            <button
+                              type="button"
+                              onClick={() => handleToggleWidget(widget)}
+                              className="px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 bg-emerald-500/10 text-emerald-600 border border-emerald-500/30 hover:bg-error/10 hover:text-error hover:border-error/30 group/btn"
+                              title="Click to remove from dashboard"
+                            >
+                              <span className="group-hover/btn:hidden flex items-center gap-1">
+                                <span>Added</span>
+                                <span>✓</span>
+                              </span>
+                              <span className="hidden group-hover/btn:inline-flex items-center gap-1">
+                                <span className="material-symbols-outlined text-[14px]">close</span>
+                                <span>Remove</span>
+                              </span>
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleToggleWidget(widget)}
+                              className="px-3.5 py-1.5 rounded-xl text-xs font-bold border border-primary text-primary hover:bg-primary/10 transition-colors flex items-center gap-1"
+                            >
+                              <span className="material-symbols-outlined text-[15px]">add</span>
+                              <span>Add</span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
         </div>
