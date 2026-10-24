@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useDialog } from '../../context/DialogContext';
 import ResizableHeader from '../ui/ResizableHeader';
+import { invoiceSourceLabel, invoiceSourceType } from '../../utils/invoiceSource';
 
 // Sales Invoice History module matching professional Stitch templates
 export default function SalesInvoiceHistory({ onViewCreate }) {
@@ -192,7 +193,7 @@ export default function SalesInvoiceHistory({ onViewCreate }) {
               <h2 class="doc-title">SALES INVOICE</h2>
               <p><strong>Invoice ID:</strong> ${invoice.id}</p>
               <p><strong>Date:</strong> ${new Date(invoice.date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
-              <p><strong>DC Reference:</strong> ${invoice.deliveryId}</p>
+              <p><strong>Source:</strong> ${invoiceSourceLabel(invoice)}</p>
               <p><strong>Status:</strong> ${invoice.status}</p>
             </div>
           </div>
@@ -318,8 +319,17 @@ export default function SalesInvoiceHistory({ onViewCreate }) {
   // delivery challan is marked invoiced, and the derived GL/AR pick the
   // invoice up). Drafts have no ledger effect until this is clicked.
   const handlePostClick = async (invoice) => {
+    // Source-aware posting note: a DC is marked invoiced on post; GRN /
+    // IGP sources are link-only (their isInvoiced flag belongs to the
+    // Purchase Invoice flow); standalone invoices have no source.
+    const srcType = invoiceSourceType(invoice);
+    const sourceNote = srcType === 'DC'
+      ? `marks Delivery Challan ${invoice.deliveryId} as invoiced.`
+      : srcType === 'GRN' || srcType === 'IGP'
+        ? `keeps it linked to ${invoiceSourceLabel(invoice)} (link-only — the document's Purchase-Invoice status is not changed).`
+        : `it has no source document.`;
     const proceed = await appConfirm(
-      `Post invoice ${invoice.id}?\n\nGrand Total: ${currencyCode} ${invoice.grandTotal?.toLocaleString(undefined, { minimumFractionDigits: 2 })}\nSales Tax (17%): ${invoice.taxApplied === false ? 'NOT APPLIED' : 'APPLIED'}\n\nPosting moves this invoice into the ledger and marks Delivery Challan ${invoice.deliveryId} as invoiced.`,
+      `Post invoice ${invoice.id}?\n\nGrand Total: ${currencyCode} ${invoice.grandTotal?.toLocaleString(undefined, { minimumFractionDigits: 2 })}\nSales Tax (17%): ${invoice.taxApplied === false ? 'NOT APPLIED' : 'APPLIED'}\n\nPosting moves this invoice into the ledger and ${sourceNote}`,
       "Post Draft Invoice",
       "Post Invoice",
       "Cancel"
@@ -337,8 +347,11 @@ export default function SalesInvoiceHistory({ onViewCreate }) {
       return;
     }
 
+    const deleteNote = invoiceSourceType(invoice) === 'DC'
+      ? `\nDeleting this invoice will restore Delivery Challan ${invoice.deliveryId} back to the invoicing dropdown list.`
+      : '';
     const proceed = await appConfirm(
-      `Are you sure you want to delete invoice ${invoice.id}?\nDeleting this invoice will restore Delivery Challan ${invoice.deliveryId} back to the invoicing dropdown list.`,
+      `Are you sure you want to delete invoice ${invoice.id}?${deleteNote}`,
       "Delete Invoice Confirmation",
       "Delete",
       "Cancel"
@@ -375,7 +388,7 @@ export default function SalesInvoiceHistory({ onViewCreate }) {
               <tr className="bg-surface-container-low text-[10px] font-bold text-on-surface-variant uppercase tracking-widest border-b border-surface-container">
                 {visibleColumns.id && <ResizableHeader className="px-6 py-4">Invoice ID</ResizableHeader>}
                 {visibleColumns.date && <ResizableHeader className="px-6 py-4">Date</ResizableHeader>}
-                {visibleColumns.dcRef && <ResizableHeader className="px-6 py-4">DC Ref</ResizableHeader>}
+                {visibleColumns.dcRef && <ResizableHeader className="px-6 py-4">Source</ResizableHeader>}
                 {visibleColumns.customer && <ResizableHeader className="px-6 py-4">Customer</ResizableHeader>}
                 {visibleColumns.total && <ResizableHeader className="px-6 py-4 text-right">Grand Total</ResizableHeader>}
                 {visibleColumns.status && <ResizableHeader className="px-6 py-4">Status</ResizableHeader>}
@@ -399,7 +412,7 @@ export default function SalesInvoiceHistory({ onViewCreate }) {
                         {Object.entries({
                           id: 'Invoice ID',
                           date: 'Date',
-                          dcRef: 'DC Reference',
+                          dcRef: 'Source Document',
                           customer: 'Customer',
                           total: 'Grand Total',
                           status: 'Status',
@@ -437,7 +450,7 @@ export default function SalesInvoiceHistory({ onViewCreate }) {
                     )}
                     {visibleColumns.dcRef && (
                       <td className="px-6 py-4 text-sm font-mono text-on-surface-variant">
-                        {invoice.deliveryId}
+                        {invoiceSourceLabel(invoice)}
                       </td>
                     )}
                     {visibleColumns.customer && (
@@ -552,7 +565,7 @@ export default function SalesInvoiceHistory({ onViewCreate }) {
                   <h2 className="text-xl font-extrabold text-on-surface uppercase tracking-wide">Sales Invoice</h2>
                   <p className="text-xs text-on-surface-variant"><strong>Invoice ID:</strong> {selectedInvoice.id}</p>
                   <p className="text-xs text-on-surface-variant"><strong>Date:</strong> {new Date(selectedInvoice.date).toLocaleDateString()}</p>
-                  <p className="text-xs text-on-surface-variant"><strong>DC Ref:</strong> {selectedInvoice.deliveryId}</p>
+                  <p className="text-xs text-on-surface-variant"><strong>Source:</strong> {invoiceSourceLabel(selectedInvoice)}</p>
                 </div>
               </div>
 

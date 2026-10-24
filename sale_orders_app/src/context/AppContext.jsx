@@ -19,6 +19,7 @@ import { getInitialFlashAmConfig, normalizeFlashAmConfig } from '../utils/flashA
 import { getInitialSalaryPrintSettings, normalizeSalaryPrintSettings } from '../utils/salaryPrintSettings';
 import { getInitialPayrollMappings, normalizePayrollMappings } from '../utils/payrollAccountMapping';
 import { DEFAULT_CHART_OF_ACCOUNTS } from '../utils/financeEngine';
+import { invoiceSourceLabel } from '../utils/invoiceSource';
 
 const AppContext = createContext();
 const BUILD_VERSION = '20260715_v5';
@@ -4558,7 +4559,7 @@ export const AppProvider = ({ children }) => {
       };
     });
     addNotification(isDraft ? 'Sales Invoice Draft Saved' : 'Sales Invoice Generated', `Invoice ${invoice.id} for ${invoice.customerName} has been ${isDraft ? 'saved as draft' : 'generated'}.`, 'success');
-    addAuditLog(isDraft ? 'Save Sales Invoice Draft' : 'Generate Sales Invoice', 'Finance', `${isDraft ? 'Saved draft sales invoice' : 'Generated sales invoice'} ${invoice.id} against Delivery Challan ${invoice.deliveryId}.`, 'Success', state.currentUser?.name || 'Admin');
+    addAuditLog(isDraft ? 'Save Sales Invoice Draft' : 'Generate Sales Invoice', 'Finance', `${isDraft ? 'Saved draft sales invoice' : 'Generated sales invoice'} ${invoice.id} against ${invoiceSourceLabel(invoice)}.`, 'Success', state.currentUser?.name || 'Admin');
   };
 
   // Post a draft sales invoice: flips it to the posted status ('Settled',
