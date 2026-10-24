@@ -2,6 +2,10 @@ import HRPayslipModal from './HRPayslipModal';
 import SalaryPrintStudio from './SalaryPrintStudio';
 import { normalizeSalaryPrintSettings } from '../../utils/salaryPrintSettings';
 import { getEffectiveDutyHours, getEffectiveOvertimeMultiplier } from '../../utils/hrDutyHours';
+import { computePayrollRecords } from '../../utils/payrollCalc';
+import { nextVoucherNumber, formatVoucherId, voucherCounterKey } from '../../utils/voucherNumbering';
+import { resolvePayrollAccountCode } from '../../utils/payrollAccountMapping';
+import { isSalaryBatchPaid, salaryBatchNet, canDeleteSalaryBatch, buildSalaryClearingVoucher } from '../../utils/paidMark';
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { exportDocumentToPdf, exportDocumentToImage, exportDocumentToCsv } from '../../utils/printExportUtils';
@@ -68,6 +72,10 @@ export default function HRSalaryGeneration({ isMobile }) {
   const [monthToDelete, setMonthToDelete] = useState(null); // modal confirmation for delete
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [isFinalizeModalOpen, setIsFinalizeModalOpen] = useState(false);
+  // Paid-mark flow (Omer, 2026-10-24): month record pending payment +
+  // the editable paid date for the Mark Paid confirmation modal.
+  const [markPaidTarget, setMarkPaidTarget] = useState(null);
+  const [paidDateInput, setPaidDateInput] = useState('');
 
   // UI Processing States
   const [isProcessing, setIsProcessing] = useState(false);
@@ -378,336 +386,10 @@ export default function HRSalaryGeneration({ isMobile }) {
 
   // Comprehensive Realtime Payroll Calculation Engine
   // RULE: Calculates for all active employees with >= 1 day attendance in that month (Supports All Divisions & App Punches)
-  const computePayrollForPeriod = (period, divisionToUse) => {
-    if (!period) return [];
-    const divFilter = (divisionToUse || 'ALL').trim().toLowerCase();
-
-    let allEmployees = (state.hr_employees_list || []).filter(emp => {
-      const isAct = (emp.status || 'Active').toLowerCase() === 'active';
-      if (!isAct) return false;
-      if (divFilter === 'all') return true;
-      const empDiv = (emp.division || emp.section || 'AJ Synthetic').trim().toLowerCase();
-      return empDiv === divFilter;
-    });
-
-    if (allEmployees.length === 0) {
-      try {
-        const savedEmps = localStorage.getItem('hr_employees_list');
-        if (savedEmps) {
-          const parsed = JSON.parse(savedEmps);
-          if (Array.isArray(parsed)) {
-            allEmployees = parsed.filter(emp => {
-              const isAct = (emp.status || 'Active').toLowerCase() === 'active';
-              if (!isAct) return false;
-              if (divFilter === 'all') return true;
-              const empDiv = (emp.division || emp.section || 'AJ Synthetic').trim().toLowerCase();
-              return empDiv === divFilter;
-            });
-          }
-        }
-      } catch (e) {}
-    }
-
-    // Load multi-source uploaded attendance logs (State + LocalStorage + Flash AM mobile app cache)
-    let attendanceLogs = state.hr_uploaded_attendance || [];
-    try {
-      const savedUploaded = localStorage.getItem('hr_uploaded_attendance');
-      if (savedUploaded) {
-        const parsed = JSON.parse(savedUploaded);
-        if (Array.isArray(parsed)) attendanceLogs = [...attendanceLogs, ...parsed];
-      }
-      const flashAmCached = localStorage.getItem('flasham_cached_attendance');
-      if (flashAmCached) {
-        const parsed = JSON.parse(flashAmCached);
-        if (Array.isArray(parsed)) attendanceLogs = [...attendanceLogs, ...parsed];
-      }
-    } catch (e) {}
-
-    const overtimeRequests = state.hr_overtime_requests || [];
-    const loanRequests = state.hr_loan_requests || [];
-    const loanLedger = state.hr_loan_ledger || [];
-
-    let salaryConfig = null;
-    try {
-      const savedConfig = localStorage.getItem('hr_salary_allowance_config');
-      if (savedConfig) salaryConfig = JSON.parse(savedConfig);
-    } catch (e) {}
-
-    let dutySettings = state?.hr_duty_settings || null;
-    try {
-      if (!dutySettings) {
-        const savedDuty = localStorage.getItem('hr_duty_settings');
-        if (savedDuty) dutySettings = JSON.parse(savedDuty);
-      }
-    } catch (e) {}
-
-    const [yearStr, monthStr] = period.split('-');
-    const currentMonthDays = new Date(parseInt(yearStr), parseInt(monthStr), 0).getDate();
-    const daysInMonth = currentMonthDays;
-    const totalWorkingDays = currentMonthDays;
-
-    const results = allEmployees.map(emp => {
-      const baseSalary = safeNum(emp.basicSalary || emp.salary || emp.baseSalary || 35000);
-      const doj = emp.doj || emp.dateOfJoining || '2024-01-15';
-      const designation = emp.designation || emp.jobTitle || emp.role || 'Associate';
-      const department = emp.department || 'Global Logistics';
-      const section = emp.section || emp.subSection || emp.division || 'Operations';
-      const division = emp.division || emp.section || (divisionToUse === 'ALL' ? 'General' : divisionToUse);
-
-      let workedDays = 0;
-      let absentsCount = 0;
-      let leavesCount = 0;
-      let lateComingHours = 0;
-      let totalFines = 0;
-      let otHours = 0;
-
-      const empIdStr = String(emp.id || '').trim();
-      const empCodeStr = String(emp.employeeCode || emp.code || '').trim();
-      const empNameLower = String(emp.name || '').trim().toLowerCase();
-
-      // Attendance logs from uploaded / biometric punches / Flash AM mobile app
-      const matchedLogs = attendanceLogs.filter(a => {
-        const aEmpId = String(a.employeeId || (a.id && String(a.id).startsWith('EMP-') ? a.id : '')).trim();
-        const aEmpCode = String(a.employeeCode || a.code || '').trim();
-        const aName = String(a.employeeName || a.name || '').trim().toLowerCase();
-
-        const idMatches = (aEmpId && (aEmpId === empIdStr || aEmpId === empCodeStr)) ||
-                          (aEmpCode && (aEmpCode === empIdStr || aEmpCode === empCodeStr));
-        const nameMatches = aName && empNameLower && (aName === empNameLower || aName.includes(empNameLower) || empNameLower.includes(aName));
-
-        const aNormDate = normalizeDate(a.date || a.logDate || a.punchDate);
-        const dateMatches = aNormDate && aNormDate.startsWith(period);
-
-        return (idMatches || nameMatches) && dateMatches;
-      });
-
-      // Daily attendance mapping from employee's embedded attendance
-      const dailyMap = {};
-      if (emp.attendance && typeof emp.attendance === 'object') {
-        Object.entries(emp.attendance).forEach(([dayKey, rec]) => {
-          const normKey = normalizeDate(dayKey);
-          if (normKey && normKey.startsWith(period) && rec) {
-            dailyMap[normKey] = { ...rec };
-          }
-        });
-      }
-
-      // Merge matched uploaded / Flash AM punches
-      matchedLogs.forEach(log => {
-        const logDate = normalizeDate(log.date || log.logDate || log.punchDate);
-        if (logDate && logDate.startsWith(period)) {
-          if (!dailyMap[logDate] || !dailyMap[logDate].userEdited) {
-            dailyMap[logDate] = {
-              ...(dailyMap[logDate] || {}),
-              status: log.status || 'present',
-              shortPunch: Boolean(log.shortPunch) || Boolean(dailyMap[logDate]?.shortPunch),
-              inTime: log.inTime || dailyMap[logDate]?.inTime,
-              outTime: log.outTime || dailyMap[logDate]?.outTime,
-              ot: parseFloat(log.ot || log.overtimeHours || dailyMap[logDate]?.ot || 0) || 0,
-              fines: parseFloat(log.fines || log.fine || dailyMap[logDate]?.fines || 0) || 0,
-              deductions: parseFloat(log.deductions || log.lateHours || dailyMap[logDate]?.deductions || 0) || 0
-            };
-          }
-        }
-      });
-
-      // Approved Overtime Requests
-      const empOtReqs = overtimeRequests.filter(req => {
-        const reqEmpId = String(req.employeeId || '').trim();
-        const reqEmpCode = String(req.employeeCode || '').trim();
-        const reqName = String(req.employeeName || '').trim().toLowerCase();
-
-        const idMatches = (reqEmpId && (reqEmpId === empIdStr || reqEmpId === empCodeStr)) ||
-                          (reqEmpCode && (reqEmpCode === empIdStr || reqEmpCode === empCodeStr));
-        const nameMatches = reqName && empNameLower && (reqName === empNameLower || reqName.includes(empNameLower) || empNameLower.includes(reqName));
-
-        const reqDate = normalizeDate(req.date);
-        return (idMatches || nameMatches) && req.status === 'Approved' && reqDate && reqDate.startsWith(period);
-      });
-      empOtReqs.forEach(r => {
-        otHours += safeNum(r.hours);
-      });
-
-      // RULE: If employee has 0 attendance records for this month AND 0 approved OT, EXCLUDE!
-      if (Object.keys(dailyMap).length === 0 && otHours === 0) {
-        return null; // Skip employee with 0 attendance
-      }
-
-      // Aggregate mapped attendance (supports Flash AM 'Completed', 'Present', 'inTime', etc.)
-      Object.values(dailyMap).forEach(rec => {
-        const st = String(rec.status || '').toLowerCase().trim();
-        const hasPunch = Boolean(rec.inTime || rec.outTime);
-
-        if (rec.shortPunch) {
-          // FLASHAM PHASE A: a short punch the terminal marked not-counted
-          // (status 'Absent' + shortPunch flag) is never a worked day, even
-          // though the record still carries its punch times for audit.
-          absentsCount += 1;
-        } else if (st.includes('present') || st === 'completed' || st === 'p' || hasPunch) {
-          workedDays += 1;
-        } else if (st.includes('half')) {
-          workedDays += 0.5;
-          if (dutySettings?.attendanceStatusRules?.halfday?.isPaid !== false) {
-            leavesCount += 0.5;
-          }
-        } else if (st.includes('offday') || st.includes('off day') || st === 'off') {
-          if (dutySettings?.attendanceStatusRules?.offday?.isPaid !== false) {
-            leavesCount += 1;
-          } else {
-            absentsCount += 1;
-          }
-        } else if (st.includes('holiday')) {
-          if (dutySettings?.attendanceStatusRules?.holiday?.isPaid !== false) {
-            leavesCount += 1;
-          } else {
-            absentsCount += 1;
-          }
-        } else if (st.includes('leave') || st === 'l' || st === 'paid_leave') {
-          if (dutySettings?.attendanceStatusRules?.leave?.isPaid !== false) {
-            leavesCount += 1;
-          } else {
-            absentsCount += 1;
-          }
-        } else if (st.includes('abs')) {
-          absentsCount += 1;
-        } else {
-          workedDays += 1; // Default any positive activity as worked
-        }
-
-        otHours += safeNum(rec.ot);
-        lateComingHours += safeNum(rec.deductions);
-        totalFines += safeNum(rec.fines);
-      });
-
-      // (basic salary / current month days = 1 day amount / duty hours = 1 hours amount)
-      const oneDayAmount = currentMonthDays > 0 ? (baseSalary / currentMonthDays) : 0;
-      const dailyRate = oneDayAmount;
-
-      // Duty Hours Resolution: HR Settings Employee Wise Custom Override -> Profile -> Dept -> Division -> Shift -> Standard
-      const dutyInfo = getEffectiveDutyHours(emp, dutySettings);
-      const empDutyHours = Number(dutyInfo?.hours) || 8;
-
-      const oneHourAmount = empDutyHours > 0 ? (oneDayAmount / empDutyHours) : 0;
-      const hourlyRate = oneHourAmount;
-
-      // Overtime Multiplier & Hourly Rate strictly based on Hourly Rate
-      const otMultiplier = getEffectiveOvertimeMultiplier(emp, dutySettings);
-      const otHourlyRate = hourlyRate * otMultiplier;
-
-      // Paid Days = Actual worked days + paid leaves
-      const payableDays = Math.min(currentMonthDays, Math.max(0, workedDays + leavesCount));
-
-      // If employee has 0 paid days and 0 worked days and 0 OT, exclude:
-      if (payableDays === 0 && otHours === 0 && workedDays === 0) {
-        return null;
-      }
-
-      // Absents Count = Remaining unworked days in the current month
-      absentsCount = Math.max(0, currentMonthDays - payableDays);
-
-      const earnedBasicSalary = Math.round(dailyRate * payableDays * 100) / 100;
-      const absentDeduction = Math.round(dailyRate * absentsCount * 100) / 100;
-      const otPay = Math.round(otHours * otHourlyRate * 100) / 100;
-      const lateDeduction = Math.round(lateComingHours * hourlyRate * 100) / 100;
-
-      // Loans & Advances
-      let loanAmount = safeNum(emp.loan || emp.loanAmount);
-      const activeLedgerItem = loanLedger.find(l => 
-        (String(l.employeeId) === empIdStr || String(l.employeeCode || '') === empCodeStr || String(l.employeeName || '').toLowerCase() === empNameLower) && 
-        l.status === 'Active' && 
-        safeNum(l.remainingBalance) > 0
-      );
-      if (activeLedgerItem && activeLedgerItem.monthlyInstallment) {
-        loanAmount = Math.min(safeNum(activeLedgerItem.monthlyInstallment), safeNum(activeLedgerItem.remainingBalance));
-      } else {
-        const activeLoanReq = loanRequests.find(r => 
-          (String(r.employeeId) === empIdStr || String(r.employeeCode || '') === empCodeStr || String(r.employeeName || '').toLowerCase() === empNameLower) && r.status === 'Approved'
-        );
-        if (activeLoanReq && activeLoanReq.monthlyInstallment) {
-          loanAmount = safeNum(activeLoanReq.monthlyInstallment);
-        }
-      }
-
-      // Configured Employee Allowance Lookup (Default PKR 1,500)
-      let customAllowanceLimit = 1500;
-      try {
-        const savedMap = localStorage.getItem('hr_employee_allowance_map');
-        if (savedMap) {
-          const parsed = JSON.parse(savedMap);
-          if (parsed && (parsed[emp.id] !== undefined || parsed[emp.name] !== undefined)) {
-            customAllowanceLimit = safeNum(parsed[emp.id] !== undefined ? parsed[emp.id] : parsed[emp.name]);
-          } else if (emp.allowance !== undefined && emp.allowance !== null && Number(emp.allowance) > 0) {
-            customAllowanceLimit = safeNum(emp.allowance);
-          }
-        } else if (emp.allowance !== undefined && emp.allowance !== null && Number(emp.allowance) > 0) {
-          customAllowanceLimit = safeNum(emp.allowance);
-        }
-      } catch (e) {}
-
-      // Attendance allowance rule: ZERO ABSENCES REQUIRED
-      let allowanceAmount = 0;
-      const isZeroAbsencesEnforced = salaryConfig?.attendanceAllowance?.zeroAbsences !== false; // Default true
-      const isZeroLateEnforced = salaryConfig?.attendanceAllowance?.zeroLate === true;
-
-      if (isZeroAbsencesEnforced) {
-        if (absentsCount === 0 && payableDays >= currentMonthDays) {
-          if (!isZeroLateEnforced || lateComingHours === 0) {
-            allowanceAmount = customAllowanceLimit;
-          }
-        }
-      } else {
-        const allowedAbsences = safeNum(salaryConfig?.attendanceAllowance?.maxAbsencesAllowed || 0);
-        if (absentsCount <= allowedAbsences && payableDays >= (currentMonthDays - allowedAbsences)) {
-          if (!isZeroLateEnforced || lateComingHours === 0) {
-            allowanceAmount = customAllowanceLimit;
-          }
-        }
-      }
-
-      const totalAdditions = otPay + allowanceAmount;
-      const totalDeductions = lateDeduction + totalFines + loanAmount + safeNum(emp.advance);
-
-      // Net Salary = Earned Basic Salary + Additions - Deductions
-      const netSalary = Math.max(0, earnedBasicSalary + totalAdditions - totalDeductions);
-
-      return {
-        employeeId: emp.employeeCode || empIdStr || `EMP-${Date.now()}`,
-        doj: doj,
-        designation: designation,
-        department: department,
-        section: section,
-        division: division,
-        employeeName: emp.name || 'Employee',
-        payableDays: payableDays,
-        basicSalary: parseFloat(baseSalary.toFixed(2)),
-        dailyRate: parseFloat(dailyRate.toFixed(2)),
-        hourlyRate: parseFloat(hourlyRate.toFixed(2)),
-        dutyHours: empDutyHours,
-        currentMonthDays: currentMonthDays,
-        otHours: parseFloat(otHours.toFixed(1)),
-        otMultiplier: otMultiplier,
-        otHourlyRate: parseFloat(otHourlyRate.toFixed(2)),
-        overtime: parseFloat(otPay.toFixed(2)),
-        lateComingHours: parseFloat(lateComingHours.toFixed(1)),
-        lateDeduction: parseFloat(lateDeduction.toFixed(2)),
-        absents: parseFloat(absentDeduction.toFixed(2)),
-        absentsCount: absentsCount,
-        workedDays: workedDays,
-        leavesCount: leavesCount,
-        totalWorkingDays: currentMonthDays,
-        daysInMonth: currentMonthDays,
-        fine: parseFloat(totalFines.toFixed(2)),
-        allowance: parseFloat(allowanceAmount.toFixed(2)),
-        advanceAmount: safeNum(emp.advance),
-        loan: parseFloat(loanAmount.toFixed(2)),
-        earnedBasicSalary: parseFloat(earnedBasicSalary.toFixed(2)),
-        netSalary: parseFloat(netSalary.toFixed(2)),
-        status: 'Calculated'
-      };
-    }).filter(Boolean);
-
-    return results;
-  };
+  // The calculation engine itself is SHARED with HRPayslip — it lives
+  // in src/utils/payrollCalc.js (computePayrollRecords) so Generation
+  // and Payslip can never diverge (ek hi rule, Omer 2026-10-24).
+  const computePayrollForPeriod = (period, divisionToUse) => computePayrollRecords(state, period, divisionToUse);
 
   // Helper toast alert
   const triggerToast = (msg) => {
@@ -794,10 +476,106 @@ export default function HRSalaryGeneration({ isMobile }) {
     }, 1000);
   };
 
+  // PAID-MARK FLOW (Omer, 2026-10-24): generation leaves the batch's net
+  // OUTSTANDING in Salary Payable (217010). Mark Paid posts ONE clearing
+  // voucher (Dr Salary Payable / Cr Cash in Hand) through the normal
+  // voucher system and stamps the batch paid — a paid batch can never be
+  // marked twice, and cannot be deleted (see the guard below).
+  const handleMarkPaid = (hist) => {
+    const latest = (state.hr_generated_salaries || []).find(item => item.month === hist.month) || hist;
+    if (isSalaryBatchPaid(latest)) {
+      triggerToast(`⚠️ Payroll for ${getPeriodLabel(hist.month)} is already marked PAID (voucher ${latest.paidVoucherId || '—'}). It cannot be marked paid twice.`);
+      return;
+    }
+    if (salaryBatchNet(latest) <= 0) {
+      triggerToast('⚠️ This payroll has no net payable amount to mark paid.');
+      return;
+    }
+    setMarkPaidTarget(latest);
+    setPaidDateInput(new Date().toISOString().substring(0, 10));
+  };
+
+  const executeMarkPaid = () => {
+    const target = markPaidTarget;
+    if (!target) return;
+    const list = state.hr_generated_salaries || [];
+    const latest = list.find(item => item.month === target.month);
+    if (!latest) {
+      setMarkPaidTarget(null);
+      triggerToast('⚠️ This payroll record no longer exists.');
+      return;
+    }
+    // Double-mark guard, re-checked against the freshest state.
+    if (isSalaryBatchPaid(latest)) {
+      setMarkPaidTarget(null);
+      triggerToast(`⚠️ Payroll for ${getPeriodLabel(target.month)} is already marked PAID (voucher ${latest.paidVoucherId || '—'}).`);
+      return;
+    }
+    const net = salaryBatchNet(latest);
+    if (net <= 0) {
+      setMarkPaidTarget(null);
+      triggerToast('⚠️ This payroll has no net payable amount to mark paid.');
+      return;
+    }
+    const paidDate = paidDateInput || new Date().toISOString().substring(0, 10);
+
+    // Allocate the next short JV number (persisted counter + scan of
+    // existing vouchers — a number is never re-issued).
+    const vouchers = state.vouchers || [];
+    const nextNum = nextVoucherNumber(state.counters, vouchers, 'JV');
+    const voucherId = formatVoucherId('JV', nextNum);
+
+    const payableAccountId = resolvePayrollAccountCode(state.payroll_account_mapping, 'salary_payable', '217010');
+    const chart = state.chartOfAccounts || [];
+    const payableAccountName = (chart.find(a => (a.id || a.code) === payableAccountId) || {}).name || 'Salary Payable';
+    const cashAccountName = (chart.find(a => (a.id || a.code) === '111010') || {}).name || 'Cash in Hand';
+
+    const voucher = buildSalaryClearingVoucher({
+      batch: latest,
+      voucherId,
+      paidDate,
+      payableAccountId,
+      payableAccountName,
+      cashAccountName,
+      monthLabel: getPeriodLabel(target.month)
+    });
+
+    setCollection('vouchers', [voucher, ...vouchers]);
+    setCollection('counters', {
+      ...(state.counters || {}),
+      [voucherCounterKey('JV')]: nextNum
+    });
+
+    const paidBatch = {
+      ...latest,
+      paidAt: new Date().toISOString(),
+      paidDate,
+      paidVoucherId: voucherId,
+      paidAmount: net,
+      paidBy: state.currentUser?.name || 'Administrator'
+    };
+    setCollection('hr_generated_salaries', list.map(item => item.month === target.month ? paidBatch : item));
+    if (viewingHistoryRecord && viewingHistoryRecord.month === target.month) {
+      setViewingHistoryRecord(paidBatch);
+    }
+    setMarkPaidTarget(null);
+    triggerToast(`Payroll for ${getPeriodLabel(target.month)} marked PAID — voucher ${voucherId} posted (Dr Salary Payable / Cr Cash in Hand, ${currSym} ${safeMoney(net)}).`);
+  };
+
   // RULE: Delete generated payroll record
   // When deleted, that month returns to the Payroll Period dropdown automatically!
+  // PAID batches are BLOCKED from deletion (paid-mark flow, 2026-10-24):
+  // their clearing voucher has already moved the cash in the GL.
   const handleDeleteGeneratedMonth = (monthKey) => {
     const list = state.hr_generated_salaries || [];
+    const batchToDelete = list.find(item => item.month === monthKey);
+    const deleteCheck = canDeleteSalaryBatch(batchToDelete);
+    if (!deleteCheck.ok) {
+      setIsDeleteModalOpen(false);
+      setMonthToDelete(null);
+      triggerToast(`⚠️ ${deleteCheck.reason}`);
+      return;
+    }
     const updated = list.filter(item => item.month !== monthKey);
     setCollection('hr_generated_salaries', updated);
 
@@ -1890,6 +1668,18 @@ export default function HRSalaryGeneration({ isMobile }) {
                         <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20">
                           {hist.status || 'Finalized'}
                         </span>
+                        {isSalaryBatchPaid(hist) ? (
+                          <span
+                            className="px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-primary/10 text-primary border border-primary/25"
+                            title={hist.paidVoucherId ? `Clearing voucher ${hist.paidVoucherId}` : 'Salary paid'}
+                          >
+                            Paid{hist.paidDate ? ` • ${hist.paidDate}` : ''}{hist.paidVoucherId ? ` • ${hist.paidVoucherId}` : ''}
+                          </span>
+                        ) : (
+                          <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/25">
+                            Unpaid
+                          </span>
+                        )}
                       </div>
 
                       <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-xs text-on-surface-variant pt-1">
@@ -1921,9 +1711,21 @@ export default function HRSalaryGeneration({ isMobile }) {
                       </div>
                     </div>
 
-                    {/* Right Actions: View Details, Single Organized Save As Dropdown, Delete */}
+                    {/* Right Actions: Mark Paid, View Details, Single Organized Save As Dropdown, Delete */}
                     <div className="flex items-center gap-2.5 w-full lg:w-auto justify-end">
-                      
+
+                      {/* Mark Paid Button (paid-mark flow) — unpaid batches only */}
+                      {!isSalaryBatchPaid(hist) && (
+                        <button
+                          onClick={() => handleMarkPaid(hist)}
+                          className="flex items-center gap-1.5 px-4 h-10 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-sm transition-all cursor-pointer"
+                          title="Post the cash payment for this payroll (Dr Salary Payable / Cr Cash in Hand)"
+                        >
+                          <span className="material-symbols-outlined text-[17px]">payments</span>
+                          Mark Paid
+                        </button>
+                      )}
+
                       {/* View Details Button */}
                       <button
                         onClick={() => setViewingHistoryRecord(hist)}
@@ -2248,6 +2050,53 @@ export default function HRSalaryGeneration({ isMobile }) {
               >
                 <span className="material-symbols-outlined text-[16px]">check_circle</span>
                 Confirm & Finalize
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* MARK PAID CONFIRMATION MODAL (paid-mark flow)              */}
+      {/* ========================================================= */}
+      {markPaidTarget && (
+        <div className="fixed inset-0 bg-on-surface/40 backdrop-blur-sm z-[300] flex items-center justify-center p-4">
+          <div className="bg-surface-container-lowest max-w-md w-full rounded-2xl border border-outline-variant/30 shadow-2xl p-6 space-y-4 animate-in zoom-in-95 duration-200">
+            <div className="flex items-center gap-3 text-emerald-600">
+              <span className="p-2.5 rounded-xl bg-emerald-500/10 material-symbols-outlined text-[24px]">payments</span>
+              <h4 className="text-base font-bold text-on-surface font-headline">Mark Payroll as Paid?</h4>
+            </div>
+
+            <p className="text-xs text-on-surface-variant leading-relaxed">
+              Mark the finalized payroll for <strong>{getPeriodLabel(markPaidTarget.month)}</strong> as PAID. Net payable: <strong>{currSym} {safeMoney(salaryBatchNet(markPaidTarget))}</strong> for {(markPaidTarget.records || []).length} employees.
+            </p>
+
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider block">Paid Date</label>
+              <input
+                type="date"
+                value={paidDateInput}
+                onChange={(e) => setPaidDateInput(e.target.value)}
+                className="w-full h-10 px-3 rounded-xl border border-outline-variant/40 bg-surface-container-lowest text-sm text-on-surface focus:outline-none focus:border-primary"
+              />
+            </div>
+
+            <div className="bg-primary/5 border border-primary/15 rounded-xl p-3 text-[11px] text-on-surface-variant font-medium">
+              💡 One clearing voucher will be posted: <strong>Dr Salary Payable / Cr Cash in Hand</strong> for the full net amount. After this, the batch shows as Paid and cannot be marked paid again or deleted.
+            </div>
+
+            <div className="flex justify-end gap-3 pt-2">
+              <button
+                onClick={() => setMarkPaidTarget(null)}
+                className="px-4 py-2 rounded-xl text-xs font-bold border border-outline-variant text-on-surface hover:bg-surface-container-low cursor-pointer transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={executeMarkPaid}
+                className="px-5 py-2 rounded-xl text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm cursor-pointer transition-colors"
+              >
+                Confirm — Mark Paid
               </button>
             </div>
           </div>

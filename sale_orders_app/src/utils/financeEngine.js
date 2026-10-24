@@ -500,11 +500,14 @@ export const generateGeneralLedger = (state = {}, filters = {}) => {
   // Allowance) are DEBITED to their mapped expense accounts; every
   // deduction is CREDITED to its own mapped recovery account (Fines,
   // Late Coming Deduction, Loan Deduction — an advance recovery credits
-  // Employee Advances); the NET is CREDITED to Salary Payable — and,
-  // because salary here is paid in CASH at generation (a paid-mark flow
-  // is a separate pending decision), the same posting immediately
-  // DEBITS Salary Payable and CREDITS Cash in Hand, so Salary Payable
-  // returns to zero and the cash effect matches the payment exactly.
+  // Employee Advances); the NET is CREDITED to Salary Payable — and
+  // STAYS THERE as an outstanding liability (PAID-MARK FLOW, Omer's
+  // decision 2026-10-24: generation no longer pays the salary itself).
+  // The payable is cleared only when the batch is marked paid on the
+  // Salary Generation screen, which posts ONE real JV voucher
+  // (Dr Salary Payable / Cr Cash in Hand) through the voucher system —
+  // section C above posts that voucher's lines, so 217010's balance is
+  // always exactly the total of UNPAID net salaries.
   // Unmapped categories fall back to the seeded payroll accounts below.
   const payrollMappings = Array.isArray(state.payroll_account_mapping) ? state.payroll_account_mapping : [];
   const PAYROLL_FALLBACK_CODES = {
@@ -518,7 +521,6 @@ export const generateGeneralLedger = (state = {}, filters = {}) => {
     loan_deduction: '423030',
     salary_payable: '217010'
   };
-  const SALARY_CASH_ACCOUNT = '111010'; // Cash in Hand — salary is paid in cash, never via a bank
   const PAYROLL_FALLBACK_NAMES = {
     '512010': 'Direct Factory Labor & Overtime Wages',
     '516010': 'Basic Salary Expense',
@@ -555,25 +557,17 @@ export const generateGeneralLedger = (state = {}, filters = {}) => {
     });
   };
 
-  // The net-payable + immediate cash-payment legs shared by every salary
-  // posting path: Cr Salary Payable (the liability is recognised), then
-  // Dr Salary Payable / Cr Cash in Hand (it is paid in cash at once), so
-  // the payable self-clears to zero and cash reflects the payment.
-  const pushPayableAndCashLegs = ({ date, voucherNo, party, net }) => {
+  // The net-payable leg shared by every salary posting path: Cr Salary
+  // Payable ONLY (PAID-MARK FLOW, 2026-10-24). The matching Dr Salary
+  // Payable / Cr Cash in Hand legs are NOT posted here — they arrive
+  // with the batch's Mark-Paid clearing voucher (see utils/paidMark.js),
+  // which the voucher section of this same engine posts like any other
+  // posted voucher. Until then the payable stays outstanding.
+  const pushPayableLeg = ({ date, voucherNo, party, net }) => {
     if (!(net > 0)) return;
     pushPayrollEntry({
       date, voucherNo, accountId: salaryPayableAccount, party,
       costCenter: 'CC-ADMIN-07', narration: `Net salary payable to ${party}`,
-      credit: net
-    });
-    pushPayrollEntry({
-      date, voucherNo, accountId: salaryPayableAccount, party,
-      costCenter: 'CC-ADMIN-07', narration: `Salary paid in cash to ${party}`,
-      debit: net
-    });
-    pushPayrollEntry({
-      date, voucherNo, accountId: SALARY_CASH_ACCOUNT, party,
-      costCenter: 'CC-ADMIN-07', narration: `Net payroll paid in cash to ${party}`,
       credit: net
     });
   };
@@ -626,7 +620,7 @@ export const generateGeneralLedger = (state = {}, filters = {}) => {
               credit: p.amount
             });
           });
-          pushPayableAndCashLegs({ date: salDate, voucherNo: salId, party: empName, net });
+          pushPayableLeg({ date: salDate, voucherNo: salId, party: empName, net });
         } else if (net > 0) {
           // Non-reconciling rows (e.g. a net clamped at zero upstream, or
           // legacy component gaps) keep a single balanced net posting
@@ -636,7 +630,7 @@ export const generateGeneralLedger = (state = {}, filters = {}) => {
             costCenter: 'CC-DRY-01', narration: `Monthly salary for ${empName}`,
             debit: net
           });
-          pushPayableAndCashLegs({ date: salDate, voucherNo: salId, party: empName, net });
+          pushPayableLeg({ date: salDate, voucherNo: salId, party: empName, net });
         }
       });
       return;
@@ -656,7 +650,7 @@ export const generateGeneralLedger = (state = {}, filters = {}) => {
         debit: netSal
       });
 
-      pushPayableAndCashLegs({ date: salDate, voucherNo: salId, party: sal.employeeName || 'Staff Payroll', net: netSal });
+      pushPayableLeg({ date: salDate, voucherNo: salId, party: sal.employeeName || 'Staff Payroll', net: netSal });
     }
   });
 

@@ -1,7 +1,7 @@
 import HRPayslipModal from './HRPayslipModal';
 import React, { useState, useMemo, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
-import { getEffectiveDutyHours, getEffectiveOvertimeMultiplier } from '../../utils/hrDutyHours';
+import { computePayrollRecords } from '../../utils/payrollCalc';
 
 // Safe date normalizer (converts DD/MM/YYYY, MM/DD/YYYY, YYYY-MM-DD into standard YYYY-MM-DD)
 const normalizeDate = (dateStr) => {
@@ -147,9 +147,9 @@ export default function HRPayslip({ isMobile }) {
 
   // 2. Comprehensive Employee Records for the selected month:
   //    - If salary was finalized in Salary Generation, use finalized record
-  //    - If NOT finalized (or for any employee not in finalized batch), but employee has ANY
-  //      attendance logged (at least a single day of punch, status, OT, or draft) in Attendance Management:
-  //      Compute their verified payroll dynamically on the fly!
+  //    - For any employee not in the finalized batch, compute live with
+  //      Salary Generation's SHARED engine (utils/payrollCalc.js) — one
+  //      rule for both screens (Omer, 2026-10-24).
   const rawRecords = useMemo(() => {
     if (!selectedPeriod) return [];
 
@@ -157,8 +157,6 @@ export default function HRPayslip({ isMobile }) {
     const y = parseInt(yearStr, 10);
     const m = parseInt(monthStr, 10);
     if (!y || !m) return [];
-
-    const currentMonthDays = new Date(y, m, 0).getDate();
 
     // Map to hold unique records per employee
     const recordMap = new Map();
@@ -175,220 +173,21 @@ export default function HRPayslip({ isMobile }) {
       });
     }
 
-    // B. Load active duty hours settings
-    let dutySettings = state?.hr_duty_settings || null;
-    try {
-      if (!dutySettings) {
-        const savedDuty = localStorage.getItem('hr_duty_settings');
-        if (savedDuty) dutySettings = JSON.parse(savedDuty);
-      }
-    } catch (e) {}
-
-    // C. Uploaded/punch attendance logs (including Flash AM mobile app cache)
-    let uploadedLogs = state.hr_uploaded_attendance || [];
-    try {
-      const savedUploaded = localStorage.getItem('hr_uploaded_attendance');
-      if (savedUploaded) {
-        const parsed = JSON.parse(savedUploaded);
-        if (Array.isArray(parsed)) uploadedLogs = [...uploadedLogs, ...parsed];
-      }
-      const flashAmCached = localStorage.getItem('flasham_cached_attendance');
-      if (flashAmCached) {
-        const parsed = JSON.parse(flashAmCached);
-        if (Array.isArray(parsed)) uploadedLogs = [...uploadedLogs, ...parsed];
-      }
-    } catch (e) {}
-
-    // D. Overtime requests
-    const overtimeRequests = state.hr_overtime_requests || [];
-
-    // E. Loan ledger & requests
-    const loanLedger = state.hr_loan_ledger || [];
-    const loanRequests = state.hr_loan_requests || [];
-
-    // F. Active employees list
-    let allEmployees = (state.hr_employees_list || []).filter(e => (e.status || 'Active').toLowerCase() === 'active');
-    if (allEmployees.length === 0) {
-      try {
-        const savedEmps = localStorage.getItem('hr_employees_list');
-        if (savedEmps) {
-          const parsed = JSON.parse(savedEmps);
-          if (Array.isArray(parsed)) {
-            allEmployees = parsed.filter(e => (e.status || 'Active').toLowerCase() === 'active');
-          }
-        }
-      } catch (e) {}
-    }
-
-    // G. Scan each employee to check if they have at least 1 day of attendance in selectedPeriod
-    allEmployees.forEach(emp => {
-      const empIdStr = String(emp.id || emp.employeeCode || '').trim();
-      const empCodeStr = String(emp.employeeCode || emp.id || '').trim();
-      const empNameLower = String(emp.name || '').trim().toLowerCase();
-
-      // If already present in finalized records, skip dynamic generation
-      if (recordMap.has(empIdStr) || recordMap.has(empCodeStr)) {
-        return;
-      }
-
-      const attObj = emp.attendance || {};
-      let hasAnyAttendance = false;
-      let workedDays = 0;
-      let leavesCount = 0;
-      let absentsCount = 0;
-      let totalOtHours = 0;
-      let totalLateHours = 0;
-      let totalFines = 0;
-
-      for (let d = 1; d <= currentMonthDays; d++) {
-        const dateStr = String(d).padStart(2, '0');
-        const fullDate = `${y}-${String(m).padStart(2, '0')}-${dateStr}`;
-
-        const dayRecord = attObj[fullDate] || attObj[`${y}-${m}-${d}`] || attObj[d] || null;
-
-        const punch = uploadedLogs.find(u => 
-          ((u.employeeId && (String(u.employeeId).trim() === empIdStr || String(u.employeeId).trim() === empCodeStr)) ||
-           (u.employeeCode && String(u.employeeCode).trim() === empIdStr) ||
-           (u.employeeName && String(u.employeeName).trim().toLowerCase() === empNameLower)) &&
-          (u.date === fullDate || normalizeDate(u.date) === fullDate)
-        );
-
-        const otReq = overtimeRequests.find(r => 
-          r.status === 'Approved' &&
-          ((r.employeeId && (String(r.employeeId).trim() === empIdStr || String(r.employeeId).trim() === empCodeStr)) ||
-           (r.employeeName && String(r.employeeName).trim().toLowerCase() === empNameLower)) &&
-          (r.date === fullDate || normalizeDate(r.date) === fullDate)
-        );
-
-        let status = dayRecord?.status || punch?.status;
-        if (!status && punch?.inTime) status = 'present';
-
-        let ot = parseFloat(dayRecord?.ot || punch?.ot || punch?.overtimeHours || otReq?.hours || 0) || 0;
-        if (otReq && parseFloat(otReq.hours || 0) > 0) {
-          ot = Math.max(ot, parseFloat(otReq.hours || 0));
-        }
-
-        let dt = parseFloat(dayRecord?.deductions || punch?.lateHours || punch?.dt || 0) || 0;
-        let fines = parseFloat(dayRecord?.fines || punch?.fines || punch?.fine || 0) || 0;
-
-        // Check if there is ANY logged activity or explicit attendance on this day
-        const dayOfWeek = new Date(y, m - 1, d).getDay();
-        const hasExplicitLog = dayRecord?.userEdited || punch?.inTime || punch?.status || ot > 0 || dt > 0 || fines > 0;
-        const sLower = String(status || '').toLowerCase();
-
-        if (hasExplicitLog || sLower.includes('present') || sLower === 'completed' || sLower === 'p' || sLower.includes('half') || sLower.includes('leave') || sLower.includes('holiday')) {
-          hasAnyAttendance = true;
-        }
-
-        if (!status) {
-          if (dayOfWeek === 0) status = 'off day';
-          else status = 'absent';
-        }
-
-        const statNorm = String(status).toLowerCase();
-        if (statNorm.includes('present') || statNorm === 'p') {
-          workedDays += 1;
-        } else if (statNorm.includes('half')) {
-          workedDays += 0.5;
-          if (dutySettings?.attendanceStatusRules?.halfday?.isPaid !== false) leavesCount += 0.5;
-        } else if (statNorm.includes('offday') || statNorm.includes('off day') || statNorm === 'off') {
-          if (dutySettings?.attendanceStatusRules?.offday?.isPaid !== false) leavesCount += 1;
-          else absentsCount += 1;
-        } else if (statNorm.includes('holiday')) {
-          if (dutySettings?.attendanceStatusRules?.holiday?.isPaid !== false) leavesCount += 1;
-          else absentsCount += 1;
-        } else if (statNorm.includes('leave') || statNorm === 'l' || statNorm === 'paid_leave') {
-          if (dutySettings?.attendanceStatusRules?.leave?.isPaid !== false) leavesCount += 1;
-          else absentsCount += 1;
-        } else {
-          absentsCount += 1;
-        }
-
-        totalOtHours += ot;
-        totalLateHours += dt;
-        totalFines += fines;
-      }
-
-      // If employee has even a single day of attendance logged:
-      if (hasAnyAttendance || workedDays > 0 || totalOtHours > 0) {
-        const baseSalary = Number(emp.basicSalary || emp.salary || emp.baseSalary || 20000);
-        const dutyInfo = getEffectiveDutyHours(emp, dutySettings);
-        const empDutyHours = Number(dutyInfo?.hours) || 8;
-
-        const oneDayAmount = currentMonthDays > 0 ? (baseSalary / currentMonthDays) : 0;
-        const oneHourAmount = empDutyHours > 0 ? (oneDayAmount / empDutyHours) : 0;
-
-        const otMultiplier = getEffectiveOvertimeMultiplier(emp, dutySettings);
-        const otHourlyRate = oneHourAmount * otMultiplier;
-
-        const payableDays = Math.min(currentMonthDays, Math.max(0, workedDays + leavesCount));
-        const finalAbsentsCount = Math.max(0, currentMonthDays - payableDays);
-
-        const earnedBasicSalary = Math.round(oneDayAmount * payableDays * 100) / 100;
-        const absentDeduction = Math.round(oneDayAmount * finalAbsentsCount * 100) / 100;
-        const otPay = Math.round(totalOtHours * otHourlyRate * 100) / 100;
-        const lateDeduction = Math.round(totalLateHours * oneHourAmount * 100) / 100;
-
-        // Custom employee allowances
-        let allowances = 0;
-        try {
-          const savedMap = localStorage.getItem('hr_employee_allowance_map');
-          if (savedMap) {
-            const parsed = JSON.parse(savedMap);
-            if (parsed && (parsed[emp.id] !== undefined || parsed[emp.name] !== undefined)) {
-              allowances = Number(parsed[emp.id] !== undefined ? parsed[emp.id] : parsed[emp.name]) || 0;
-            } else if (emp.allowance) {
-              allowances = Number(emp.allowance) || 0;
-            }
-          } else if (emp.allowance) {
-            allowances = Number(emp.allowance) || 0;
-          }
-        } catch (e) {}
-        if (finalAbsentsCount > 0) allowances = 0;
-
-        // Advance & Loan installments
-        let advance = Number(emp.advance || emp.advanceAmount || 0);
-        let loan = Number(emp.loan || emp.loanInstallment || 0);
-        const activeLedgerItem = loanLedger.find(l => 
-          (String(l.employeeId) === empIdStr || String(l.employeeName || '').toLowerCase() === empNameLower) && 
-          l.status === 'Active' && 
-          (Number(l.remainingBalance) || 0) > 0
-        );
-        if (activeLedgerItem && activeLedgerItem.monthlyInstallment) {
-          loan = Math.min(Number(activeLedgerItem.monthlyInstallment) || 0, Number(activeLedgerItem.remainingBalance) || 0);
-        }
-
-        const netSalary = Math.max(0, Math.round((earnedBasicSalary + otPay + allowances - lateDeduction - totalFines - advance - loan) * 100) / 100);
-
-        const liveRecord = {
-          employeeId: emp.employeeCode || emp.id,
-          employeeName: emp.name,
-          designation: emp.designation || emp.role || emp.jobTitle || 'Staff',
-          department: emp.department || 'Operations',
-          division: emp.division || emp.section || 'General',
-          section: emp.section || emp.division || 'General',
-          shift: emp.shift || 'Standard',
-          dutyHours: empDutyHours,
-          basicSalary: baseSalary,
-          workedDays: workedDays,
-          payableDays: payableDays,
-          paidDays: payableDays,
-          absentsCount: finalAbsentsCount,
-          absents: absentDeduction,
-          otHours: totalOtHours,
-          overtime: otPay,
-          lateComingHours: totalLateHours,
-          lateDeduction: lateDeduction,
-          fine: totalFines,
-          allowance: allowances,
-          advanceAmount: advance,
-          loan: loan,
-          netSalary: netSalary,
-          currentMonthDays: currentMonthDays,
-          status: 'Live Attendance'
-        };
-
-        recordMap.set(empIdStr, liveRecord);
+    // B. Live records for employees NOT in the finalized batch — computed
+    //    with Salary Generation's SHARED engine (utils/payrollCalc.js).
+    //    EK HI RULE (Omer, 2026-10-24 — "payslip jab bane, jab salary
+    //    generate ho"): the payslip's old private live engine is gone. It
+    //    counted UNRECORDED Sundays as paid off-days and still produced
+    //    slips for absent-only / zero-payable employees; the shared
+    //    Generation engine counts recorded days only and drops those
+    //    employees — so a live payslip now always matches what Salary
+    //    Generation would produce for the same month.
+    const liveRecords = computePayrollRecords(state, selectedPeriod, 'ALL');
+    liveRecords.forEach(rec => {
+      if (!rec || !rec.employeeId) return;
+      const key = String(rec.employeeId).trim();
+      if (!recordMap.has(key)) {
+        recordMap.set(key, { ...rec, status: 'Live Attendance' });
       }
     });
 
