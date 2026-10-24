@@ -130,10 +130,10 @@ export default function FinanceDashboard({ onNavigateTab }) {
         </div>
       </div>
 
-      {/* 2. SECONDARY EXECUTIVE RATIOS & PROFITABILITY ROW */}
+      {/* 2. PROFITABILITY ROW */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {/* Net Profit Summary */}
-        <div className="bg-surface-container-lowest rounded-2xl p-6 border border-outline-variant/10 shadow-sm flex flex-col justify-between">
+        <div className="bg-surface-container-lowest rounded-2xl p-6 border border-outline-variant/10 shadow-sm flex flex-col justify-between md:col-span-3">
           <div>
             <div className="flex items-center justify-between mb-3">
               <span className="text-xs font-bold uppercase tracking-wider text-on-surface-variant">Net Operating Profit</span>
@@ -152,52 +152,6 @@ export default function FinanceDashboard({ onNavigateTab }) {
           <div className="mt-6 pt-4 border-t border-outline-variant/10 flex justify-between text-xs text-on-surface-variant">
             <span>Operating Health</span>
             <span className="font-bold text-emerald-600">High Profitability</span>
-          </div>
-        </div>
-
-        {/* Working Capital & Liquidity Ratios */}
-        <div className="bg-surface-container-lowest rounded-2xl p-6 border border-outline-variant/10 shadow-sm flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-bold uppercase tracking-wider text-on-surface-variant">Liquidity & Solvency</span>
-              <span className="p-2 bg-blue-500/10 text-blue-600 rounded-xl material-symbols-outlined text-[20px]">speed</span>
-            </div>
-            <div className="grid grid-cols-2 gap-3 mt-1">
-              <div className="p-3 bg-surface-container-low rounded-xl">
-                <span className="text-[10px] uppercase font-bold text-on-surface-variant block">Quick Ratio (Acid Test)</span>
-                <span className="text-xl font-headline font-black text-blue-600 mt-1 block">{quickRatio}x</span>
-                <span className="text-[10px] text-on-surface-variant">Target: &gt; 1.0x</span>
-              </div>
-              <div className="p-3 bg-surface-container-low rounded-xl">
-                <span className="text-[10px] uppercase font-bold text-on-surface-variant block">Current Ratio</span>
-                <span className="text-xl font-headline font-black text-emerald-600 mt-1 block">{currentRatio}x</span>
-                <span className="text-[10px] text-on-surface-variant">Target: &gt; 1.5x</span>
-              </div>
-            </div>
-          </div>
-          <div className="mt-4 pt-4 border-t border-outline-variant/10 flex justify-between text-xs text-on-surface-variant">
-            <span>Solvency Status</span>
-            <span className="font-bold text-emerald-600">Fully Solvent ✓</span>
-          </div>
-        </div>
-
-        {/* Cash Conversion Cycle / DSO */}
-        <div className="bg-surface-container-lowest rounded-2xl p-6 border border-outline-variant/10 shadow-sm flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-bold uppercase tracking-wider text-on-surface-variant">Receivables Recovery</span>
-              <span className="p-2 bg-purple-500/10 text-purple-600 rounded-xl material-symbols-outlined text-[20px]">timelapse</span>
-            </div>
-            <div className="text-3xl font-headline font-black text-on-surface">
-              {dso} Days
-            </div>
-            <p className="text-xs text-on-surface-variant mt-2">
-              Average Days Sales Outstanding (DSO) required to convert credit leather sales into cash.
-            </p>
-          </div>
-          <div className="mt-6 pt-4 border-t border-outline-variant/10 flex justify-between text-xs text-on-surface-variant">
-            <span>Industry Benchmark</span>
-            <span className="font-bold text-on-surface">45-60 Days (Healthy)</span>
           </div>
         </div>
       </div>
