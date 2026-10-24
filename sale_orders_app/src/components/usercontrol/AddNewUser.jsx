@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import GranularPermissionsModal from './GranularPermissionsModal';
+import TelegramFields from './TelegramFields';
+import { normalizeTelegramUsername, isValidTelegramChatId } from '../../utils/telegram';
 
 export default function AddNewUser({ initialUser, onCancel }) {
   const { state, addUser, updateUser, addNotification } = useApp();
@@ -28,6 +30,8 @@ export default function AddNewUser({ initialUser, onCancel }) {
     username: '',
     email: '',
     phone: '',
+    telegramUsername: '',
+    telegramChatId: '',
     department: 'Global Logistics',
     jobTitle: 'Senior Operator',
     image: null,
@@ -99,6 +103,8 @@ export default function AddNewUser({ initialUser, onCancel }) {
         username: initialUser.username || '',
         email: initialUser.email || '',
         phone: initialUser.phone || '',
+        telegramUsername: normalizeTelegramUsername(initialUser.telegramUsername),
+        telegramChatId: initialUser.telegramChatId || '',
         department: initialUser.department || 'Global Logistics',
         jobTitle: initialUser.jobTitle || 'Senior Operator',
         image: initialUser.image || null,
@@ -204,11 +210,19 @@ export default function AddNewUser({ initialUser, onCancel }) {
       return;
     }
 
+    const telegramChatIdValue = (formData.telegramChatId || '').trim();
+    if (telegramChatIdValue && !isValidTelegramChatId(telegramChatIdValue)) {
+      alert(`Telegram Chat ID Error!\n\nThe Telegram Chat ID must be numeric digits only (a leading minus is allowed for groups/channels), or left empty to unlink.`);
+      return;
+    }
+
     const userData = {
       name: formData.name,
       username: formData.username,
       email: formData.email,
       phone: formData.phone,
+      telegramUsername: normalizeTelegramUsername(formData.telegramUsername),
+      telegramChatId: telegramChatIdValue,
       department: formData.department,
       jobTitle: formData.jobTitle,
       role: formData.jobTitle,
@@ -389,6 +403,21 @@ export default function AddNewUser({ initialUser, onCancel }) {
               />
             </div>
           </div>
+        </section>
+
+        {/* Telegram Section — link only; sending stays OFF until the owner enables it */}
+        <section className="bg-surface-container-low p-8 rounded-xl border border-outline-variant/10">
+          <div className="flex items-center gap-3 mb-6">
+            <span className="material-symbols-outlined text-primary text-xl" style={{ fontVariationSettings: "'FILL' 1" }}>send</span>
+            <h3 className="text-lg font-extrabold font-headline">Telegram</h3>
+          </div>
+          <TelegramFields
+            telegramUsername={formData.telegramUsername}
+            telegramChatId={formData.telegramChatId}
+            onUsernameChange={(v) => setFormData(prev => ({ ...prev, telegramUsername: v }))}
+            onChatIdChange={(v) => setFormData(prev => ({ ...prev, telegramChatId: v }))}
+            inputClassName="w-full bg-surface-container-lowest border border-outline-variant/20 focus:ring-2 focus:ring-primary/20 focus:border-primary rounded-xl px-4 py-3 outline-none transition-all placeholder:text-outline-variant/60 text-sm font-semibold"
+          />
         </section>
 
         {/* Account Details Section */}

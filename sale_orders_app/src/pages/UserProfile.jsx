@@ -4,6 +4,8 @@ import { useApp } from '../context/AppContext';
 import { useDialog } from '../context/DialogContext';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../utils/supabaseClient';
+import TelegramFields from '../components/usercontrol/TelegramFields';
+import { normalizeTelegramUsername, isValidTelegramChatId } from '../utils/telegram';
 
 export default function UserProfile() {
   const { state, updateUser, hasPermission, connectionId, triggerHeartbeat, currencySymbol } = useApp();
@@ -156,6 +158,8 @@ export default function UserProfile() {
   const [username, setUsername] = useState(currentUser.username || '');
   const [email, setEmail] = useState(currentUser.email || '');
   const [phone, setPhone] = useState(currentUser.phone || '+92 300 1234567');
+  const [telegramUsername, setTelegramUsername] = useState(normalizeTelegramUsername(currentUser.telegramUsername));
+  const [telegramChatId, setTelegramChatId] = useState(currentUser.telegramChatId || '');
   const [dateOfJoining, setDateOfJoining] = useState(currentUser.dateOfJoining || '12-Oct-2023');
 
   // Password fields
@@ -168,6 +172,7 @@ export default function UserProfile() {
     account: true,
     password: false,
     devices: true,
+    telegram: false,
     compensation: false,
     benefits: false
   });
@@ -196,6 +201,8 @@ export default function UserProfile() {
       setUsername(currentUser.username || '');
       setEmail(currentUser.email || '');
       setPhone(currentUser.phone || '+92 300 1234567');
+      setTelegramUsername(normalizeTelegramUsername(currentUser.telegramUsername));
+      setTelegramChatId(currentUser.telegramChatId || '');
       setDateOfJoining(currentUser.dateOfJoining || '12-Oct-2023');
     }
   }, [state.currentUser]);
@@ -288,6 +295,12 @@ export default function UserProfile() {
       return;
     }
 
+    const telegramChatIdValue = (telegramChatId || '').trim();
+    if (telegramChatIdValue && !isValidTelegramChatId(telegramChatIdValue)) {
+      appAlert('Telegram Chat ID must be numeric digits only (a leading minus is allowed for groups/channels), or left empty to unlink.', 'error');
+      return;
+    }
+
     // Check if username is taken by another user
     const usernameExists = (state.users || []).some(
       u => u.username.toLowerCase() === username.trim().toLowerCase() && u.id !== currentUser.id
@@ -302,6 +315,8 @@ export default function UserProfile() {
       username: username.trim(),
       email: email.trim(),
       phone: phone.trim(),
+      telegramUsername: normalizeTelegramUsername(telegramUsername),
+      telegramChatId: telegramChatIdValue,
       dateOfJoining: dateOfJoining.trim()
     });
 
@@ -496,6 +511,41 @@ export default function UserProfile() {
                       Save Changes
                     </button>
                   </form>
+                )}
+              </div>
+
+              {/* Telegram Accordion — link only; sending stays OFF until the owner enables it */}
+              <div className="border-b border-slate-100 pb-3">
+                <button
+                  onClick={() => toggleSection('telegram')}
+                  className="w-full flex items-center justify-between py-2 text-sm font-bold text-slate-800 hover:text-blue-600 transition-colors"
+                >
+                  <span className="flex items-center gap-2">
+                    <span className="material-symbols-outlined text-[18px]">send</span>
+                    Telegram
+                  </span>
+                  <span className="material-symbols-outlined text-[18px]">
+                    {expandedSections.telegram ? 'expand_less' : 'expand_more'}
+                  </span>
+                </button>
+
+                {expandedSections.telegram && (
+                  <div className="mt-3 animate-fade-in">
+                    <TelegramFields
+                      telegramUsername={telegramUsername}
+                      telegramChatId={telegramChatId}
+                      onUsernameChange={setTelegramUsername}
+                      onChatIdChange={setTelegramChatId}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleSaveProfile({ preventDefault: () => {} })}
+                      className="w-full mt-3 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-sm shadow-blue-100"
+                    >
+                      <span className="material-symbols-outlined text-[14px]">save</span>
+                      Save Telegram Details
+                    </button>
+                  </div>
                 )}
               </div>
 

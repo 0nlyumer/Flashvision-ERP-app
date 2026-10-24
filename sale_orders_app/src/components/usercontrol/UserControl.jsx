@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import AddNewUser from './AddNewUser';
+import { isTelegramLinked } from '../../utils/telegram';
 import GlobalPagination from '../ui/GlobalPagination';
 
 export default function UserControl() {
@@ -109,6 +110,11 @@ export default function UserControl() {
                   {user.department && (
                     <span className="text-[10px] font-bold text-on-surface-variant/60 uppercase tracking-widest leading-none">
                       {user.department}
+                    </span>
+                  )}
+                  {isTelegramLinked(user) && (
+                    <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest leading-none">
+                      ● Telegram linked
                     </span>
                   )}
                 </div>
