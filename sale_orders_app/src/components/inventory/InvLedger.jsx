@@ -4,9 +4,35 @@ import ResizableHeader from '../ui/ResizableHeader';
 import PrintLayout from '../ui/PrintLayout';
 import GlobalPagination from '../ui/GlobalPagination';
 import CustomMultiSelect from '../ui/CustomMultiSelect';
+import StockReportStudio from './StockReportStudio';
+import { normalizeFGConfig, getInitialFGConfig } from '../../utils/fgCombinationUtils';
+import {
+  UNGRADED,
+  getTypeMeta,
+  typeUnit,
+  buildStockRow,
+  sumStockRows,
+  groupStockRows,
+  buildLedgerEntries,
+  computeLedgerBalances,
+  getPackingLabel,
+  extractPaperCode,
+  toCsv,
+} from '../../utils/stockReportUtils';
+
+const TX_TYPES = ['Purchase', 'Sale', 'Production', 'Adjustment', 'Return', 'Transfer', 'Consumption'];
+
+const fmt = (n, dp = 2) =>
+  n === null || n === undefined || Number.isNaN(Number(n))
+    ? '—'
+    : Number(n).toLocaleString(undefined, { maximumFractionDigits: dp });
+const fmtMoney = (n) =>
+  n === null || n === undefined
+    ? '—'
+    : Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export default function InvLedger({ selectedDepartments = [], onBack }) {
-  const { state, toggleGlobalPagination } = useApp();
+  const { state, toggleGlobalPagination, hasPermission } = useApp();
   
   // States
   const [selectedItemIds, setSelectedItemIds] = useState([]);
@@ -22,14 +48,21 @@ export default function InvLedger({ selectedDepartments = [], onBack }) {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
 
-  const [selectedTypes, setSelectedTypes] = useState(['Purchase', 'Sale', 'Production', 'Adjustment', 'Initial']);
-  const [selectedOutputTypes, setSelectedOutputTypes] = useState([]); // Array for multi-select output types
-  
+  const [selectedTypes, setSelectedTypes] = useState([...TX_TYPES, 'Initial']);
+
+  // ---- FG Stock Report state ----
+  const [reportMode, setReportMode] = useState('stock'); // 'stock' | 'transactions'
+  const [selectedGrades, setSelectedGrades] = useState(null); // null = all grades
+  const [grouping, setGrouping] = useState('item'); // 'item' | 'paper' | 'packing'
+  const [showValue, setShowValue] = useState(false);
+  const [studioOpen, setStudioOpen] = useState(false);
+  const [reportModel, setReportModel] = useState(null);
+
   const [isTypeDropdownOpen, setIsTypeDropdownOpen] = useState(false);
-  const [isOutputDropdownOpen, setIsOutputDropdownOpen] = useState(false);
+  const [isGradeDropdownOpen, setIsGradeDropdownOpen] = useState(false);
   const [isExportDropdownOpen, setIsExportDropdownOpen] = useState(false);
   const typeDropdownRef = useRef(null);
-  const outputDropdownRef = useRef(null);
+  const gradeDropdownRef = useRef(null);
 
   const [currentPages, setCurrentPages] = useState({});
   const itemsPerPage = 20;
@@ -39,12 +72,29 @@ export default function InvLedger({ selectedDepartments = [], onBack }) {
     const handleClickOutside = (event) => {
       if (itemDropdownRef.current && !itemDropdownRef.current.contains(event.target)) setIsItemDropdownOpen(false);
       if (typeDropdownRef.current && !typeDropdownRef.current.contains(event.target)) setIsTypeDropdownOpen(false);
-      if (outputDropdownRef.current && !outputDropdownRef.current.contains(event.target)) setIsOutputDropdownOpen(false);
+      if (gradeDropdownRef.current && !gradeDropdownRef.current.contains(event.target)) setIsGradeDropdownOpen(false);
       if (!event.target.closest('.export-dropdown')) setIsExportDropdownOpen(false);
     };
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+
+  // Stock Value is permission-gated (inventory / stockValue screen in User
+  // Control). Without it the toggle is disabled and value data is never
+  // computed into the DOM or any export. Super Admin passes via hasPermission.
+  const canViewValue = !!hasPermission && hasPermission('inventory', 'stockValue');
+  const valueOn = canViewValue && showValue;
+
+  // FG Combo config (paper codes + packings) — same source the combo uses.
+  const fgConfig = useMemo(() => {
+    try {
+      return normalizeFGConfig(state?.fg_combinations_config || getInitialFGConfig());
+    } catch (e) {
+      return getInitialFGConfig();
+    }
+  }, [state?.fg_combinations_config]);
+  const paperCodeList = useMemo(() => fgConfig?.paperCodes || [], [fgConfig]);
+  const packingList = useMemo(() => fgConfig?.packings || [], [fgConfig]);
 
   const effectiveDepartments = selectedDepartments.length > 0 ? selectedDepartments : localDepartments;
 
@@ -69,239 +119,49 @@ export default function InvLedger({ selectedDepartments = [], onBack }) {
       setSelectedItemIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
   };
 
-  const handleToggleOutputType = (type) => {
-      setSelectedOutputTypes(prev => prev.includes(type) ? prev.filter(t => t !== type) : [...prev, type]);
+  const handleToggleGrade = (name) => {
+      setSelectedGrades(prev => {
+          const base = prev === null ? [...discoveredGrades] : [...prev];
+          return base.includes(name) ? base.filter(t => t !== name) : [...base, name];
+      });
   };
 
   const handleToggleType = (type) => {
       setSelectedTypes(prev => prev.includes(type) ? prev.filter(t => t !== type) : [...prev, type]);
   };
-  // Helper to calculate exact stock 
-  const getAccurateStock = (itm) => {
-      return parseFloat(itm.stock) || 0;
-  };
 
-  // Build Ledger Entries
+  // ---- Movement stream (audited sources — see stockReportUtils) ----
+  const rawEntries = useMemo(() => buildLedgerEntries(state || {}), [state]);
+
+  // Grades known to the system: configured batch output types first, then
+  // any extra grade names found in entries / stored stock splits.
+  const discoveredGrades = useMemo(() => {
+      const names = getTypeMeta(state?.batchOutputTypes || []).map(t => t.name);
+      rawEntries.forEach(e => {
+          if (e.outputType && e.outputType !== UNGRADED && !names.includes(e.outputType)) names.push(e.outputType);
+      });
+      (state?.items || []).forEach(i => Object.keys(i.stockByType || {}).forEach(t => {
+          if (!names.includes(t)) names.push(t);
+      }));
+      return names;
+  }, [rawEntries, state?.batchOutputTypes, state?.items]);
+
+  const allGradesSelected = selectedGrades === null;
+  const effectiveGrades = allGradesSelected ? discoveredGrades : selectedGrades;
+
+  // Grade filter applies to the WHOLE register: the per-grade streams are
+  // built from the selected grades only, and balances are anchored per
+  // grade so every closing balance equals the current stockByType figure.
+  // Ungraded movements (transfers, GRN, other consumption) belong to the
+  // All Grades view only.
   const allEntries = useMemo(() => {
-      let entries = [];
-
-      // 1. Sale Orders (Sale -> Qty Out)
-      state?.saleOrders?.forEach(so => {
-          if (so.status !== 'Cancelled' && so.items) {
-              so.items.forEach(si => {
-                  let qtyOut = parseFloat(si.deliveredQty) || parseFloat(si.dispatchedQty) || 0;
-                  if (qtyOut === 0 && (so.status === 'Completed' || so.status === 'Delivered')) {
-                      qtyOut = parseFloat(si.quantity) || 0;
-                  }
-                  
-                  if (qtyOut > 0) {
-                      entries.push({
-                          id: `so-${so.id}-${si.id}`,
-                          timestamp: new Date(so.orderDate || new Date()).getTime(),
-                          dateStr: so.orderDate || new Date().toLocaleDateString(),
-                          itemId: si.productName || si.itemCode, // Try matching by name first since itemCode might be sale order specific ID
-                          type: 'Sale',
-                          ref: so.id,
-                          outputType: si.outputType || si.type || '-',
-                          qtyIn: 0,
-                          qtyOut: qtyOut
-                      });
-                  }
-              });
-          }
+      const gradeSet = new Set(effectiveGrades);
+      const stream = rawEntries.filter(e => {
+          if (e.outputType === UNGRADED) return allGradesSelected;
+          return gradeSet.has(e.outputType);
       });
-
-      // 2. Production Plans (Production -> Qty In / Consumption -> Qty Out)
-      state?.productionPlans?.forEach(pp => {
-          if (pp.status !== 'Cancelled' && pp.items) {
-              pp.items.forEach(pi => {
-                  // Production Output (Inward)
-                  if (pi.outputs) {
-                      pi.outputs.forEach((out, idx) => {
-                          const qty = parseFloat(out.quantity) || 0;
-                          if (qty > 0) {
-                              entries.push({
-                                  id: `pp-${pp.id}-${pi.itemCode}-${idx}`,
-                                  timestamp: new Date(pp.createdDate || new Date()).getTime() + idx,
-                                  dateStr: pp.createdDate || new Date().toLocaleDateString(),
-                                  itemId: pi.productName || pi.itemCode, // Use productName because itemCode might be linked to SO
-                                  type: 'Production',
-                                  ref: pp.id,
-                                  outputType: out.typeName || '', // Track the output type
-                                  qtyIn: qty,
-                                  qtyOut: 0
-                              });
-                          }
-                      });
-                  }
-                  
-                  // Production Consumption (Outward)
-                  const consumedQty = parseFloat(pi.fabricRequiredQty) || 0;
-                  if (consumedQty > 0) {
-                      entries.push({
-                          id: `pp-cons-${pp.id}-${pi.itemCode}`,
-                          timestamp: new Date(pp.createdDate || new Date()).getTime(),
-                          dateStr: pp.createdDate || new Date().toLocaleDateString(),
-                          itemId: pi.requiredFabricId || pi.requiredFabricName,
-                          type: 'Consumption',
-                          ref: pp.id,
-                          outputType: '-',
-                          qtyIn: 0,
-                          qtyOut: consumedQty
-                      });
-                  }
-              });
-          }
-      });
-
-      // 3. Returns (Return -> Qty In)
-      state?.returns?.forEach(ret => {
-          if (ret.items) {
-              ret.items.forEach(ri => {
-                  const qty = parseFloat(ri.qty) || 0;
-                  if (qty > 0) {
-                      entries.push({
-                          id: `ret-${ret.id}-${ri.itemId}`,
-                          timestamp: ret.timestamp || new Date().getTime(),
-                          dateStr: ret.date || new Date().toLocaleDateString(),
-                          itemId: ri.itemCode || ri.name, // Try matching by code or name
-                          type: 'Return',
-                          ref: ret.id,
-                          outputType: ri.outputType || ri.type || '-',
-                          qtyIn: qty,
-                          qtyOut: 0
-                      });
-                  }
-              });
-          }
-      });
-
-      // 4. Adjustments (Adjustment -> Qty In / Out)
-      state?.adjustments?.forEach(adj => {
-          entries.push({
-              id: adj.id,
-              timestamp: adj.timestamp,
-              dateStr: adj.date,
-              itemId: adj.itemId, // Actual item ID
-              type: 'Adjustment',
-              ref: 'MANUAL-ADJ',
-              outputType: adj.outputType || '-',
-              qtyIn: adj.type === 'add' ? adj.qty : 0,
-              qtyOut: adj.type === 'sub' ? adj.qty : 0
-          });
-      });
-
-      // Compute balances chronologically
-      // Sort ascending first
-      entries.sort((a, b) => a.timestamp - b.timestamp);
-
-      // Match items correctly
-      const getMatchingItem = (refId) => {
-          return filteredItems.find(i => i.id === refId || i.sku === refId || i.name === refId);
-      };
-
-      let itemMovements = {};
-      entries.forEach(e => {
-          const itm = getMatchingItem(e.itemId);
-          if (itm) {
-              const oType = e.outputType || '-';
-              const key = `${itm.id}-${oType}`;
-              itemMovements[key] = (itemMovements[key] || 0) + e.qtyIn - e.qtyOut;
-              e.matchedItem = itm;
-          }
-      });
-
-      // Calculate chronological balances so that the final balance matches current stock
-      let currentBalances = {};
-      filteredItems.forEach(itm => {
-          currentBalances[itm.id] = {};
-          if (itm.stockByType && Object.keys(itm.stockByType).length > 0) {
-              Object.entries(itm.stockByType).forEach(([oType, qty]) => {
-                  const key = `${itm.id}-${oType}`;
-                  const mov = itemMovements[key] || 0;
-                  const initialStock = qty - mov;
-                  currentBalances[itm.id][oType] = initialStock;
-                  
-                  if (initialStock !== 0) {
-                      entries.unshift({
-                          id: `init-${itm.id}-${oType}`,
-                          timestamp: 0,
-                          dateStr: 'Initial',
-                          itemId: itm.id,
-                          type: 'Initial',
-                          ref: '-',
-                          outputType: oType,
-                          qtyIn: initialStock > 0 ? initialStock : 0,
-                          qtyOut: initialStock < 0 ? Math.abs(initialStock) : 0,
-                          matchedItem: itm
-                      });
-                  }
-              });
-              // Add any outputTypes that were in movements but not currently in stockByType
-              Object.keys(itemMovements).filter(k => k.startsWith(`${itm.id}-`)).forEach(k => {
-                  const oType = k.split('-').slice(1).join('-');
-                  if (oType !== '-' && currentBalances[itm.id][oType] === undefined) {
-                      const mov = itemMovements[k] || 0;
-                      const initialStock = 0 - mov;
-                      currentBalances[itm.id][oType] = initialStock;
-                      if (initialStock !== 0) {
-                          entries.unshift({
-                              id: `init-${itm.id}-${oType}`,
-                              timestamp: 0,
-                              dateStr: 'Initial',
-                              itemId: itm.id,
-                              type: 'Initial',
-                              ref: '-',
-                              outputType: oType,
-                              qtyIn: initialStock > 0 ? initialStock : 0,
-                              qtyOut: initialStock < 0 ? Math.abs(initialStock) : 0,
-                              matchedItem: itm
-                          });
-                      }
-                  }
-              });
-          } else {
-              const key = `${itm.id}--`;
-              const mov = itemMovements[key] || 0;
-              const initialStock = getAccurateStock(itm) - mov;
-              currentBalances[itm.id]['-'] = initialStock;
-              
-              if (initialStock !== 0) {
-                  entries.unshift({
-                      id: `init-${itm.id}`,
-                      timestamp: 0,
-                      dateStr: 'Initial',
-                      itemId: itm.id,
-                      type: 'Initial',
-                      ref: '-',
-                      outputType: '-',
-                      qtyIn: initialStock > 0 ? initialStock : 0,
-                      qtyOut: initialStock < 0 ? Math.abs(initialStock) : 0,
-                      matchedItem: itm
-                  });
-              }
-          }
-      });
-
-      // Sort ascending to calculate running balance correctly
-      entries.sort((a, b) => a.timestamp - b.timestamp);
-
-      entries.forEach(e => {
-          if (e.matchedItem) {
-              const oType = e.outputType || '-';
-              if (currentBalances[e.matchedItem.id][oType] === undefined) {
-                  currentBalances[e.matchedItem.id][oType] = 0;
-              }
-              if (e.type !== 'Initial') {
-                  currentBalances[e.matchedItem.id][oType] += (e.qtyIn - e.qtyOut);
-              }
-              e.balance = currentBalances[e.matchedItem.id][oType];
-          }
-      });
-
-      // Keep chronological sorting! (Start date wise table me entries honi chahie)
-      return entries.filter(e => e.matchedItem);
-  }, [state, filteredItems]);
+      return computeLedgerBalances(stream, filteredItems);
+  }, [rawEntries, effectiveGrades, allGradesSelected, filteredItems]);
 
   const filteredEntries = useMemo(() => {
       return allEntries.filter(e => {
@@ -320,17 +180,12 @@ export default function InvLedger({ selectedDepartments = [], onBack }) {
           // Type Filter
           if (!selectedTypes.includes(e.type)) return false;
 
-          // Output Type Filter for Production
-          if (selectedOutputTypes.length > 0 && e.type === 'Production') {
-              if (e.outputType && !selectedOutputTypes.includes(e.outputType)) return false;
-          }
-
           // Item Filter (Driven by activeItemIds instead of selectedItemIds)
           if (activeItemIds.length > 0 && !activeItemIds.includes(e.matchedItem.id)) return false;
 
           return true;
       });
-  }, [allEntries, dateFrom, dateTo, selectedTypes, activeItemIds, selectedOutputTypes]);
+  }, [allEntries, dateFrom, dateTo, selectedTypes, activeItemIds]);
 
   // Group entries by item and output type
   const groupedEntries = useMemo(() => {
@@ -368,17 +223,16 @@ export default function InvLedger({ selectedDepartments = [], onBack }) {
       const targetItems = activeItemIds.length > 0 ? filteredItems.filter(i => activeItemIds.includes(i.id)) : filteredItems;
       targetItems.forEach(i => {
           let tStock = i.stock || 0;
-          // Use stockByType if available to be accurate, especially with outputTypeFilter
+          // Use stockByType if available to be accurate with the grade filter
           if (i.stockByType && Object.keys(i.stockByType).length > 0) {
               tStock = 0;
               Object.entries(i.stockByType).forEach(([typeName, qty]) => {
-                  // Only sum the filtered output type, or sum all if no filter
-                  if (selectedOutputTypes.length === 0 || selectedOutputTypes.includes(typeName)) {
+                  if (effectiveGrades.includes(typeName)) {
                       tStock += qty;
                   }
               });
           }
-          
+
           totalStock += tStock;
           itemsCount.add(i.id);
       });
@@ -390,13 +244,17 @@ export default function InvLedger({ selectedDepartments = [], onBack }) {
       });
 
       return { totalStock, itemCount: itemsCount.size, inward, outward, txCount: filteredEntries.length };
-  }, [filteredEntries, filteredItems, activeItemIds, selectedOutputTypes]);
+  }, [filteredEntries, filteredItems, activeItemIds, effectiveGrades]);
 
   const handleGetLedger = () => {
       setActiveItemIds(selectedItemIds);
   };
 
   const handlePrint = () => {
+      if (reportMode === 'stock') {
+          openReportStudio();
+          return;
+      }
       setTimeout(() => {
           window.print();
       }, 100);
@@ -423,8 +281,248 @@ export default function InvLedger({ selectedDepartments = [], onBack }) {
       setActiveItemIds([]);
       setDateFrom('');
       setDateTo('');
-      setSelectedTypes(['Purchase', 'Sale', 'Production', 'Adjustment', 'Return', 'Initial']);
-      setSelectedOutputTypes([]);
+      setSelectedTypes([...TX_TYPES, 'Initial']);
+      setSelectedGrades(null);
+      setGrouping('item');
+      setShowValue(false);
+  };
+
+  // ---------------- FG Stock Report derivation ----------------
+  const stockScopeItems = useMemo(() => {
+      return activeItemIds.length > 0
+          ? filteredItems.filter(i => activeItemIds.includes(i.id))
+          : filteredItems;
+  }, [filteredItems, activeItemIds]);
+
+  const stockRows = useMemo(() => stockScopeItems.map(item => {
+      const row = buildStockRow(item, {
+          departments: effectiveDepartments,
+          batchOutputTypes: state?.batchOutputTypes || [],
+          showValue: valueOn,
+      });
+      return {
+          ...row,
+          packingLabel: getPackingLabel(item, packingList),
+          paperCode: extractPaperCode(item, paperCodeList),
+      };
+  }), [stockScopeItems, effectiveDepartments, state?.batchOutputTypes, valueOn, packingList, paperCodeList]);
+
+  // Grade columns shown in the stock report (selected grades only)
+  const stockGradeColumns = useMemo(() => effectiveGrades.map(name => ({
+      name,
+      unit: typeUnit(name, state?.batchOutputTypes || []),
+  })), [effectiveGrades, state?.batchOutputTypes]);
+
+  const stockGroups = useMemo(
+      () => groupStockRows(stockRows, grouping, { paperCodes: paperCodeList, packings: packingList }),
+      [stockRows, grouping, paperCodeList, packingList],
+  );
+  const stockGrand = useMemo(() => sumStockRows(stockRows), [stockRows]);
+  const missingRateCount = stockRows.filter(r => r.missingRate).length;
+  const splitUnavailableCount = stockRows.filter(r => r.hasTypes && !r.splitExact).length;
+
+  const currencyCode = (state?.adminSetup?.baseCurrency || 'PKR').split('(')[0].trim() || 'PKR';
+  const deptScopeLabel = effectiveDepartments.length ? effectiveDepartments.join(', ') : 'No department selected';
+  const gradeScopeLabel = allGradesSelected ? 'All Grades' : (effectiveGrades.join(', ') || 'No grades');
+
+  // ---------------- Report models (studio + CSV share these) ----------------
+  const buildStockReportModel = () => {
+      const columns = [
+          { key: 'name', label: 'Item Name', width: 250 },
+          { key: 'sku', label: 'Item Code', width: 85 },
+          { key: 'packing', label: 'Packing Size', width: 85 },
+          ...stockGradeColumns.map(c => ({
+              key: `t_${c.name}`,
+              label: `${c.name} (${c.unit === 'Kgs' ? 'kg' : 'm'})`,
+              numeric: true,
+              width: 85,
+          })),
+          { key: 'totalMeters', label: 'Total Meters', numeric: true, width: 100 },
+          { key: 'rolls', label: 'Rolls', numeric: true, width: 75 },
+          ...(valueOn ? [{ key: 'value', label: `Value (${currencyCode})`, numeric: true, width: 110 }] : []),
+      ];
+
+      const rowValues = (r) => {
+          const v = {
+              name: r.name,
+              sku: r.sku,
+              packing: r.packingSize ? `${r.packingSize} m` : '—',
+              totalMeters: fmt(r.totalMeters),
+              rolls: r.rolls === null ? '—' : fmt(r.rolls),
+          };
+          stockGradeColumns.forEach(c => {
+              const q = r.typeQtys[c.name];
+              v[`t_${c.name}`] = q === null || q === undefined ? '—' : fmt(q);
+          });
+          if (valueOn) v.value = r.value === null ? '—' : fmtMoney(r.value);
+          return v;
+      };
+      const totalValues = (rows, label) => {
+          const s = sumStockRows(rows);
+          const v = { name: label, sku: '', packing: '', totalMeters: fmt(s.totalMeters), rolls: s.rolls === null ? '—' : fmt(s.rolls) };
+          stockGradeColumns.forEach(c => {
+              v[`t_${c.name}`] = s.typeTotals[c.name] === undefined ? '—' : fmt(s.typeTotals[c.name]);
+          });
+          if (valueOn) v.value = s.value === null ? '—' : fmtMoney(s.value);
+          return v;
+      };
+
+      const groups = stockGroups.map(g => ({
+          label: g.label || '',
+          rows: [
+              ...g.rows.map(r => ({ kind: 'data', values: rowValues(r) })),
+              ...(g.label ? [{ kind: 'subtotal', values: totalValues(g.rows, `Subtotal — ${g.label}`) }] : []),
+          ],
+      }));
+      groups.push({ label: '', rows: [{ kind: 'grand', values: totalValues(stockRows, 'GRAND TOTAL') }] });
+
+      const footnotes = ['Current Stock at the time of generation (date range applies to the Transactions Report only).'];
+      if (splitUnavailableCount > 0) footnotes.push(`${splitUnavailableCount} item(s) also hold stock in departments outside this scope — the grade split is not stored per department, so their grade columns show '—'; their totals are the exact department figures.`);
+      if (valueOn && missingRateCount > 0) footnotes.push(`${missingRateCount} item(s) without a rate — value incomplete.`);
+
+      const csvLines = [
+          ['Finished Goods Stock Report'],
+          [`Departments: ${deptScopeLabel}`],
+          [`Grades: ${gradeScopeLabel}`],
+          [`Grouping: ${grouping === 'item' ? 'Item-wise' : grouping === 'paper' ? 'Paper-wise' : 'Packing-wise'}`],
+          [],
+          columns.map(c => c.label),
+      ];
+      const csvRow = (vals) => columns.map(c => vals[c.key] ?? '');
+      stockGroups.forEach(g => {
+          if (g.label) csvLines.push([`== ${g.label} ==`]);
+          g.rows.forEach(r => csvLines.push(csvRow(rowValues(r))));
+          if (g.label) csvLines.push(csvRow(totalValues(g.rows, `Subtotal — ${g.label}`)));
+      });
+      csvLines.push(csvRow(totalValues(stockRows, 'GRAND TOTAL')));
+
+      return {
+          title: 'Finished Goods Stock Report',
+          companyName: state?.adminSetup?.companyName || 'FlashVision ERP',
+          scopeLines: [
+              `Departments: ${deptScopeLabel}`,
+              `Grades: ${gradeScopeLabel} • Grouping: ${grouping === 'item' ? 'Item-wise' : grouping === 'paper' ? 'Paper-wise' : 'Packing-wise'} • Stock: Current`,
+          ],
+          generatedAtLabel: `Generated: ${new Date().toLocaleString()}`,
+          columns,
+          groups,
+          footnotes,
+          filenameBase: `FG_Stock_Report_${new Date().toISOString().slice(0, 10)}`,
+          csvText: toCsv(csvLines),
+      };
+  };
+
+  const buildTransactionsReportModel = () => {
+      const columns = [
+          { key: 'date', label: 'Date', width: 90 },
+          { key: 'type', label: 'Type', width: 80 },
+          { key: 'ref', label: 'Ref #', width: 110 },
+          { key: 'department', label: 'Department', width: 130 },
+          { key: 'grade', label: 'Grade', width: 70 },
+          { key: 'qtyIn', label: 'Qty In', numeric: true, width: 80 },
+          { key: 'qtyOut', label: 'Qty Out', numeric: true, width: 80 },
+          { key: 'balance', label: 'Balance', numeric: true, width: 90 },
+      ];
+
+      const sections = Object.values(groupedEntries);
+      const sectionLabel = (s) => `${s.item.name} (${s.item.sku || s.item.id})${s.outputType !== UNGRADED ? ` — ${s.outputType}` : ''}`;
+      const entryRow = (e) => ({
+          kind: 'data',
+          values: {
+              date: e.timestamp === 0 ? 'Opening Balance' : new Date(e.timestamp).toLocaleDateString(),
+              type: e.type,
+              ref: e.ref || '',
+              department: e.department || '—',
+              grade: e.outputType || '—',
+              qtyIn: e.qtyIn ? fmt(e.qtyIn) : '—',
+              qtyOut: e.qtyOut ? fmt(e.qtyOut) : '—',
+              balance: fmt(e.balance),
+          },
+      });
+      const sectionRows = (s) => {
+          const rows = s.entries.map(entryRow);
+          const finalBalance = s.entries.length ? s.entries[s.entries.length - 1].balance : 0;
+          rows.push({
+              kind: 'subtotal',
+              values: {
+                  date: `Total — ${s.item.sku || s.item.id}${s.outputType !== UNGRADED ? ` (${s.outputType})` : ''}`,
+                  type: '', ref: '', department: '', grade: '',
+                  qtyIn: fmt(s.inward), qtyOut: fmt(s.outward), balance: fmt(finalBalance),
+              },
+          });
+          return rows;
+      };
+
+      let groups;
+      if (grouping === 'item') {
+          groups = sections.map(s => ({ label: sectionLabel(s), rows: sectionRows(s) }));
+      } else {
+          const clusterOf = (item) => grouping === 'paper'
+              ? (() => { const c = extractPaperCode(item, paperCodeList); return c === 'Other' ? 'Other' : `Paper ${c}`; })()
+              : getPackingLabel(item, packingList);
+          const clusters = new Map();
+          sections.forEach(s => {
+              const label = clusterOf(s.item);
+              if (!clusters.has(label)) clusters.set(label, []);
+              clusters.get(label).push(s);
+          });
+          groups = [...clusters.entries()]
+              .sort((a, b) => a[0].localeCompare(b[0], undefined, { numeric: true }))
+              .map(([label, secs]) => {
+                  const rows = [];
+                  let inSum = 0, outSum = 0;
+                  secs.forEach(s => {
+                      inSum += s.inward; outSum += s.outward;
+                      rows.push({ kind: 'subhead', values: { __label: sectionLabel(s) } });
+                      rows.push(...sectionRows(s));
+                  });
+                  rows.push({
+                      kind: 'subtotal',
+                      values: { date: `Subtotal — ${label}`, type: '', ref: '', department: '', grade: '', qtyIn: fmt(inSum), qtyOut: fmt(outSum), balance: '' },
+                  });
+                  return { label, rows };
+              });
+      }
+
+      const footnotes = ['Opening balances are anchored so each grade\u2019s closing balance equals the current stock figure for that grade.'];
+      if (!allGradesSelected) footnotes.push('Grade filter active — untyped movements (transfers, purchase receipts, other consumption) appear only in the All Grades view.');
+      if (dateFrom || dateTo) footnotes.push('Balances are running balances on the full register stream; entries outside the selected date range are not printed.');
+
+      const csvLines = [
+          ['Stock Transactions Report'],
+          [`Departments: ${deptScopeLabel}`],
+          [`Date Range: ${dateFrom || '…'} to ${dateTo || '…'}`],
+          [`Grades: ${gradeScopeLabel}`],
+          [],
+          columns.map(c => c.label),
+      ];
+      groups.forEach(g => {
+          if (g.label) csvLines.push([`== ${g.label} ==`]);
+          g.rows.forEach(r => {
+              if (r.kind === 'subhead') csvLines.push([`-- ${r.values.__label} --`]);
+              else csvLines.push(columns.map(c => r.values[c.key] ?? ''));
+          });
+      });
+
+      return {
+          title: 'Stock Transactions Report',
+          companyName: state?.adminSetup?.companyName || 'FlashVision ERP',
+          scopeLines: [
+              `Departments: ${deptScopeLabel}`,
+              `Date Range: ${dateFrom || 'From start'} to ${dateTo || 'To date'} • Grades: ${gradeScopeLabel} • Grouping: ${grouping === 'item' ? 'Item-wise' : grouping === 'paper' ? 'Paper-wise' : 'Packing-wise'}`,
+          ],
+          generatedAtLabel: `Generated: ${new Date().toLocaleString()}`,
+          columns,
+          groups,
+          footnotes,
+          filenameBase: `Stock_Transactions_Report_${new Date().toISOString().slice(0, 10)}`,
+          csvText: toCsv(csvLines),
+      };
+  };
+
+  const openReportStudio = () => {
+      setReportModel(reportMode === 'stock' ? buildStockReportModel() : buildTransactionsReportModel());
+      setStudioOpen(true);
   };
 
   return (
@@ -560,6 +658,117 @@ export default function InvLedger({ selectedDepartments = [], onBack }) {
         </div>
       </section>
 
+      {/* ===== FG Stock Report Bar ===== */}
+      <section className="bg-surface-container-lowest p-5 rounded-2xl border border-outline-variant/10 shadow-sm mb-8">
+        <div className="flex flex-wrap items-end gap-x-8 gap-y-4">
+          {/* Report mode */}
+          <div className="space-y-1.5">
+            <label className="block text-[10px] font-black uppercase tracking-widest text-on-surface-variant px-1">Report</label>
+            <div className="flex items-center p-1 bg-surface-container-low border border-outline-variant/20 rounded-xl">
+              <button
+                type="button"
+                onClick={() => setReportMode('stock')}
+                className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${reportMode === 'stock' ? 'bg-primary text-on-primary shadow' : 'text-on-surface-variant hover:text-on-surface'}`}
+              >
+                Stock Report
+              </button>
+              <button
+                type="button"
+                onClick={() => setReportMode('transactions')}
+                className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${reportMode === 'transactions' ? 'bg-primary text-on-primary shadow' : 'text-on-surface-variant hover:text-on-surface'}`}
+              >
+                Transactions Report
+              </button>
+            </div>
+          </div>
+
+          {/* Grades / Types — applies to the WHOLE report */}
+          <div className="space-y-1.5 relative" ref={gradeDropdownRef}>
+            <label className="block text-[10px] font-black uppercase tracking-widest text-on-surface-variant px-1">Grades / Types</label>
+            <div
+                className="flex items-center gap-2 bg-surface-container-low border border-outline-variant/20 rounded-lg text-sm font-medium py-2.5 px-4 cursor-pointer min-w-[200px]"
+                onClick={() => setIsGradeDropdownOpen(!isGradeDropdownOpen)}
+            >
+                <span className="material-symbols-outlined text-outline-variant text-sm" style={{ fontVariationSettings: "'FILL' 0" }}>category</span>
+                <span className="flex-1 text-on-surface text-sm font-medium">{allGradesSelected ? 'All Grades' : `${effectiveGrades.length} Selected`}</span>
+                <span className="material-symbols-outlined text-sm text-outline-variant" style={{ fontVariationSettings: "'FILL' 0" }}>expand_more</span>
+            </div>
+
+            {isGradeDropdownOpen && (
+                <div className="absolute z-50 top-full mt-2 w-full bg-surface-container-lowest border border-outline-variant/20 rounded-xl shadow-lg p-2 max-h-60 overflow-y-auto animate-in fade-in slide-in-from-top-2">
+                    {discoveredGrades.map(name => (
+                        <label key={name} className="flex items-center gap-3 px-3 py-2 hover:bg-surface-container-low rounded-lg cursor-pointer transition-colors">
+                            <input
+                                type="checkbox"
+                                className="w-4 h-4 rounded text-primary focus:ring-primary border-outline-variant/30"
+                                checked={allGradesSelected || effectiveGrades.includes(name)}
+                                onChange={() => handleToggleGrade(name)}
+                            />
+                            <span className="text-sm font-medium text-on-surface">{name}</span>
+                            <span className="text-[10px] font-bold text-on-surface-variant uppercase">{typeUnit(name, state?.batchOutputTypes || [])}</span>
+                        </label>
+                    ))}
+                    {discoveredGrades.length === 0 && (
+                         <div className="px-3 py-2 text-sm text-on-surface-variant text-center">No types available</div>
+                    )}
+                </div>
+            )}
+          </div>
+
+          {/* Grouping */}
+          <div className="space-y-1.5">
+            <label className="block text-[10px] font-black uppercase tracking-widest text-on-surface-variant px-1">Grouping</label>
+            <select
+                value={grouping}
+                onChange={(e) => setGrouping(e.target.value)}
+                className="bg-surface-container-low border border-outline-variant/20 rounded-lg text-sm font-medium py-2.5 px-4 focus:ring-2 focus:ring-primary outline-none cursor-pointer"
+            >
+                <option value="item">Item-wise</option>
+                <option value="paper">Paper-wise</option>
+                <option value="packing">Packing-wise</option>
+            </select>
+          </div>
+
+          {/* Stock Value — permission gated */}
+          <div className="space-y-1.5">
+            <label className="block text-[10px] font-black uppercase tracking-widest text-on-surface-variant px-1">Stock Value</label>
+            <div className="flex items-center gap-2.5 py-1">
+              <button
+                type="button"
+                disabled={!canViewValue}
+                onClick={() => setShowValue(v => !v)}
+                title={canViewValue ? 'Show or hide stock value (quantity × rate)' : 'Requires the “View Stock Value” permission (User Control → Inventory)'}
+                className={`relative w-11 h-6 rounded-full transition-colors ${!canViewValue ? 'bg-surface-container-highest opacity-50 cursor-not-allowed' : valueOn ? 'bg-primary cursor-pointer' : 'bg-surface-container-highest cursor-pointer'}`}
+              >
+                <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${valueOn && canViewValue ? 'left-[22px]' : 'left-0.5'}`}></span>
+              </button>
+              <span className="text-sm font-medium text-on-surface">{valueOn ? 'Value shown' : 'Value hidden'}</span>
+              {!canViewValue && (
+                <span className="flex items-center gap-1 text-[11px] font-semibold text-on-surface-variant">
+                  <span className="material-symbols-outlined text-xs" style={{ fontVariationSettings: "'FILL' 0" }}>lock</span>
+                  Needs “View Stock Value” permission
+                </span>
+              )}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3 ml-auto">
+            {reportMode === 'stock' && (
+              <span className="text-[11px] font-bold px-3 py-1.5 rounded-full bg-secondary-container text-on-secondary-container">
+                Current Stock — date range applies to Transactions
+              </span>
+            )}
+            <button
+                onClick={openReportStudio}
+                className="flex items-center gap-2 px-6 py-3 bg-gradient-to-br from-primary to-primary-container rounded-xl font-bold text-white shadow-lg shadow-primary/20 hover:-translate-y-0.5 transition-all"
+            >
+              <span className="material-symbols-outlined text-sm" style={{ fontVariationSettings: "'FILL' 0" }}>print</span>
+              <span>Preview / Export Report</span>
+            </button>
+          </div>
+        </div>
+      </section>
+
       {/* Stats Bar */}
       <section className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
         <div className="bg-surface-container-lowest p-6 rounded-xl border border-outline-variant/10 shadow-sm relative overflow-hidden">
@@ -637,13 +846,13 @@ export default function InvLedger({ selectedDepartments = [], onBack }) {
                 className="flex items-center gap-2 bg-surface-container-low border border-outline-variant/20 rounded-lg text-sm font-medium py-2 px-4 cursor-pointer min-w-[200px]"
                 onClick={() => setIsTypeDropdownOpen(!isTypeDropdownOpen)}
             >
-                <span className="flex-1">{selectedTypes.length === 5 ? 'All Transactions' : `${selectedTypes.length} Selected`}</span>
+                <span className="flex-1">{selectedTypes.length >= TX_TYPES.length ? 'All Transactions' : `${selectedTypes.length} Selected`}</span>
                 <span className="material-symbols-outlined text-sm" style={{ fontVariationSettings: "'FILL' 0" }}>expand_more</span>
             </div>
             
             {isTypeDropdownOpen && (
                 <div className="absolute z-50 top-full mt-2 w-full bg-surface-container-lowest border border-outline-variant/20 rounded-xl shadow-lg p-2 max-h-60 overflow-y-auto animate-in fade-in slide-in-from-top-2">
-                    {['Purchase', 'Sale', 'Production', 'Adjustment', 'Return'].map(type => (
+                    {TX_TYPES.map(type => (
                         <label key={type} className="flex items-center gap-3 px-3 py-2 hover:bg-surface-container-low rounded-lg cursor-pointer transition-colors">
                             <input 
                                 type="checkbox" 
@@ -657,45 +866,116 @@ export default function InvLedger({ selectedDepartments = [], onBack }) {
                 </div>
             )}
           </div>
-
-          {/* Production Output Type Filter */}
-          <div className="space-y-1.5 p-2 relative" ref={outputDropdownRef}>
-            <label className="block text-[10px] font-black uppercase tracking-widest text-on-surface-variant px-1">Output Type (Production)</label>
-            <div 
-                className="flex items-center gap-2 bg-surface-container-low border border-outline-variant/20 rounded-lg text-sm font-medium py-2 px-4 cursor-pointer min-w-[200px]"
-                onClick={() => setIsOutputDropdownOpen(!isOutputDropdownOpen)}
-            >
-                <span className="material-symbols-outlined text-outline-variant text-sm" style={{ fontVariationSettings: "'FILL' 0" }}>category</span>
-                <span className="flex-1 text-on-surface text-sm font-medium">{selectedOutputTypes.length === 0 ? 'All Outputs' : `${selectedOutputTypes.length} Selected`}</span>
-                <span className="material-symbols-outlined text-sm text-outline-variant" style={{ fontVariationSettings: "'FILL' 0" }}>expand_more</span>
-            </div>
-            
-            {isOutputDropdownOpen && (
-                <div className="absolute z-50 top-full mt-2 w-full bg-surface-container-lowest border border-outline-variant/20 rounded-xl shadow-lg p-2 max-h-60 overflow-y-auto animate-in fade-in slide-in-from-top-2">
-                    {(state?.batchOutputTypes || []).map(t => (
-                        <label key={t.id} className="flex items-center gap-3 px-3 py-2 hover:bg-surface-container-low rounded-lg cursor-pointer transition-colors">
-                            <input 
-                                type="checkbox" 
-                                className="w-4 h-4 rounded text-primary focus:ring-primary border-outline-variant/30"
-                                checked={selectedOutputTypes.includes(t.name)}
-                                onChange={() => handleToggleOutputType(t.name)}
-                            />
-                            <span className="text-sm font-medium text-on-surface">{t.name}</span>
-                        </label>
-                    ))}
-                    {(state?.batchOutputTypes || []).length === 0 && (
-                         <div className="px-3 py-2 text-sm text-on-surface-variant text-center">No types available</div>
-                    )}
-                </div>
-            )}
-          </div>
         </div>
+
         <button onClick={resetFilters} className="text-primary font-bold text-sm flex items-center gap-1 hover:bg-primary/10 px-4 py-2 rounded-lg transition-colors">
           <span className="material-symbols-outlined text-sm" style={{ fontVariationSettings: "'FILL' 0" }}>filter_list_off</span>
           Reset Filters
         </button>
       </section>
 
+      {reportMode === 'stock' ? (
+        <div>
+          {effectiveDepartments.length === 0 ? (
+              <div className="bg-surface-container-lowest p-12 rounded-2xl flex flex-col items-center justify-center border border-outline-variant/10 shadow-sm text-center">
+                  <span className="material-symbols-outlined text-6xl text-outline-variant/50 mb-4" style={{ fontVariationSettings: "'FILL' 1" }}>inventory_2</span>
+                  <h3 className="text-xl font-bold text-on-surface mb-2">Select a Department</h3>
+                  <p className="text-on-surface-variant max-w-md">Choose at least one department above to see its current stock report.</p>
+              </div>
+          ) : stockRows.length === 0 ? (
+              <div className="bg-surface-container-lowest p-12 rounded-2xl flex flex-col items-center justify-center border border-outline-variant/10 shadow-sm text-center">
+                  <span className="material-symbols-outlined text-6xl text-outline-variant/50 mb-4" style={{ fontVariationSettings: "'FILL' 1" }}>inventory_2</span>
+                  <h3 className="text-xl font-bold text-on-surface mb-2">No Items in Scope</h3>
+                  <p className="text-on-surface-variant max-w-md">No items are mapped to the selected department(s).</p>
+              </div>
+          ) : (
+            <>
+              {stockGroups.map(g => {
+                  const gSub = sumStockRows(g.rows);
+                  return (
+                  <section key={g.key} className="bg-surface-container-lowest rounded-2xl overflow-hidden shadow-sm border border-outline-variant/10 mb-8">
+                      {g.label && (
+                          <div className="bg-surface-container-low px-6 py-3.5 flex flex-wrap items-center justify-between gap-3 border-b border-outline-variant/10">
+                              <h3 className="text-base font-black text-on-surface flex items-center gap-2">
+                                  <span className="material-symbols-outlined text-primary" style={{ fontVariationSettings: "'FILL' 1" }}>{grouping === 'paper' ? 'layers' : 'package_2'}</span>
+                                  {grouping === 'paper' ? 'Paper' : 'Packing'}: {g.label}
+                              </h3>
+                              <span className="text-xs font-bold text-on-surface-variant">{g.rows.length} items • {fmt(gSub.totalMeters)} m total</span>
+                          </div>
+                      )}
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left border-collapse min-w-[900px]">
+                          <thead className="bg-surface-container-low/50 text-on-surface-variant border-b border-outline-variant/10">
+                            <tr>
+                              <th className="px-6 py-3 text-[11px] font-black uppercase tracking-widest">Item Name</th>
+                              <th className="px-6 py-3 text-[11px] font-black uppercase tracking-widest">Item Code</th>
+                              <th className="px-6 py-3 text-[11px] font-black uppercase tracking-widest">Packing Size</th>
+                              {stockGradeColumns.map(c => (
+                                  <th key={c.name} className="px-6 py-3 text-[11px] font-black uppercase tracking-widest text-right">{c.name} ({c.unit === 'Kgs' ? 'kg' : 'm'})</th>
+                              ))}
+                              <th className="px-6 py-3 text-[11px] font-black uppercase tracking-widest text-right">Total Meters</th>
+                              <th className="px-6 py-3 text-[11px] font-black uppercase tracking-widest text-right">Rolls</th>
+                              {valueOn && <th className="px-6 py-3 text-[11px] font-black uppercase tracking-widest text-right">Value ({currencyCode})</th>}
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-outline-variant/10">
+                            {g.rows.map(r => (
+                              <tr key={r.itemId} className="hover:bg-surface-container-low/50 transition-colors">
+                                <td className="px-6 py-3.5 text-sm font-bold text-on-surface">{r.name}</td>
+                                <td className="px-6 py-3.5 text-sm font-mono text-on-surface-variant">{r.sku}</td>
+                                <td className="px-6 py-3.5 text-sm text-on-surface-variant">{r.packingSize ? `${r.packingSize} m` : '—'}</td>
+                                {stockGradeColumns.map(c => (
+                                  <td key={c.name} className="px-6 py-3.5 text-right text-sm font-semibold text-on-surface">
+                                      {r.typeQtys[c.name] === null || r.typeQtys[c.name] === undefined ? '—' : fmt(r.typeQtys[c.name])}
+                                  </td>
+                                ))}
+                                <td className="px-6 py-3.5 text-right text-sm font-black text-primary">{fmt(r.totalMeters)}</td>
+                                <td className="px-6 py-3.5 text-right text-sm font-semibold text-on-surface">{r.rolls === null ? '—' : fmt(r.rolls)}</td>
+                                {valueOn && <td className="px-6 py-3.5 text-right text-sm font-semibold text-on-surface">{fmtMoney(r.value)}</td>}
+                              </tr>
+                            ))}
+                            {g.label && (
+                              <tr className="bg-primary/5">
+                                <td className="px-6 py-3.5 text-sm font-black text-on-surface" colSpan={3}>Subtotal — {g.label}</td>
+                                {stockGradeColumns.map(c => (
+                                  <td key={c.name} className="px-6 py-3.5 text-right text-sm font-bold text-on-surface">{gSub.typeTotals[c.name] === undefined ? '—' : fmt(gSub.typeTotals[c.name])}</td>
+                                ))}
+                                <td className="px-6 py-3.5 text-right text-sm font-black text-primary">{fmt(gSub.totalMeters)}</td>
+                                <td className="px-6 py-3.5 text-right text-sm font-bold text-on-surface">{gSub.rolls === null ? '—' : fmt(gSub.rolls)}</td>
+                                {valueOn && <td className="px-6 py-3.5 text-right text-sm font-bold text-on-surface">{gSub.value === null ? '—' : fmtMoney(gSub.value)}</td>}
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                  </section>
+                  );
+              })}
+
+              {/* Grand Total */}
+              <section className="bg-surface-container-lowest rounded-2xl shadow-sm border border-primary/25 mb-4 px-6 py-5">
+                  <div className="flex flex-wrap items-center gap-x-10 gap-y-3">
+                      <span className="text-sm font-black uppercase tracking-widest text-on-surface">Grand Total</span>
+                      {stockGradeColumns.map(c => (
+                          <span key={c.name} className="text-sm font-semibold text-on-surface-variant">{c.name}: <strong className="text-on-surface">{stockGrand.typeTotals[c.name] === undefined ? '—' : fmt(stockGrand.typeTotals[c.name])}</strong></span>
+                      ))}
+                      <span className="text-sm font-semibold text-on-surface-variant">Meters: <strong className="text-primary text-base">{fmt(stockGrand.totalMeters)}</strong></span>
+                      <span className="text-sm font-semibold text-on-surface-variant">Rolls: <strong className="text-on-surface">{stockGrand.rolls === null ? '—' : fmt(stockGrand.rolls)}</strong></span>
+                      {valueOn && <span className="text-sm font-semibold text-on-surface-variant">Value: <strong className="text-on-surface">{stockGrand.value === null ? '—' : `${currencyCode} ${fmtMoney(stockGrand.value)}`}</strong></span>}
+                  </div>
+              </section>
+
+              {(splitUnavailableCount > 0 || (valueOn && missingRateCount > 0)) && (
+                  <div className="text-xs text-on-surface-variant space-y-1 mb-8 px-2">
+                      {splitUnavailableCount > 0 && <p>* {splitUnavailableCount} item(s) also hold stock in departments outside this scope — the grade split is not stored per department, so their grade columns show '—'; totals are the exact department figures.</p>}
+                      {valueOn && missingRateCount > 0 && <p>* {missingRateCount} item(s) without a rate — value incomplete.</p>}
+                  </div>
+              )}
+            </>
+          )}
+        </div>
+      ) : (
+      <>
       {/* Grouped Ledger Sections */}
       {activeItemIds.length === 0 ? (
           <div className="bg-surface-container-lowest p-12 rounded-2xl flex flex-col items-center justify-center border border-outline-variant/10 shadow-sm text-center">
@@ -805,7 +1085,11 @@ export default function InvLedger({ selectedDepartments = [], onBack }) {
             <p className="text-sm font-medium text-on-surface-variant max-w-sm">Adjust your filters or ensure the selected item has logged transactions.</p>
           </div>
       )}
+      </>
+      )}
     </div>
+
+    <StockReportStudio isOpen={studioOpen} onClose={() => setStudioOpen(false)} model={reportModel} />
 
     {/* PRINT ONLY UI */}
     <div className="hidden print:block w-full">

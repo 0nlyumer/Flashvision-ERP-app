@@ -184,6 +184,15 @@ export const permissionsConfig = {
         ]
       },
       {
+        id: 'stockValue',
+        title: 'Stock Value',
+        description: 'View stock values and item rates in inventory reports.',
+        icon: 'attach_money',
+        perms: [
+          { id: 'view', label: 'View Stock Value', desc: 'Allows viewing stock value (quantity × rate) in the stock register and the FG stock report.' }
+        ]
+      },
+      {
         id: 'adjustStock',
         title: 'Adjust Stock',
         description: 'Manual adjustment of stock levels.',
