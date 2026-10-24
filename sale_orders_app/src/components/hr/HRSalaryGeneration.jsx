@@ -6,6 +6,7 @@ import { computePayrollRecords } from '../../utils/payrollCalc';
 import { nextVoucherNumber, formatVoucherId, voucherCounterKey } from '../../utils/voucherNumbering';
 import { resolvePayrollAccountCode } from '../../utils/payrollAccountMapping';
 import { isSalaryBatchPaid, salaryBatchNet, canDeleteSalaryBatch, buildSalaryClearingVoucher } from '../../utils/paidMark';
+import { getDivisionPrintFullName } from '../../utils/divisionPrintName';
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { exportDocumentToPdf, exportDocumentToImage, exportDocumentToCsv } from '../../utils/printExportUtils';
@@ -754,7 +755,8 @@ export default function HRSalaryGeneration({ isMobile }) {
       advance: advance,
       loanInstallment: loanInstallment,
       netAdjustmentBalance: netAdjustmentBalance,
-      netSalary: r.netSalary || 0
+      netSalary: r.netSalary || 0,
+      printFullName: getDivisionPrintFullName(r.division || r.section || '')
     };
   }, [selectedRecordForDetail, payrollPeriod, state.hr_uploaded_attendance]);
 
@@ -2164,6 +2166,7 @@ export default function HRSalaryGeneration({ isMobile }) {
         columns={visibleColumns}
         rows={filteredList}
         divisionName={selectedDivision !== 'ALL' ? selectedDivision : (state.adminSetup?.companyName || 'All Divisions')}
+        divisionPrintName={selectedDivision !== 'ALL' ? getDivisionPrintFullName(selectedDivision) : ''}
         periodLabel={payrollPeriod ? getPeriodLabel(payrollPeriod) : ''}
         periodKey={payrollPeriod}
         currencySymbol={currSym}

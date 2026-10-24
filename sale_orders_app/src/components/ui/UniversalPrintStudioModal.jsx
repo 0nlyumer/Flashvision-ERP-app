@@ -83,7 +83,7 @@ export default function UniversalPrintStudioModal({
   const [saveSuccess, setSaveSuccess] = useState(false);
 
   // Company Global Metadata
-  const companyName = state?.adminSetup?.companyName || 'FLASHVISION LOGISTICS & ENTERPRISE ERP';
+  const companyName = state?.adminSetup?.companyName || 'FLASHVISION';
   const companyLogo = state?.adminSetup?.logo || state?.adminSetup?.logoUrl || '';
   const companyAddress = state?.adminSetup?.address || 'Plot 42-B, Industrial Zone Phase III, Karachi, Pakistan';
   const companyPhone = state?.adminSetup?.phone || '+92-21-34567890';

@@ -2,6 +2,7 @@ import HRPayslipModal from './HRPayslipModal';
 import React, { useState, useMemo, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
 import { computePayrollRecords } from '../../utils/payrollCalc';
+import { getDivisionPrintFullName } from '../../utils/divisionPrintName';
 
 // Safe date normalizer (converts DD/MM/YYYY, MM/DD/YYYY, YYYY-MM-DD into standard YYYY-MM-DD)
 const normalizeDate = (dateStr) => {
@@ -426,7 +427,8 @@ export default function HRPayslip({ isMobile }) {
       advance: advance,
       loanInstallment: loanInstallment,
       netAdjustmentBalance: netAdjustmentBalance,
-      netSalary: r.netSalary || 0
+      netSalary: r.netSalary || 0,
+      printFullName: getDivisionPrintFullName(r.division || r.section || '')
     };
   }, [selectedSlipForDetail, selectedPeriod, state.hr_employees_list, state.hr_uploaded_attendance, state.hr_overtime_requests]);
 

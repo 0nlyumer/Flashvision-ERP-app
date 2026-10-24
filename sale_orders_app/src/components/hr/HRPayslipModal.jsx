@@ -2,9 +2,14 @@ import React, { useRef } from 'react';
 import { createPortal } from 'react-dom';
 
 // Number to Words Converter (Pakistani / South Asian & Western standard)
+// Paisa included when non-zero (Omer, 2026-10-24): "Rupees … and Paisa …
+// Only"; when paisa is 0 the output is exactly the old format.
 export function numberToWords(num) {
-  const n = Math.floor(Math.abs(num || 0));
-  if (n === 0) return 'Rupees Zero Only';
+  const abs = Math.abs(num || 0);
+  let n = Math.floor(abs);
+  let paisa = Math.round((abs - n) * 100);
+  if (paisa === 100) { n += 1; paisa = 0; }
+  if (n === 0 && paisa === 0) return 'Rupees Zero Only';
 
   const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
   const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
@@ -18,7 +23,8 @@ export function numberToWords(num) {
     return convert(Math.floor(val / 10000000)) + ' Crore' + (val % 10000000 !== 0 ? ' ' + convert(val % 10000000) : '');
   }
 
-  return 'Rupees ' + convert(n) + ' Only';
+  const rupeesWords = n === 0 ? 'Zero' : convert(n);
+  return 'Rupees ' + rupeesWords + (paisa > 0 ? ' and Paisa ' + convert(paisa) : '') + ' Only';
 }
 
 export default function HRPayslipModal({ isOpen, onClose, slip }) {
@@ -34,6 +40,17 @@ export default function HRPayslipModal({ isOpen, onClose, slip }) {
     const num = Number(val) || 0;
     return num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   };
+
+  // Signed money lines (Omer, 2026-10-24): the amount is always formatted
+  // absolute so a stored negative can never double up with the line's sign
+  // prefix ("+ Rs -18,155.17" bug). Lines whose output was already correct
+  // (positive magnitudes) render byte-identically.
+  const formatAbsPKR = (val) => formatPKR(Math.abs(Number(val) || 0));
+  // For the one truly signed line (Net Overtime & Adjustment Balance):
+  // the sign comes from the value itself; zero renders "+ Rs 0.00".
+  const formatSignedPKR = (val) => `${(Number(val) || 0) < 0 ? '-' : '+'} Rs ${formatAbsPKR(val)}`;
+
+  const netAdjBal = slip.netAdjustmentBalance || (slip.otPay + slip.allowances - slip.absentDeduction - slip.dtDeduction - slip.fines - slip.advance - slip.loanInstallment);
 
   const totalCalendarDays = slip.currentMonthDays || 30;
   const halfDays = Math.ceil(totalCalendarDays / 2); // e.g. 15 for 30, 16 for 31
@@ -83,7 +100,10 @@ export default function HRPayslipModal({ isOpen, onClose, slip }) {
           {/* 1. Header (Brand & Month Badge) */}
           <div className="flex justify-between items-start border-b border-slate-200 pb-4">
             <div className="flex items-center gap-3.5">
-              <div className="w-13 h-13 rounded-2xl border-2 border-slate-900 flex items-center justify-center text-slate-900 font-headline font-black text-xl tracking-tighter shrink-0">
+              {/* AJ mark — Omer's approved sheet-template logo (2026-10-24):
+                  rounded-corner outline box ~44×34, dark border, no fill,
+                  bold "AJ" centered (generate_payslip.py reference). */}
+              <div className="w-[44px] h-[34px] rounded-[6px] border-2 border-slate-900 flex items-center justify-center text-slate-900 font-headline font-bold text-[19px] shrink-0">
                 AJ
               </div>
               <div>
@@ -91,7 +111,7 @@ export default function HRPayslipModal({ isOpen, onClose, slip }) {
                   AJ SYNTHETIC
                 </h1>
                 <p className="text-[11px] text-slate-500 font-medium">
-                  Payroll Audit Division • AJ Synthetic Leather &amp; footware Industries Pvt. Limited
+                  Payroll Audit Division • {slip.printFullName || 'AJ Synthetic Leather & footware Industries Pvt. Limited'}
                 </p>
               </div>
             </div>
@@ -261,25 +281,25 @@ export default function HRPayslipModal({ isOpen, onClose, slip }) {
                 <div className="flex justify-between items-center">
                   <span className="text-slate-700">Overtime Hours (OT)</span>
                   <span className="font-bold text-teal-600 font-mono">
-                    {(Number(slip.otHours) || 0).toFixed(1)} Hrs (+ Rs {formatPKR(slip.otPay)})
+                    {(Number(slip.otHours) || 0).toFixed(1)} Hrs (+ Rs {formatAbsPKR(slip.otPay)})
                   </span>
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-slate-700">Decrease / Short Hours (DT)</span>
                   <span className="font-bold text-rose-600 font-mono">
-                    {(Number(slip.dtHours) || 0).toFixed(1)} Hrs (- Rs {formatPKR(slip.dtDeduction)})
+                    {(Number(slip.dtHours) || 0).toFixed(1)} Hrs (- Rs {formatAbsPKR(slip.dtDeduction)})
                   </span>
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-slate-700">Unpaid Absence Days</span>
                   <span className="font-bold text-rose-600 font-mono">
-                    {slip.absentDays || 0} Day (- Rs {formatPKR(slip.absentDeduction)})
+                    {slip.absentDays || 0} Day (- Rs {formatAbsPKR(slip.absentDeduction)})
                   </span>
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-slate-700">Fine / Disciplinary Penalty</span>
                   <span className="font-bold text-rose-600 font-mono">
-                    - Rs {formatPKR(slip.fines)}
+                    - Rs {formatAbsPKR(slip.fines)}
                   </span>
                 </div>
               </div>
@@ -295,25 +315,25 @@ export default function HRPayslipModal({ isOpen, onClose, slip }) {
                 <div className="flex justify-between items-center">
                   <span className="text-slate-700">Attendance / Incharge Allowance</span>
                   <span className="font-bold text-teal-600 font-mono">
-                    + Rs {formatPKR(slip.allowances)}
+                    + Rs {formatAbsPKR(slip.allowances)}
                   </span>
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-slate-700">Company Advance Amount</span>
                   <span className="font-bold text-rose-600 font-mono">
-                    - Rs {formatPKR(slip.advance)}
+                    - Rs {formatAbsPKR(slip.advance)}
                   </span>
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-slate-700">Personal Loan Installment</span>
                   <span className="font-bold text-rose-600 font-mono">
-                    - Rs {formatPKR(slip.loanInstallment)}
+                    - Rs {formatAbsPKR(slip.loanInstallment)}
                   </span>
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-slate-700">Net Overtime &amp; Adjustment Balance</span>
-                  <span className="font-bold text-teal-600 font-mono">
-                    + Rs {formatPKR(slip.netAdjustmentBalance || (slip.otPay + slip.allowances - slip.absentDeduction - slip.dtDeduction - slip.fines - slip.advance - slip.loanInstallment))}
+                  <span className={`font-bold font-mono ${netAdjBal < 0 ? 'text-rose-600' : 'text-teal-600'}`}>
+                    {formatSignedPKR(netAdjBal)}
                   </span>
                 </div>
               </div>

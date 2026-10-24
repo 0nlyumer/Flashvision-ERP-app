@@ -1286,7 +1286,7 @@ export default function Layout({ children, hideSidebar = false, subNavigation = 
         {/* Footer Attribution/Meta */}
         {!hideSidebar && location.pathname !== '/document-warehouse' && !location.search.includes('tab=e-files') && (
           <footer className={`mt-auto px-6 ${location.pathname.startsWith('/inventory') || location.pathname.startsWith('/production') ? 'pt-2 pb-3' : 'pt-6 pb-8'} flex justify-between items-center text-[10px] font-bold text-slate-400 uppercase tracking-widest relative z-10 print:hidden`}>
-            <p>© 2024 {state?.adminSetup?.companyName?.toUpperCase() || 'FLASHVISION LOGISTICS'}</p>
+            <p>© 2024 {state?.adminSetup?.companyName?.toUpperCase() || 'FLASHVISION'}</p>
             <div className="flex gap-6">
               <a className="hover:text-primary transition-colors" href="#">Legal & Compliance</a>
               <span className="text-on-surface-variant/70">Powered by Flashvision</span>

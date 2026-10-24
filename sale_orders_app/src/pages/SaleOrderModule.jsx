@@ -937,7 +937,7 @@ export default function SaleOrderModule() {
         const address = printSettings.address || state.adminSetup?.address || '123 Logistics Avenue, Industrial Estate, TX 75001';
         const phone = printSettings.phone || state.adminSetup?.phone || '+1 (555) 123-4567';
         const email = printSettings.email || state.adminSetup?.email || 'operations@flashvision.com';
-        const companyName = state.adminSetup?.companyName || 'FLASHVISION LOGISTICS';
+        const companyName = state.adminSetup?.companyName || 'FLASHVISION';
 
         // Paper sizing details
         const paperSize = salesLayout.paperSize || 'A4';

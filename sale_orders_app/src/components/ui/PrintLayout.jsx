@@ -14,7 +14,7 @@ export default function PrintLayout({
   hideMetaBlock = false
 }) {
   const { state } = useApp() || {};
-  const companyName = state?.adminSetup?.companyName || 'FLASHVISION LOGISTICS & ENTERPRISE ERP';
+  const companyName = state?.adminSetup?.companyName || 'FLASHVISION';
   const printSettings = state?.adminSetup?.printSettings || {};
 
   const docTypeMap = {

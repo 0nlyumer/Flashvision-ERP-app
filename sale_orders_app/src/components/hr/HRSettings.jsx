@@ -196,13 +196,13 @@ export default function HRSettings({ isMobile }) {
       const saved = localStorage.getItem('hr_divisions_config');
       if (saved) return JSON.parse(saved);
       return [
-        { id: 1, name: 'AJ Synthetic', code: 'AJS', description: 'AJ Synthetic Core Division', head: '' },
-        { id: 2, name: 'AAA', code: 'AAA', description: 'AAA Operations Wing', head: '' }
+        { id: 1, name: 'AJ Synthetic', code: 'AJS', description: 'AJ Synthetic Core Division', head: '', printFullName: 'AJ Synthetic Leather & Footwear Industries Pvt. Limited' },
+        { id: 2, name: 'AAA', code: 'AAA', description: 'AAA Operations Wing', head: '', printFullName: '' }
       ];
     } catch (e) {
       return [
-        { id: 1, name: 'AJ Synthetic', code: 'AJS', description: 'AJ Synthetic Core Division', head: '' },
-        { id: 2, name: 'AAA', code: 'AAA', description: 'AAA Operations Wing', head: '' }
+        { id: 1, name: 'AJ Synthetic', code: 'AJS', description: 'AJ Synthetic Core Division', head: '', printFullName: 'AJ Synthetic Leather & Footwear Industries Pvt. Limited' },
+        { id: 2, name: 'AAA', code: 'AAA', description: 'AAA Operations Wing', head: '', printFullName: '' }
       ];
     }
   });
@@ -220,7 +220,8 @@ export default function HRSettings({ isMobile }) {
     name: '',
     code: '',
     description: '',
-    head: ''
+    head: '',
+    printFullName: ''
   });
 
   const handleOpenAddDivision = () => {
@@ -230,7 +231,8 @@ export default function HRSettings({ isMobile }) {
       name: '',
       code: '',
       description: '',
-      head: ''
+      head: '',
+      printFullName: ''
     });
     setShowDivisionModal(true);
   };
@@ -242,7 +244,8 @@ export default function HRSettings({ isMobile }) {
       name: div.name,
       code: div.code || '',
       description: div.description || '',
-      head: div.head || ''
+      head: div.head || '',
+      printFullName: div.printFullName || (div.name === 'AJ Synthetic' ? 'AJ Synthetic Leather & Footwear Industries Pvt. Limited' : '')
     });
     setShowDivisionModal(true);
   };
@@ -267,7 +270,8 @@ export default function HRSettings({ isMobile }) {
         name: activeDivision.name.trim(),
         code: activeDivision.code ? activeDivision.code.trim().toUpperCase() : activeDivision.name.slice(0, 3).toUpperCase(),
         description: activeDivision.description.trim(),
-        head: activeDivision.head || ''
+        head: activeDivision.head || '',
+        printFullName: (activeDivision.printFullName || '').trim()
       };
       setDivisions(prev => [...prev, newDiv]);
     } else {
@@ -276,7 +280,8 @@ export default function HRSettings({ isMobile }) {
         name: activeDivision.name.trim(),
         code: activeDivision.code ? activeDivision.code.trim().toUpperCase() : d.code,
         description: activeDivision.description.trim(),
-        head: activeDivision.head || ''
+        head: activeDivision.head || '',
+        printFullName: (activeDivision.printFullName || '').trim()
       } : d));
     }
 
@@ -1212,6 +1217,18 @@ export default function HRSettings({ isMobile }) {
                     placeholder="e.g. AJ Synthetic, AAA"
                     className="w-full bg-surface-container-low border border-outline-variant/30 rounded-xl px-3.5 py-2.5 font-bold text-on-surface outline-none"
                   />
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant block mb-1">Full Name (for prints)</label>
+                  <input
+                    type="text"
+                    value={activeDivision.printFullName || ''}
+                    onChange={(e) => setActiveDivision({ ...activeDivision, printFullName: e.target.value })}
+                    placeholder="e.g. AJ Synthetic Leather & Footwear Industries Pvt. Limited"
+                    className="w-full bg-surface-container-low border border-outline-variant/30 rounded-xl px-3.5 py-2.5 font-bold text-on-surface outline-none"
+                  />
+                  <p className="text-[10px] text-on-surface-variant mt-1">Print headers (pay slip, salary sheet) par division ka ye poora naam ayega. Khali ho to division name hi ayega.</p>
                 </div>
 
                 <div>

@@ -833,7 +833,7 @@ export function discoverDocumentSchema(docType, sampleRecord = null, existingLay
 // Generate Realistic Mock Data for Live Paper Preview across all 26 document types
 export function getMockPreviewData(docType) {
   const commonHeader = {
-    company: 'FLASHVISION LOGISTICS & ENTERPRISE ERP',
+    company: 'FLASHVISION',
     address: 'Plot 42-B, Industrial Zone Phase III, Karachi, Pakistan',
     phone: '+92-21-34567890',
     email: 'info@flashvision.com'

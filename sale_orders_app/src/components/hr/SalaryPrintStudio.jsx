@@ -36,6 +36,7 @@ export default function SalaryPrintStudio({
   columns = [],          // visibleColumns from the Salary Generation screen
   rows = [],             // filteredList from the screen (what is on screen prints)
   divisionName = '',     // resolved header title (division name / company name)
+  divisionPrintName = '', // selected division's "Full Name (for prints)" (Fix 4/6, Omer 2026-10-24)
   periodLabel = '',
   periodKey = '',
   currencySymbol = 'Rs.',
@@ -350,10 +351,10 @@ export default function SalaryPrintStudio({
                   type="text"
                   value={draft.headerTitle}
                   onChange={(e) => patchDraft({ headerTitle: e.target.value })}
-                  placeholder={divisionName}
+                  placeholder={divisionPrintName || divisionName}
                   className="mt-1 w-full h-9 px-3 rounded-lg border border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 text-xs font-medium"
                 />
-                <span className="text-[10px] text-slate-400">Leave blank for automatic: selected division name (company name for All Divisions).</span>
+                <span className="text-[10px] text-slate-400">Leave blank for automatic: selected division's Full Name (for prints) — division name when unset (company name for All Divisions).</span>
               </label>
               <label className="block">
                 <span className="font-semibold text-slate-600">Slogan Line</span>
@@ -486,8 +487,13 @@ export default function SalaryPrintStudio({
                 {pageIdx === 0 && (
                   <div style={{ borderBottom: '2.5px solid #2563eb', paddingBottom: '10px', marginBottom: '12px' }}>
                     <h1 style={{ margin: 0, fontSize: '22px', fontWeight: 900, color: '#1e3a8a', letterSpacing: '-0.3px', textTransform: 'uppercase', textAlign: 'center' }}>
-                      {draft.headerTitle?.trim() ? draft.headerTitle : divisionName}
+                      {draft.headerTitle?.trim() ? draft.headerTitle : (divisionPrintName || divisionName)}
                     </h1>
+                    {/* Audit-report line (Omer, 2026-10-24 — his printed-sheet
+                        reference): DIVISION wording, per his order. */}
+                    <p style={{ margin: '4px 0 0 0', fontSize: '11px', fontWeight: 700, color: '#374151', textAlign: 'center', letterSpacing: '0.4px', textTransform: 'uppercase' }}>
+                      Monthly Salary Audit Report - {periodLabel} - Division: {divisionName}
+                    </p>
                     {draft.slogan?.trim() && (
                       <p style={{ margin: '3px 0 0 0', fontSize: '12px', fontWeight: 600, color: '#6b7280', textAlign: 'center', fontStyle: 'italic' }}>
                         {draft.slogan}

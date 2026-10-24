@@ -116,7 +116,7 @@ export default function PrintSettings() {
   const [documentLayouts, setDocumentLayouts] = useState({});
 
   // Company Global Metadata
-  const companyName = state?.adminSetup?.companyName || 'FLASHVISION LOGISTICS & ENTERPRISE ERP';
+  const companyName = state?.adminSetup?.companyName || 'FLASHVISION';
   const companyLogo = state?.adminSetup?.logo || state?.adminSetup?.logoUrl || '';
 
   // 1. Initial Load: Fetch saved layouts from Supabase print_layout_settings & AppContext state
