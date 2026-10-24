@@ -31,7 +31,7 @@ export default function FinanceDashboard({ onNavigateTab }) {
   };
 
   return (
-    <div className="flex-1 min-h-full w-full max-w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 flex flex-col gap-6">
+    <div className="flex-1 min-h-0 w-full max-w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 flex flex-col gap-6">
       {/* Page Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
         <div>
@@ -168,7 +168,7 @@ export default function FinanceDashboard({ onNavigateTab }) {
           <span className="text-xs font-bold text-primary">Live Posting Stream</span>
         </div>
 
-        <div className="overflow-auto flex-1">
+        <div className="overflow-auto flex-1 min-h-0">
           <table className="w-full text-left text-xs border-collapse">
             <thead>
               <tr className="bg-surface-container-low text-on-surface-variant text-[11px] font-bold uppercase tracking-wider">

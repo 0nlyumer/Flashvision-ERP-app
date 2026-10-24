@@ -75,10 +75,10 @@ export default function FinanceModule() {
 
   return (
     <Layout subNavConfig={subNavConfig}>
-      <div className="max-w-full mx-auto w-full">
+      <div className="max-w-full mx-auto w-full flex-1 flex flex-col min-h-0">
         {/* 1. Overview */}
         {visitedTabs.has('overview') && (
-          <div style={{ display: activeTab === 'overview' ? 'block' : 'none' }}>
+          <div style={{ display: activeTab === 'overview' ? 'flex' : 'none' }} className="flex-col flex-1 min-h-0">
             <FinanceDashboard onNavigateTab={handleTabSelect} />
           </div>
         )}
