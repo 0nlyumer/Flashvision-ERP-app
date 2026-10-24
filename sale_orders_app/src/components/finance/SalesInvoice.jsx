@@ -16,6 +16,12 @@ import { normalizeSourceDocLines, itemsForDepartment, siLinkedSourceIds } from '
 // LINK-ONLY: their isInvoiced flag belongs to the Purchase Invoice flow
 // and is never touched here (see utils/invoiceSource.js). The DC flag
 // keeps its exact old behaviour — marked on post, never on draft.
+// Stable per-row id for standalone manual lines — customRates/discounts
+// are keyed by this id so deleting a middle row never shifts another
+// row's edited rate/discount.
+let manualLineSeq = 0;
+const newManualLine = () => ({ id: 'ml' + (++manualLineSeq), itemId: '', qty: 1 });
+
 export default function SalesInvoice() {
   const { state, addSalesInvoice } = useApp();
   const { appConfirm } = useDialog();
@@ -26,7 +32,7 @@ export default function SalesInvoice() {
   const [selectedDocId, setSelectedDocId] = useState(''); // GRN / IGP document id
   const [departmentId, setDepartmentId] = useState(''); // standalone
   const [customerId, setCustomerId] = useState(''); // standalone
-  const [manualLines, setManualLines] = useState([{ itemId: '', qty: 1 }]); // standalone rows
+  const [manualLines, setManualLines] = useState([newManualLine()]); // standalone rows (stable ml.id per row)
   const [customRates, setCustomRates] = useState({}); // editable rate overrides (non-DC modes)
   const [remarks, setRemarks] = useState('');
   const [discounts, setDiscounts] = useState({}); // Stores discount percentage per item index
@@ -86,7 +92,7 @@ export default function SalesInvoice() {
     setSelectedDocId('');
     setDepartmentId('');
     setCustomerId('');
-    setManualLines([{ itemId: '', qty: 1 }]);
+    setManualLines([newManualLine()]);
     setCustomRates({});
     setDiscounts({});
   };
@@ -154,25 +160,24 @@ export default function SalesInvoice() {
   } else if (sourceType === 'STANDALONE' && selectedDepartment && selectedCustomer) {
     itemsList = [];
     subtotal = 0;
-    // lineIdx counts only rows that have an item selected — itemsList,
-    // customRates and discounts are all keyed by this index (the row
-    // renderer computes the same index for each manual row).
-    let lineIdx = 0;
+    // Standalone rows are keyed by their stable ml.id — deleting a middle
+    // row (or filling an empty row above) never shifts another row's
+    // edited rate/discount.
     manualLines.forEach((ml) => {
       const item = (state.items || []).find(i => i.id === ml.itemId);
       if (!item) return;
       // Rate Item Rate Profile / item master price se, screen par editable.
       const resolved = resolveSalesLineRate({}, item, currencyCode);
-      const unitPrice = customRates[lineIdx] !== undefined ? customRates[lineIdx] : resolved;
+      const unitPrice = customRates[ml.id] !== undefined ? customRates[ml.id] : resolved;
       pushLine({
+        lineId: ml.id,
         itemCode: item.sku,
         productName: item.name,
         stockType: null,
         qty: parseFloat(ml.qty) || 0,
         uom: item.uom || 'Units',
         unitPrice
-      }, lineIdx);
-      lineIdx += 1;
+      }, ml.id);
     });
   }
 
@@ -244,7 +249,7 @@ export default function SalesInvoice() {
     setSelectedDocId('');
     setDepartmentId('');
     setCustomerId('');
-    setManualLines([{ itemId: '', qty: 1 }]);
+    setManualLines([newManualLine()]);
     setCustomRates({});
     setRemarks('');
     setDiscounts({});
@@ -429,7 +434,7 @@ export default function SalesInvoice() {
               <div className="relative group">
                 <select
                   value={departmentId}
-                  onChange={(e) => { setDepartmentId(e.target.value); setManualLines([{ itemId: '', qty: 1 }]); setCustomRates({}); setDiscounts({}); }}
+                  onChange={(e) => { setDepartmentId(e.target.value); setManualLines([newManualLine()]); setCustomRates({}); setDiscounts({}); }}
                   className={selectClass}
                 >
                   <option value="">Choose a department...</option>
@@ -697,15 +702,12 @@ export default function SalesInvoice() {
                 <tbody className="divide-y divide-surface-container">
                   {sourceType === 'STANDALONE' ? (
                     manualLines.map((ml, idx) => {
-                      // This row's index inside itemsList (rows without an
-                      // item selected are skipped by the builder).
-                      const validIdx = ml.itemId
-                        ? manualLines.slice(0, idx).filter(r => r.itemId).length
-                        : -1;
-                      const line = validIdx >= 0 ? itemsList[validIdx] : undefined;
+                      // Stable-id lookup — rows without an item selected
+                      // have no built line.
+                      const line = ml.itemId ? itemsList.find(l => l.lineId === ml.id) : undefined;
                       const item = (state.items || []).find(i => i.id === ml.itemId);
                       return (
-                        <tr key={`ml_${idx}`} className="hover:bg-surface transition-colors">
+                        <tr key={ml.id} className="hover:bg-surface transition-colors">
                           {visibleColumns.sr && (
                             <td className="px-6 py-4 text-sm font-medium text-on-surface-variant">
                               {String(idx + 1).padStart(2, '0')}
@@ -759,9 +761,8 @@ export default function SalesInvoice() {
                                 value={line ? line.unitPrice : 0}
                                 onChange={(e) => {
                                   const val = parseFloat(e.target.value) || 0;
-                                  // customRates is keyed by itemsList index
-                                  // (validIdx, computed above for this row).
-                                  if (validIdx >= 0) setCustomRates(prev => ({ ...prev, [validIdx]: val }));
+                                  // customRates is keyed by the row's stable id.
+                                  if (ml.itemId) setCustomRates(prev => ({ ...prev, [ml.id]: val }));
                                 }}
                                 className="w-28 text-right bg-surface-container-low border border-outline-variant/30 rounded px-2 py-1 text-sm focus:ring-1 focus:ring-primary focus:border-primary outline-none"
                                 min="0"
@@ -775,7 +776,7 @@ export default function SalesInvoice() {
                                 value={line ? line.discountPercent : 0}
                                 onChange={(e) => {
                                   const val = Math.min(100, Math.max(0, parseFloat(e.target.value) || 0));
-                                  if (validIdx >= 0) setDiscounts(prev => ({ ...prev, [validIdx]: val }));
+                                  if (ml.itemId) setDiscounts(prev => ({ ...prev, [ml.id]: val }));
                                 }}
                                 className="w-20 text-right bg-surface-container-low border border-outline-variant/30 rounded px-2 py-1 text-sm focus:ring-1 focus:ring-primary focus:border-primary outline-none"
                                 min="0"
@@ -886,7 +887,7 @@ export default function SalesInvoice() {
               <div className="px-6 py-4 border-t border-surface-container bg-surface-container-low/30">
                 <button
                   type="button"
-                  onClick={() => setManualLines(prev => [...prev, { itemId: '', qty: 1 }])}
+                  onClick={() => setManualLines(prev => [...prev, newManualLine()])}
                   className="flex items-center gap-1.5 px-4 py-2 bg-secondary-container text-on-secondary-container rounded-xl font-bold text-xs hover:opacity-90 transition-all shadow-sm cursor-pointer"
                 >
                   <span className="material-symbols-outlined text-[16px]">add_circle</span>
