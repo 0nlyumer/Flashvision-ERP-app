@@ -73,7 +73,16 @@ export const HEADER_DESIGNS = [
   { id: 'wave', name: 'Graphic — Wave' },
   { id: 'sideblock', name: 'Graphic — Side Block' },
   { id: 'topstrip', name: 'Graphic — Top Strip' },
-  { id: 'frame', name: 'Graphic — Corporate Frame' }
+  { id: 'frame', name: 'Graphic — Corporate Frame' },
+  // Round 5 (Omer, 2026-10-25): the Round 3 set read "thoda classical
+  // zyada" — these six are the stylish, graphic-rich set. Same opt-in
+  // field, same classic default everywhere.
+  { id: 'diagonal', name: 'Graphic — Diagonal Split' },
+  { id: 'ribbonfold', name: 'Graphic — Ribbon Fold' },
+  { id: 'medallion', name: 'Graphic — Medallion' },
+  { id: 'swoosh', name: 'Graphic — Double Swoosh' },
+  { id: 'watermark', name: 'Graphic — Watermark' },
+  { id: 'premium', name: 'Graphic — Premium Dark' }
 ];
 
 // Font choices for the print studio's Font Family picker (same list the

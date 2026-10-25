@@ -122,7 +122,7 @@ export function MetaGridHeader({ layout, companyName, companyLegal, companyAddre
   // division sub-line, legal name, address) plus the same party + meta
   // fields — compact and in-line per the standing print rules.
   // ------------------------------------------------------------------
-  const design = ['ribbon', 'wave', 'sideblock', 'topstrip', 'frame'].includes(layout.headerDesign) ? layout.headerDesign : 'classic';
+  const design = ['ribbon', 'wave', 'sideblock', 'topstrip', 'frame', 'diagonal', 'ribbonfold', 'medallion', 'swoosh', 'watermark', 'premium'].includes(layout.headerDesign) ? layout.headerDesign : 'classic';
   if (design !== 'classic') {
     const initials = String(companyName || 'F').trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase() || 'F';
     const monogramText = planVariant ? 'AJ' : initials;
@@ -146,6 +146,47 @@ export function MetaGridHeader({ layout, companyName, companyLegal, companyAddre
       </>
     );
     const exact = { printColorAdjust: 'exact', WebkitPrintColorAdjust: 'exact' };
+
+    // Round 5 shade helpers (stylish set): derive darker/lighter tints
+    // from a layout color so folds, tails and the premium block skin
+    // from the document's own band colors. Unparseable colors pass
+    // through untouched.
+    const rgbOf = (color) => {
+      const m = String(color || '').trim().match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
+      if (!m) return null;
+      let h = m[1];
+      if (h.length === 3) h = h.split('').map((c) => c + c).join('');
+      return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+    };
+    const scaleRgb = (color, f) => {
+      const rgb = rgbOf(color);
+      return rgb ? `rgb(${rgb.map((v) => Math.round(Math.max(0, Math.min(255, v * f)))).join(', ')})` : color;
+    };
+    const rgbaOf = (color, a) => {
+      const rgb = rgbOf(color);
+      return rgb ? `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${a})` : color;
+    };
+    const bandColor1 = layout.bandColor || '#4338ca';
+    const bandColor2 = layout.bandColor2 || layout.bandColor || '#4f46e5';
+
+    // Split identity lines for designs that carry the name in the shape
+    // and the legal/address lines elsewhere (Ribbon Fold's sub-strip).
+    const nameLine = (mainColor) => (
+      <div style={{ fontSize: '13.5pt', fontWeight: 800, letterSpacing: '.4px', lineHeight: 1.2, color: mainColor }}>{companyName}</div>
+    );
+    const planSubLine = (subColor) => (planVariant ? (
+      <div style={{ fontSize: '8pt', color: subColor, marginTop: '0.8mm' }}>Production &amp; Planning Division</div>
+    ) : null);
+    const legalLines = (subColor) => (
+      <>
+        {companyLegal && (
+          <div style={{ fontSize: '7.5pt', color: subColor, lineHeight: 1.45 }}>{companyLegal}</div>
+        )}
+        {!planVariant && layout.showHeaderDetails !== false && companyAddress && (
+          <div style={{ fontSize: '7.5pt', color: subColor, lineHeight: 1.45, marginTop: companyLegal ? '0.4mm' : 0 }}>{companyAddress}</div>
+        )}
+      </>
+    );
 
     const ribbonBlock = (
       <div data-design-shape="ribbon" style={{ position: 'relative', background: band, borderRadius: '6px', overflow: 'hidden', padding: '3mm 4.5mm 3.4mm', ...exact }}>
@@ -202,10 +243,128 @@ export function MetaGridHeader({ layout, companyName, companyLegal, companyAddre
       </div>
     );
 
+    // --------------------------------------------------------------
+    // Round 5 — the STYLISH set (Omer, 2026-10-25: Round 3 read
+    // "thoda classical zyada"; he wants proper graphics). Same rules
+    // as Round 3: band-color skinned, alignment-mirrored, same
+    // identity fields, compact, light text on dark shapes.
+    // --------------------------------------------------------------
+
+    // Diagonal Split — gradient panel with a skewed diagonal edge on
+    // the aligned side carries the monogram; name + lines in ink on
+    // white. The diagonal flips with alignment.
+    const diagonalBlock = (
+      <div style={{ position: 'relative', display: 'flex', flexDirection: align === 'right' ? 'row-reverse' : 'row', border: `1px solid ${DESIGN.line}`, borderRadius: '8px', overflow: 'hidden', background: '#ffffff' }}>
+        <div data-design-shape="diagonal" style={{ position: 'relative', background: band, width: '30mm', flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '3.2mm 2mm', zIndex: 1, ...exact }}>
+          <div style={{ width: '11mm', height: '9mm', border: '1.6px solid rgba(255,255,255,0.92)', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 900, fontSize: '11pt', color: '#ffffff' }}>{monogramText}</div>
+          <div style={{ fontSize: '6pt', fontWeight: 700, letterSpacing: '1.8px', color: 'rgba(255,255,255,0.85)', textTransform: 'uppercase', marginTop: '1.4mm' }}>{planVariant ? 'Division' : 'Company'}</div>
+          <div data-design-shape="diagonal-edge" style={{ position: 'absolute', top: 0, bottom: 0, width: '7mm', background: band, ...(align === 'right' ? { left: '-3.4mm', transform: 'skewX(16deg)' } : { right: '-3.4mm', transform: 'skewX(-16deg)' }), ...exact }} />
+        </div>
+        <div style={{ flex: 1, padding: '3.2mm 4mm 3.4mm 7mm', textAlign: align }}>
+          {identityLines(DESIGN.ink, DESIGN.muted)}
+        </div>
+      </div>
+    );
+
+    // Ribbon Fold — award ribbon: gradient ribbon with folded tails
+    // (swallowtail clip) and darker fold triangles at both ends; the
+    // name sits centered in white inside the ribbon, legal/address in
+    // a slim sub-strip under it.
+    const ribbonFoldBlock = (
+      <div>
+        <div style={{ position: 'relative', margin: '0 2.5mm' }}>
+          <div data-design-shape="ribbonfold-tail" style={{ position: 'absolute', top: '2.6mm', bottom: '2.2mm', left: '-2.5mm', width: '7mm', background: scaleRgb(bandColor2, 0.68), clipPath: 'polygon(0 0, 100% 10%, 74% 50%, 100% 90%, 0 100%)', ...exact }} />
+          <div data-design-shape="ribbonfold-tail" style={{ position: 'absolute', top: '2.6mm', bottom: '2.2mm', right: '-2.5mm', width: '7mm', background: scaleRgb(bandColor2, 0.68), clipPath: 'polygon(100% 0, 0 10%, 26% 50%, 0 90%, 100% 100%)', ...exact }} />
+          <div data-design-shape="ribbonfold-fold" style={{ position: 'absolute', bottom: '-1.7mm', left: '0.4mm', width: '3.4mm', height: '3.4mm', background: scaleRgb(bandColor2, 0.5), clipPath: 'polygon(0 0, 100% 0, 0 100%)', ...exact }} />
+          <div data-design-shape="ribbonfold-fold" style={{ position: 'absolute', bottom: '-1.7mm', right: '0.4mm', width: '3.4mm', height: '3.4mm', background: scaleRgb(bandColor2, 0.5), clipPath: 'polygon(0 0, 100% 0, 100% 100%)', ...exact }} />
+          <div data-design-shape="ribbonfold" style={{ position: 'relative', background: band, borderRadius: '2px', padding: '3mm 4.5mm 3.4mm', textAlign: 'center', ...exact }}>
+            {eyebrow('rgba(255,255,255,0.75)')}
+            {nameLine('#ffffff')}
+            {planSubLine('rgba(255,255,255,0.85)')}
+          </div>
+        </div>
+        {(companyLegal || (!planVariant && layout.showHeaderDetails !== false && companyAddress)) && (
+          <div style={{ marginTop: '2.4mm', background: DESIGN.soft, border: `1px solid ${DESIGN.line}`, borderRadius: '5px', padding: '1.6mm 4mm', textAlign: 'center' }}>
+            {legalLines(DESIGN.muted)}
+          </div>
+        )}
+      </div>
+    );
+
+    // Medallion — dark gradient band; a circular monogram medallion
+    // straddles the band's bottom edge on the aligned side; name +
+    // lines in white inside the band clear of the medallion.
+    const medallionBlock = (
+      <div style={{ position: 'relative', paddingBottom: '6.5mm' }}>
+        <div data-design-shape="medallion-band" style={{ background: band, borderRadius: '6px', padding: '3mm 4.5mm 3.6mm', ...exact }}>
+          <div style={{ textAlign: align, ...(align === 'right' ? { paddingRight: '15mm' } : { paddingLeft: '15mm' }) }}>
+            {eyebrow('rgba(255,255,255,0.75)')}
+            {identityLines('#ffffff', 'rgba(255,255,255,0.85)')}
+          </div>
+        </div>
+        <div data-design-shape="medallion" style={{ position: 'absolute', bottom: '0.2mm', width: '13mm', height: '13mm', borderRadius: '50%', background: band, border: '2.2px solid #ffffff', boxShadow: `0 0 0 1.6px ${accent}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 900, fontSize: '11.5pt', color: '#ffffff', ...(align === 'right' ? { right: '6mm' } : { left: '6mm' }), ...exact }}>{monogramText}</div>
+      </div>
+    );
+
+    // Double Swoosh — full gradient base with two layered translucent
+    // SVG swooshes sweeping across; name in white over them. The
+    // swooshes mirror with right alignment.
+    const swooshBlock = (
+      <div data-design-shape="swoosh" style={{ position: 'relative', background: band, borderRadius: '6px', overflow: 'hidden', ...exact }}>
+        <svg data-design-shape="swoosh-svg" aria-hidden="true" preserveAspectRatio="none" viewBox="0 0 100 24" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', display: 'block', transform: align === 'right' ? 'scaleX(-1)' : 'none' }}>
+          <path d="M0,17 C26,7 52,21 100,8 L100,0 L0,0 Z" fill="#ffffff" opacity="0.15" />
+          <path d="M0,21.5 C32,12 60,24 100,14" fill="none" stroke="#ffffff" strokeWidth="1.1" opacity="0.5" />
+          <path d="M0,4.5 C30,-1 66,8.5 100,2.5 L100,0 L0,0 Z" fill={bandColor2} opacity="0.4" />
+        </svg>
+        <div style={{ position: 'relative', zIndex: 1, padding: '3mm 4.5mm 3.4mm', textAlign: align }}>
+          {eyebrow('rgba(255,255,255,0.78)')}
+          {identityLines('#ffffff', 'rgba(255,255,255,0.88)')}
+        </div>
+      </div>
+    );
+
+    // Watermark — clean white header: huge faint monogram initial
+    // clipped at the aligned edge + name in ink + a thick gradient
+    // rule under the identity block. Modern minimal.
+    const watermarkBlock = (
+      <div data-design-shape="watermark" style={{ position: 'relative', border: `1px solid ${DESIGN.line}`, borderRadius: '8px', overflow: 'hidden', background: '#ffffff', padding: '3mm 4mm 0' }}>
+        <div data-design-shape="watermark-mark" aria-hidden="true" style={{ position: 'absolute', top: '-7mm', fontSize: '46pt', fontWeight: 900, lineHeight: 0.8, color: rgbaOf(bandColor1, 0.09), ...(align === 'right' ? { right: '-1mm' } : { left: '-1mm' }), ...exact }}>{monogramText}</div>
+        <div style={{ position: 'relative', textAlign: align }}>
+          {eyebrow(accent)}
+          {identityLines(DESIGN.ink, DESIGN.muted)}
+        </div>
+        <div data-design-shape="watermark-rule" style={{ height: '1.6mm', background: band, margin: '2.6mm -4mm 0', ...exact }} />
+      </div>
+    );
+
+    // Premium Dark — near-black block derived from the darkest band
+    // shade, gold-outline monogram box, name in white, thin metallic
+    // gold accent line (the signature — stays gold at any band color),
+    // legal/address in light grey.
+    const GOLD = '#c9a227';
+    const premiumBlock = (
+      <div data-design-shape="premium" style={{ background: `linear-gradient(90deg, ${scaleRgb(bandColor1, 0.3)}, ${scaleRgb(bandColor2, 0.38)})`, borderRadius: '6px', padding: '3.2mm 4.5mm 3.6mm', display: 'flex', flexDirection: align === 'center' ? 'column' : align === 'right' ? 'row-reverse' : 'row', alignItems: 'center', gap: '3.6mm', ...exact }}>
+        <div data-design-shape="premium-mono" style={{ width: '12mm', height: '10mm', border: `1.4px solid ${GOLD}`, borderRadius: '3px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 900, fontSize: '11.5pt', color: GOLD, flexShrink: 0, ...exact }}>{monogramText}</div>
+        <div style={{ flex: 1, textAlign: align }}>
+          {eyebrow(GOLD)}
+          {nameLine('#ffffff')}
+          {planSubLine('rgba(255,255,255,0.66)')}
+          <div data-design-shape="premium-rule" style={{ height: '0.55mm', width: '36mm', maxWidth: '70%', background: `linear-gradient(90deg, ${GOLD}, #e8cf6a)`, marginTop: '1.7mm', ...(align === 'center' ? { marginLeft: 'auto', marginRight: 'auto' } : align === 'right' ? { marginLeft: 'auto' } : {}), ...exact }} />
+          <div style={{ marginTop: '1.4mm' }}>{legalLines('rgba(255,255,255,0.66)')}</div>
+        </div>
+      </div>
+    );
+
     const graphicBlock = design === 'ribbon' ? ribbonBlock
       : design === 'wave' ? waveBlock
       : design === 'sideblock' ? sideBlock
       : design === 'topstrip' ? topStripBlock
+      : design === 'diagonal' ? diagonalBlock
+      : design === 'ribbonfold' ? ribbonFoldBlock
+      : design === 'medallion' ? medallionBlock
+      : design === 'swoosh' ? swooshBlock
+      : design === 'watermark' ? watermarkBlock
+      : design === 'premium' ? premiumBlock
       : frameBlock;
 
     const partyStrip = party ? (
