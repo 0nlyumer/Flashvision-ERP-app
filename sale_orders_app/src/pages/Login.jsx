@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
+import ArtLoginView from '../components/login/ArtLoginView';
+import { getLoginThemeById, normalizeLoginThemeSettings, resolveLoginThemeId } from '../utils/loginThemes';
 
 const DB_NAME = 'AjSyntheticSettings';
 const STORE_NAME = 'media';
@@ -156,6 +158,10 @@ export default function Login() {
   const [lockoutSeconds, setLockoutSeconds] = useState(0);
   const [sessionExpiredNotice, setSessionExpiredNotice] = useState(false);
 
+  // Login Screen Theme State (global setting, app_config 'loginThemeSettings')
+  const [activeLoginThemeId, setActiveLoginThemeId] = useState(null);
+  const loginThemeResolvedRef = useRef(false);
+
   // Appearance State
   const [theme, setTheme] = useState('dark');
   const [bgMedia, setBgMedia] = useState(null);
@@ -248,6 +254,22 @@ export default function Login() {
       usernameInputRef.current.focus();
     }
   }, [getRateLimitStatus]);
+
+  // Resolve the login screen theme ONCE the initial (pre-auth) state load
+  // completes — the settings arrive through the same AppContext load that
+  // brings the users for authentication. Any failure falls back to the
+  // shipped default (Paper Leaf), then Classic; theming can never block
+  // sign-in.
+  useEffect(() => {
+    if (loginThemeResolvedRef.current) return;
+    if (!isInitialLoadCompleted) return;
+    loginThemeResolvedRef.current = true;
+    try {
+      setActiveLoginThemeId(resolveLoginThemeId(normalizeLoginThemeSettings(state?.login_theme_settings)));
+    } catch (e) {
+      setActiveLoginThemeId('paper-leaf');
+    }
+  }, [isInitialLoadCompleted, state?.login_theme_settings]);
 
   const handleKeyDown = (e) => {
     if (e.getModifierState) {
@@ -361,6 +383,49 @@ export default function Login() {
   const shakeClass = "animate-[shake_0.4s_ease-in-out] border-rose-500 shadow-[0_0_12px_rgba(244,63,94,0.4)]";
 
   const companyName = state?.adminSetup?.companyName || 'FLASHVISION ENTERPRISE';
+
+  const activeLoginTheme = activeLoginThemeId ? getLoginThemeById(activeLoginThemeId) : null;
+
+  // Theme not resolved yet — hold on the same initialising screen the
+  // classic design shows while state loads, so neither design flashes.
+  if (!activeLoginTheme) {
+    return (
+      <main className="relative min-h-screen w-full bg-slate-950 flex flex-col items-center justify-center gap-4 text-white">
+        <div className="w-12 h-12 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin" />
+        <p className="text-sm font-semibold tracking-wide text-slate-300">Initializing Enterprise Security Engine...</p>
+      </main>
+    );
+  }
+
+  // Art themes (Paper Leaf) render Omer's mockup layout with the very same
+  // form state and handlers as Classic — auth behaviour is identical.
+  if (activeLoginTheme.type === 'art') {
+    return (
+      <ArtLoginView
+        theme={activeLoginTheme}
+        companyName={companyName}
+        identifier={identifier}
+        setIdentifier={setIdentifier}
+        password={password}
+        setPassword={setPassword}
+        showPassword={showPassword}
+        setShowPassword={setShowPassword}
+        rememberMe={rememberMe}
+        setRememberMe={setRememberMe}
+        isCapsLockOn={isCapsLockOn}
+        errorMessage={errorMessage}
+        lockoutSeconds={lockoutSeconds}
+        sessionExpiredNotice={sessionExpiredNotice}
+        isSubmitting={isSubmitting}
+        shakeField={shakeField}
+        onSubmit={handleLogin}
+        onForgotPassword={() => alert("Enterprise Security Notice:\nTo reset your credentials, please request an administrative reset from your Super Administrator.")}
+        onKeyDown={handleKeyDown}
+        onKeyUp={handleKeyDown}
+        usernameInputRef={usernameInputRef}
+      />
+    );
+  }
 
   return (
     <main 

@@ -509,6 +509,38 @@ export const syncSalaryPrintSettingsToTable = async (settings) => {
   }
 };
 
+// --- Login Theme Settings (app_config) — Login Themes phase ---------------
+// The login screen theme choice (fixed theme or auto-rotation) is a GLOBAL
+// pre-auth setting: it rides in app_config under key 'loginThemeSettings',
+// mirroring salaryPrintSettings — the table copy wins on load and changes
+// write through. Never stored in the blob or per-user settings.
+
+export const loadLoginThemeSettingsFromTable = async () => {
+  try {
+    const { data, error } = await supabase
+      .from('app_config')
+      .select('data')
+      .eq('key', 'loginThemeSettings')
+      .maybeSingle();
+    if (error || !data || typeof data.data !== 'object' || data.data === null) return null;
+    return data.data;
+  } catch (_) {
+    return null;
+  }
+};
+
+export const syncLoginThemeSettingsToTable = async (settings) => {
+  if (!settings || typeof settings !== 'object') return;
+  try {
+    const { error } = await supabase
+      .from('app_config')
+      .upsert({ key: 'loginThemeSettings', data: settings, updated_at: new Date().toISOString() }, { onConflict: 'key' });
+    if (error) throw error;
+  } catch (err) {
+    console.warn('[EntityTables] loginThemeSettings write-through failed:', err?.message || err);
+  }
+};
+
 // --- Payroll Account Mapping (app_config) — HR Payroll Mapping phase -------
 // The HR payroll-category -> GL-account mappings ride in app_config under
 // key 'payrollAccountMapping' (data = the mappings array): the table copy

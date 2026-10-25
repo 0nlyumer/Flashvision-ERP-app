@@ -12,10 +12,11 @@ import {
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { applyTheme } from '../utils/theme';
 import { supabase } from '../utils/supabaseClient';
-import { STEP1_ENTITY_TABLES, loadStep1EntitiesFromTables, syncEntityDiffToTable, recordKeyWithFallback, loadAdminSetupFromTable, syncAdminSetupToTable, loadFGComboConfigFromTable, syncFGComboConfigToTable, loadFlashAmConfigFromTable, syncFlashAmConfigToTable, loadSalaryPrintSettingsFromTable, syncSalaryPrintSettingsToTable, loadPayrollAccountMappingFromTable, syncPayrollAccountMappingToTable, loadCategoryPrefixesFromTable, syncCategoryPrefixesToTable, loadScalarsFromTable, syncScalarsToTable, loadCountersFromTable, syncCountersToTable, loadBatchOutputTypesFromTable, syncBatchOutputTypesToTable, loadBatchLaborConfigFromTable, syncBatchLaborConfigToTable } from '../utils/entityTables';
+import { STEP1_ENTITY_TABLES, loadStep1EntitiesFromTables, syncEntityDiffToTable, recordKeyWithFallback, loadAdminSetupFromTable, syncAdminSetupToTable, loadFGComboConfigFromTable, syncFGComboConfigToTable, loadFlashAmConfigFromTable, syncFlashAmConfigToTable, loadSalaryPrintSettingsFromTable, syncSalaryPrintSettingsToTable, loadPayrollAccountMappingFromTable, syncPayrollAccountMappingToTable, loadCategoryPrefixesFromTable, syncCategoryPrefixesToTable, loadScalarsFromTable, syncScalarsToTable, loadCountersFromTable, syncCountersToTable, loadBatchOutputTypesFromTable, syncBatchOutputTypesToTable, loadBatchLaborConfigFromTable, syncBatchLaborConfigToTable, loadLoginThemeSettingsFromTable, syncLoginThemeSettingsToTable } from '../utils/entityTables';
 import { formatLineCode, maxLineCodeNumber } from '../utils/itemCodes';
 import { getInitialFGConfig, saveFGConfig, normalizeFGConfig } from '../utils/fgCombinationUtils';
 import { getInitialFlashAmConfig, normalizeFlashAmConfig } from '../utils/flashAmConfig';
+import { getInitialLoginThemeSettings, normalizeLoginThemeSettings } from '../utils/loginThemes';
 import { getInitialSalaryPrintSettings, normalizeSalaryPrintSettings } from '../utils/salaryPrintSettings';
 import { getInitialPayrollMappings, normalizePayrollMappings } from '../utils/payrollAccountMapping';
 import { getInitialBatchLaborConfig, normalizeBatchLaborConfig } from '../utils/batchLaborCost';
@@ -35,6 +36,7 @@ const initialMockState = {
   currentUser: null,
   fg_combinations_config: getInitialFGConfig(),
   flash_am_config: getInitialFlashAmConfig(),
+  login_theme_settings: getInitialLoginThemeSettings(),
   salary_print_settings: getInitialSalaryPrintSettings(),
   payroll_account_mapping: getInitialPayrollMappings(),
   batch_labor_config: getInitialBatchLaborConfig(),
@@ -595,6 +597,10 @@ const getSanitizedSyncState = (stateObj) => {
   // ONLY in app_config (key 'payrollAccountMapping', table copy wins on
   // load) — never in the blob.
   delete cleanState.payroll_account_mapping;
+  // LOGIN THEMES (2026-10-25): the login screen theme settings live ONLY in
+  // app_config (key 'loginThemeSettings', table copy wins on load) — never
+  // in the blob.
+  delete cleanState.login_theme_settings;
   if (Array.isArray(cleanState.documentWarehouseBinders)) {
     lastGoodBindersCache = cleanState.documentWarehouseBinders;
   } else if (lastGoodBindersCache) {
@@ -657,6 +663,8 @@ export const AppProvider = ({ children }) => {
   const fgComboConfigSnapshotRef = useRef(null);
   const flashAmConfigLoadedRef = useRef(false);
   const flashAmConfigSnapshotRef = useRef(null);
+  const loginThemeSettingsLoadedRef = useRef(false);
+  const loginThemeSettingsSnapshotRef = useRef(null);
   const salaryPrintSettingsLoadedRef = useRef(false);
   const salaryPrintSettingsSnapshotRef = useRef(null);
   const payrollMappingLoadedRef = useRef(false);
@@ -1443,6 +1451,7 @@ export const AppProvider = ({ children }) => {
         const countersFromTable = await loadCountersFromTable();
         const batchOutputTypesFromTable = await loadBatchOutputTypesFromTable();
         const batchLaborConfigFromTable = await loadBatchLaborConfigFromTable();
+        const loginThemeSettingsFromTable = await loadLoginThemeSettingsFromTable();
         setState(prev => {
           const next = { ...prev };
           const seedSource = {};
@@ -1564,6 +1573,19 @@ export const AppProvider = ({ children }) => {
             batchLaborConfigSnapshotRef.current = null;
           }
           batchLaborConfigLoadedRef.current = true;
+          // LOGIN THEMES (2026-10-25): the app_config copy of the login
+          // theme settings wins when present; when the table has none yet,
+          // the snapshot stays null so the write-through effect seeds it
+          // with the shipped default (fixed / Paper Leaf) — the login page
+          // reads this state pre-auth through the same load as the users.
+          if (loginThemeSettingsFromTable) {
+            const normalizedLoginTheme = normalizeLoginThemeSettings(loginThemeSettingsFromTable);
+            next.login_theme_settings = normalizedLoginTheme;
+            loginThemeSettingsSnapshotRef.current = normalizedLoginTheme;
+          } else {
+            loginThemeSettingsSnapshotRef.current = null;
+          }
+          loginThemeSettingsLoadedRef.current = true;
           seedSnapshots(seedSource);
           return next;
         });
@@ -1591,6 +1613,8 @@ export const AppProvider = ({ children }) => {
           batchOutputTypesLoadedRef.current = true;
           batchLaborConfigSnapshotRef.current = null;
           batchLaborConfigLoadedRef.current = true;
+          loginThemeSettingsSnapshotRef.current = null;
+          loginThemeSettingsLoadedRef.current = true;
           return prev;
         });
       } finally {
@@ -5018,6 +5042,7 @@ export const AppProvider = ({ children }) => {
   const countersForSync = state.counters;
   const batchOutputTypesForSync = state.batchOutputTypes;
   const batchLaborConfigForSync = state.batch_labor_config;
+  const loginThemeSettingsForSync = state.login_theme_settings;
   const scalarsBundleForSync = { buildVersion: state.buildVersion, lastUpdatedBy: state.lastUpdatedBy, productionTarget: state.productionTarget, isGlobalPaginated: state.isGlobalPaginated };
   const scalarsWatchKey = JSON.stringify({ buildVersion: state.buildVersion, productionTarget: state.productionTarget, isGlobalPaginated: state.isGlobalPaginated });
   useEffect(() => {
@@ -5216,6 +5241,22 @@ export const AppProvider = ({ children }) => {
     }, 250);
     return () => clearTimeout(timer);
   }, [batchLaborConfigForSync]);
+
+  // LOGIN THEMES (2026-10-25): the login screen theme settings
+  // write-through to app_config on change — same durable pattern as
+  // flashAmConfig. A null snapshot means "table had no copy at load", so
+  // the first effect run seeds it with the shipped default (fixed /
+  // Paper Leaf).
+  useEffect(() => {
+    if (!loginThemeSettingsLoadedRef.current) return;
+    if (!loginThemeSettingsForSync || typeof loginThemeSettingsForSync !== 'object') return;
+    if (loginThemeSettingsSnapshotRef.current === loginThemeSettingsForSync) return;
+    const timer = setTimeout(() => {
+      loginThemeSettingsSnapshotRef.current = loginThemeSettingsForSync;
+      syncLoginThemeSettingsToTable(loginThemeSettingsForSync);
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [loginThemeSettingsForSync]);
 
   const setCollection = (collection, data) => {
     setState(prev => {

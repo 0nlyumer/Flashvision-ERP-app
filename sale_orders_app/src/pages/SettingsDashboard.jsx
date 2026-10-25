@@ -4,6 +4,7 @@ import AddNewItem from '../components/settings/AddNewItem';
 import AddNewCustomer from '../components/settings/AddNewCustomer';
 import AddNewSupplier from '../components/settings/AddNewSupplier';
 import PrintSettings from '../components/settings/PrintSettings';
+import LoginThemeSettings from '../components/settings/LoginThemeSettings';
 import DocumentRoutingCenter from '../components/settings/DocumentRoutingCenter';
 import DisplaySettings from '../components/settings/DisplaySettings';
 import DepartmentSettings from '../components/settings/DepartmentSettings';
@@ -22,6 +23,7 @@ export default function SettingsDashboard() {
     { id: 'add_supplier', screenId: 'masterData', label: 'Supplier Onboarding', icon: 'storefront' },
     { id: 'department_settings', screenId: 'departmentSettings', label: 'Department Settings', icon: 'corporate_fare' },
     { id: 'print_settings', screenId: 'systemConfig', label: 'Print Settings & Layout', icon: 'print' },
+    { id: 'login_theme', screenId: 'systemConfig', label: 'Login Screen Theme', icon: 'wallpaper' },
     { id: 'document_routing', screenId: 'documentRouting', label: 'Document Routing Center', icon: 'account_tree' },
     { id: 'display', screenId: 'displayScale', label: 'Display Settings', icon: 'aspect_ratio' }
   ];
@@ -75,6 +77,8 @@ export default function SettingsDashboard() {
         return <DepartmentSettings />;
       case 'print_settings':
         return <PrintSettings />;
+      case 'login_theme':
+        return <LoginThemeSettings />;
       case 'document_routing':
         return <DocumentRoutingCenter />;
       case 'display':
