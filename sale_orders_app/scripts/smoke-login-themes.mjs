@@ -233,12 +233,16 @@ check('identifier: empty identifier rejected',
 
 check('Part A: backdrop layers are viewport-fixed (always cover the screen)',
   (artSrc.match(/fixed inset-0/g) || []).length >= 3);
-check('Part A: card is bigger — max width 1200px',
-  artSrc.includes('lg:max-w-[1200px]'));
+check('Margins fix: desktop card is viewport-proportioned (95% × 92%, no px cap)',
+  artSrc.includes('lg:w-[95%]') && artSrc.includes('lg:h-[92%]') && artSrc.includes('lg:max-w-none'));
+check('Margins fix: backdrop blur halved + veil lightened (leaves recognisable, colours unchanged)',
+  artSrc.includes('blur-[6px]') && artSrc.includes('bg-white/55'));
 check('Part A: card split follows the mockup (form ≈42% / artwork ≈58%)',
   artSrc.includes('lg:w-[42%]') && artSrc.includes('lg:w-[58%]'));
-check('Part A: page centres via 100dvh min-height',
+check('Part A: page centres via 100dvh min-height (mobile flow; desktop shell pinned by the margins fix)',
   artSrc.includes("minHeight: '100dvh'"));
+check('Margins fix: desktop page shell is viewport-fixed (immune to the body-zoom 100dvh shrink)',
+  artSrc.includes('lg:fixed') && artSrc.includes('lg:inset-0') && artSrc.includes('lg:p-0'));
 check('Part A: mobile card is glass (translucent + backdrop blur + saturate)',
   artSrc.includes('bg-white/60') && artSrc.includes('backdrop-blur-[16px]') && artSrc.includes('backdrop-saturate-[1.2]'));
 check('Part A: mobile card is solid white again on desktop',

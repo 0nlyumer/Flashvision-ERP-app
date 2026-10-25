@@ -16,6 +16,21 @@ import React, { useState } from 'react';
 // (glassmorphism, as in his mockup's phone panel): the artwork shows
 // through it, blurred and softened.
 //
+// Margins fix (2026-10-26, Omer's second live-laptop report — the card
+// still rode high with uneven, oversized margins): root cause is the
+// app-wide display scale. AppContext sets body zoom 75% with compensating
+// body width/height, under which 100dvh resolves SHORT — the in-flow page
+// shell measured exactly 75% of the screen height, so the card centred
+// in the top three-quarters (measured under production zoom: bottom
+// margin 240px vs top 48px at 1366×768, sides 233px). On DESKTOP the
+// shell is now pinned to the viewport (lg:fixed lg:inset-0 — fixed
+// geometry is immune to the body box) with NO page padding, and the card
+// is sized as a share of that shell (95% × 92%), so all four margins are
+// small and near-equal at any window size and any display scale. The
+// backdrop blur is also halved and the white veil lightened so the
+// leaves behind the card read as the same artwork, softly — colours
+// themselves are unchanged (Omer: "colors bilkul perfect hain").
+//
 // This view is a pure skin: every field, handler and behaviour (auth,
 // lockout, shake, caps-lock, remember-me, session notices, the Part C
 // handover message) is owned by src/pages/Login.jsx and passed in as
@@ -64,7 +79,7 @@ export default function ArtLoginView({
 
   return (
     <main
-      className="relative min-h-screen w-full overflow-x-hidden flex items-center justify-center p-3 sm:p-6 lg:p-10 select-none"
+      className="relative lg:fixed lg:inset-0 min-h-screen w-full overflow-x-hidden lg:overflow-hidden flex items-center justify-center p-3 sm:p-6 lg:p-0 select-none"
       style={{ backgroundColor: '#edf1ea', minHeight: '100dvh' }}
       onKeyDown={onKeyDown}
       onKeyUp={onKeyUp}
@@ -87,15 +102,17 @@ export default function ArtLoginView({
             src={image}
             alt=""
             aria-hidden="true"
-            className="fixed inset-0 w-full h-full object-cover -scale-x-100 scale-110 blur-md hidden lg:block"
+            className="fixed inset-0 w-full h-full object-cover -scale-x-100 scale-110 blur-[6px] hidden lg:block"
           />
-          <div className="fixed inset-0 hidden lg:block bg-white/75" />
+          <div className="fixed inset-0 hidden lg:block bg-white/55" />
         </>
       )}
 
-      {/* Card — desktop: solid white, form left / artwork right.
+      {/* Card — desktop: solid white, form left / artwork right, sized as
+          a share of the viewport-pinned shell (95% × 92%) so its margins
+          are small and balanced on every screen (margins fix above).
           Mobile: frosted glass over the full-screen artwork. */}
-      <div className="relative z-10 w-full max-w-[430px] lg:max-w-[1200px] min-h-[68dvh] lg:min-h-[640px] flex flex-col lg:flex-row rounded-[2rem] overflow-hidden border border-white/60 lg:border-white bg-white/60 lg:bg-white backdrop-blur-[16px] backdrop-saturate-[1.2] lg:backdrop-blur-none lg:backdrop-saturate-100 shadow-[0_35px_90px_-25px_rgba(24,44,34,0.45)]">
+      <div className="relative z-10 w-full max-w-[430px] lg:max-w-none lg:w-[95%] lg:h-[92%] min-h-[68dvh] flex flex-col lg:flex-row rounded-[2rem] overflow-hidden border border-white/60 lg:border-white bg-white/60 lg:bg-white backdrop-blur-[16px] backdrop-saturate-[1.2] lg:backdrop-blur-none lg:backdrop-saturate-100 shadow-[0_35px_90px_-25px_rgba(24,44,34,0.45)]">
         {/* Form column */}
         <section className="w-full lg:w-[42%] flex-1 px-7 py-10 sm:px-10 lg:px-14 lg:py-12 flex flex-col justify-center">
           <div className="w-full max-w-[360px] lg:max-w-[380px] mx-auto lg:mx-0">
