@@ -4,6 +4,7 @@ import { useDialog } from '../../context/DialogContext';
 import CustomMultiSelect from '../ui/CustomMultiSelect';
 import UniversalPrintStudioModal from '../ui/UniversalPrintStudioModal';
 import { buildConsumptionPrintRecord } from '../../utils/printDesign';
+import { mergePhasesIntoGlobal, collectPhasesFromConsumption } from '../../utils/phaseSync';
 
 export default function PlanConsumption({ plan, onClose }) {
   const { state, setCollection, setDirty, isDirty } = useApp();
@@ -453,9 +454,20 @@ export default function PlanConsumption({ plan, onClose }) {
 
         const allPlans = [...state.productionPlans];
         const planIndex = allPlans.findIndex(p => p.id === plan.id);
-        
+
         if (planIndex !== -1) {
             allPlans[planIndex].consumptions = consumptionData;
+            // Round 4 (Omer, 2026-10-25): sync any phase that exists only in
+            // this plan's phaseConfigs (e.g. via a BOM or an older saved plan)
+            // into the global finishedGoodPhases list — dedupe by id, never
+            // overwrite an existing global record.
+            const syncedGlobalPhases = mergePhasesIntoGlobal(
+                state.finishedGoodPhases || [],
+                collectPhasesFromConsumption(consumptionData)
+            );
+            if (syncedGlobalPhases !== (state.finishedGoodPhases || [])) {
+                setCollection('finishedGoodPhases', syncedGlobalPhases);
+            }
             setCollection('items', updatedItems);
             setCollection('productionPlans', allPlans);
             setDirty(false);
@@ -658,19 +670,27 @@ export default function PlanConsumption({ plan, onClose }) {
       }
       const itemCode = newPhaseModal.itemCode;
       const newId = `custom-${Date.now()}`;
+      const newPhase = {
+          id: newId,
+          title: newPhaseModal.name,
+          tank: 'Custom',
+          unit: 'kg',
+          width: 420,
+          enabled: true,
+          type: newPhaseModal.type
+      };
+      // Round 4 (Omer, 2026-10-25): a new phase also lands in the GLOBAL
+      // finishedGoodPhases list, so it appears as a column in Raw Material
+      // Configuration and items can be pre-ticked for it.
+      const mergedGlobalPhases = mergePhasesIntoGlobal(state.finishedGoodPhases || [], [newPhase]);
+      if (mergedGlobalPhases !== (state.finishedGoodPhases || [])) {
+          setCollection('finishedGoodPhases', mergedGlobalPhases);
+      }
       setConsumptionData(prev => {
           const updated = { ...prev };
           const targetItem = { ...updated[itemCode] };
           if (targetItem.phaseConfig) {
-              targetItem.phaseConfig.push({
-                  id: newId,
-                  title: newPhaseModal.name,
-                  tank: 'Custom',
-                  unit: 'kg',
-                  width: 420,
-                  enabled: true,
-                  type: newPhaseModal.type
-              });
+              targetItem.phaseConfig.push({ ...newPhase });
               // Init empty materials array
               targetItem.materials[newId] = [];
           }

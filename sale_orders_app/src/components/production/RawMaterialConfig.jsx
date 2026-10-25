@@ -1,8 +1,11 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
+import { useDialog } from '../../context/DialogContext';
+import { stripPhaseFromItems } from '../../utils/phaseStrip';
 
 export default function RawMaterialConfig() {
     const { state, setCollection } = useApp();
+    const { appConfirm, appAlert } = useDialog();
     const [selectedDept, setSelectedDept] = useState(() => {
         return state.departments?.[0]?.value || '';
     });
@@ -43,6 +46,30 @@ export default function RawMaterialConfig() {
             return item;
         });
         setCollection('items', updatedItems);
+    };
+
+    // Round 4 (Omer, 2026-10-25): delete a Finished-Good phase GLOBALLY from
+    // this screen — removes it from the global finishedGoodPhases list AND
+    // strips its tick from every material's phase mapping (same phase-strip
+    // principle as the RM-side delete in RawMaterialProduction). Saved plans'
+    // consumptions and BOMs' phaseConfig are historical snapshots and are
+    // NOT rewritten. RM-production phase columns have no delete here — they
+    // stay managed in Raw Material Production.
+    const handleDeleteFgPhase = async (phaseId, phaseTitle) => {
+        const confirmDelete = await appConfirm(
+            `Are you sure you want to delete the phase "${phaseTitle}"?\nThis will remove it globally from all raw material configurations, and its ticks will be removed from every material's phase mapping.`,
+            "Delete Phase", "Delete", "Cancel"
+        );
+        if (!confirmDelete) return;
+
+        const nextPhases = fgPhases.filter(p => p.id !== phaseId);
+        setCollection('finishedGoodPhases', nextPhases);
+
+        const cleanedItems = stripPhaseFromItems(state.items || [], phaseId);
+        if (cleanedItems !== (state.items || [])) {
+            setCollection('items', cleanedItems);
+        }
+        appAlert(`Phase "${phaseTitle}" removed.`, 'info');
     };
 
     const fgPhases = state.finishedGoodPhases || [
@@ -101,7 +128,21 @@ export default function RawMaterialConfig() {
                                 </tr>
                                 <tr>
                                     {fgPhases.map((p, idx) => (
-                                        <th key={p.id} className={`py-2 px-4 border-b border-outline-variant/10 text-center font-bold text-[9px] text-on-surface-variant ${idx === fgPhases.length - 1 ? 'border-r border-outline-variant/15' : ''}`}>{p.title || p.label}</th>
+                                        <th key={p.id} className={`py-2 px-4 border-b border-outline-variant/10 text-center font-bold text-[9px] text-on-surface-variant ${idx === fgPhases.length - 1 ? 'border-r border-outline-variant/15' : ''}`}>
+                                            <span className="inline-flex items-center gap-1">
+                                                <span>{p.title || p.label}</span>
+                                                <button
+                                                    type="button"
+                                                    data-fg-phase-delete={p.id}
+                                                    onClick={() => handleDeleteFgPhase(p.id, p.title || p.label)}
+                                                    className="inline-flex items-center justify-center w-4 h-4 rounded-full text-on-surface-variant/60 hover:text-error hover:bg-error/10 transition-colors"
+                                                    title={`Delete phase "${p.title || p.label}" globally`}
+                                                    aria-label={`Delete phase ${p.title || p.label}`}
+                                                >
+                                                    <span className="material-symbols-outlined text-[13px] leading-none">close</span>
+                                                </button>
+                                            </span>
+                                        </th>
                                     ))}
                                     {rmPhases.map(p => (
                                         <th key={p.id} className="py-2 px-4 border-b border-outline-variant/10 text-center font-bold text-[9px] text-on-surface-variant">{p.title || p.label}</th>
