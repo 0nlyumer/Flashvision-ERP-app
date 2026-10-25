@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { loadOnboardingHistory, saveOnboardingHistory as persistOnboardingHistory } from '../../utils/onboardingHistory';
 import CustomSelect from '../ui/CustomSelect';
 import { useApp } from '../../context/AppContext';
 import { seedHrDepartments } from '../../utils/hrDepartments';
@@ -75,7 +76,7 @@ export default function HROnboarding({ isMobile }) {
   useEffect(() => {
     try {
       const savedHistory = localStorage.getItem('hr_onboarding_history');
-      let historyList = savedHistory ? JSON.parse(savedHistory) : [];
+      let historyList = loadOnboardingHistory();
       let updated = false;
 
       if (employees.length > 0) {
@@ -117,7 +118,7 @@ export default function HROnboarding({ isMobile }) {
       }
 
       if (updated || !savedHistory) {
-        localStorage.setItem('hr_onboarding_history', JSON.stringify(historyList));
+        historyList = persistOnboardingHistory(historyList);
       }
       setOnboardingHistory(historyList);
     } catch (e) {
@@ -126,8 +127,7 @@ export default function HROnboarding({ isMobile }) {
   }, [employees]);
 
   const saveOnboardingHistory = (updatedHistory) => {
-    setOnboardingHistory(updatedHistory);
-    localStorage.setItem('hr_onboarding_history', JSON.stringify(updatedHistory));
+    setOnboardingHistory(persistOnboardingHistory(updatedHistory));
   };
 
   const interns = employees.filter(emp => emp.paidInternship === true);

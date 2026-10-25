@@ -19,7 +19,8 @@ import {
   buildCsvBlob
 } from '../../utils/printExportUtils';
 import PrintStudioShell from './PrintStudioShell';
-import { resolveMargins, amountInWords, fmtQty, ensurePhaseMatrixRecord , ensureContrastText } from '../../utils/printDesign';
+import { resolveMargins, ensurePhaseMatrixRecord, uomSymbol } from '../../utils/printDesign';
+import { PhaseMatrixSheet, PrintTableSheet } from './PrintSheetParts';
 import { getDivisionPrintFullName } from '../../utils/divisionPrintName';
 
 const PAPER_DIMENSIONS = {
@@ -50,285 +51,6 @@ const BRAND_PALETTES = [
   { name: 'Warm Charcoal', primary: '#27272a', bg: '#27272a', text: '#ffffff' }
 ];
 
-// Approved design tokens (from the signed-off samples)
-const DESIGN = {
-  ink: '#1b1e2e',
-  dark: '#232946',
-  muted: '#71748c',
-  line: '#dde0ea',
-  zebra: '#f6f7fb',
-  soft: '#eef0f8'
-};
-
-const FONT_OPTIONS = [
-  { id: 'Inter', name: 'Inter (Modern Clean)' },
-  { id: 'Roboto', name: 'Roboto (Enterprise)' },
-  { id: 'Outfit', name: 'Outfit (Geometric UI)' },
-  { id: 'Courier Prime', name: 'Courier Prime (Technical)' },
-  { id: 'Playfair Display', name: 'Playfair Display (Executive)' },
-  { id: 'Poppins', name: 'Poppins' },
-  { id: 'Montserrat', name: 'Montserrat' },
-  { id: 'Open Sans', name: 'Open Sans' },
-  { id: 'Lato', name: 'Lato' },
-  { id: 'Nunito', name: 'Nunito' },
-  { id: 'Rubik', name: 'Rubik' },
-  { id: 'Work Sans', name: 'Work Sans' },
-  { id: 'DM Sans', name: 'DM Sans' },
-  { id: 'Plus Jakarta Sans', name: 'Plus Jakarta Sans' },
-  { id: 'IBM Plex Sans', name: 'IBM Plex Sans' },
-  { id: 'Source Sans 3', name: 'Source Sans 3' },
-  { id: 'Figtree', name: 'Figtree' }
-];
-
-// ---------------------------------------------------------------------------
-// Approved Meta-Grid sheet header: party | company/division | meta rows,
-// with the accent title band under it. headerAlign left/center/right is a
-// Print Settings option (Omer, 2026-10-24).
-// ---------------------------------------------------------------------------
-function MetaGridHeader({ layout, companyName, companyLegal, companyAddress, party, metaRows, docTitle, docSub, planVariant }) {
-  const band = `linear-gradient(90deg, ${layout.bandColor || '#4338ca'}, ${layout.bandColor2 || layout.bandColor || '#4f46e5'})`;
-  const align = layout.headerAlign || 'left';
-  const accent = layout.bandColor || '#4338ca';
-
-  const companyBlock = (centered = false) => (
-    <div style={{ textAlign: centered ? 'center' : 'left' }}>
-      <div style={{ fontSize: '6.5pt', fontWeight: 700, letterSpacing: '1.6px', color: accent, textTransform: 'uppercase', marginBottom: '1.4mm' }}>
-        {planVariant ? 'Division' : 'Company'}
-      </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '3mm', justifyContent: centered ? 'center' : 'flex-start' }}>
-        {planVariant && (
-          <div style={{ width: '11mm', height: '9mm', border: '1.6px solid #232946', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 900, fontSize: '11pt', color: '#232946', flexShrink: 0 }}>
-            AJ
-          </div>
-        )}
-        <div style={{ fontSize: '13.5pt', fontWeight: 800, letterSpacing: '.4px', lineHeight: 1.2, color: DESIGN.ink }}>{companyName}</div>
-      </div>
-      {planVariant && (
-        <div style={{ fontSize: '8pt', color: DESIGN.muted, marginTop: '0.8mm' }}>Production &amp; Planning Division</div>
-      )}
-      {companyLegal && (
-        <div style={{ fontSize: '7.5pt', color: DESIGN.muted, lineHeight: 1.45, marginTop: '1mm' }}>{companyLegal}</div>
-      )}
-      {!planVariant && layout.showHeaderDetails !== false && companyAddress && (
-        <div style={{ fontSize: '7.5pt', color: DESIGN.muted, lineHeight: 1.45, marginTop: '1mm' }}>{companyAddress}</div>
-      )}
-    </div>
-  );
-
-  const bandEl = (
-    <div
-      style={{
-        marginTop: '3mm', background: band, color: ensureContrastText(band, layout.bandTextColor || '#fff'), borderRadius: '6px',
-        padding: '2.4mm 4.5mm', display: 'flex', justifyContent: align === 'center' ? 'center' : 'space-between',
-        alignItems: 'center', gap: '4mm', printColorAdjust: 'exact', WebkitPrintColorAdjust: 'exact'
-      }}
-    >
-      <div style={{ fontSize: '13pt', fontWeight: 700, letterSpacing: '3.5px', textAlign: align === 'center' ? 'center' : 'left' }}>{docTitle}</div>
-      {docSub && align !== 'center' && (
-        <div style={{ fontSize: '7.5pt', fontWeight: 600, letterSpacing: '1.6px', textTransform: 'uppercase', opacity: 0.9 }}>{docSub}</div>
-      )}
-    </div>
-  );
-
-  if (align === 'center') {
-    return (
-      <>
-        <div style={{ border: `1px solid ${DESIGN.line}`, borderRadius: '8px', padding: '3mm 4mm', textAlign: 'center' }}>
-          {companyBlock(true)}
-          {party && (
-            <div style={{ marginTop: '2mm', fontSize: '10pt', fontWeight: 700, color: DESIGN.ink }}>
-              <span style={{ fontSize: '6.5pt', fontWeight: 700, letterSpacing: '1.6px', color: accent, textTransform: 'uppercase', display: 'block' }}>{party.label}</span>
-              {party.value}
-            </div>
-          )}
-          {metaRows.length > 0 && (
-            <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: '1mm 6mm', marginTop: '2mm' }}>
-              {metaRows.map((row, i) => (
-                <span key={i} style={{ fontSize: '8.5pt', color: DESIGN.ink }}>
-                  <span style={{ fontSize: '7pt', fontWeight: 600, letterSpacing: '1px', color: DESIGN.muted, textTransform: 'uppercase' }}>{row.label}: </span>
-                  <strong>{row.value}</strong>
-                </span>
-              ))}
-            </div>
-          )}
-        </div>
-        {bandEl}
-      </>
-    );
-  }
-
-  // Meta fields: full-width compact grid strip UNDER the party/company
-  // row, inside the same bordered box (Omer, 2026-10-25 — the old 33%
-  // side rail crushed 8 Sale Order fields into per-word wraps and ate
-  // ~40% of the page). Label sits ABOVE the value; up to 4 fields per
-  // row; a long value (address / contact) takes 2 columns when the
-  // field count leaves room in the 2-row budget for typical documents.
-  const metaSpanFor = (row) => {
-    const isLong = /address|contact/i.test(row.label || '') || String(row.value || '').length > 34;
-    return isLong && metaRows.length <= 7 ? 2 : 1;
-  };
-
-  return (
-    <>
-      <div style={{ border: `1px solid ${DESIGN.line}`, borderRadius: '8px', overflow: 'hidden' }}>
-        <div style={{ display: 'flex', flexDirection: align === 'right' ? 'row-reverse' : 'row' }}>
-          {party && (
-            <div style={{ width: '38%', padding: '3.2mm 4mm 3.4mm' }}>
-              <div style={{ fontSize: '6.5pt', fontWeight: 700, letterSpacing: '1.6px', color: accent, textTransform: 'uppercase', marginBottom: '1.4mm' }}>{party.label}</div>
-              <div style={{ fontSize: '12.5pt', fontWeight: 700, lineHeight: 1.25, color: DESIGN.ink }}>{party.value}</div>
-            </div>
-          )}
-          <div style={{ flex: 1, padding: '3.2mm 4mm 3.4mm', borderLeft: party ? `1px solid ${DESIGN.line}` : 'none' }}>
-            {companyBlock(!party)}
-          </div>
-        </div>
-        {metaRows.length > 0 && (
-          <div
-            style={{
-              display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)',
-              borderTop: `1px solid ${DESIGN.line}`, background: '#fbfcfe'
-            }}
-          >
-            {metaRows.map((row, i) => (
-              <div key={i} style={{ padding: '1.9mm 4mm 2.1mm', gridColumn: `span ${metaSpanFor(row)}`, minWidth: 0 }}>
-                <div style={{ fontSize: '6.3pt', fontWeight: 700, letterSpacing: '1.2px', color: DESIGN.muted, textTransform: 'uppercase', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{row.label}</div>
-                <div style={{ fontSize: '9.3pt', fontWeight: row.strong ? 800 : 600, color: DESIGN.ink, lineHeight: 1.3, marginTop: '0.5mm', fontVariantNumeric: 'tabular-nums', overflowWrap: 'break-word' }}>{row.value}</div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-      {bandEl}
-    </>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Phase-Matrix sheet (BOM / Consumption): slim header + title band, then
-// item sections whose phase panels flow side-by-side and wrap to the next
-// panel row (phasesPerRow, default 4) — never squeezed. Phase totals live
-// inside the panels; there is deliberately NO category grand total.
-// ---------------------------------------------------------------------------
-function PhaseMatrixSheet({ record, layout, companyName, companyLegal, margins, paperWidth, paperHeight, pageIdx = 0, pageCount = 1 }) {
-  const perRow = Math.max(2, Math.min(6, Number(layout.phasesPerRow) || 4));
-  const gapMm = 3.5;
-  const basis = `calc((100% - ${(perRow - 1) * gapMm}mm) / ${perRow})`;
-  const band = `linear-gradient(90deg, ${layout.bandColor || '#4338ca'}, ${layout.bandColor2 || layout.bandColor || '#4f46e5'})`;
-  const align = layout.headerAlign || 'left';
-
-  return (
-    <div
-      className="bg-white text-slate-900 shadow-2xl relative print-preview-page"
-      style={{
-        width: paperWidth,
-        minHeight: paperHeight,
-        maxWidth: paperWidth,
-        fontFamily: layout.fontFamily || 'Inter',
-        padding: `${margins.top} ${margins.right} ${margins.bottom} ${margins.left}`,
-        color: DESIGN.ink,
-        display: 'flex',
-        flexDirection: 'column'
-      }}
-    >
-      <div className="no-print absolute top-2 right-2 bg-slate-900/80 text-white text-[9px] font-mono px-2 py-0.5 rounded shadow pointer-events-none">
-        Page {pageIdx + 1} of {pageCount}
-      </div>
-
-      <MetaGridHeader
-        layout={layout}
-        companyName={companyName}
-        companyLegal={companyLegal}
-        companyAddress=""
-        party={null}
-        metaRows={(record.metaRows || []).map((r) => ({ label: r.key, value: r.value, strong: r.key.toLowerCase().includes('id') }))}
-        docTitle={record.docTitle}
-        docSub={record.docSub}
-      />
-
-      {(record.sections || []).map((section, sIdx) => (
-        <div key={sIdx} style={{ marginTop: sIdx === 0 ? '1mm' : '3mm' }}>
-          {section.name && (
-            <div
-              style={{
-                marginTop: '2mm', background: DESIGN.soft, border: `1px solid ${DESIGN.line}`,
-                borderLeft: `3.5px solid ${layout.bandColor || '#4f46e5'}`, borderRadius: '6px',
-                padding: '1.3mm 4mm', display: 'flex', justifyContent: 'space-between', alignItems: 'baseline'
-              }}
-            >
-              <div style={{ fontSize: '9.5pt', fontWeight: 800, letterSpacing: '.4px' }}>
-                {section.code && <span style={{ color: layout.bandColor2 || '#4338ca' }}>{section.code} · </span>}
-                {section.name}
-              </div>
-              {section.qtyLabel && (
-                <div style={{ fontSize: '8.5pt', fontWeight: 700, color: '#3c4060', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{section.qtyLabel}</div>
-              )}
-            </div>
-          )}
-
-          <div
-            style={{
-              display: 'flex', gap: `${gapMm}mm`, flexWrap: 'wrap', marginTop: '2.5mm',
-              alignItems: layout.phaseRowHeight === 'equal' ? 'stretch' : 'flex-start'
-            }}
-          >
-            {(section.phases || []).map((phase, pIdx) => (
-              <div
-                key={pIdx}
-                style={{
-                  flex: `0 0 ${basis}`, border: `1px solid ${DESIGN.line}`, borderRadius: '8px',
-                  overflow: 'hidden', breakInside: 'avoid', pageBreakInside: 'avoid',
-                  display: 'flex', flexDirection: 'column'
-                }}
-              >
-                <div style={{ background: layout.tableHeaderBgColor || DESIGN.dark, color: ensureContrastText(layout.tableHeaderBgColor || DESIGN.dark, layout.tableHeaderTextColor || '#fff'), padding: '1.8mm 3mm 2mm', printColorAdjust: 'exact', WebkitPrintColorAdjust: 'exact' }}>
-                  <div style={{ fontSize: '6.3pt', fontWeight: 700, letterSpacing: '1.8px', textTransform: 'uppercase', opacity: 0.75 }}>
-                    Phase {pIdx + 1}
-                  </div>
-                  <div style={{ fontSize: '9.5pt', fontWeight: 700, lineHeight: 1.25, marginTop: '.4mm' }}>{phase.name}</div>
-                </div>
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                  <thead>
-                    <tr>
-                      <th style={{ background: DESIGN.soft, color: '#3c4060', fontSize: '6.8pt', fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', padding: '1.4mm 3mm', textAlign: 'left' }}>Raw Material</th>
-                      <th style={{ background: DESIGN.soft, color: '#3c4060', fontSize: '6.8pt', fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', padding: '1.4mm 3mm', textAlign: 'right', whiteSpace: 'nowrap' }}>{record.qtyColumnLabel || 'Qty'}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(phase.rows || []).map((row, rIdx) => (
-                      <tr key={rIdx} style={{ background: rIdx % 2 === 1 ? DESIGN.zebra : '#fff' }}>
-                        <td style={{ fontSize: '8.6pt', fontWeight: 600, padding: '1.3mm 3mm', borderTop: `1px solid ${DESIGN.line}`, verticalAlign: 'middle' }}>{row.name}</td>
-                        <td style={{ fontSize: '8.6pt', padding: '1.3mm 3mm', borderTop: `1px solid ${DESIGN.line}`, textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
-                          {fmtQty(row.qty)} {row.uom}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  {layout.showPhaseTotals !== false && (phase.totals || []).length > 0 && (
-                    <tfoot>
-                      <tr>
-                        <td style={{ fontSize: '8.6pt', fontWeight: 700, padding: '1.4mm 3mm', borderTop: `2px solid ${layout.tableHeaderBgColor || DESIGN.dark}`, background: DESIGN.soft }}>Phase Total</td>
-                        <td style={{ fontSize: '8.6pt', fontWeight: 700, padding: '1.4mm 3mm', borderTop: `2px solid ${layout.tableHeaderBgColor || DESIGN.dark}`, background: DESIGN.soft, textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
-                          {phase.totals.map((t) => `${fmtQty(t.qty)} ${t.uom}`).join(' · ')}
-                        </td>
-                      </tr>
-                    </tfoot>
-                  )}
-                </table>
-              </div>
-            ))}
-            {(section.phases || []).length === 0 && (
-              <p style={{ fontSize: '9pt', color: DESIGN.muted, fontStyle: 'italic', padding: '2mm 0' }}>No phase data recorded for this item.</p>
-            )}
-          </div>
-        </div>
-      ))}
-
-      <div style={{ marginTop: 'auto', paddingTop: '6mm', textAlign: align === 'left' ? 'center' : align, fontSize: '7pt', letterSpacing: '1.2px', color: '#a2a6ba', textTransform: 'uppercase' }}>
-        Powered by Flashvision
-      </div>
-    </div>
-  );
-}
 
 // ---------------------------------------------------------------------------
 // Main modal component (part 2): layout load/discovery/save/reset (same
@@ -430,6 +152,7 @@ function UniversalPrintStudioModalInner({
     if (colKey === 'serial_no' || colKey === 'sr' || colKey === 'sr_no') return String(index + 1).padStart(2, '0');
     if (item[colKey] !== undefined && item[colKey] !== null) {
       const val = item[colKey];
+      if ((colKey === 'uom' || colKey === 'unit') && typeof val === 'string') return uomSymbol(val);
       return typeof val === 'number' ? val.toLocaleString() : String(val);
     }
     if (colKey === 'item_name' || colKey === 'product_name' || colKey === 'description') {
@@ -440,7 +163,7 @@ function UniversalPrintStudioModalInner({
     }
     if (colKey === 'qty' || colKey === 'quantity') return String(item.quantity ?? item.qty ?? '0');
     if (colKey === 'rolls' || colKey === 'roll_qty') return String(item.rolls || item.rollQty || item.rollsCount || '-');
-    if (colKey === 'uom' || colKey === 'unit') return item.uom || item.unit || 'Mtr';
+    if (colKey === 'uom' || colKey === 'unit') return uomSymbol(item.uom || item.unit || 'Mtr');
     if (colKey === 'rate' || colKey === 'price') return Number(item.price || item.rate || 0).toLocaleString();
     if (colKey === 'sub_total' || colKey === 'total') {
       if (item.sub_total !== undefined) return Number(item.sub_total).toLocaleString();
@@ -686,7 +409,7 @@ function UniversalPrintStudioModalInner({
     (resolvedRecord.sections || []).forEach((section) => {
       (section.phases || []).forEach((phase) => {
         (phase.rows || []).forEach((row) => {
-          rows.push({ section: section.name || section.code || '', phase: phase.name || '', material: row.name || '', qty: row.qty, uom: row.uom || '' });
+          rows.push({ section: section.name || section.code || '', phase: phase.name || '', material: row.name || '', qty: row.qty, uom: uomSymbol(row.uom || '') });
         });
       });
     });
@@ -1038,144 +761,46 @@ function UniversalPrintStudioModalInner({
     ? { ...resolvedRecord, docTitle: phaseDocTitle, docSub: resolvedRecord.docSub || '' }
     : null;
 
+  // Page rendering delegates to the shared PrintTableSheet (the same
+  // component the Print Settings designer preview renders — one layout
+  // family, one source of truth).
   const renderTablePage = (pageItems, pageIdx) => {
     const isLastPage = pageIdx === pages.length - 1;
     const showTotals = layoutConfig.totalsPosition === 'every_page' || isLastPage;
     const showHeader = pageIdx === 0 || layoutConfig.repeatHeader === true;
     const fitScale = scaleMode === 'fit' ? (fitScales[pageIdx] ?? 1) : 1;
-    const grandTotal = resolvedRecord?.totals?.grandTotal;
-    const totalsBarBg = layoutConfig.goldenTotalRow ? '#fbbf24' : (layoutConfig.totalsColor || '#232946');
-    const totalsBarText = layoutConfig.goldenTotalRow ? '#232946' : ensureContrastText(totalsBarBg, '#ffffff');
-    let runningItems = 0;
-    pages.slice(0, pageIdx).forEach((pg) => { runningItems += pg.filter((r) => !r._isGroup).length; });
-
+    let startItemNo = 0;
+    pages.slice(0, pageIdx).forEach((pg) => { startItemNo += pg.filter((r) => !r._isGroup).length; });
     return (
-      <div
+      <PrintTableSheet
         key={pageIdx}
-        ref={(el) => { pageRefs.current[pageIdx] = el; }}
-        className="bg-white text-slate-900 shadow-2xl relative print-preview-page"
-        style={{
-          width: paperWidth,
-          height: scaleMode === 'actual' ? 'auto' : paperHeight,
-          minHeight: paperHeight,
-          maxWidth: paperWidth,
-          fontFamily: layoutConfig.fontFamily || 'Inter',
-          padding: `${margins.top} ${margins.right} ${margins.bottom} ${margins.left}`,
-          color: DESIGN.ink,
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: scaleMode === 'actual' ? 'visible' : 'hidden'
-        }}
-      >
-        <div className="no-print absolute top-2 right-2 bg-slate-900/80 text-white text-[9px] font-mono px-2 py-0.5 rounded shadow pointer-events-none">
-          Page {pageIdx + 1} of {pages.length}
-        </div>
-        <div data-fit-content style={{ transform: fitScale !== 1 ? `scale(${fitScale})` : undefined, transformOrigin: 'top left', display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
-          {showHeader && (
-            <MetaGridHeader
-              layout={layoutConfig}
-              companyName={isPlanDoc || isBatchDoc ? 'AJ SYNTHETIC' : companyName}
-              companyLegal={isPlanDoc ? 'AJ Synthetic Leather & Footwear Industries Pvt. Limited' : isBatchDoc ? (getDivisionPrintFullName('AJ Synthetic') || 'AJ Synthetic Leather & Footwear Industries Pvt. Limited') : ''}
-              companyAddress={isPlanDoc || isBatchDoc ? '' : companyAddress}
-              party={party}
-              metaRows={metaRows}
-              docTitle={docTitleDisplay}
-              docSub={isPlanDoc ? 'ORDER LIST' : null}
-              planVariant={isPlanDoc}
-            />
-          )}
-
-          <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '3mm' }}>
-            <thead>
-              <tr>
-                {activeCols.map((col, ci) => (
-                  <th key={ci} style={{ background: layoutConfig.tableHeaderBgColor || DESIGN.dark, color: ensureContrastText(layoutConfig.tableHeaderBgColor || DESIGN.dark, layoutConfig.tableHeaderTextColor || '#fff'), fontSize: '7pt', fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', padding: '2mm 2.5mm', textAlign: col.align || 'left', width: col.width, printColorAdjust: 'exact', WebkitPrintColorAdjust: 'exact' }}>
-                    {col.label}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {pageItems.map((row, rIdx) => {
-                if (row._isGroup) {
-                  return (
-                    <tr key={rIdx}>
-                      <td colSpan={Math.max(1, activeCols.length)} style={{ background: DESIGN.soft, borderTop: `1px solid ${DESIGN.line}`, borderBottom: `1px solid ${DESIGN.line}`, padding: '1.8mm 3mm', fontSize: '8.6pt', fontWeight: 800, color: DESIGN.ink }}>
-                        {row._group}
-                        <span style={{ fontWeight: 600, color: DESIGN.muted, marginLeft: '3mm' }}>
-                          {row._count} order{row._count === 1 ? '' : 's'}
-                          {activeCols.filter((c) => c.total).map((c) => ` · ${c.label}: ${Number(row._sums[c.key] || 0).toLocaleString()}`).join('')}
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                }
-                runningItems += 1;
-                const itemNo = runningItems;
-                return (
-                  <tr key={rIdx} style={{ background: rIdx % 2 === 1 ? DESIGN.zebra : '#fff' }}>
-                    {activeCols.map((col, ci) => {
-                      let val;
-                      if (['serial_no', 'sr', 'sr_no'].includes(col.key) && (row[col.key] === undefined || row[col.key] === null)) {
-                        val = String(itemNo).padStart(2, '0');
-                      } else {
-                        val = getCellValue(col.key, row, itemNo - 1);
-                      }
-                      return (
-                        <td key={ci} style={{ fontSize: '8.8pt', padding: '1.6mm 2.5mm', borderTop: `1px solid ${DESIGN.line}`, textAlign: col.align || 'left', fontVariantNumeric: 'tabular-nums', fontWeight: col.total ? 700 : 400 }}>
-                          {val}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                );
-              })}
-              {pageItems.length === 0 && (
-                <tr><td colSpan={Math.max(1, activeCols.length)} style={{ padding: '4mm', textAlign: 'center', color: DESIGN.muted, fontStyle: 'italic', fontSize: '9pt' }}>No rows to display.</td></tr>
-              )}
-            </tbody>
-            {showTotals && activeCols.some((c) => c.total) && (
-              <tfoot>
-                <tr>
-                  {activeCols.map((col, ci) => (
-                    <td key={ci} style={{ background: totalsBarBg, color: totalsBarText, fontSize: '9pt', fontWeight: 800, padding: '2.2mm 2.5mm', borderTop: `2px solid ${totalsBarBg}`, textAlign: col.align || 'left', fontVariantNumeric: 'tabular-nums', printColorAdjust: 'exact', WebkitPrintColorAdjust: 'exact' }}>
-                      {col.total ? Number(columnTotals[col.key] || 0).toLocaleString() : (ci === 0 ? 'TOTAL' : '')}
-                    </td>
-                  ))}
-                </tr>
-              </tfoot>
-            )}
-          </table>
-
-          {showTotals && grandTotal !== undefined && grandTotal !== null && (
-            <div style={{ marginTop: '2.5mm', border: `1px solid ${DESIGN.line}`, borderRadius: '6px', padding: '2.2mm 4mm', display: 'flex', justifyContent: 'space-between', gap: '4mm', background: '#fff' }}>
-              <span style={{ fontSize: '8.5pt', fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', color: DESIGN.muted }}>Amount in Words</span>
-              <span style={{ fontSize: '9.5pt', fontWeight: 700, textAlign: 'right' }}>Rupees {amountInWords(grandTotal)} Only</span>
-            </div>
-          )}
-
-          {isLastPage && layoutConfig.termsConditions && (
-            <div style={{ marginTop: '3mm', fontSize: '8pt', color: DESIGN.muted, lineHeight: 1.5 }}>
-              <strong>Terms &amp; Conditions: </strong>{layoutConfig.termsConditions}
-            </div>
-          )}
-
-          {isLastPage && (layoutConfig.signatures || []).length > 0 && (
-            <div style={{ display: 'flex', gap: '8mm', marginTop: '8mm' }}>
-              {(layoutConfig.signatures || []).map((sig, si) => (
-                <div key={si} style={{ flex: 1, textAlign: 'center' }}>
-                  <div style={{ borderTop: `1.5px solid ${DESIGN.ink}`, paddingTop: '1.5mm', fontSize: '8.5pt', fontWeight: 700 }}>{sig.label}</div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          <div style={{ marginTop: 'auto', paddingTop: '4mm', display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', fontSize: '7pt', letterSpacing: '1.2px', color: '#a2a6ba', textTransform: 'uppercase' }}>
-            <span>{layoutConfig.customFooterText || 'Powered by Flashvision'}</span>
-            {layoutConfig.showPageNumbers !== false && <span>Page {pageIdx + 1} of {pages.length}</span>}
-          </div>
-        </div>
-      </div>
+        pageRef={(el) => { pageRefs.current[pageIdx] = el; }}
+        layout={layoutConfig}
+        companyName={isPlanDoc || isBatchDoc ? 'AJ SYNTHETIC' : companyName}
+        companyLegal={isPlanDoc ? 'AJ Synthetic Leather & Footwear Industries Pvt. Limited' : isBatchDoc ? (getDivisionPrintFullName('AJ Synthetic') || 'AJ Synthetic Leather & Footwear Industries Pvt. Limited') : ''}
+        companyAddress={isPlanDoc || isBatchDoc ? '' : companyAddress}
+        party={party}
+        metaRows={metaRows}
+        docTitle={docTitleDisplay}
+        docSub={isPlanDoc ? 'ORDER LIST' : null}
+        planVariant={isPlanDoc}
+        columns={activeCols}
+        items={pageItems}
+        getCellValue={getCellValue}
+        startItemNo={startItemNo}
+        columnTotals={columnTotals}
+        grandTotal={resolvedRecord?.totals?.grandTotal}
+        showHeader={showHeader}
+        showTotals={showTotals}
+        isLastPage={isLastPage}
+        pageLabel={`Page ${pageIdx + 1} of ${pages.length}`}
+        footerPageText={`Page ${pageIdx + 1} of ${pages.length}`}
+        margins={margins}
+        paperWidth={paperWidth}
+        paperHeight={paperHeight}
+        fixedHeight={scaleMode !== 'actual'}
+        fitScale={fitScale}
+      />
     );
   };
 

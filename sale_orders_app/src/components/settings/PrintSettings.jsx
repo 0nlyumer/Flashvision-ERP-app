@@ -4,7 +4,9 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
 import { useDialog } from '../../context/DialogContext';
 import { supabase } from '../../utils/supabaseClient';
-import { ensureContrastText } from '../../utils/printDesign';
+import { ensureContrastText, resolveMargins, ensurePhaseMatrixRecord, uomSymbol } from '../../utils/printDesign';
+import { PhaseMatrixSheet, PrintTableSheet } from '../ui/PrintSheetParts';
+import { getDivisionPrintFullName } from '../../utils/divisionPrintName';
 import {
   SYSTEM_DOCUMENTS,
   DOCUMENT_MODULES,
@@ -404,6 +406,82 @@ export default function PrintSettings() {
       return getMockPreviewData(selectedDocId) || { header: {}, items: [], totals: {} };
     }
   }, [selectedDocId, state, currentDocMeta]);
+
+  // ------------------------------------------------------------------
+  // Unified WYSIWYG preview (Omer, 2026-10-25): the paper below renders
+  // the SAME shared sheet components the Universal Print Studio prints
+  // with, fed by the SAME saved layout (activeLayout) that Save writes
+  // to print_layout_settings + AppContext + localStorage — the exact
+  // stores the studio loads from. One layout family, one source of
+  // truth: what is customized here is what prints.
+  // ------------------------------------------------------------------
+  const previewIsPhaseDoc = selectedDocId === 'bom_master' || selectedDocId === 'consumption_history';
+  const previewIsPlanDoc = selectedDocId === 'production_plan';
+  const previewIsBatchDoc = selectedDocId === 'master_batch_record';
+
+  const previewPhaseRecord = useMemo(() => {
+    if (!previewIsPhaseDoc) return null;
+    try {
+      const fromState = getSampleRecordFromState ? getSampleRecordFromState(selectedDocId, state) : null;
+      const base = fromState || getMockPreviewData(selectedDocId);
+      const rec = ensurePhaseMatrixRecord(base, selectedDocId, state);
+      const title = selectedDocId === 'consumption_history' ? 'CONSUMPTION' : 'BILL OF MATERIALS';
+      return { ...rec, docTitle: title, docSub: rec.docSub || '' };
+    } catch (e) {
+      console.error('Error building phase preview record:', e);
+      return null;
+    }
+  }, [previewIsPhaseDoc, selectedDocId, state]);
+
+  const previewPaper = PAPER_DIMENSIONS[activeLayout.paperSize] || PAPER_DIMENSIONS.A4;
+  const previewLandscape = activeLayout.orientation === 'landscape';
+  const previewPaperWidth = previewLandscape ? previewPaper.minHeight : previewPaper.width;
+  const previewPaperHeight = previewLandscape ? previewPaper.width : previewPaper.minHeight;
+  const previewMargins = resolveMargins(activeLayout);
+
+  const previewHeaderFields = (activeLayout.headerFields || []).filter((f) => f.enabled !== false);
+  const previewPartyField = previewHeaderFields.find((f) => ['customer', 'customer_name', 'party_name'].includes(f.key));
+  const previewFieldValue = (key) => {
+    const v = mockData?.header?.[key] ?? mockData?.[key];
+    return v === undefined || v === null || v === '' ? '---' : String(v);
+  };
+  const previewParty = previewPartyField && previewFieldValue(previewPartyField.key) !== '---'
+    ? { label: previewPartyField.label || 'Customer', value: previewFieldValue(previewPartyField.key) }
+    : null;
+  const previewMetaRows = previewHeaderFields
+    .filter((f) => f !== previewPartyField)
+    .map((f) => ({ key: f.key, label: f.label || f.key, value: previewFieldValue(f.key), strong: /no|number|code|id/i.test(f.key) }));
+
+  const previewColumns = (activeLayout.gridColumns || []).filter((c) => c.enabled !== false);
+  const previewGetCellValue = (colKey, row) => {
+    if (!row) return '---';
+    if (colKey === 'uom' || colKey === 'unit') return uomSymbol(row.uom || row.unit || 'Mtr');
+    const val = row[colKey];
+    if (val === undefined || val === null) return '---';
+    return typeof val === 'number' ? val.toLocaleString() : String(val);
+  };
+  const previewNumeric = (colKey, row) => {
+    const n = Number(row?.[colKey]);
+    if (Number.isFinite(n)) return n;
+    if (colKey === 'sub_total' || colKey === 'total') {
+      return Number(row?.quantity || row?.qty || 0) * Number(row?.price || row?.rate || 0);
+    }
+    return 0;
+  };
+  const previewColumnTotals = {};
+  previewColumns.forEach((c) => {
+    if (c.total) previewColumnTotals[c.key] = (mockData.items || []).reduce((s, r) => s + previewNumeric(c.key, r), 0);
+  });
+
+  const previewCompanyName = (previewIsPlanDoc || previewIsBatchDoc) ? 'AJ SYNTHETIC' : companyName;
+  const previewCompanyLegal = previewIsPlanDoc
+    ? 'AJ Synthetic Leather & Footwear Industries Pvt. Limited'
+    : previewIsBatchDoc
+      ? (getDivisionPrintFullName('AJ Synthetic') || 'AJ Synthetic Leather & Footwear Industries Pvt. Limited')
+      : '';
+  const previewCompanyAddress = (previewIsPlanDoc || previewIsBatchDoc)
+    ? ''
+    : (state?.adminSetup?.address || 'Plot 42-B, Industrial Zone Phase III, Karachi, Pakistan');
 
   return (
     <>
@@ -1063,8 +1141,8 @@ export default function PrintSettings() {
         </aside>
 
         {/* CENTER PANEL: LIVE INTERACTIVE WYSIWYG PAPER CANVAS */}
-        <main className="col-span-12 lg:col-span-8 bg-slate-200/60 rounded-2xl p-6 border border-slate-300/60 overflow-y-auto flex justify-center items-start min-h-[650px]">
-          <div className="w-full max-w-3xl flex flex-col items-center">
+        <main className="col-span-12 lg:col-span-8 bg-slate-200/60 rounded-2xl p-6 border border-slate-300/60 overflow-auto flex justify-center items-start min-h-[650px]">
+          <div className="w-full flex flex-col items-center">
             <div className="w-full mb-3 flex items-center justify-between text-xs text-slate-500 font-medium px-2">
               <span className="flex items-center gap-1 font-bold text-slate-700">
                 <span className="material-symbols-outlined text-sm text-emerald-600">wysiwyg</span>
@@ -1075,177 +1153,66 @@ export default function PrintSettings() {
               </span>
             </div>
 
-            {/* LIVE PAPER CANVAS */}
-            <div
-              className="bg-white text-slate-900 shadow-xl rounded-md transition-all relative overflow-hidden"
-              style={{
-                width: PAPER_DIMENSIONS[activeLayout.paperSize]?.width || '210mm',
-                minHeight: PAPER_DIMENSIONS[activeLayout.paperSize]?.minHeight || '297mm',
-                paddingTop: activeLayout.marginTop || '15mm',
-                paddingBottom: activeLayout.marginBottom || '15mm',
-                paddingLeft: activeLayout.marginLeft || '15mm',
-                paddingRight: activeLayout.marginRight || '15mm',
-                fontFamily: activeLayout.fontFamily || 'Inter'
-              }}
-            >
-              {/* Dynamic Header Theme Rendering */}
-              <div className="border-b-2 border-slate-900 pb-4 mb-6">
-                <div className="flex justify-between items-start">
-                  <div className="flex items-center gap-4">
-                    {activeLayout.showHeaderLogo !== false && companyLogo && (
-                      <img src={companyLogo} alt="Logo" className="h-14 object-contain" />
-                    )}
-                    {activeLayout.showHeaderDetails !== false && (
-                      <div>
-                        <h2
-                          className="text-xl font-black uppercase tracking-tight"
-                          style={{ color: activeLayout.primaryColor || '#004277' }}
-                        >
-                          {companyName}
-                        </h2>
-                        <p className="text-[10px] text-slate-600 leading-tight mt-0.5">
-                          {(mockData?.header?.address || 'Plot 42-B, Industrial Zone Phase III, Karachi')} | Tel: {(mockData?.header?.phone || '+92-21-34567890')}
-                        </p>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="text-right">
-                    <h3 className="text-2xl font-black uppercase tracking-widest text-slate-900">
-                      {currentDocMeta.name}
-                    </h3>
-                    <span className="inline-block mt-1 px-2.5 py-0.5 rounded bg-slate-100 font-mono text-xs font-bold text-slate-700">
-                      {mockData?.header?.so_number || mockData?.header?.grn_number || mockData?.header.invoice_no || mockData?.header.ref_no || `${currentDocMeta.code}-2026-001`}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Dynamic Header Fields Grid */}
-              <div className="grid grid-cols-3 gap-3 mb-6 bg-slate-50 border border-slate-200 p-3.5 rounded-xl text-xs">
-                {(activeLayout.headerFields || []).map((field) => {
-                  if (field.enabled === false) return null;
-                  const val = mockData?.header?.[field.key] || mockData?.[field.key] || 'N/A';
-                  const isSelected = selectedElement?.key === field.key;
-                  return (
-                    <div
-                      key={field.key}
-                      onClick={() => {
-                        setSelectedElement({ type: 'header_field', key: field.key });
-                        setLeftTab('inspector');
-                      }}
-                      className={`p-1.5 rounded-lg transition-all cursor-pointer ${
-                        isSelected ? 'ring-2 ring-blue-500 bg-blue-50/80' : 'hover:bg-slate-100'
-                      }`}
-                    >
-                      <span className="text-[9px] uppercase font-bold text-slate-400 block">{field.label}:</span>
-                      <span className="font-bold text-slate-800">{val}</span>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Dynamic Line-Items Table */}
-              <div className="mb-6 overflow-x-auto">
-                <table className="w-full text-xs border-collapse border border-slate-300">
-                  <thead>
-                    <tr style={{ backgroundColor: activeLayout.tableHeaderBgColor || '#004277', color: ensureContrastText(activeLayout.tableHeaderBgColor || '#004277', activeLayout.tableHeaderTextColor || '#ffffff') }}>
-                      {(activeLayout.gridColumns || []).map((col, colIndex) => {
-                        if (col.enabled === false) return null;
-                        const isSelected = selectedElement?.key === col.key;
-                        return (
-                          <th
-                            key={col.key || colIndex}
-                            onClick={() => {
-                              setSelectedElement({ type: 'column', key: col.key, index: colIndex });
-                              setLeftTab('inspector');
-                            }}
-                            className={`p-2 border border-slate-300 font-bold uppercase text-[10px] cursor-pointer transition-all ${
-                              isSelected ? 'ring-2 ring-yellow-400' : ''
-                            }`}
-                            style={{ width: col.width || 'auto', textAlign: col.align || 'left' }}
-                          >
-                            {col.label}
-                          </th>
-                        );
-                      })}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(mockData.items || []).map((row, rIdx) => (
-                      <tr key={rIdx} className={rIdx % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
-                        {(activeLayout.gridColumns || []).map((col, colIndex) => {
-                          if (col.enabled === false) return null;
-                          const cellVal = row[col.key] !== undefined ? row[col.key] : '-';
-                          return (
-                            <td
-                              key={col.key || colIndex}
-                              className="p-2 border border-slate-200 text-[11px]"
-                              style={{ textAlign: col.align || 'left' }}
-                            >
-                              {cellVal}
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Terms & Totals Section */}
-              <div className="flex justify-between items-start gap-6 mb-8 pt-2">
-                <div className="flex-1 pr-4">
-                  <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
-                    Terms & Conditions
-                  </h4>
-                  <p className="text-[10px] text-slate-600 whitespace-pre-line leading-relaxed border-l-2 border-slate-300 pl-2">
-                    {activeLayout.termsConditions || 'Standard ERP terms apply.'}
-                  </p>
-                </div>
-
-                {mockData.totals && (
-                  <div className="w-56 bg-slate-50 border border-slate-200 p-3 rounded-lg space-y-1.5 text-xs">
-                    {mockData.totals.subtotal !== undefined && (
-                      <div className="flex justify-between text-slate-600">
-                        <span>Subtotal:</span>
-                        <span className="font-mono font-bold">{currSym} {Number(mockData.totals.subtotal || 0).toLocaleString()}</span>
-                      </div>
-                    )}
-                    {mockData.totals.tax !== undefined && (
-                      <div className="flex justify-between text-slate-600">
-                        <span>Tax:</span>
-                        <span className="font-mono font-bold">{currSym} {Number(mockData.totals.tax || 0).toLocaleString()}</span>
-                      </div>
-                    )}
-                    {mockData.totals.grandTotal !== undefined && (
-                      <div className="flex justify-between text-slate-900 font-black text-sm pt-1 border-t border-slate-300">
-                        <span>Grand Total:</span>
-                        <span className="font-mono" style={{ color: activeLayout.primaryColor || '#004277' }}>
-                          {currSym} {Number(mockData.totals.grandTotal || 0).toLocaleString()}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* Dynamic Signatures Footer */}
-              <div className="mt-12 pt-4 flex justify-between items-end gap-4 border-t border-slate-200">
-                {(activeLayout.signatures || []).map((sig, sIdx) => (
-                  <div key={sig.key || sIdx} className="flex-1 text-center">
-                    <div className="border-b border-slate-400 w-3/4 mx-auto mb-1.5"></div>
-                    <span className="text-[10px] font-bold text-slate-700 uppercase tracking-wider block">
-                      {sig.label}
-                    </span>
-                  </div>
-                ))}
-              </div>
-
-              {/* Footer text */}
-              <div className="mt-8 text-center text-[9px] text-slate-400 border-t border-slate-100 pt-2 font-mono">
-                {activeLayout.customFooterText || 'Computer Generated Document. Powered by Flashvision ERP.'}
-              </div>
+            {/* LIVE PAPER CANVAS — the finalized print family itself
+                (shared PrintSheetParts), driven by the layout being
+                edited. Canvas clicks still select elements for the
+                Inspector, exactly as before. */}
+            <div className="w-full overflow-x-auto flex justify-center pb-2">
+              {previewIsPhaseDoc && previewPhaseRecord ? (
+                <PhaseMatrixSheet
+                  record={previewPhaseRecord}
+                  layout={activeLayout}
+                  companyName="AJ SYNTHETIC"
+                  companyLegal="AJ Synthetic Leather & Footwear Industries Pvt. Limited"
+                  margins={previewMargins}
+                  paperWidth={previewPaperWidth}
+                  paperHeight={previewPaperHeight}
+                  pageIdx={0}
+                  pageCount={1}
+                />
+              ) : (
+                <PrintTableSheet
+                  layout={activeLayout}
+                  companyName={previewCompanyName}
+                  companyLegal={previewCompanyLegal}
+                  companyAddress={previewCompanyAddress}
+                  party={previewParty}
+                  metaRows={previewMetaRows}
+                  docTitle={currentDocMeta.name}
+                  docSub={previewIsPlanDoc ? 'ORDER LIST' : null}
+                  planVariant={previewIsPlanDoc}
+                  columns={previewColumns}
+                  items={mockData.items || []}
+                  getCellValue={previewGetCellValue}
+                  columnTotals={previewColumnTotals}
+                  grandTotal={mockData.totals?.grandTotal}
+                  showHeader
+                  showTotals
+                  isLastPage
+                  margins={previewMargins}
+                  paperWidth={previewPaperWidth}
+                  paperHeight={previewPaperHeight}
+                  fixedHeight={false}
+                  onSelectColumn={(col) => {
+                    const fullIdx = (activeLayout.gridColumns || []).findIndex((c) => c.key === col.key);
+                    setSelectedElement({ type: 'column', key: col.key, index: fullIdx > -1 ? fullIdx : 0 });
+                    setLeftTab('inspector');
+                  }}
+                  selectedColumnKey={selectedElement?.type === 'column' ? selectedElement.key : null}
+                  onSelectMeta={(row) => {
+                    setSelectedElement({ type: 'header_field', key: row.key });
+                    setLeftTab('inspector');
+                  }}
+                  onSelectParty={() => {
+                    if (previewPartyField) {
+                      setSelectedElement({ type: 'header_field', key: previewPartyField.key });
+                      setLeftTab('inspector');
+                    }
+                  }}
+                  selectedMetaKey={selectedElement?.type === 'header_field' ? selectedElement.key : null}
+                  partySelected={!!previewPartyField && selectedElement?.type === 'header_field' && selectedElement.key === previewPartyField.key}
+                />
+              )}
             </div>
           </div>
         </main>

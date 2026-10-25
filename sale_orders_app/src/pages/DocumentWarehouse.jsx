@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Layout from '../components/Layout';
 import { useApp } from '../context/AppContext';
+import { loadOnboardingHistory } from '../utils/onboardingHistory';
 
 export default function DocumentWarehouse({ insideDashboard = false }) {
   const { state, setState } = useApp();
@@ -63,11 +64,7 @@ export default function DocumentWarehouse({ insideDashboard = false }) {
     ];
 
     // 2. HR Profiles
-    const onboardingRaw = localStorage.getItem('hr_onboarding_history');
-    let onboardingList = [];
-    if (onboardingRaw) {
-      try { onboardingList = JSON.parse(onboardingRaw); } catch(e){}
-    }
+    const onboardingList = loadOnboardingHistory();
     const hrDocs = onboardingList.length > 0 ? onboardingList.map(emp => ({
       id: emp.id || `EMP-${emp.employeeCode || '101'}`,
       title: emp.employeeName || 'Staff Member',

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { seedHrDepartments } from '../../utils/hrDepartments';
+import { loadOnboardingHistory } from '../../utils/onboardingHistory';
 
 export default function HRDashboard({ isMobile, onNavigateTab }) {
   const [approvedRequests, setApprovedRequests] = useState({});
@@ -92,9 +93,9 @@ export default function HRDashboard({ isMobile, onNavigateTab }) {
   const [onboardingList, setOnboardingList] = useState([]);
   useEffect(() => {
     try {
-      const saved = localStorage.getItem('hr_onboarding_history');
-      if (saved) {
-        setOnboardingList(JSON.parse(saved).filter(item => item.status === 'Submitted').slice(0, 3));
+      const saved = loadOnboardingHistory();
+      if (saved.length > 0) {
+        setOnboardingList(saved.filter(item => item.status === 'Submitted').slice(0, 3));
       }
     } catch (e) {
       console.error(e);
@@ -170,8 +171,7 @@ export default function HRDashboard({ isMobile, onNavigateTab }) {
 
   // Get pending onboarding list (> 7 days joined)
   const pendingOnboardingEmployees = employees.filter(emp => {
-    const onboardingHistoryRaw = localStorage.getItem('hr_onboarding_history');
-    const historyList = onboardingHistoryRaw ? JSON.parse(onboardingHistoryRaw) : [];
+    const historyList = loadOnboardingHistory();
     const isCompleted = historyList.some(item => (item.id === emp.id || item.fullName === emp.name) && item.status === 'Submitted');
     if (isCompleted) return false;
     

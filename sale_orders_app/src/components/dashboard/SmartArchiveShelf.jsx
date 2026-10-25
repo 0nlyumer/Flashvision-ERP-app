@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
+import { loadOnboardingHistory } from '../../utils/onboardingHistory';
 
 export default function SmartArchiveShelf({ isOpen, onClose }) {
   const { state } = useApp();
@@ -60,11 +61,7 @@ export default function SmartArchiveShelf({ isOpen, onClose }) {
     });
 
     // 2. HR Profiles Folder
-    const onboardingRaw = localStorage.getItem('hr_onboarding_history');
-    let onboardingList = [];
-    if (onboardingRaw) {
-      try { onboardingList = JSON.parse(onboardingRaw); } catch(e){}
-    }
+    const onboardingList = loadOnboardingHistory();
     folders.push({
       id: 'hr_profiles',
       name: 'HR Profiles',

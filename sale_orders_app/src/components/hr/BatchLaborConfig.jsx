@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useDialog } from '../../context/DialogContext';
 import {
@@ -23,7 +23,22 @@ import {
 export default function BatchLaborConfig({ isMobile, onBack }) {
   const { state, setCollection, currencySymbol } = useApp();
   const { showTopPill } = useDialog();
-  const [form, setForm] = useState(() => normalizeBatchLaborConfig(state.batch_labor_config));
+  // The form is DERIVED from the saved config (Omer, 2026-10-25): a
+  // mount-time snapshot went stale — after Clear + Save, reopening the
+  // section in the same session kept showing the old selection until a
+  // full reload, because the snapshot never re-read the persisted
+  // value. Now, whenever the persisted config changes (save round-trip,
+  // late table load, remount), the form re-derives from it — unless the
+  // user has unsaved edits in flight, which are never clobbered.
+  const savedConfig = useMemo(
+    () => normalizeBatchLaborConfig(state.batch_labor_config),
+    [state.batch_labor_config]
+  );
+  const [form, setForm] = useState(savedConfig);
+  const dirtyRef = useRef(false);
+  useEffect(() => {
+    if (!dirtyRef.current) setForm(savedConfig);
+  }, [savedConfig]);
   const [saved, setSaved] = useState(false);
   const [query, setQuery] = useState('');
 
@@ -46,6 +61,7 @@ export default function BatchLaborConfig({ isMobile, onBack }) {
   const fmtMoney = (v) => `${currencySymbol || 'Rs '}${Number(v || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
 
   const applyIds = (ids) => {
+    dirtyRef.current = true;
     setForm({ employeeIds: ids });
     setSaved(false);
   };
@@ -60,6 +76,7 @@ export default function BatchLaborConfig({ isMobile, onBack }) {
 
   const handleSave = () => {
     setCollection('batch_labor_config', normalizeBatchLaborConfig(form));
+    dirtyRef.current = false;
     setSaved(true);
     if (showTopPill) showTopPill('Batch Record Labor Cost Employees Saved • Selection updated', 'success');
   };

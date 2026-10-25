@@ -203,11 +203,11 @@ export default function PrintLayout({
         printColorAdjust: 'exact', WebkitPrintColorAdjust: 'exact'
       }}
     >
-      <div style={{ fontSize: '17px', fontWeight: 700, letterSpacing: '3px', textAlign: headerAlign === 'center' ? 'center' : 'left' }}>
+      <div style={{ fontSize: '17px', fontWeight: 700, letterSpacing: '3px', textAlign: headerAlign === 'center' ? 'center' : 'left', color: bandTextColor }}>
         {(documentTitle || activeDocType.replace(/_/g, ' ').toUpperCase())}
       </div>
       {documentId && headerAlign !== 'center' && (
-        <div style={{ fontSize: '11px', fontWeight: 600, letterSpacing: '1.6px', textTransform: 'uppercase', opacity: 0.9 }}>{documentId}</div>
+        <div style={{ fontSize: '11px', fontWeight: 600, letterSpacing: '1.6px', textTransform: 'uppercase', opacity: 0.9, color: bandTextColor }}>{documentId}</div>
       )}
     </div>
   );

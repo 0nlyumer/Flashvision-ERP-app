@@ -100,6 +100,29 @@ export const fmtQty = (v) => {
   return n.toLocaleString(undefined, { maximumFractionDigits: 3 });
 };
 
+// Unit display for prints (Omer, 2026-10-25): quantities on paper carry
+// ONLY the unit symbol — '100 kg', never the stored full form
+// '100 Kilograms (kg)'. Rendering-only: stored UOM values stay as they
+// are ('Kilograms (kg)' etc. in the UOM master). A value already in
+// short form ('Kg', '480 Kg' style quantities, 'm', 'Rolls') is left
+// untouched; 'Name (symbol)' collapses to the symbol, and a bare known
+// full name maps to its symbol.
+const UOM_FULL_NAME_TO_SYMBOL = {
+  kilograms: 'kg', kilogram: 'kg',
+  liters: 'L', liter: 'L', litres: 'L', litre: 'L',
+  meters: 'm', meter: 'm', metres: 'm', metre: 'm',
+  units: 'ea', unit: 'ea'
+};
+export function uomSymbol(uom) {
+  if (uom === null || uom === undefined) return '';
+  const s = String(uom).trim();
+  if (!s) return s;
+  const bracket = s.match(/\(([^)]+)\)\s*$/);
+  if (bracket) return bracket[1].trim();
+  const mapped = UOM_FULL_NAME_TO_SYMBOL[s.toLowerCase()];
+  return mapped || s;
+}
+
 const totalsByUom = (rows) => {
   const map = new Map();
   rows.forEach((r) => {
