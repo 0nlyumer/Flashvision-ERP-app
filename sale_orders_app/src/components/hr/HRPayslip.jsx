@@ -428,6 +428,7 @@ export default function HRPayslip({ isMobile }) {
       loanInstallment: loanInstallment,
       netAdjustmentBalance: netAdjustmentBalance,
       netSalary: r.netSalary || 0,
+      division: r.division || r.section || '',
       printFullName: getDivisionPrintFullName(r.division || r.section || '')
     };
   }, [selectedSlipForDetail, selectedPeriod, state.hr_employees_list, state.hr_uploaded_attendance, state.hr_overtime_requests]);

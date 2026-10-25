@@ -162,6 +162,22 @@ export default function FlashAM() {
   });
   const isDark = theme === 'dark';
 
+  // FLASHAM VOID FIX (Omer, 2026-10-25): the page backdrop (html/body)
+  // is painted with the terminal's own theme color while the terminal
+  // is mounted, so no white void can ever show below/around the roster
+  // or any other tab — the dark frame fills its space evenly.
+  useEffect(() => {
+    const color = isDark ? '#090d16' : '#f8fafc';
+    const prevBody = document.body.style.backgroundColor;
+    const prevHtml = document.documentElement.style.backgroundColor;
+    document.body.style.backgroundColor = color;
+    document.documentElement.style.backgroundColor = color;
+    return () => {
+      document.body.style.backgroundColor = prevBody;
+      document.documentElement.style.backgroundColor = prevHtml;
+    };
+  }, [isDark]);
+
   const toggleTheme = () => {
     const nextTheme = isDark ? 'light' : 'dark';
     setTheme(nextTheme);
@@ -2817,7 +2833,8 @@ export default function FlashAM() {
                 <p className="text-xs text-slate-400 mt-1">Try adjusting your search query or department filter.</p>
               </div>
             ) : (
-              <div className="space-y-2.5">
+              <div className="relative">
+                <div className="space-y-2.5">
                 {filteredEmployees.map((emp) => {
                   const rec = getEmployeeAttendance(emp);
                   const hasIn = Boolean(rec && rec.inTime);
@@ -2828,7 +2845,7 @@ export default function FlashAM() {
                   return (
                     <div
                       key={emp.id || emp.employeeCode}
-                      className={`p-3 sm:p-3.5 rounded-2xl border transition-all duration-200 flex flex-col ${isEditing ? 'items-stretch' : 'sm:flex-row sm:items-center'} justify-between gap-3 ${
+                      className={`p-3 sm:p-3.5 rounded-2xl border transition-all duration-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
                         isDark
                           ? 'bg-[#121927]/90 hover:bg-[#151e30] border-slate-800'
                           : 'bg-white hover:bg-slate-50/80 border-slate-200 shadow-sm'
@@ -2914,16 +2931,81 @@ export default function FlashAM() {
                         </div>
                       </div>
 
-                      {isEditing ? (
-                        <div
-                          className={`w-full p-3 rounded-2xl border space-y-2.5 ${
-                            isDark ? 'bg-slate-900/70 border-cyan-500/30' : 'bg-cyan-50/60 border-cyan-200'
+<div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                        {/* PUNCH IN BUTTON - Guarantees 100% Crisp White Text in Light & Dark Mode */}
+                        <button
+                          type="button"
+                          onClick={() => handlePunchIn(emp)}
+                          title={hasIn ? 'Already Clocked IN. Click to UNDO clock-in' : 'Clock IN'}
+                          className={`px-3.5 py-2.5 rounded-xl font-black text-xs uppercase tracking-wider flex items-center gap-1.5 transition-all active:scale-95 shadow-md cursor-pointer !text-white text-white ${
+                            hasIn
+                              ? 'bg-emerald-600 hover:bg-emerald-700 !text-white text-white shadow-emerald-600/30 border border-emerald-400/40'
+                              : 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 !text-white text-white shadow-emerald-600/25'
                           }`}
                         >
-                          <div className="flex items-center justify-between">
+                          <span className="material-symbols-outlined text-[17px] !text-white text-white font-bold">
+                            {hasIn ? 'undo' : 'login'}
+                          </span>
+                          <span className="!text-white text-white font-black tracking-wide">
+                            {hasIn ? `IN ${rec.inTime.split(':')[0]}:${rec.inTime.split(':')[1]}` : 'PUNCH IN'}
+                          </span>
+                        </button>
+
+                        {/* PUNCH OUT BUTTON - Guarantees 100% Crisp White Text in Light & Dark Mode */}
+                        <button
+                          type="button"
+                          onClick={() => handlePunchOut(emp)}
+                          title={hasOut ? 'Already Clocked OUT. Click to UNDO clock-out' : 'Clock OUT'}
+                          className={`px-3.5 py-2.5 rounded-xl font-black text-xs uppercase tracking-wider flex items-center gap-1.5 transition-all active:scale-95 shadow-md cursor-pointer ${
+                            hasOut
+                              ? 'bg-purple-600 hover:bg-purple-700 !text-white text-white shadow-purple-600/30 border border-purple-400/40'
+                              : hasIn
+                              ? 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 !text-white text-white shadow-purple-600/25'
+                              : isDark
+                              ? 'bg-slate-800/80 !text-slate-400 border border-slate-700 cursor-not-allowed opacity-60'
+                              : 'bg-slate-200 !text-slate-400 border border-slate-300 cursor-not-allowed opacity-60'
+                          }`}
+                        >
+                          <span className={`material-symbols-outlined text-[17px] font-bold ${hasOut || hasIn ? '!text-white text-white' : '!text-slate-400'}`}>
+                            {hasOut ? 'undo' : 'logout'}
+                          </span>
+                          <span className={`font-black tracking-wide ${hasOut || hasIn ? '!text-white text-white' : '!text-slate-400'}`}>
+                            {hasOut ? `OUT ${rec.outTime.split(':')[0]}:${rec.outTime.split(':')[1]}` : 'PUNCH OUT'}
+                          </span>
+                        </button>
+
+                        {/* MANUAL TIME LOG BUTTON */}
+                        <button
+                          type="button"
+                          onClick={() => startManualEdit(emp, rec)}
+                          title="Manual Time In / Out & Attendance Edit"
+                          className={`p-2.5 rounded-xl border flex items-center justify-center transition-all cursor-pointer active:scale-95 shadow-sm ${
+                            isDark
+                              ? 'bg-slate-800/90 hover:bg-slate-700 text-cyan-400 border-slate-700'
+                              : 'bg-slate-100 hover:bg-slate-200 text-cyan-700 border-slate-300'
+                          }`}
+                        >
+                          <span className="material-symbols-outlined text-[18px]">edit_calendar</span>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+                </div>
+                {manualEdit && (() => {
+                  const emp = dbEmployees.find((e) => String(e.id) === String(manualEdit.empId));
+                  if (!emp) return null;
+                  const rec = getEmployeeAttendance(emp);
+                  return (
+                    <div
+                      className={`absolute inset-0 z-20 overflow-y-auto rounded-3xl border p-3.5 space-y-2.5 shadow-2xl ${
+                        isDark ? 'bg-[#0d1420] border-cyan-500/30' : 'bg-white border-cyan-200'
+                      }`}
+                    >
+<div className="flex items-center justify-between">
                             <span className="text-[10px] font-bold uppercase tracking-wider text-cyan-500 flex items-center gap-1">
                               <span className="material-symbols-outlined text-[14px]">edit_calendar</span>
-                              Manual Entry — {selectedDate}
+                              Manual Entry — {emp.name} • {selectedDate}
                             </span>
                             <span className="text-[10px] text-slate-400">Source: Manual</span>
                           </div>
@@ -3019,69 +3101,9 @@ export default function FlashAM() {
                               Save
                             </button>
                           </div>
-                        </div>
-                      ) : (
-                      <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
-                        {/* PUNCH IN BUTTON - Guarantees 100% Crisp White Text in Light & Dark Mode */}
-                        <button
-                          type="button"
-                          onClick={() => handlePunchIn(emp)}
-                          title={hasIn ? 'Already Clocked IN. Click to UNDO clock-in' : 'Clock IN'}
-                          className={`px-3.5 py-2.5 rounded-xl font-black text-xs uppercase tracking-wider flex items-center gap-1.5 transition-all active:scale-95 shadow-md cursor-pointer !text-white text-white ${
-                            hasIn
-                              ? 'bg-emerald-600 hover:bg-emerald-700 !text-white text-white shadow-emerald-600/30 border border-emerald-400/40'
-                              : 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 !text-white text-white shadow-emerald-600/25'
-                          }`}
-                        >
-                          <span className="material-symbols-outlined text-[17px] !text-white text-white font-bold">
-                            {hasIn ? 'undo' : 'login'}
-                          </span>
-                          <span className="!text-white text-white font-black tracking-wide">
-                            {hasIn ? `IN ${rec.inTime.split(':')[0]}:${rec.inTime.split(':')[1]}` : 'PUNCH IN'}
-                          </span>
-                        </button>
-
-                        {/* PUNCH OUT BUTTON - Guarantees 100% Crisp White Text in Light & Dark Mode */}
-                        <button
-                          type="button"
-                          onClick={() => handlePunchOut(emp)}
-                          title={hasOut ? 'Already Clocked OUT. Click to UNDO clock-out' : 'Clock OUT'}
-                          className={`px-3.5 py-2.5 rounded-xl font-black text-xs uppercase tracking-wider flex items-center gap-1.5 transition-all active:scale-95 shadow-md cursor-pointer ${
-                            hasOut
-                              ? 'bg-purple-600 hover:bg-purple-700 !text-white text-white shadow-purple-600/30 border border-purple-400/40'
-                              : hasIn
-                              ? 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 !text-white text-white shadow-purple-600/25'
-                              : isDark
-                              ? 'bg-slate-800/80 !text-slate-400 border border-slate-700 cursor-not-allowed opacity-60'
-                              : 'bg-slate-200 !text-slate-400 border border-slate-300 cursor-not-allowed opacity-60'
-                          }`}
-                        >
-                          <span className={`material-symbols-outlined text-[17px] font-bold ${hasOut || hasIn ? '!text-white text-white' : '!text-slate-400'}`}>
-                            {hasOut ? 'undo' : 'logout'}
-                          </span>
-                          <span className={`font-black tracking-wide ${hasOut || hasIn ? '!text-white text-white' : '!text-slate-400'}`}>
-                            {hasOut ? `OUT ${rec.outTime.split(':')[0]}:${rec.outTime.split(':')[1]}` : 'PUNCH OUT'}
-                          </span>
-                        </button>
-
-                        {/* MANUAL TIME LOG BUTTON */}
-                        <button
-                          type="button"
-                          onClick={() => startManualEdit(emp, rec)}
-                          title="Manual Time In / Out & Attendance Edit"
-                          className={`p-2.5 rounded-xl border flex items-center justify-center transition-all cursor-pointer active:scale-95 shadow-sm ${
-                            isDark
-                              ? 'bg-slate-800/90 hover:bg-slate-700 text-cyan-400 border-slate-700'
-                              : 'bg-slate-100 hover:bg-slate-200 text-cyan-700 border-slate-300'
-                          }`}
-                        >
-                          <span className="material-symbols-outlined text-[18px]">edit_calendar</span>
-                        </button>
-                      </div>
-                      )}
                     </div>
                   );
-                })}
+                })()}
               </div>
             )}
               </>

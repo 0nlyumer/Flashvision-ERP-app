@@ -221,6 +221,88 @@ export function buildSampleBomPrintRecord() {
   };
 }
 
+// --- Batch Record print record (Master Batch Record, 2026-10-25) -------------
+// Builds the Universal Print Studio record for one MasterBatchRecord batch
+// object (the exact shape MasterBatchRecord.jsx derives from production
+// plans): batch meta + costing summary as header fields, the consumption
+// details as the line table, and the Estimated Labor Cost as its own
+// header line — '—' when the date has no attendance data / no selection
+// (never a guessed zero). fmtMoney is injected by the caller (the screen
+// passes its context formatter) so the app's single currency rules apply.
+
+export function buildBatchRecordPrintRecord(batch, { laborCost = null, fmtMoney } = {}) {
+  const fmt = typeof fmtMoney === 'function'
+    ? fmtMoney
+    : (v) => `Rs ${Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const fgOutputs = (batch.outputDetails || []).filter((o) => !o.isWastage);
+  const wastageOutputs = (batch.outputDetails || []).filter((o) => o.isWastage);
+  const fgValue = fgOutputs.reduce((s, o) => s + (Number(o.value) || 0), 0);
+  const wastageValue = wastageOutputs.reduce((s, o) => s + (Number(o.value) || 0), 0);
+  const otherConsumptionCost = (batch.consumptionDetails || [])
+    .filter((c) => c.name && c.name.includes('(Other Cons. Split)'))
+    .reduce((s, c) => s + (Number(c.cost) || 0), 0);
+  const totalCost = Number(batch.totalConsumedCost) || 0;
+  const rawMaterialCost = totalCost - otherConsumptionCost;
+  const totalFgQty = fgOutputs.reduce((s, o) => s + (Number(o.quantity) || 0), 0);
+  const costPerUnit = totalFgQty > 0 ? totalCost / totalFgQty : 0;
+  const fgUom = fgOutputs[0]?.uom || 'Meters';
+
+  return {
+    id: batch.batchCode,
+    batch_code: batch.batchCode,
+    product_name: batch.productName,
+    production_date: batch.date,
+    plan_id: batch.planId,
+    status: batch.status,
+    requested_qty: `${Number(batch.requestedQty || 0).toLocaleString()} m`,
+    produced_qty: `${Number(batch.totalOutputQty || 0).toLocaleString()} m`,
+    efficiency: `${Number(batch.efficiency || 0).toFixed(1)}%`,
+    finished_goods_value: fmt(fgValue),
+    wastage_value: fmt(wastageValue),
+    raw_material_cost: fmt(rawMaterialCost),
+    other_consumption_cost: fmt(otherConsumptionCost),
+    est_labor_cost: laborCost === null || laborCost === undefined ? '—' : fmt(laborCost),
+    cost_per_unit: `${fmt(costPerUnit)} / ${fgUom}`,
+    items: (batch.consumptionDetails || []).map((m) => ({
+      material_name: m.name,
+      target_qty: Number(m.target) > 0 ? `${Number(m.target).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${m.unit}` : '—',
+      actual_qty: `${Number(m.actual || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${m.unit}`,
+      unit_price: Number(m.price) || 0,
+      total_cost: Number(m.cost) || 0,
+      variance: Number(m.target) > 0 ? `${Number(m.variance) > 0 ? '+' : ''}${Number(m.variance || 0).toFixed(1)}%` : '—'
+    }))
+  };
+}
+
+// Representative SAMPLE record for the Batch Record document — used ONLY
+// by the Print Settings / studio sample path so the Master Batch Record
+// test preview shows a filled record (with an Estimated Labor Cost line)
+// instead of a generic mock. Real batch prints are built by
+// buildBatchRecordPrintRecord from the actual batch.
+export function buildSampleBatchRecordPrintRecord() {
+  const fmt = (v) => `Rs ${Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return buildBatchRecordPrintRecord({
+    batchCode: 'ITEM-001',
+    productName: '170 PK DTY BLACK (WHITE)',
+    date: new Date().toISOString(),
+    status: 'Completed',
+    requestedQty: 2000,
+    totalOutputQty: 1950,
+    totalConsumedCost: 84517.76,
+    efficiency: 96.4,
+    consumptionDetails: [
+      { name: 'PVC 682', unit: 'Kg', target: 480, actual: 472, price: 120, cost: 56640, variance: -1.7 },
+      { name: 'MARBLE M3500', unit: 'Kg', target: 100, actual: 98, price: 210, cost: 20580, variance: -2.0 },
+      { name: 'PK DTY WHITE', unit: 'Kg', target: 86.364, actual: 86.364, price: 84.5, cost: 7297.76, variance: 0 }
+    ],
+    outputDetails: [
+      { typeName: 'A', quantity: 1950, value: 487500, uom: 'Meters', isWastage: false },
+      { typeName: 'Wastage', quantity: 12, value: 0, uom: 'Kgs', isWastage: true }
+    ],
+    planId: 'PLAN-SAMPLE'
+  }, { laborCost: 1397.42, fmtMoney: fmt });
+}
+
 // Normalize a resolved studio record for phase documents. A raw BOM
 // (state.boms entry) is converted with the same builder real prints
 // use; when nothing usable resolves, the representative sample above
@@ -293,4 +375,53 @@ export function buildConsumptionPrintRecord(plan, state, onlyItemCode = null) {
     ],
     sections
   };
+}
+
+// ---------------------------------------------------------------------------
+// Contrast guard (Omer, 2026-10-25 — system-wide print rule): wherever a
+// print block sits on a DARK background its text must be light; dark-on-
+// dark must never render. Saved layouts can carry any band/header text
+// color, so rendering — not the config — enforces the rule: when the
+// configured text color has insufficient contrast against the actual
+// background, it is replaced by whichever of white / ink contrasts best.
+// ---------------------------------------------------------------------------
+export function parseCssColorToRgb(color) {
+  if (!color || typeof color !== 'string') return null;
+  const hex = color.match(/#([0-9a-fA-F]{6}|[0-9a-fA-F]{3})\b/);
+  if (hex) {
+    let h = hex[1];
+    if (h.length === 3) h = h.split('').map((c) => c + c).join('');
+    return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+  }
+  const rgb = color.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
+  if (rgb) return [Number(rgb[1]), Number(rgb[2]), Number(rgb[3])];
+  return null;
+}
+
+export function relativeLuminanceOfRgb([r, g, b]) {
+  const f = (v) => {
+    const s = v / 255;
+    return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+  };
+  return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
+}
+
+export function contrastRatioRgb(rgbA, rgbB) {
+  const la = relativeLuminanceOfRgb(rgbA);
+  const lb = relativeLuminanceOfRgb(rgbB);
+  const hi = Math.max(la, lb);
+  const lo = Math.min(la, lb);
+  return (hi + 0.05) / (lo + 0.05);
+}
+
+// `bg` may be a gradient string — its first color stop decides.
+export function ensureContrastText(bg, fg, minRatio = 3) {
+  const bgRgb = parseCssColorToRgb(bg);
+  if (!bgRgb) return fg;
+  const white = [255, 255, 255];
+  const ink = [27, 30, 46];
+  const ideal = contrastRatioRgb(bgRgb, white) >= contrastRatioRgb(bgRgb, ink) ? '#ffffff' : '#1b1e2e';
+  const fgRgb = parseCssColorToRgb(fg);
+  if (!fgRgb) return ideal;
+  return contrastRatioRgb(bgRgb, fgRgb) >= minRatio ? fg : ideal;
 }

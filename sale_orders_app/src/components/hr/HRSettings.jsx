@@ -5,6 +5,7 @@ import PayrollAccountMapping from './PayrollAccountMapping';
 import { normalizePayrollMappings } from '../../utils/payrollAccountMapping';
 import SalaryAllowanceConfig from './SalaryAllowanceConfig';
 import FlashAMConfig from './FlashAMConfig';
+import BatchLaborConfig from './BatchLaborConfig';
 import { loadHrDepartments } from '../../utils/hrDepartments';
 
 
@@ -164,20 +165,28 @@ export default function HRSettings({ isMobile }) {
           // normalize to 'Footwear' on load; the persist effect below
           // writes the corrected config back through the normal save
           // path. printFullName values are preserved exactly.
-          return parsed.map((d) => (d && typeof d.description === 'string'
-            ? { ...d, description: d.description.replace(/footware/gi, 'Footwear') }
-            : d));
+          return parsed.map((d) => {
+            if (!d) return d;
+            const out = { ...d };
+            if (typeof out.description === 'string') out.description = out.description.replace(/footware/gi, 'Footwear');
+            // AAA print-name spelling correction (Omer, 2026-10-25):
+            // records saved with the old 'Triple A Industry' string are
+            // rewritten to 'AAA Industry'; the persist effect below
+            // writes the corrected config back.
+            if (out.printFullName === 'Triple A Industry') out.printFullName = 'AAA Industry';
+            return out;
+          });
         }
         return parsed;
       }
       return [
         { id: 1, name: 'AJ Synthetic', code: 'AJS', description: 'AJ Synthetic Core Division', head: '', printFullName: 'AJ Synthetic Leather & Footwear Industries Pvt. Limited' },
-        { id: 2, name: 'AAA', code: 'AAA', description: 'AAA Operations Wing', head: '', printFullName: 'Triple A Industry' }
+        { id: 2, name: 'AAA', code: 'AAA', description: 'AAA Operations Wing', head: '', printFullName: 'AAA Industry' }
       ];
     } catch (e) {
       return [
         { id: 1, name: 'AJ Synthetic', code: 'AJS', description: 'AJ Synthetic Core Division', head: '', printFullName: 'AJ Synthetic Leather & Footwear Industries Pvt. Limited' },
-        { id: 2, name: 'AAA', code: 'AAA', description: 'AAA Operations Wing', head: '', printFullName: 'Triple A Industry' }
+        { id: 2, name: 'AAA', code: 'AAA', description: 'AAA Operations Wing', head: '', printFullName: 'AAA Industry' }
       ];
     }
   });
@@ -220,7 +229,7 @@ export default function HRSettings({ isMobile }) {
       code: div.code || '',
       description: div.description || '',
       head: div.head || '',
-      printFullName: div.printFullName || (div.name === 'AJ Synthetic' ? 'AJ Synthetic Leather & Footwear Industries Pvt. Limited' : (div.name === 'AAA' ? 'Triple A Industry' : ''))
+      printFullName: div.printFullName || (div.name === 'AJ Synthetic' ? 'AJ Synthetic Leather & Footwear Industries Pvt. Limited' : (div.name === 'AAA' ? 'AAA Industry' : ''))
     });
     setShowDivisionModal(true);
   };
@@ -770,6 +779,7 @@ export default function HRSettings({ isMobile }) {
     { id: 'payroll_mapping', label: 'Payroll Account Mapping', icon: 'account_balance' },
     { id: 'salary_allowance_config', label: 'Salary & Allowance Configuration', icon: 'payments' },
     { id: 'flasham_config', label: 'Flash AM Configuration', icon: 'fingerprint' },
+    { id: 'batch_labor_config', label: 'Batch Record — Labor Cost Employees', icon: 'engineering' },
     { id: 'subsections', label: 'Sub-sections', icon: 'account_tree' },
     { id: 'permissions', label: 'HR Permissions', icon: 'verified_user' },
     { id: 'roles', label: 'Role Management', icon: 'admin_panel_settings' },
@@ -1060,6 +1070,31 @@ export default function HRSettings({ isMobile }) {
                 </div>
               </div>
 
+              {/* Batch Record Labor Cost Card */}
+              <div
+                onClick={() => {
+                  setActiveCategory('batch_labor_config');
+                  setViewMode('departments');
+                }}
+                className="group relative bg-gradient-to-br from-surface-container-lowest via-surface-container-lowest to-amber-500/5 border border-outline-variant/15 hover:border-amber-500/30 rounded-3xl p-6 shadow-sm hover:shadow-xl hover:shadow-amber-500/5 hover:-translate-y-1.5 transition-all duration-300 ease-out cursor-pointer flex flex-col justify-between min-h-[190px] overflow-hidden"
+              >
+                <div className="absolute top-0 right-0 w-32 h-32 bg-amber-500/5 rounded-full blur-3xl group-hover:bg-amber-500/10 transition-all duration-300 animate-pulse"></div>
+                <div className="flex items-start justify-between relative z-10">
+                  <div className="w-14 h-14 rounded-2xl bg-amber-500/10 text-amber-600 flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
+                    <span className="material-symbols-outlined text-[32px] icon-fill">engineering</span>
+                  </div>
+                  <span className="material-symbols-outlined text-outline-variant group-hover:text-amber-600 transition-colors text-[20px] font-bold">arrow_forward</span>
+                </div>
+                <div className="mt-6 relative z-10">
+                  <h3 className="font-headline text-base font-black text-on-surface">Batch Record — Labor Cost</h3>
+                  <p className="text-[11px] text-on-surface-variant font-medium mt-1 leading-relaxed">AJ Synthetic employees jinki daily salary Batch Record ke estimated labor cost mein ginni jati hai — yahan se select karein.</p>
+                </div>
+                <div className="mt-4 pt-4 border-t border-outline-variant/10 flex items-center justify-between relative z-10 text-[10px] uppercase tracking-wider font-bold">
+                  <span className="text-amber-600 font-body">{(state?.batch_labor_config?.employeeIds || []).length} Selected</span>
+                  <span className="text-on-surface-variant font-body">AJ Synthetic</span>
+                </div>
+              </div>
+
               {/* Flash AM Configuration App-Style Card */}
               <div
                 onClick={() => {
@@ -1149,6 +1184,7 @@ export default function HRSettings({ isMobile }) {
               {activeCategory === 'payroll_mapping' && <PayrollAccountMapping isMobile={isMobile} onBack={() => setViewMode('grid')} />}
               {activeCategory === 'salary_allowance_config' && <SalaryAllowanceConfig isMobile={isMobile} onBack={() => setViewMode('grid')} />}
               {activeCategory === 'flasham_config' && <FlashAMConfig isMobile={isMobile} onBack={() => setViewMode('grid')} />}
+              {activeCategory === 'batch_labor_config' && <BatchLaborConfig isMobile={isMobile} onBack={() => setViewMode('grid')} />}
               {activeCategory === 'subsections' && renderDesktopSubsections()}
               {activeCategory === 'permissions' && renderDesktopPermissions()}
               {activeCategory === 'roles' && renderDesktopRoles()}
@@ -1764,6 +1800,9 @@ export default function HRSettings({ isMobile }) {
     if (activeCategory === 'flasham_config') {
       return <FlashAMConfig isMobile={true} onBack={() => setActiveCategory('departments')} />;
     }
+    if (activeCategory === 'batch_labor_config') {
+      return <BatchLaborConfig isMobile={true} onBack={() => setActiveCategory('departments')} />;
+    }
     if (activeCategory === 'duty_hours') {
       return renderMobileDutyHours();
     }
@@ -1863,6 +1902,23 @@ export default function HRSettings({ isMobile }) {
               <div>
                 <h2 className="font-headline text-sm font-bold text-on-surface">Flash AM Configuration</h2>
                 <p className="font-body text-[10px] text-on-surface-variant font-medium">Terminal Punch Rules</p>
+              </div>
+            </div>
+            <span className="material-symbols-outlined text-outline-variant text-[20px]">chevron_right</span>
+          </div>
+
+          {/* Batch Record Labor Cost Bento Block */}
+          <div
+            onClick={() => setActiveCategory('batch_labor_config')}
+            className="bg-surface-container-lowest rounded-2xl p-5 border border-outline-variant/15 shadow-sm cursor-pointer hover:border-amber-500/30 transition-all flex justify-between items-center"
+          >
+            <div className="flex items-center gap-3 text-amber-600">
+              <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center">
+                <span className="material-symbols-outlined text-[24px]">engineering</span>
+              </div>
+              <div>
+                <h2 className="font-headline text-sm font-bold text-on-surface">Batch Record — Labor Cost Employees</h2>
+                <p className="font-body text-[10px] text-on-surface-variant font-medium">Estimated Labor Cost Selection</p>
               </div>
             </div>
             <span className="material-symbols-outlined text-outline-variant text-[20px]">chevron_right</span>

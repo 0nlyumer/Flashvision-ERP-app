@@ -1,7 +1,7 @@
 import React from 'react';
 import { useApp } from '../../context/AppContext';
 import { DEFAULT_DOCUMENT_SCHEMAS, DEFAULT_LAYOUT_SETTINGS } from '../../utils/printSchemaRegistry';
-import { resolveMargins } from '../../utils/printDesign';
+import { resolveMargins, ensureContrastText } from '../../utils/printDesign';
 
 export default function PrintLayout({
   documentTitle,
@@ -47,13 +47,13 @@ export default function PrintLayout({
   const margins = resolveMargins(layoutConfig);
   const bandColor = layoutConfig.bandColor || '#4338ca';
   const bandColor2 = layoutConfig.bandColor2 || layoutConfig.bandColor || '#4f46e5';
-  const bandTextColor = layoutConfig.bandTextColor || '#ffffff';
+  const bandTextColor = ensureContrastText(`linear-gradient(90deg, ${bandColor}, ${bandColor2})`, layoutConfig.bandTextColor || '#ffffff');
   const headerAlign = layoutConfig.headerAlign || 'left';
 
   const fontFamily = layoutConfig.fontFamily || 'Inter';
   const primaryColor = layoutConfig.primaryColor || '#004277';
   const tableHeaderBgColor = layoutConfig.tableHeaderBgColor || primaryColor;
-  const tableHeaderTextColor = layoutConfig.tableHeaderTextColor || '#ffffff';
+  const tableHeaderTextColor = ensureContrastText(tableHeaderBgColor, layoutConfig.tableHeaderTextColor || '#ffffff');
 
   const logoUrl = printSettings.logoUrl || state?.adminSetup?.logo || state?.adminSetup?.logoUrl || '';
   const address = printSettings.address || state?.adminSetup?.address || 'Plot 42-B, Industrial Zone Phase III, Karachi, Pakistan';
@@ -143,30 +143,43 @@ export default function PrintLayout({
     ...(date ? [{ label: 'Date', value: date }] : []),
     ...extraMeta
   ];
-  const metaCellInner = (
-    <div style={{ padding: '10px 14px', minWidth: '180px' }}>
-      {metaEntries.map((meta, i) => (
-        <div key={i} style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', padding: '4px 0', borderTop: i > 0 ? '1px solid #dde0ea' : 'none' }}>
-          <span style={{ fontSize: '10px', fontWeight: 600, letterSpacing: '1px', color: '#71748c', textTransform: 'uppercase' }}>{meta.label}</span>
-          <span style={{ fontSize: '12px', fontWeight: 700, color: '#1b1e2e', textAlign: 'right' }}>{meta.value}</span>
+  // Meta strip (rider 8-b, 2026-10-25): the meta fields no longer stack
+  // in a narrow side rail — they run side-by-side in a compact grid
+  // under the party/company row, inside the same bordered box: small
+  // caps label ABOVE the value, up to 4 per row; long values span 2
+  // columns when the field count leaves room. Same shape as the
+  // Universal Print Studio header.
+  const allMetaEntries = [
+    ...metaEntries,
+    ...(documentId ? [{ label: 'Document No', value: documentId, mono: true }] : [])
+  ];
+  const metaSpanFor = (meta) => {
+    const isLong = /address|contact/i.test(meta.label || '') || String(meta.value || '').length > 34;
+    return isLong && allMetaEntries.length <= 7 ? 2 : 1;
+  };
+  const metaStrip = allMetaEntries.length > 0 ? (
+    <div
+      style={{
+        display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)',
+        borderTop: '1px solid #dde0ea', background: '#fbfcfe'
+      }}
+    >
+      {allMetaEntries.map((meta, i) => (
+        <div key={i} style={{ padding: '7px 14px 8px', gridColumn: `span ${metaSpanFor(meta)}`, minWidth: 0 }}>
+          <div style={{ fontSize: '9px', fontWeight: 700, letterSpacing: '1.2px', color: '#71748c', textTransform: 'uppercase', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{meta.label}</div>
+          <div style={{ fontSize: '12px', fontWeight: 700, color: '#1b1e2e', lineHeight: 1.3, marginTop: '2px', fontFamily: meta.mono ? 'monospace' : 'inherit', overflowWrap: 'break-word' }}>{meta.value}</div>
         </div>
       ))}
-      {documentId && (
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', padding: '4px 0', borderTop: metaEntries.length > 0 ? '1px solid #dde0ea' : 'none' }}>
-          <span style={{ fontSize: '10px', fontWeight: 600, letterSpacing: '1px', color: '#71748c', textTransform: 'uppercase' }}>Document No</span>
-          <span style={{ fontSize: '12px', fontWeight: 700, color: '#1b1e2e', fontFamily: 'monospace' }}>{documentId}</span>
-        </div>
-      )}
     </div>
-  );
+  ) : null;
   const partyCell = finalParty ? (
-    <div style={{ width: '33%', padding: '12px 14px' }}>
+    <div style={{ width: '38%', padding: '12px 14px' }}>
       <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '1.6px', color: bandColor, textTransform: 'uppercase', marginBottom: '5px' }}>Party / Customer</div>
       <div style={{ fontSize: '16px', fontWeight: 700, lineHeight: 1.25, color: '#1b1e2e' }}>{finalParty}</div>
     </div>
   ) : null;
   const companyCell = (
-    <div style={{ width: finalParty ? '34%' : '58%', padding: '12px 14px', borderLeft: finalParty ? '1px solid #dde0ea' : 'none' }}>
+    <div style={{ flex: 1, padding: '12px 14px', borderLeft: finalParty ? '1px solid #dde0ea' : 'none' }}>
       <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '1.6px', color: bandColor, textTransform: 'uppercase', marginBottom: '5px' }}>Company</div>
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
         {showHeaderLogo && <img src={logoUrl} alt="Logo" style={{ height: '44px', objectFit: 'contain' }} />}
@@ -181,13 +194,6 @@ export default function PrintLayout({
       )}
     </div>
   );
-  const metaWrap = (
-    <div style={{ borderLeft: '1px solid #dde0ea', display: 'flex', flex: 1 }}>
-      {metaCellInner}
-    </div>
-  );
-  const gridCells = [partyCell, companyCell, metaWrap].filter(Boolean);
-  const orderedCells = headerAlign === 'right' ? [...gridCells].reverse() : gridCells;
   const titleBand = (
     <div
       style={{
@@ -227,8 +233,12 @@ export default function PrintLayout({
         </div>
       ) : (
         !hideMetaBlock && (
-          <div style={{ display: 'flex', border: '1px solid #dde0ea', borderRadius: '8px', overflow: 'hidden', marginBottom: '6px' }}>
-            {orderedCells}
+          <div style={{ border: '1px solid #dde0ea', borderRadius: '8px', overflow: 'hidden', marginBottom: '6px' }}>
+            <div style={{ display: 'flex', flexDirection: headerAlign === 'right' ? 'row-reverse' : 'row' }}>
+              {partyCell}
+              {companyCell}
+            </div>
+            {metaStrip}
           </div>
         )
       )}

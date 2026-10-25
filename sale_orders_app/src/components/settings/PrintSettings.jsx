@@ -4,6 +4,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
 import { useDialog } from '../../context/DialogContext';
 import { supabase } from '../../utils/supabaseClient';
+import { ensureContrastText } from '../../utils/printDesign';
 import {
   SYSTEM_DOCUMENTS,
   DOCUMENT_MODULES,
@@ -1148,7 +1149,7 @@ export default function PrintSettings() {
               <div className="mb-6 overflow-x-auto">
                 <table className="w-full text-xs border-collapse border border-slate-300">
                   <thead>
-                    <tr style={{ backgroundColor: activeLayout.tableHeaderBgColor || '#004277', color: activeLayout.tableHeaderTextColor || '#ffffff' }}>
+                    <tr style={{ backgroundColor: activeLayout.tableHeaderBgColor || '#004277', color: ensureContrastText(activeLayout.tableHeaderBgColor || '#004277', activeLayout.tableHeaderTextColor || '#ffffff') }}>
                       {(activeLayout.gridColumns || []).map((col, colIndex) => {
                         if (col.enabled === false) return null;
                         const isSelected = selectedElement?.key === col.key;

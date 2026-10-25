@@ -756,6 +756,7 @@ export default function HRSalaryGeneration({ isMobile }) {
       loanInstallment: loanInstallment,
       netAdjustmentBalance: netAdjustmentBalance,
       netSalary: r.netSalary || 0,
+      division: r.division || r.section || '',
       printFullName: getDivisionPrintFullName(r.division || r.section || '')
     };
   }, [selectedRecordForDetail, payrollPeriod, state.hr_uploaded_attendance]);

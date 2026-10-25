@@ -12,12 +12,13 @@ import {
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { applyTheme } from '../utils/theme';
 import { supabase } from '../utils/supabaseClient';
-import { STEP1_ENTITY_TABLES, loadStep1EntitiesFromTables, syncEntityDiffToTable, recordKeyWithFallback, loadAdminSetupFromTable, syncAdminSetupToTable, loadFGComboConfigFromTable, syncFGComboConfigToTable, loadFlashAmConfigFromTable, syncFlashAmConfigToTable, loadSalaryPrintSettingsFromTable, syncSalaryPrintSettingsToTable, loadPayrollAccountMappingFromTable, syncPayrollAccountMappingToTable, loadCategoryPrefixesFromTable, syncCategoryPrefixesToTable, loadScalarsFromTable, syncScalarsToTable, loadCountersFromTable, syncCountersToTable, loadBatchOutputTypesFromTable, syncBatchOutputTypesToTable } from '../utils/entityTables';
+import { STEP1_ENTITY_TABLES, loadStep1EntitiesFromTables, syncEntityDiffToTable, recordKeyWithFallback, loadAdminSetupFromTable, syncAdminSetupToTable, loadFGComboConfigFromTable, syncFGComboConfigToTable, loadFlashAmConfigFromTable, syncFlashAmConfigToTable, loadSalaryPrintSettingsFromTable, syncSalaryPrintSettingsToTable, loadPayrollAccountMappingFromTable, syncPayrollAccountMappingToTable, loadCategoryPrefixesFromTable, syncCategoryPrefixesToTable, loadScalarsFromTable, syncScalarsToTable, loadCountersFromTable, syncCountersToTable, loadBatchOutputTypesFromTable, syncBatchOutputTypesToTable, loadBatchLaborConfigFromTable, syncBatchLaborConfigToTable } from '../utils/entityTables';
 import { formatLineCode, maxLineCodeNumber } from '../utils/itemCodes';
 import { getInitialFGConfig, saveFGConfig, normalizeFGConfig } from '../utils/fgCombinationUtils';
 import { getInitialFlashAmConfig, normalizeFlashAmConfig } from '../utils/flashAmConfig';
 import { getInitialSalaryPrintSettings, normalizeSalaryPrintSettings } from '../utils/salaryPrintSettings';
 import { getInitialPayrollMappings, normalizePayrollMappings } from '../utils/payrollAccountMapping';
+import { getInitialBatchLaborConfig, normalizeBatchLaborConfig } from '../utils/batchLaborCost';
 import { DEFAULT_CHART_OF_ACCOUNTS } from '../utils/financeEngine';
 import { invoiceSourceLabel } from '../utils/invoiceSource';
 
@@ -36,6 +37,7 @@ const initialMockState = {
   flash_am_config: getInitialFlashAmConfig(),
   salary_print_settings: getInitialSalaryPrintSettings(),
   payroll_account_mapping: getInitialPayrollMappings(),
+  batch_labor_config: getInitialBatchLaborConfig(),
   customers: [],
   suppliers: [],
   items: [],
@@ -667,6 +669,8 @@ export const AppProvider = ({ children }) => {
   const countersSnapshotRef = useRef(null);
   const batchOutputTypesLoadedRef = useRef(false);
   const batchOutputTypesSnapshotRef = useRef(null);
+  const batchLaborConfigLoadedRef = useRef(false);
+  const batchLaborConfigSnapshotRef = useRef(null);
   const lsDebounceRef = useRef({ hr_employees_list: null, hr_uploaded_attendance: null });
 
   const safeLocalStorageSet = (key, value) => {
@@ -1438,6 +1442,7 @@ export const AppProvider = ({ children }) => {
         const scalarsFromTable = await loadScalarsFromTable();
         const countersFromTable = await loadCountersFromTable();
         const batchOutputTypesFromTable = await loadBatchOutputTypesFromTable();
+        const batchLaborConfigFromTable = await loadBatchLaborConfigFromTable();
         setState(prev => {
           const next = { ...prev };
           const seedSource = {};
@@ -1546,6 +1551,19 @@ export const AppProvider = ({ children }) => {
             batchOutputTypesSnapshotRef.current = prev.batchOutputTypes || null;
           }
           batchOutputTypesLoadedRef.current = true;
+          // BATCH LABOR (2026-10-25): the app_config copy of the Batch
+          // Record labor-cost employee selection wins when present; when
+          // the table has none yet, the snapshot stays null so the
+          // write-through effect seeds it with the default (empty)
+          // selection — the selection can never be lost in a blob flip.
+          if (batchLaborConfigFromTable) {
+            const normalizedBatchLabor = normalizeBatchLaborConfig(batchLaborConfigFromTable);
+            next.batch_labor_config = normalizedBatchLabor;
+            batchLaborConfigSnapshotRef.current = normalizedBatchLabor;
+          } else {
+            batchLaborConfigSnapshotRef.current = null;
+          }
+          batchLaborConfigLoadedRef.current = true;
           seedSnapshots(seedSource);
           return next;
         });
@@ -1571,6 +1589,8 @@ export const AppProvider = ({ children }) => {
           countersLoadedRef.current = true;
           batchOutputTypesSnapshotRef.current = prev.batchOutputTypes || null;
           batchOutputTypesLoadedRef.current = true;
+          batchLaborConfigSnapshotRef.current = null;
+          batchLaborConfigLoadedRef.current = true;
           return prev;
         });
       } finally {
@@ -4997,6 +5017,7 @@ export const AppProvider = ({ children }) => {
   const categoryPrefixesForSync = state.categoryPrefixes;
   const countersForSync = state.counters;
   const batchOutputTypesForSync = state.batchOutputTypes;
+  const batchLaborConfigForSync = state.batch_labor_config;
   const scalarsBundleForSync = { buildVersion: state.buildVersion, lastUpdatedBy: state.lastUpdatedBy, productionTarget: state.productionTarget, isGlobalPaginated: state.isGlobalPaginated };
   const scalarsWatchKey = JSON.stringify({ buildVersion: state.buildVersion, productionTarget: state.productionTarget, isGlobalPaginated: state.isGlobalPaginated });
   useEffect(() => {
@@ -5179,6 +5200,22 @@ export const AppProvider = ({ children }) => {
     }, 250);
     return () => clearTimeout(timer);
   }, [batchOutputTypesForSync]);
+
+  // BATCH LABOR (2026-10-25): the Batch Record labor-cost employee
+  // selection write-through to app_config on change — same durable
+  // pattern as flashAmConfig. A null snapshot means "table had no copy
+  // at load", so the first effect run seeds it with the current
+  // (default) selection.
+  useEffect(() => {
+    if (!batchLaborConfigLoadedRef.current) return;
+    if (!batchLaborConfigForSync || typeof batchLaborConfigForSync !== 'object') return;
+    if (batchLaborConfigSnapshotRef.current === batchLaborConfigForSync) return;
+    const timer = setTimeout(() => {
+      batchLaborConfigSnapshotRef.current = batchLaborConfigForSync;
+      syncBatchLaborConfigToTable(batchLaborConfigForSync);
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [batchLaborConfigForSync]);
 
   const setCollection = (collection, data) => {
     setState(prev => {

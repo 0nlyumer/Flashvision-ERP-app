@@ -1,5 +1,6 @@
 import React, { useRef } from 'react';
 import { createPortal } from 'react-dom';
+import { getPayslipIdentity } from '../../utils/divisionPrintName';
 
 // Number to Words Converter (Pakistani / South Asian & Western standard)
 // Paisa included when non-zero (Omer, 2026-10-24): "Rupees … and Paisa …
@@ -49,6 +50,11 @@ export default function HRPayslipModal({ isOpen, onClose, slip }) {
   // For the one truly signed line (Net Overtime & Adjustment Balance):
   // the sign comes from the value itself; zero renders "+ Rs 0.00".
   const formatSignedPKR = (val) => `${(Number(val) || 0) < 0 ? '-' : '+'} Rs ${formatAbsPKR(val)}`;
+
+  // Division identity (Omer, 2026-10-25): heading, monogram and footer
+  // name follow the employee's division — AJ slips unchanged, AAA slips
+  // carry 'AAA' / 'AAA Industry' (never the AJ legal name).
+  const identity = getPayslipIdentity(slip);
 
   const netAdjBal = slip.netAdjustmentBalance || (slip.otPay + slip.allowances - slip.absentDeduction - slip.dtDeduction - slip.fines - slip.advance - slip.loanInstallment);
 
@@ -104,14 +110,14 @@ export default function HRPayslipModal({ isOpen, onClose, slip }) {
                   rounded-corner outline box ~44×34, dark border, no fill,
                   bold "AJ" centered (generate_payslip.py reference). */}
               <div className="w-[44px] h-[34px] rounded-[6px] border-2 border-slate-900 flex items-center justify-center text-slate-900 font-headline font-bold text-[19px] shrink-0">
-                AJ
+                {identity.monogram}
               </div>
               <div>
                 <h1 className="font-headline text-2xl font-black text-slate-900 tracking-tight leading-tight">
-                  AJ SYNTHETIC
+                  {identity.heading}
                 </h1>
                 <p className="text-[11px] text-slate-500 font-medium">
-                  Payroll Audit Division • {slip.printFullName || 'AJ Synthetic Leather & Footwear Industries Pvt. Limited'}
+                  Payroll Audit Division • {identity.fullName}
                 </p>
               </div>
             </div>
@@ -358,7 +364,7 @@ export default function HRPayslipModal({ isOpen, onClose, slip }) {
 
           {/* 7. Footer */}
           <div className="pt-3 border-t border-slate-200 flex justify-between items-center text-[10px] text-slate-500 font-medium">
-            <span>AJ Synthetic Leather &amp; Footwear Industries Pvt. Limited • Confidential Pay Sheet</span>
+            <span>{identity.fullName} • Confidential Pay Sheet</span>
             <span className="font-headline font-black text-slate-800 tracking-wider">POWERED BY FLASHVISION</span>
             <span>Page 1 of 1</span>
           </div>

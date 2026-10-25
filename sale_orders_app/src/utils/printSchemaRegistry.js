@@ -1,5 +1,7 @@
 // Comprehensive Print Schema Registry for 26 ERP System Documents
 
+import { buildSampleBatchRecordPrintRecord } from './printDesign';
+
 export const DOCUMENT_MODULES = [
   { id: 'oms', name: 'OMS Module', icon: 'shopping_cart' },
   { id: 'production', name: 'Production Module', icon: 'precision_manufacturing' },
@@ -336,19 +338,41 @@ export const DEFAULT_DOCUMENT_SCHEMAS = {
   },
 
   master_batch_record: {
+    // Real Batch Record print (finalized 2026-10-25): the record is built
+    // by buildBatchRecordPrintRecord (utils/printDesign) from the actual
+    // batch — meta + costing summary as header fields (including the
+    // Estimated Labor Cost line), consumption details as the line table.
     ...DEFAULT_LAYOUT_SETTINGS,
     headerFields: [
-      { key: 'mbr_no', label: 'MBR Code', enabled: true, width: 'span-1' },
+      { key: 'id', label: 'Record ID', enabled: false, width: 'span-1' },
+      { key: 'batch_code', label: 'Batch Reference', enabled: true, width: 'span-1' },
       { key: 'product_name', label: 'Product Name', enabled: true, width: 'span-2' },
-      { key: 'batch_size', label: 'Target Batch Size', enabled: true, width: 'span-1' },
-      { key: 'qa_sign', label: 'QA Clear Code', enabled: true, width: 'span-1' }
+      { key: 'production_date', label: 'Production Date', enabled: true, width: 'span-1' },
+      { key: 'plan_id', label: 'Plan ID', enabled: true, width: 'span-1' },
+      { key: 'status', label: 'Batch Status', enabled: true, width: 'span-1' },
+      { key: 'requested_qty', label: 'Requested Output', enabled: true, width: 'span-1' },
+      { key: 'produced_qty', label: 'Actual Output', enabled: true, width: 'span-1' },
+      { key: 'efficiency', label: 'Yield Efficiency', enabled: true, width: 'span-1' },
+      { key: 'finished_goods_value', label: 'Finished Goods Value', enabled: true, width: 'span-1' },
+      { key: 'wastage_value', label: 'Wastage Loss Value', enabled: true, width: 'span-1' },
+      { key: 'raw_material_cost', label: 'Raw Material Cost (BOM)', enabled: true, width: 'span-1' },
+      { key: 'other_consumption_cost', label: 'Other Consumption Cost', enabled: true, width: 'span-1' },
+      { key: 'est_labor_cost', label: 'Estimated Labor Cost', enabled: true, width: 'span-1' },
+      { key: 'cost_per_unit', label: 'Cost per Unit Finished Good', enabled: true, width: 'span-1' }
     ],
     gridColumns: [
-      { key: 'step_no', label: 'Step #', enabled: true, width: '10%', align: 'center' },
-      { key: 'operation', label: 'Operation Name', enabled: true, width: '30%', align: 'left' },
-      { key: 'parameters', label: 'Standard Parameters', enabled: true, width: '30%', align: 'left' },
-      { key: 'spec_limit', label: 'Specification Limit', enabled: true, width: '15%', align: 'center' },
-      { key: 'sign_off', label: 'Operator Sign', enabled: true, width: '15%', align: 'center' }
+      { key: 'serial_no', label: 'Sr #', enabled: true, width: '6%', align: 'center' },
+      { key: 'material_name', label: 'Material Name', enabled: true, width: '30%', align: 'left' },
+      { key: 'target_qty', label: 'Target Qty', enabled: true, width: '14%', align: 'right' },
+      { key: 'actual_qty', label: 'Actual Qty', enabled: true, width: '14%', align: 'right' },
+      { key: 'unit_price', label: 'Unit Price (Rs.)', enabled: true, width: '12%', align: 'right' },
+      { key: 'total_cost', label: 'Total Cost (Rs.)', enabled: true, width: '14%', align: 'right', total: true },
+      { key: 'variance', label: 'Variance', enabled: true, width: '10%', align: 'center' }
+    ],
+    signatures: [
+      { key: 'sig_produced', label: 'Produced By (Operator)', size: '1/3', type: 'text' },
+      { key: 'sig_qc', label: 'Quality Control Assurance', size: '1/3', type: 'text' },
+      { key: 'sig_manager', label: 'Plant Manager Sign-Off', size: '1/3', type: 'text' }
     ]
   },
 
@@ -1009,6 +1033,11 @@ export function getMockPreviewData(docType) {
         ],
         totals: { batchComponentsCount: 3 }
       };
+
+    case 'master_batch_record':
+      // Filled representative batch record (same shape the real builder
+      // produces) so the test preview is never a generic mock.
+      return buildSampleBatchRecordPrintRecord();
 
     case 'batch_closing_history':
       return {

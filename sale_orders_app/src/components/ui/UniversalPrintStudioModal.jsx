@@ -19,7 +19,8 @@ import {
   buildCsvBlob
 } from '../../utils/printExportUtils';
 import PrintStudioShell from './PrintStudioShell';
-import { resolveMargins, amountInWords, fmtQty, ensurePhaseMatrixRecord } from '../../utils/printDesign';
+import { resolveMargins, amountInWords, fmtQty, ensurePhaseMatrixRecord , ensureContrastText } from '../../utils/printDesign';
+import { getDivisionPrintFullName } from '../../utils/divisionPrintName';
 
 const PAPER_DIMENSIONS = {
   A4: { width: '210mm', minHeight: '297mm', label: 'A4 (210 × 297 mm)' },
@@ -114,27 +115,10 @@ function MetaGridHeader({ layout, companyName, companyLegal, companyAddress, par
     </div>
   );
 
-  const metaCell = (width) => (
-    <div style={{ width, padding: '2.6mm 4mm' }}>
-      {metaRows.map((row, i) => (
-        <div
-          key={i}
-          style={{
-            display: 'flex', justifyContent: 'space-between', alignItems: 'baseline',
-            padding: '1.1mm 0', borderTop: i > 0 ? `1px solid ${DESIGN.line}` : 'none'
-          }}
-        >
-          <span style={{ fontSize: '7pt', fontWeight: 600, letterSpacing: '1.1px', color: DESIGN.muted, textTransform: 'uppercase' }}>{row.label}</span>
-          <span style={{ fontSize: '9.5pt', fontWeight: row.strong ? 800 : 600, fontVariantNumeric: 'tabular-nums', color: DESIGN.ink }}>{row.value}</span>
-        </div>
-      ))}
-    </div>
-  );
-
   const bandEl = (
     <div
       style={{
-        marginTop: '3mm', background: band, color: layout.bandTextColor || '#fff', borderRadius: '6px',
+        marginTop: '3mm', background: band, color: ensureContrastText(band, layout.bandTextColor || '#fff'), borderRadius: '6px',
         padding: '2.4mm 4.5mm', display: 'flex', justifyContent: align === 'center' ? 'center' : 'space-between',
         alignItems: 'center', gap: '4mm', printColorAdjust: 'exact', WebkitPrintColorAdjust: 'exact'
       }}
@@ -173,33 +157,46 @@ function MetaGridHeader({ layout, companyName, companyLegal, companyAddress, par
     );
   }
 
-  const cells = [];
-  if (party) {
-    cells.push(
-      <div key="party" style={{ width: '33%', padding: '3.2mm 4mm 3.4mm' }}>
-        <div style={{ fontSize: '6.5pt', fontWeight: 700, letterSpacing: '1.6px', color: accent, textTransform: 'uppercase', marginBottom: '1.4mm' }}>{party.label}</div>
-        <div style={{ fontSize: '12.5pt', fontWeight: 700, lineHeight: 1.25, color: DESIGN.ink }}>{party.value}</div>
-      </div>
-    );
-  }
-  cells.push(
-    <div key="company" style={{ width: party ? '34%' : '58%', padding: '3.2mm 4mm 3.4mm', borderLeft: party ? `1px solid ${DESIGN.line}` : 'none' }}>
-      {companyBlock(false)}
-    </div>
-  );
-  if (metaRows.length > 0) {
-    cells.push(
-      <div key="meta" style={{ borderLeft: `1px solid ${DESIGN.line}`, display: 'flex' }}>
-        {metaCell(party ? '33%' : '42%')}
-      </div>
-    );
-  }
-  const ordered = align === 'right' ? [...cells].reverse() : cells;
+  // Meta fields: full-width compact grid strip UNDER the party/company
+  // row, inside the same bordered box (Omer, 2026-10-25 — the old 33%
+  // side rail crushed 8 Sale Order fields into per-word wraps and ate
+  // ~40% of the page). Label sits ABOVE the value; up to 4 fields per
+  // row; a long value (address / contact) takes 2 columns when the
+  // field count leaves room in the 2-row budget for typical documents.
+  const metaSpanFor = (row) => {
+    const isLong = /address|contact/i.test(row.label || '') || String(row.value || '').length > 34;
+    return isLong && metaRows.length <= 7 ? 2 : 1;
+  };
 
   return (
     <>
-      <div style={{ display: 'flex', border: `1px solid ${DESIGN.line}`, borderRadius: '8px', overflow: 'hidden' }}>
-        {ordered}
+      <div style={{ border: `1px solid ${DESIGN.line}`, borderRadius: '8px', overflow: 'hidden' }}>
+        <div style={{ display: 'flex', flexDirection: align === 'right' ? 'row-reverse' : 'row' }}>
+          {party && (
+            <div style={{ width: '38%', padding: '3.2mm 4mm 3.4mm' }}>
+              <div style={{ fontSize: '6.5pt', fontWeight: 700, letterSpacing: '1.6px', color: accent, textTransform: 'uppercase', marginBottom: '1.4mm' }}>{party.label}</div>
+              <div style={{ fontSize: '12.5pt', fontWeight: 700, lineHeight: 1.25, color: DESIGN.ink }}>{party.value}</div>
+            </div>
+          )}
+          <div style={{ flex: 1, padding: '3.2mm 4mm 3.4mm', borderLeft: party ? `1px solid ${DESIGN.line}` : 'none' }}>
+            {companyBlock(!party)}
+          </div>
+        </div>
+        {metaRows.length > 0 && (
+          <div
+            style={{
+              display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)',
+              borderTop: `1px solid ${DESIGN.line}`, background: '#fbfcfe'
+            }}
+          >
+            {metaRows.map((row, i) => (
+              <div key={i} style={{ padding: '1.9mm 4mm 2.1mm', gridColumn: `span ${metaSpanFor(row)}`, minWidth: 0 }}>
+                <div style={{ fontSize: '6.3pt', fontWeight: 700, letterSpacing: '1.2px', color: DESIGN.muted, textTransform: 'uppercase', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{row.label}</div>
+                <div style={{ fontSize: '9.3pt', fontWeight: row.strong ? 800 : 600, color: DESIGN.ink, lineHeight: 1.3, marginTop: '0.5mm', fontVariantNumeric: 'tabular-nums', overflowWrap: 'break-word' }}>{row.value}</div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
       {bandEl}
     </>
@@ -283,7 +280,7 @@ function PhaseMatrixSheet({ record, layout, companyName, companyLegal, margins, 
                   display: 'flex', flexDirection: 'column'
                 }}
               >
-                <div style={{ background: layout.tableHeaderBgColor || DESIGN.dark, color: layout.tableHeaderTextColor || '#fff', padding: '1.8mm 3mm 2mm', printColorAdjust: 'exact', WebkitPrintColorAdjust: 'exact' }}>
+                <div style={{ background: layout.tableHeaderBgColor || DESIGN.dark, color: ensureContrastText(layout.tableHeaderBgColor || DESIGN.dark, layout.tableHeaderTextColor || '#fff'), padding: '1.8mm 3mm 2mm', printColorAdjust: 'exact', WebkitPrintColorAdjust: 'exact' }}>
                   <div style={{ fontSize: '6.3pt', fontWeight: 700, letterSpacing: '1.8px', textTransform: 'uppercase', opacity: 0.75 }}>
                     Phase {pIdx + 1}
                   </div>
@@ -376,6 +373,7 @@ function UniversalPrintStudioModalInner({
   const isPhaseDoc = resolvedRecord?.renderMode === 'phase_matrix'
     || documentType === 'bom_master' || documentType === 'consumption_history';
   const isPlanDoc = documentType === 'production_plan';
+  const isBatchDoc = documentType === 'master_batch_record';
   const isPendingDoc = documentType === 'pending_orders';
 
   // 2. Load stored layout configuration (defaults + schema + saved).
@@ -820,7 +818,7 @@ function UniversalPrintStudioModalInner({
               <div className="p-2.5 rounded-xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900/50 text-[11px]">
                 <div className="font-bold">Active Layout Distribution:</div>
                 {pages.map((pItems, idx) => (
-                  <div key={idx} className="flex justify-between"><span>Page {idx + 1}:</span><strong>{pItems.length} rows</strong></div>
+                  <div key={idx} className="flex justify-between"><span>Page {idx + 1}:</span><strong>{isPhaseDoc ? flattenedPhaseRows.length : pItems.length} rows</strong></div>
                 ))}
               </div>
             </div>
@@ -1047,7 +1045,7 @@ function UniversalPrintStudioModalInner({
     const fitScale = scaleMode === 'fit' ? (fitScales[pageIdx] ?? 1) : 1;
     const grandTotal = resolvedRecord?.totals?.grandTotal;
     const totalsBarBg = layoutConfig.goldenTotalRow ? '#fbbf24' : (layoutConfig.totalsColor || '#232946');
-    const totalsBarText = layoutConfig.goldenTotalRow ? '#232946' : '#ffffff';
+    const totalsBarText = layoutConfig.goldenTotalRow ? '#232946' : ensureContrastText(totalsBarBg, '#ffffff');
     let runningItems = 0;
     pages.slice(0, pageIdx).forEach((pg) => { runningItems += pg.filter((r) => !r._isGroup).length; });
 
@@ -1076,9 +1074,9 @@ function UniversalPrintStudioModalInner({
           {showHeader && (
             <MetaGridHeader
               layout={layoutConfig}
-              companyName={isPlanDoc ? 'AJ SYNTHETIC' : companyName}
-              companyLegal={isPlanDoc ? 'AJ Synthetic Leather & Footwear Industries Pvt. Limited' : ''}
-              companyAddress={isPlanDoc ? '' : companyAddress}
+              companyName={isPlanDoc || isBatchDoc ? 'AJ SYNTHETIC' : companyName}
+              companyLegal={isPlanDoc ? 'AJ Synthetic Leather & Footwear Industries Pvt. Limited' : isBatchDoc ? (getDivisionPrintFullName('AJ Synthetic') || 'AJ Synthetic Leather & Footwear Industries Pvt. Limited') : ''}
+              companyAddress={isPlanDoc || isBatchDoc ? '' : companyAddress}
               party={party}
               metaRows={metaRows}
               docTitle={docTitleDisplay}
@@ -1091,7 +1089,7 @@ function UniversalPrintStudioModalInner({
             <thead>
               <tr>
                 {activeCols.map((col, ci) => (
-                  <th key={ci} style={{ background: layoutConfig.tableHeaderBgColor || DESIGN.dark, color: layoutConfig.tableHeaderTextColor || '#fff', fontSize: '7pt', fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', padding: '2mm 2.5mm', textAlign: col.align || 'left', width: col.width, printColorAdjust: 'exact', WebkitPrintColorAdjust: 'exact' }}>
+                  <th key={ci} style={{ background: layoutConfig.tableHeaderBgColor || DESIGN.dark, color: ensureContrastText(layoutConfig.tableHeaderBgColor || DESIGN.dark, layoutConfig.tableHeaderTextColor || '#fff'), fontSize: '7pt', fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', padding: '2mm 2.5mm', textAlign: col.align || 'left', width: col.width, printColorAdjust: 'exact', WebkitPrintColorAdjust: 'exact' }}>
                     {col.label}
                   </th>
                 ))}
@@ -1185,7 +1183,7 @@ function UniversalPrintStudioModalInner({
     <PrintStudioShell
       onClose={onClose}
       title={docTitleDisplay}
-      subtitle={`Universal Print Studio • Rows: ${resolvedLineItems.length} • Pages: ${isPhaseDoc ? 1 : pages.length}`}
+      subtitle={`Universal Print Studio • Rows: ${isPhaseDoc ? flattenedPhaseRows.length : resolvedLineItems.length} • Pages: ${isPhaseDoc ? 1 : pages.length}`}
       paperLabel={currentPaper.label}
       paperWidth={paperWidth}
       paperHeight={paperHeight}

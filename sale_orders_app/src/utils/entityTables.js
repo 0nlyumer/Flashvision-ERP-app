@@ -664,3 +664,37 @@ export const syncBatchOutputTypesToTable = async (types) => {
     console.warn('[EntityTables] batchOutputTypes write-through failed:', err?.message || err);
   }
 };
+
+// --- Batch Record labor-cost selection (app_config) — 2026-10-25 -----------
+// The HR Settings selection of AJ Synthetic employees whose daily salary
+// cost feeds the Batch Record estimated labor cost rides in app_config
+// under key 'batchLaborConfig' ({ employeeIds: [...] }), mirroring
+// flashAmConfig: the table copy wins on load and changes write through,
+// so the selection is identical on every device and can never be lost
+// in a blob flip or browser swap.
+
+export const loadBatchLaborConfigFromTable = async () => {
+  try {
+    const { data, error } = await supabase
+      .from('app_config')
+      .select('data')
+      .eq('key', 'batchLaborConfig')
+      .maybeSingle();
+    if (error || !data || typeof data.data !== 'object' || data.data === null) return null;
+    return data.data;
+  } catch (_) {
+    return null;
+  }
+};
+
+export const syncBatchLaborConfigToTable = async (config) => {
+  if (!config || typeof config !== 'object') return;
+  try {
+    const { error } = await supabase
+      .from('app_config')
+      .upsert({ key: 'batchLaborConfig', data: config, updated_at: new Date().toISOString() }, { onConflict: 'key' });
+    if (error) throw error;
+  } catch (err) {
+    console.warn('[EntityTables] batchLaborConfig write-through failed:', err?.message || err);
+  }
+};
