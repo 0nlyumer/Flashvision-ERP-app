@@ -59,6 +59,28 @@ export const SYSTEM_DOCUMENTS = [
   { id: 'hr_payslip', name: 'Salary Generation / Payslip', module: 'hr', icon: 'payments', code: 'PAY' }
 ];
 
+// Font choices for the print studio's Font Family picker (same list the
+// Print Settings designer offers — one source so the two never drift).
+export const FONT_OPTIONS = [
+  { id: 'Inter', name: 'Inter (Sans-serif)' },
+  { id: 'Roboto', name: 'Roboto' },
+  { id: 'Outfit', name: 'Outfit' },
+  { id: 'Playfair Display', name: 'Playfair (Serif)' },
+  { id: 'Courier Prime', name: 'Courier Prime (Monospace)' },
+  { id: 'Poppins', name: 'Poppins' },
+  { id: 'Montserrat', name: 'Montserrat' },
+  { id: 'Open Sans', name: 'Open Sans' },
+  { id: 'Lato', name: 'Lato' },
+  { id: 'Nunito', name: 'Nunito' },
+  { id: 'Rubik', name: 'Rubik' },
+  { id: 'Work Sans', name: 'Work Sans' },
+  { id: 'DM Sans', name: 'DM Sans' },
+  { id: 'Plus Jakarta Sans', name: 'Plus Jakarta Sans' },
+  { id: 'IBM Plex Sans', name: 'IBM Plex Sans' },
+  { id: 'Source Sans 3', name: 'Source Sans 3' },
+  { id: 'Figtree', name: 'Figtree' }
+];
+
 export const DEFAULT_LAYOUT_SETTINGS = {
   paperSize: 'A4', // A4, Letter, Thermal, A5, Legal
   orientation: 'portrait',

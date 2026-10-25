@@ -1,5 +1,5 @@
 import React from 'react';
-import { amountInWords, fmtQty, ensureContrastText, uomSymbol } from '../../utils/printDesign';
+import { amountInWords, fmtQty, ensureContrastText, resolveBandTextColor, uomSymbol } from '../../utils/printDesign';
 
 // ---------------------------------------------------------------------------
 // Shared print sheet parts — the finalized print family (Meta-Grid header,
@@ -35,7 +35,11 @@ export const DESIGN = {
 // ---------------------------------------------------------------------------
 export function MetaGridHeader({ layout, companyName, companyLegal, companyAddress, party, metaRows, docTitle, docSub, planVariant, onSelectMeta = null, selectedMetaKey = null, onSelectParty = null, partySelected = false }) {
   const band = `linear-gradient(90deg, ${layout.bandColor || '#4338ca'}, ${layout.bandColor2 || layout.bandColor || '#4f46e5'})`;
-  const bandText = ensureContrastText(band, layout.bandTextColor || '#fff');
+  // Band text derives from the band colors alone (resolveBandTextColor) —
+  // never from a stored bandTextColor — and is applied inline AND through
+  // the .fv-bandtext CSS variable (index.css, !important), so no saved
+  // layout or global rule can leave dark text on a dark band.
+  const bandText = resolveBandTextColor(band);
   const align = layout.headerAlign || 'left';
   const accent = layout.bandColor || '#4338ca';
 
@@ -69,12 +73,13 @@ export function MetaGridHeader({ layout, companyName, companyLegal, companyAddre
       style={{
         marginTop: '3mm', background: band, color: bandText, borderRadius: '6px',
         padding: '2.4mm 4.5mm', display: 'flex', justifyContent: align === 'center' ? 'center' : 'space-between',
-        alignItems: 'center', gap: '4mm', printColorAdjust: 'exact', WebkitPrintColorAdjust: 'exact'
+        alignItems: 'center', gap: '4mm', printColorAdjust: 'exact', WebkitPrintColorAdjust: 'exact',
+        '--fv-bandtext': bandText
       }}
     >
-      <div style={{ fontSize: '13pt', fontWeight: 700, letterSpacing: '3.5px', textAlign: align === 'center' ? 'center' : 'left', color: bandText }}>{docTitle}</div>
+      <div className="fv-bandtext" style={{ fontSize: '13pt', fontWeight: 700, letterSpacing: '3.5px', textAlign: align === 'center' ? 'center' : 'left', color: bandText }}>{docTitle}</div>
       {docSub && align !== 'center' && (
-        <div style={{ fontSize: '7.5pt', fontWeight: 600, letterSpacing: '1.6px', textTransform: 'uppercase', opacity: 0.9, color: bandText }}>{docSub}</div>
+        <div className="fv-bandtext" style={{ fontSize: '7.5pt', fontWeight: 600, letterSpacing: '1.6px', textTransform: 'uppercase', opacity: 0.9, color: bandText }}>{docSub}</div>
       )}
     </div>
   );
@@ -181,6 +186,7 @@ export function PhaseMatrixSheet({ record, layout, companyName, companyLegal, ma
 
   return (
     <div
+      data-contrast-ignore
       className="bg-white text-slate-900 shadow-2xl relative print-preview-page"
       style={{
         width: paperWidth,
@@ -321,6 +327,7 @@ export function PrintTableSheet({
   return (
     <div
       ref={pageRef || undefined}
+      data-contrast-ignore
       className="bg-white text-slate-900 shadow-2xl relative print-preview-page"
       style={{
         width: paperWidth,

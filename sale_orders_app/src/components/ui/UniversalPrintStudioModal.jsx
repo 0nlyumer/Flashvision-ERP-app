@@ -8,7 +8,8 @@ import {
   DEFAULT_LAYOUT_SETTINGS,
   discoverDocumentSchema,
   getMockPreviewData,
-  getSampleRecordFromState
+  getSampleRecordFromState,
+  FONT_OPTIONS
 } from '../../utils/printSchemaRegistry';
 import {
   exportDocumentToPdf,

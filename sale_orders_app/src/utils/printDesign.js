@@ -585,3 +585,14 @@ export function ensureContrastText(bg, fg, minRatio = 3) {
   if (!fgRgb) return ideal;
   return worstRatio(fgRgb) >= minRatio ? fg : ideal;
 }
+
+// Title-band text color (Omer, 2026-10-25 — final construction): the band's
+// text color is DERIVED FROM THE BAND COLORS ALONE, white-preferred. A saved
+// layout's bandTextColor is deliberately never consulted: in live sessions a
+// stored value left the title near-black on the purple band through three
+// successive guard fixes, while the same code rendered white in isolation.
+// Deriving from the band itself removes the stored value from the equation —
+// dark bands always get white text, light bands get ink, by construction.
+export function resolveBandTextColor(bandCss) {
+  return ensureContrastText(bandCss, '#ffffff');
+}

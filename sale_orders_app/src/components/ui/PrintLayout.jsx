@@ -1,7 +1,7 @@
 import React from 'react';
 import { useApp } from '../../context/AppContext';
 import { DEFAULT_DOCUMENT_SCHEMAS, DEFAULT_LAYOUT_SETTINGS } from '../../utils/printSchemaRegistry';
-import { resolveMargins, ensureContrastText } from '../../utils/printDesign';
+import { resolveMargins, ensureContrastText, resolveBandTextColor } from '../../utils/printDesign';
 
 export default function PrintLayout({
   documentTitle,
@@ -47,7 +47,9 @@ export default function PrintLayout({
   const margins = resolveMargins(layoutConfig);
   const bandColor = layoutConfig.bandColor || '#4338ca';
   const bandColor2 = layoutConfig.bandColor2 || layoutConfig.bandColor || '#4f46e5';
-  const bandTextColor = ensureContrastText(`linear-gradient(90deg, ${bandColor}, ${bandColor2})`, layoutConfig.bandTextColor || '#ffffff');
+  // Band text derives from the band colors alone (resolveBandTextColor) —
+  // never from a stored bandTextColor (Omer, 2026-10-25).
+  const bandTextColor = resolveBandTextColor(`linear-gradient(90deg, ${bandColor}, ${bandColor2})`);
   const headerAlign = layoutConfig.headerAlign || 'left';
 
   const fontFamily = layoutConfig.fontFamily || 'Inter';
@@ -200,14 +202,15 @@ export default function PrintLayout({
         marginTop: '10px', background: `linear-gradient(90deg, ${bandColor}, ${bandColor2})`, color: bandTextColor,
         borderRadius: '6px', padding: '9px 16px', display: 'flex',
         justifyContent: headerAlign === 'center' ? 'center' : 'space-between', alignItems: 'center', gap: '12px',
-        printColorAdjust: 'exact', WebkitPrintColorAdjust: 'exact'
+        printColorAdjust: 'exact', WebkitPrintColorAdjust: 'exact',
+        '--fv-bandtext': bandTextColor
       }}
     >
-      <div style={{ fontSize: '17px', fontWeight: 700, letterSpacing: '3px', textAlign: headerAlign === 'center' ? 'center' : 'left', color: bandTextColor }}>
+      <div className="fv-bandtext" style={{ fontSize: '17px', fontWeight: 700, letterSpacing: '3px', textAlign: headerAlign === 'center' ? 'center' : 'left', color: bandTextColor }}>
         {(documentTitle || activeDocType.replace(/_/g, ' ').toUpperCase())}
       </div>
       {documentId && headerAlign !== 'center' && (
-        <div style={{ fontSize: '11px', fontWeight: 600, letterSpacing: '1.6px', textTransform: 'uppercase', opacity: 0.9, color: bandTextColor }}>{documentId}</div>
+        <div className="fv-bandtext" style={{ fontSize: '11px', fontWeight: 600, letterSpacing: '1.6px', textTransform: 'uppercase', opacity: 0.9, color: bandTextColor }}>{documentId}</div>
       )}
     </div>
   );
@@ -249,6 +252,7 @@ export default function PrintLayout({
 
   return (
     <div
+      data-contrast-ignore
       className="w-full bg-white text-slate-900 m-0 font-sans print-layout-wrapper"
       style={{ fontFamily, padding: `${margins.top} ${margins.right} ${margins.bottom} ${margins.left}` }}
     >

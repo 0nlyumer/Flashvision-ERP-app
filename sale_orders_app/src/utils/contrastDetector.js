@@ -74,6 +74,24 @@ function blendOver(fg, bg) {
   };
 }
 
+// Extract the colors of a CSS linear-gradient background-image. A gradient
+// lives in background-image, NOT background-color — an element painted with
+// one reports backgroundColor as fully transparent, so a background walk
+// that only reads backgroundColor sees straight through a dark gradient
+// band to the white page behind it and "corrects" its white text to dark.
+// (This was the print title-band bug, Omer, 2026-10-25: the band title was
+// forced to #0f172a on the purple gradient band.) Returns the average of
+// the gradient's parseable color stops, or null when there is no gradient.
+function getGradientColor(style) {
+  const img = style.backgroundImage || '';
+  if (!img.includes('linear-gradient')) return null;
+  const tokens = img.match(/#[0-9a-fA-F]{3,8}\b|rgba?\([^)]*\)/g) || [];
+  const stops = tokens.map((t) => parseRgbColor(t)).filter((c) => c && c.a > 0.05);
+  if (!stops.length) return null;
+  const avg = (k) => Math.round(stops.reduce((s, c) => s + c[k], 0) / stops.length);
+  return { r: avg('r'), g: avg('g'), b: avg('b'), a: 1 };
+}
+
 // Traverse parent elements to find effective composite background color
 function getEffectiveBackgroundColor(el) {
   let curr = el;
@@ -85,6 +103,13 @@ function getEffectiveBackgroundColor(el) {
     const style = window.getComputedStyle(curr);
     if (style.display === 'none' || style.visibility === 'hidden') {
       return null;
+    }
+    // A gradient paints OVER the element's background color — it is the
+    // effective background for everything inside this element.
+    const grad = getGradientColor(style);
+    if (grad) {
+      layers.unshift(grad);
+      break; // Gradients in this app are opaque — nothing below shows through
     }
     const bg = parseRgbColor(style.backgroundColor);
     if (bg && bg.a > 0.05) {
@@ -144,6 +169,9 @@ const PALETTES = {
 function shouldInspectElement(el) {
   if (!el || el.nodeType !== Node.ELEMENT_NODE) return false;
   if (el.hasAttribute('data-contrast-ignore')) return false;
+  // A marked subtree (e.g. a print sheet, whose colors are guaranteed by the
+  // print design system itself) is never recolored — the exemption inherits.
+  if (el.closest && el.closest('[data-contrast-ignore]')) return false;
 
   const tag = el.tagName.toLowerCase();
   if (['script', 'style', 'svg', 'path', 'canvas', 'noscript', 'iframe'].includes(tag)) return false;
