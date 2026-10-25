@@ -23,6 +23,7 @@ import { getInitialBatchLaborConfig, normalizeBatchLaborConfig } from '../utils/
 import { DEFAULT_CHART_OF_ACCOUNTS } from '../utils/financeEngine';
 import { invoiceSourceLabel } from '../utils/invoiceSource';
 import { buildFiledDocumentSnapshot } from '../utils/studioSnapshot';
+import { findUserByLoginIdentifier } from '../utils/loginIdentifier';
 
 const AppContext = createContext();
 const BUILD_VERSION = '20260715_v5';
@@ -644,6 +645,11 @@ export const AppProvider = ({ children }) => {
   };
 
   const sessionsChannelRef = useRef(null);
+  // Single-session handover (Part C, 2026-10-25): connection ids THIS
+  // client signed out during its own login. Their late realtime events
+  // (a final heartbeat can resurrect a swept row) must never kick the
+  // session that replaced them — see the user_sessions channel handler.
+  const terminatedConnectionIdsRef = useRef(new Set());
   const clientId = useRef(Math.random().toString(36).substr(2, 9) + Date.now().toString(36));
   const isLocalStorageWriting = useRef(false);
   const isRemoteSyncing = useRef(false);
@@ -1841,8 +1847,19 @@ export const AppProvider = ({ children }) => {
               } catch (e) {}
 
               if (payload.new.connection_id !== myConn && (!newDev || newDev !== myDev)) {
-                console.warn('[Security Guard] New active session detected for our account on another device. Logging out.');
-                handleForceConcurrentLogout();
+                if (terminatedConnectionIdsRef.current.has(payload.new.connection_id)) {
+                  // This is a session OUR login just signed out. Its last
+                  // heartbeat may have landed after the sweep and brought
+                  // its row back — clear the zombie row, never kick the
+                  // session that replaced it.
+                  console.warn('[Security Guard] Cleared a resurrected row from a session this login signed out.');
+                  try {
+                    supabase.from('user_sessions').delete().eq('connection_id', payload.new.connection_id);
+                  } catch (e) {}
+                } else {
+                  console.warn('[Security Guard] New active session detected for our account on another device. Logging out.');
+                  handleForceConcurrentLogout();
+                }
               }
             }
           } else if (payload.eventType === 'DELETE') {
@@ -4845,7 +4862,7 @@ export const AppProvider = ({ children }) => {
      addNotification('Widget Added', `${widgetConfig.title} has been pinned to your dashboard.`, 'success');
   };
 
-   const login = (username, password, platform = 'Web', rememberMe = false) => {
+   const login = async (username, password, platform = 'Web', rememberMe = false, onStatus = null) => {
     const cleanIdentifier = String(username || '').trim();
 
     // 1. Anti-Brute-Force Rate Limiting Check
@@ -4859,11 +4876,10 @@ export const AppProvider = ({ children }) => {
       };
     }
 
-    // 2. Lookup user in state
-    const user = state.users?.find(u => 
-      u.username?.toLowerCase() === cleanIdentifier.toLowerCase() || 
-      u.email?.toLowerCase() === cleanIdentifier.toLowerCase()
-    );
+    // 2. Lookup user in state — by username, email, or mobile number
+    // (src/utils/loginIdentifier.js; username/email behaviour unchanged,
+    // the phone match is the 2026-10-25 widening Omer ordered)
+    const user = findUserByLoginIdentifier(state.users, cleanIdentifier);
     
     // 3. Verify credentials
     if (user && verifyPassword(password, user.password)) {
@@ -4886,8 +4902,18 @@ export const AppProvider = ({ children }) => {
         user: user.name
       };
       
-      // Enforce Single Active Device Session:
-      // Invalidate all other active sessions for this user across all other devices/browsers
+      // Enforce Single Active Device Session — as an ordered handover
+      // (Part C, 2026-10-25). Previously this block fired the delete /
+      // upsert / broadcast WITHOUT awaiting them and login returned
+      // instantly: the new device landed on the dashboard while the old
+      // session's rows were still live, and the realtime guards then
+      // force-logged-out the NEW device too (the old device's heartbeat
+      // row event looks exactly like a rival login) — the user saw the
+      // dashboard for half a second, got bounced out, and had to log in
+      // a second time. Now: detect a prior session, report the stage to
+      // the login screen, broadcast the kick, AWAIT the server-side
+      // sweep, register this session, and only then set currentUser and
+      // return — one navigation, straight in.
       const myConnId = connectionId.current;
       const myDeviceId = getDeviceId();
       const devInfoStr = JSON.stringify({
@@ -4897,36 +4923,64 @@ export const AppProvider = ({ children }) => {
         userAgent: navigator.userAgent
       });
 
-      // 1. Delete prior sessions for this username in Supabase
-      supabase
-        .from('user_sessions')
-        .delete()
-        .ilike('username', cleanIdentifier)
-        .then(() => {
-          // 2. Upsert this device's session
-          supabase
-            .from('user_sessions')
-            .upsert({
-              username: user.username,
-              connection_id: myConnId,
-              last_active: new Date().toISOString(),
-              status: 'online',
-              device_info: devInfoStr
-            }, { onConflict: 'connection_id' });
-        });
-
-      // 3. Send instant broadcast to kick any previous device out immediately
       try {
-        sessionsChannelRef.current?.send({
-          type: 'broadcast',
-          event: 'force_logout_concurrent',
-          payload: {
-            username: user.username.toLowerCase(),
-            activeConnectionId: myConnId,
-            activeDeviceId: myDeviceId,
-            timestamp: Date.now()
-          }
-        });
+        const { data: existingSessions } = await supabase
+          .from('user_sessions')
+          .select('connection_id, device_info')
+          .ilike('username', user.username);
+
+        const priorSessions = (existingSessions || []).filter(s => s.connection_id !== myConnId);
+        if (priorSessions.length > 0) {
+          onStatus?.('signing-out-other');
+          priorSessions.forEach(s => terminatedConnectionIdsRef.current.add(s.connection_id));
+
+          // Instant broadcast so the other device signs out right away
+          try {
+            sessionsChannelRef.current?.send({
+              type: 'broadcast',
+              event: 'force_logout_concurrent',
+              payload: {
+                username: user.username.toLowerCase(),
+                activeConnectionId: myConnId,
+                activeDeviceId: myDeviceId,
+                timestamp: Date.now()
+              }
+            });
+          } catch (e) {}
+
+          // Authoritative sweep — keyed on the account's real username,
+          // so it also fires when the user signed in by email or mobile
+          // number (the old code swept by the typed identifier and
+          // silently missed in those cases).
+          await supabase
+            .from('user_sessions')
+            .delete()
+            .ilike('username', user.username)
+            .neq('connection_id', myConnId);
+
+          // Brief settle so the other device can process its sign-out
+          onStatus?.('signing-in');
+          await new Promise(r => setTimeout(r, 400));
+        }
+      } catch (e) {
+        // Handover mechanics must never block a valid sign-in; the
+        // realtime guards still enforce the single-session rule.
+        console.warn('[Security Shield] Session handover sweep failed; proceeding with sign-in.', e);
+      }
+
+      // Register this device's session and AWAIT it, so the session
+      // table is already consistent when the app navigates — no guard
+      // can mistake the brand-new session for a stale one.
+      try {
+        await supabase
+          .from('user_sessions')
+          .upsert({
+            username: user.username,
+            connection_id: myConnId,
+            last_active: new Date().toISOString(),
+            status: 'online',
+            device_info: devInfoStr
+          }, { onConflict: 'connection_id' });
       } catch (e) {}
 
       setState(prev => {
@@ -4962,7 +5016,7 @@ export const AppProvider = ({ children }) => {
 
     return {
       success: false,
-      reason: 'Invalid username/email or password. Please verify your credentials.',
+      reason: 'Invalid username, email or mobile number. Please verify your credentials.',
       remainingAttempts: newRate.remainingAttempts,
       locked: !newRate.allowed,
       remainingSeconds: newRate.remainingSeconds

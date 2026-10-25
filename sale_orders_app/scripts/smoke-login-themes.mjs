@@ -125,8 +125,14 @@ check('Login renders ArtLoginView for art themes',
   loginSrc.includes('ArtLoginView') && loginSrc.includes("activeLoginTheme.type === 'art'"));
 check('classic login design preserved (Authenticate & Access)',
   loginSrc.includes('Authenticate & Access'));
-check('auth call site untouched — login(identifier, password, platform, rememberMe)',
-  loginSrc.includes('login(cleanIdentifier, cleanPassword, platform, rememberMe)'));
+check('auth call site — same arguments, now awaited with the Part C stage callback',
+  loginSrc.includes('await login(cleanIdentifier, cleanPassword, platform, rememberMe'));
+// NOTE (2026-10-25 login-fix): the original assertion pinned the exact
+// synchronous call `login(cleanIdentifier, cleanPassword, platform,
+// rememberMe)`. Part C (single-session handover) REQUIRES the call to be
+// awaited and to receive a stage callback — same identifier, password,
+// platform and rememberMe arguments, in the same order, plus the
+// callback. The assertion above pins exactly that.
 check('rate-limit behaviour untouched', loginSrc.includes('getRateLimitStatus'));
 check('post-login routing untouched (password-change + dashboard destinations)',
   loginSrc.includes("navigate('/profile?forceChange=true'") && loginSrc.includes("'/dashboard'"));
@@ -165,6 +171,104 @@ check('Settings UI saves via setCollection to login_theme_settings',
   settingsSrc.includes("setCollection('login_theme_settings'"));
 check('Settings UI offers Fixed + Auto modes',
   settingsSrc.includes('Fixed Theme') && settingsSrc.includes('Auto'));
+
+// ---------------------------------------------------------------- Part 3
+// Login-fix job (2026-10-25): Part A layout (centred bigger card, fixed
+// backdrop, glass mobile card, single-line footer), Part B (username OR
+// mobile number), Part C (single-session handover flow).
+console.log('Part 3 — layout fix, mobile-number login, session handover');
+
+const {
+  normalizePkMobile,
+  findUserByLoginIdentifier
+} = await import('../src/utils/loginIdentifier.js');
+
+check("normalize: stored canonical '923079418134' stays canonical",
+  normalizePkMobile('923079418134') === '923079418134');
+check("normalize: local '03079418134' → canonical",
+  normalizePkMobile('03079418134') === '923079418134');
+check("normalize: '+92 307 9418134' → canonical",
+  normalizePkMobile('+92 307 9418134') === '923079418134');
+check("normalize: '0307-941-8134' (dashes/spaces) → canonical",
+  normalizePkMobile('0307-941 8134') === '923079418134');
+check("normalize: '00923079418134' → canonical",
+  normalizePkMobile('00923079418134') === '923079418134');
+check("normalize: bare '3079418134' → canonical",
+  normalizePkMobile('3079418134') === '923079418134');
+check("normalize: placeholder 'Null' → null (never matches)",
+  normalizePkMobile('Null') === null);
+check('normalize: empty / null / undefined → null',
+  normalizePkMobile('') === null && normalizePkMobile(null) === null && normalizePkMobile(undefined) === null);
+check("normalize: non-PK number '+1 555 123 4567' → null",
+  normalizePkMobile('+1 555 123 4567') === null);
+check("normalize: short code '12345' → null",
+  normalizePkMobile('12345') === null);
+
+// Fixture mirrors the live user-record shape (field `phone`, canonical
+// '92…' stored form; null / 'Null' / missing where no number is saved).
+const fixtureUsers = [
+  { username: 'only.umer', email: 'umerali@gmail.com', phone: '923079418134' },
+  { username: 'arfan_jameel', email: null, phone: null },
+  { username: 'umair_shabir', email: 'umairshabir@gmail.com', phone: 'Null' },
+  { username: 'admin', email: null }
+];
+check('identifier: username match (case-insensitive) unchanged',
+  findUserByLoginIdentifier(fixtureUsers, 'ONLY.UMER')?.username === 'only.umer');
+check('identifier: email match unchanged',
+  findUserByLoginIdentifier(fixtureUsers, 'UmerAli@gmail.com')?.username === 'only.umer');
+check('identifier: phone match — canonical stored form',
+  findUserByLoginIdentifier(fixtureUsers, '923079418134')?.username === 'only.umer');
+check('identifier: phone match — local 03… form',
+  findUserByLoginIdentifier(fixtureUsers, '03079418134')?.username === 'only.umer');
+check('identifier: phone match — +92 with spaces',
+  findUserByLoginIdentifier(fixtureUsers, '+92 307 9418134')?.username === 'only.umer');
+check("identifier: 'Null' placeholder never signs anyone in",
+  findUserByLoginIdentifier(fixtureUsers, 'Null') === null);
+check('identifier: unknown phone number rejected',
+  findUserByLoginIdentifier(fixtureUsers, '03001112222') === null);
+check('identifier: unknown username rejected',
+  findUserByLoginIdentifier(fixtureUsers, 'nobody') === null);
+check('identifier: empty identifier rejected',
+  findUserByLoginIdentifier(fixtureUsers, '   ') === null);
+
+check('Part A: backdrop layers are viewport-fixed (always cover the screen)',
+  (artSrc.match(/fixed inset-0/g) || []).length >= 3);
+check('Part A: card is bigger — max width 1200px',
+  artSrc.includes('lg:max-w-[1200px]'));
+check('Part A: card split follows the mockup (form ≈42% / artwork ≈58%)',
+  artSrc.includes('lg:w-[42%]') && artSrc.includes('lg:w-[58%]'));
+check('Part A: page centres via 100dvh min-height',
+  artSrc.includes("minHeight: '100dvh'"));
+check('Part A: mobile card is glass (translucent + backdrop blur + saturate)',
+  artSrc.includes('bg-white/60') && artSrc.includes('backdrop-blur-[16px]') && artSrc.includes('backdrop-saturate-[1.2]'));
+check('Part A: mobile card is solid white again on desktop',
+  artSrc.includes('lg:bg-white') && artSrc.includes('lg:backdrop-blur-none'));
+check('Part A: mobile card occupies a substantial share of the screen',
+  artSrc.includes('min-h-[68dvh]'));
+check('Part A: footer is the single short line “Protected & Encrypted”',
+  artSrc.includes('Protected &amp; Encrypted'));
+check('Part A: old footer lines are gone from the art view',
+  !artSrc.includes('Protected Enterprise Gateway') && !artSrc.includes('Synthetic Leather Manufacturing ERP'));
+check('Part B: art view label is “Username or Mobile Number”',
+  artSrc.includes('Username or Mobile Number'));
+check('Part B: art view placeholder mentions the mobile number',
+  artSrc.includes('Enter your username or mobile number'));
+check('Part B: classic label updated to “Username or Mobile Number”',
+  loginSrc.includes('Username or Mobile Number'));
+check('Part C: Login drives the handover message from the login stage',
+  loginSrc.includes('handoverStage') && loginSrc.includes('handoverMessage'));
+check('Part C: exact short messages (professional English)',
+  loginSrc.includes('Signing out your other session…') && loginSrc.includes('Signing you in…'));
+check('Part C: art view renders the handover message on the submit button',
+  artSrc.includes('handoverMessage'));
+check('Part C: AppContext login is async and reports its stage',
+  ctxSrc.includes('const login = async') && ctxSrc.includes("onStatus?.('signing-out-other')") && ctxSrc.includes("onStatus?.('signing-in')"));
+check('Part C: identifier lookup goes through the shared resolver (username/email/phone)',
+  ctxSrc.includes('findUserByLoginIdentifier(state.users, cleanIdentifier)'));
+check('Part C: prior-session sweep is awaited and keyed on the account username',
+  ctxSrc.includes(".ilike('username', user.username)") && ctxSrc.includes(".neq('connection_id', myConnId)"));
+check('Part C: sessions this login terminated can never kick the new session',
+  ctxSrc.includes('terminatedConnectionIdsRef'));
 
 // ---------------------------------------------------------------- done
 console.log(`\n${pass} passed, ${fail} failed`);

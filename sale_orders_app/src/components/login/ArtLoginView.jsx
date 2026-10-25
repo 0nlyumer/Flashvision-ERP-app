@@ -8,9 +8,18 @@ import React, { useState } from 'react';
 // mirror composition (form | wave | leaves), so the artwork is mirrored
 // with CSS — the served file itself stays byte-identical.
 //
+// Layout fix (2026-10-25, Omer's live-laptop report): the backdrop layers
+// are FIXED to the viewport so they always cover exactly the screen, and
+// the card is a generously sized, truly centred panel (~1200px max,
+// form ≈42% / artwork ≈58% as in his mockup) — no top-anchoring and no
+// empty white plate below. On phones the card is frosted glass
+// (glassmorphism, as in his mockup's phone panel): the artwork shows
+// through it, blurred and softened.
+//
 // This view is a pure skin: every field, handler and behaviour (auth,
-// lockout, shake, caps-lock, remember-me, session notices) is owned by
-// src/pages/Login.jsx and passed in as props. No theme controls live here.
+// lockout, shake, caps-lock, remember-me, session notices, the Part C
+// handover message) is owned by src/pages/Login.jsx and passed in as
+// props. No theme controls live here.
 
 export default function ArtLoginView({
   theme,
@@ -28,6 +37,7 @@ export default function ArtLoginView({
   lockoutSeconds,
   sessionExpiredNotice,
   isSubmitting,
+  handoverMessage,
   shakeField,
   onSubmit,
   onForgotPassword,
@@ -54,15 +64,16 @@ export default function ArtLoginView({
 
   return (
     <main
-      className="relative min-h-screen w-full overflow-hidden flex items-center justify-center p-4 sm:p-6 select-none"
-      style={{ backgroundColor: '#edf1ea' }}
+      className="relative min-h-screen w-full overflow-x-hidden flex items-center justify-center p-3 sm:p-6 lg:p-10 select-none"
+      style={{ backgroundColor: '#edf1ea', minHeight: '100dvh' }}
       onKeyDown={onKeyDown}
       onKeyUp={onKeyUp}
     >
       <style>{`@keyframes fv-shake{10%,90%{transform:translateX(-1px)}20%,80%{transform:translateX(2px)}30%,50%,70%{transform:translateX(-4px)}40%,60%{transform:translateX(4px)}}.fv-shake{animation:fv-shake .4s ease-in-out}`}</style>
 
-      {/* Backdrop — mobile: the artwork itself (mockup phone panel);
-          desktop: the same artwork, softly blurred, as the scene behind
+      {/* Backdrop — FIXED to the viewport so it covers exactly the screen
+          at every size: mobile shows the artwork itself (mockup phone
+          panel); desktop shows the same artwork, softly blurred, behind
           the card (mockup desktop scene). */}
       {image && (
         <>
@@ -70,23 +81,24 @@ export default function ArtLoginView({
             src={image}
             alt=""
             aria-hidden="true"
-            className="absolute inset-0 w-full h-full object-cover -scale-x-100 lg:hidden"
+            className="fixed inset-0 w-full h-full object-cover -scale-x-100 lg:hidden"
           />
           <img
             src={image}
             alt=""
             aria-hidden="true"
-            className="absolute inset-0 w-full h-full object-cover -scale-x-100 scale-110 blur-md hidden lg:block"
+            className="fixed inset-0 w-full h-full object-cover -scale-x-100 scale-110 blur-md hidden lg:block"
           />
-          <div className="absolute inset-0 hidden lg:block bg-white/75" />
+          <div className="fixed inset-0 hidden lg:block bg-white/75" />
         </>
       )}
 
-      {/* Card */}
-      <div className="relative z-10 w-full max-w-md lg:max-w-5xl bg-white rounded-[2rem] shadow-[0_35px_90px_-25px_rgba(24,44,34,0.45)] overflow-hidden lg:flex">
+      {/* Card — desktop: solid white, form left / artwork right.
+          Mobile: frosted glass over the full-screen artwork. */}
+      <div className="relative z-10 w-full max-w-[430px] lg:max-w-[1200px] min-h-[68dvh] lg:min-h-[640px] flex flex-col lg:flex-row rounded-[2rem] overflow-hidden border border-white/60 lg:border-white bg-white/60 lg:bg-white backdrop-blur-[16px] backdrop-saturate-[1.2] lg:backdrop-blur-none lg:backdrop-saturate-100 shadow-[0_35px_90px_-25px_rgba(24,44,34,0.45)]">
         {/* Form column */}
-        <section className="w-full lg:w-[54%] px-7 py-9 sm:px-10 lg:px-14 lg:py-12 flex flex-col justify-center">
-          <div className="w-full max-w-[360px] mx-auto lg:mx-0">
+        <section className="w-full lg:w-[42%] flex-1 px-7 py-10 sm:px-10 lg:px-14 lg:py-12 flex flex-col justify-center">
+          <div className="w-full max-w-[360px] lg:max-w-[380px] mx-auto lg:mx-0">
             {/* Brand mark */}
             <div className="flex items-center gap-2.5">
               <div className="w-10 h-10 rounded-xl flex items-center justify-center shadow-md" style={{ backgroundColor: accent }}>
@@ -129,9 +141,9 @@ export default function ArtLoginView({
             )}
 
             <form onSubmit={onSubmit} className="mt-7 space-y-5">
-              {/* Username */}
+              {/* Username or mobile number */}
               <div className={userShaking ? 'fv-shake' : ''}>
-                <label className="block text-[11px] font-semibold text-slate-500 mb-1.5 ml-1 tracking-wide">Username</label>
+                <label className="block text-[11px] font-semibold text-slate-500 mb-1.5 ml-1 tracking-wide">Username or Mobile Number</label>
                 <input
                   ref={usernameInputRef}
                   type="text"
@@ -141,7 +153,7 @@ export default function ArtLoginView({
                   onChange={(e) => setIdentifier(e.target.value)}
                   onFocus={() => setFocusedField('email')}
                   onBlur={() => setFocusedField(null)}
-                  placeholder="Enter your username"
+                  placeholder="Enter your username or mobile number"
                   disabled={isSubmitting || lockoutSeconds > 0}
                   className="w-full rounded-full border bg-white px-5 py-3.5 text-sm font-medium text-slate-800 placeholder-slate-300 outline-none transition-all duration-200 disabled:opacity-60"
                   style={pillStyle('email', userShaking)}
@@ -207,14 +219,20 @@ export default function ArtLoginView({
                 </button>
               </div>
 
-              {/* Submit */}
+              {/* Submit — during a single-session handover the button
+                  carries the short status message (Part C). */}
               <button
                 type="submit"
                 disabled={isSubmitting || lockoutSeconds > 0}
                 className="w-full py-3.5 px-4 rounded-full font-bold text-sm tracking-wide shadow-lg hover:brightness-110 active:scale-[0.99] transition-all duration-300 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                 style={{ backgroundColor: accent, color: buttonTextColor }}
               >
-                {isSubmitting ? (
+                {handoverMessage ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    <span>{handoverMessage}</span>
+                  </>
+                ) : isSubmitting ? (
                   <>
                     <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
                     <span>Verifying Credentials...</span>
@@ -230,13 +248,12 @@ export default function ArtLoginView({
               </button>
             </form>
 
-            {/* Footer */}
-            <div className="mt-9 text-center border-t border-slate-100 pt-5">
-              <div className="flex items-center justify-center gap-2 text-[11px] text-slate-400">
+            {/* Footer — one short protection line (Omer, 2026-10-25) */}
+            <div className="mt-9 text-center border-t border-slate-900/10 pt-5">
+              <div className="flex items-center justify-center gap-2 text-[11px] text-slate-500">
                 <span className="material-symbols-outlined text-xs" style={{ color: accent }}>lock</span>
-                <span>Protected Enterprise Gateway</span>
+                <span>Protected &amp; Encrypted</span>
               </div>
-              <p className="text-[10px] mt-2 text-slate-400">Synthetic Leather Manufacturing ERP</p>
             </div>
           </div>
         </section>
@@ -244,7 +261,7 @@ export default function ArtLoginView({
         {/* Artwork panel — desktop: leaves flow in from the right behind
             the wavy paper-cut edge baked into the artwork. */}
         {image && (
-          <div className="hidden lg:block relative lg:w-[46%] min-h-[580px]">
+          <div className="hidden lg:block relative lg:w-[58%]">
             <img
               src={image}
               alt="Paper-cut tropical leaves artwork"

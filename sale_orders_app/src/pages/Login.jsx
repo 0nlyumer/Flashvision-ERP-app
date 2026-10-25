@@ -151,6 +151,10 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [isCapsLockOn, setIsCapsLockOn] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  // Single-session handover stage (Part C): 'signing-out-other' while the
+  // previous session is being signed out, then 'signing-in'. Null in the
+  // normal no-prior-session flow, which behaves exactly as before.
+  const [handoverStage, setHandoverStage] = useState(null);
 
   // Security & Feedback State
   const [errorMessage, setErrorMessage] = useState('');
@@ -288,7 +292,7 @@ export default function Login() {
       if (!cleanIdentifier && !cleanPassword) setShakeField('both');
       else if (!cleanIdentifier) setShakeField('email');
       else setShakeField('password');
-      setErrorMessage('Please provide both username/email and password.');
+      setErrorMessage('Please provide both username/mobile number and password.');
       setTimeout(() => setShakeField(null), 500);
       return;
     }
@@ -308,7 +312,12 @@ export default function Login() {
       // Simulate slight cryptographic delay for timing attack mitigation
       await new Promise(r => setTimeout(r, 250));
 
-      const result = login(cleanIdentifier, cleanPassword, platform, rememberMe);
+      // Awaited (Part C): login now completes the single-session handover
+      // BEFORE returning, reporting its stage so the button can show
+      // 'Signing out your other session…' / 'Signing you in…' while the
+      // form stays in its loading state — no dashboard flash, no second
+      // login.
+      const result = await login(cleanIdentifier, cleanPassword, platform, rememberMe, (stage) => setHandoverStage(stage));
 
       if (!result.success) {
         setShakeField('both');
@@ -341,8 +350,17 @@ export default function Login() {
       setErrorMessage('An unexpected security error occurred during authentication.');
     } finally {
       setIsSubmitting(false);
+      setHandoverStage(null);
     }
   };
+
+  // Short professional handover copy (Omer, 2026-10-25) — shown on the
+  // submit button of BOTH login themes while the handover runs.
+  const handoverMessage = handoverStage === 'signing-out-other'
+    ? 'Signing out your other session…'
+    : handoverStage === 'signing-in'
+      ? 'Signing you in…'
+      : null;
 
   const toggleTheme = () => {
     const newTheme = theme === 'dark' ? 'light' : 'dark';
@@ -417,6 +435,7 @@ export default function Login() {
         lockoutSeconds={lockoutSeconds}
         sessionExpiredNotice={sessionExpiredNotice}
         isSubmitting={isSubmitting}
+        handoverMessage={handoverMessage}
         shakeField={shakeField}
         onSubmit={handleLogin}
         onForgotPassword={() => alert("Enterprise Security Notice:\nTo reset your credentials, please request an administrative reset from your Super Administrator.")}
@@ -625,7 +644,7 @@ export default function Login() {
               {/* Username / Email Field */}
               <div>
                 <label className={`block text-xs font-semibold mb-1.5 tracking-wide ${textClass}`}>
-                  Username or Corporate Email
+                  Username or Mobile Number
                 </label>
                 <div className="relative">
                   <span className="absolute left-3.5 top-1/2 -translate-y-1/2 material-symbols-outlined text-[18px] text-slate-400 pointer-events-none">
@@ -638,7 +657,7 @@ export default function Login() {
                     autoComplete="username"
                     value={identifier}
                     onChange={(e) => setIdentifier(e.target.value)}
-                    placeholder="e.g. admin or operator@flashvision.com"
+                    placeholder="e.g. admin or 0300 1234567"
                     disabled={isSubmitting || lockoutSeconds > 0}
                     className={`w-full pl-11 pr-4 py-3 rounded-xl border text-sm font-medium transition-all duration-200 outline-none ${inputBgClass} ${shakeField === 'email' || shakeField === 'both' ? shakeClass : ''}`}
                   />
@@ -715,7 +734,12 @@ export default function Login() {
                 disabled={isSubmitting || lockoutSeconds > 0}
                 className="w-full py-3.5 px-4 rounded-xl font-bold text-sm tracking-wide mt-2 shadow-lg hover:shadow-cyan-500/20 active:scale-[0.98] transition-all duration-300 flex items-center justify-center gap-2 bg-gradient-to-r from-cyan-600 via-blue-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {isSubmitting ? (
+                {handoverMessage ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    <span>{handoverMessage}</span>
+                  </>
+                ) : isSubmitting ? (
                   <>
                     <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
                     <span>Verifying Credentials...</span>
