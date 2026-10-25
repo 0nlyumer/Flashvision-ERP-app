@@ -6,8 +6,11 @@ import { DEFAULT_DOCUMENT_SCHEMAS, SYSTEM_DOCUMENTS } from '../../utils/printSch
 // documents (vouchers, HR forms, inventory adjustment / return). These
 // documents print through the shared slip renderer (PrintLayout) — the same
 // component and the same per-document layout settings the modules' own
-// print popups use — so a filed slip re-prints in its current saved design
-// while its content stays the frozen filing snapshot.
+// print popups use — so a filed slip re-prints in its current saved design.
+// The content is resolved live-first by the Warehouse (the source record's
+// current version while it exists, else the frozen filing snapshot);
+// `attachment.viewSource` says which one this is, and the header pill
+// states it plainly.
 //
 // The body is built generically from the snapshot record: the document
 // schema's header fields become the detail grid, an `items` array (when the
@@ -92,6 +95,16 @@ export default function SlipDocumentPopup({ isOpen, onClose, attachment }) {
           <div className="flex items-center gap-2">
             <span className="material-symbols-outlined text-xl text-indigo-600 dark:text-indigo-400">print</span>
             <span className="font-bold text-sm">{docName} — Filed Print</span>
+            {attachment.viewSource === 'live' && (
+              <span className="px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-500/30 text-[9px] font-black uppercase tracking-wider">
+                Live version
+              </span>
+            )}
+            {attachment.viewSource === 'snapshot' && (
+              <span className="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-500/30 text-[9px] font-black uppercase tracking-wider">
+                Filed copy
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-3">
             <button

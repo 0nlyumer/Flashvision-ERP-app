@@ -454,7 +454,7 @@ export default function DocumentRoutingCenter() {
             linear-gradient(to bottom, rgba(114, 119, 130, 0.05) 1px, transparent 1px);
         }
         .btn-gradient {
-          background: linear-gradient(135deg, #0f172a, #1e293b);
+          background: linear-gradient(135deg, #4f46e5, #2563eb);
         }
       `}</style>
 

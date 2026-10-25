@@ -11,6 +11,13 @@ import React, { useEffect, useState } from 'react';
 // edit flow the parent decides what the colour means — in the Warehouse the
 // edit colour writes only the current user's per-user override; the name
 // still renames the shared record.
+//
+// Deletion is confirmed IN-APP: the Delete action first swaps this modal
+// to a confirmation panel, and only the panel's "Delete File" button calls
+// `onDelete` (the parent then performs the delete and closes the modal).
+// The previous flow gated deletion behind the native `window.confirm(...)`
+// in the parent — in the live environment that dialog never resolves true,
+// which left the Delete button completely dead (live check, 2026-10-25).
 
 export const BINDER_COLOR_OPTIONS = [
   { value: 'binder-blue-spine', label: 'Royal Indigo Blue', preview: 'linear-gradient(90deg, #1e3a8a, #2563eb)' },
@@ -33,18 +40,30 @@ export default function BinderFormModal({
   const [name, setName] = useState(initialName);
   const [colorClass, setColorClass] = useState(initialColor);
   const [error, setError] = useState('');
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
       setName(initialName || '');
       setColorClass(initialColor || 'binder-blue-spine');
       setError('');
+      setConfirmingDelete(false);
     }
   }, [isOpen, initialName, initialColor]);
 
   if (!isOpen) return null;
 
   const isEdit = mode === 'edit';
+
+  const handleClose = () => {
+    setConfirmingDelete(false);
+    onClose && onClose();
+  };
+
+  const handleConfirmDelete = () => {
+    setConfirmingDelete(false);
+    onDelete && onDelete();
+  };
 
   const handleSubmit = () => {
     const trimmed = (name || '').trim();
@@ -75,14 +94,43 @@ export default function BinderFormModal({
             </div>
           </div>
           <button
-            onClick={onClose}
+            onClick={handleClose}
             className="w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 hover:text-slate-700 dark:hover:text-slate-200 transition-all cursor-pointer"
           >
             <span className="material-symbols-outlined text-[18px]">close</span>
           </button>
         </div>
 
-        {/* Modal Body */}
+        {/* Modal Body — the delete confirmation replaces the form in place */}
+        {confirmingDelete ? (
+          <div className="p-6 space-y-5">
+            <div className="flex flex-col items-center text-center gap-3 py-2">
+              <div className="w-12 h-12 rounded-2xl bg-rose-50 dark:bg-rose-500/10 border border-rose-100 dark:border-rose-500/20 flex items-center justify-center text-rose-600 dark:text-rose-400">
+                <span className="material-symbols-outlined text-[24px]">delete_forever</span>
+              </div>
+              <div>
+                <h4 className="text-sm font-black text-slate-900 dark:text-white">Delete this file?</h4>
+                <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mt-1.5 leading-relaxed">
+                  &ldquo;{initialName || name}&rdquo; will be removed from the cabinet, along with its list of filed documents. This cannot be undone.
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setConfirmingDelete(false)}
+                className="flex-1 py-2.5 rounded-xl border border-slate-200 dark:border-white/10 text-xs font-black uppercase tracking-wider text-slate-500 hover:bg-slate-50 dark:hover:bg-white/5 transition-all cursor-pointer"
+              >
+                Keep File
+              </button>
+              <button
+                onClick={handleConfirmDelete}
+                className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-black uppercase tracking-wider shadow-lg shadow-rose-600/25 transition-all cursor-pointer"
+              >
+                Delete File
+              </button>
+            </div>
+          </div>
+        ) : (
         <div className="p-6 space-y-5">
           <div className="space-y-1.5">
             <label className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest block">File Name</label>
@@ -133,7 +181,7 @@ export default function BinderFormModal({
           <div className="flex gap-3 pt-1">
             {isEdit && onDelete && (
               <button
-                onClick={onDelete}
+                onClick={() => setConfirmingDelete(true)}
                 className="py-2.5 px-3.5 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 text-xs font-black uppercase tracking-wider flex items-center gap-1.5 transition-all cursor-pointer"
               >
                 <span className="material-symbols-outlined text-[15px]">delete</span>
@@ -141,7 +189,7 @@ export default function BinderFormModal({
               </button>
             )}
             <button
-              onClick={onClose}
+              onClick={handleClose}
               className="flex-1 py-2.5 rounded-xl border border-slate-200 dark:border-white/10 text-xs font-black uppercase tracking-wider text-slate-500 hover:bg-slate-50 dark:hover:bg-white/5 transition-all cursor-pointer"
             >
               Cancel
@@ -154,6 +202,7 @@ export default function BinderFormModal({
             </button>
           </div>
         </div>
+        )}
       </div>
     </div>
   );

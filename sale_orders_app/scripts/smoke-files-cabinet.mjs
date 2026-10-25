@@ -54,8 +54,14 @@ const {
   isSlipFamilyDocType,
   buildFiledDocumentSnapshot,
   resolveLiveStudioRecord,
+  resolveFiledDocumentView,
+  getFiledDocumentViewSource,
   resolveBinderColor,
+  BINDER_FRAME_TOKENS,
+  resolveBinderFrameToken,
 } = await import('../src/utils/studioSnapshot.js');
+
+const { searchFiledDocuments } = await import('../src/utils/filedDocSearch.js');
 
 // ---------------------------------------------------------------- Part 1
 console.log('Part 1 — studioSnapshot unit logic');
@@ -206,6 +212,110 @@ check('routing: deploy refuses an archive step with zero binders',
   routingCenter.includes('The archive step needs at least one file'));
 check('shared form: canonical colour classes incl. amber (not yellow)',
   binderForm.includes("'binder-amber-spine'") && !binderForm.includes('binder-yellow-spine'));
+
+// ---------------------------------------------------------------- Part 3
+console.log('Part 3 — viewer freshness (live-first), frame tokens, in-file search');
+
+const filedAttachment = { docType: 'hr_leave_request', docId: 'LVR-100', id: 'LVR-100', studioRecord: { id: 'LVR-100', employeeName: 'STALE SNAPSHOT NAME' } };
+const liveView = resolveFiledDocumentView(fakeState, filedAttachment);
+check('freshness: edited live record wins over the filed snapshot',
+  liveView.source === 'live' && liveView.studioRecord?.employeeName === 'Test Emp');
+check('freshness: source classification agrees (live)',
+  getFiledDocumentViewSource(fakeState, filedAttachment) === 'live');
+
+const orphanedAttachment = { docType: 'hr_leave_request', docId: 'LVR-GONE', id: 'LVR-GONE', studioRecord: { id: 'LVR-GONE', employeeName: 'Filed Person' } };
+const filedView = resolveFiledDocumentView(fakeState, orphanedAttachment);
+check('freshness: missing source record falls back to the filed snapshot',
+  filedView.source === 'snapshot' && filedView.studioRecord?.employeeName === 'Filed Person');
+check('freshness: source classification agrees (snapshot)',
+  getFiledDocumentViewSource(fakeState, orphanedAttachment) === 'snapshot');
+
+const bareAttachment = { docType: 'hr_leave_request', docId: 'LVR-GONE', id: 'LVR-GONE', studioRecord: null };
+check('freshness: neither live record nor snapshot -> no printable copy',
+  resolveFiledDocumentView(fakeState, bareAttachment).source === null &&
+  resolveFiledDocumentView(fakeState, bareAttachment).studioRecord === null &&
+  getFiledDocumentViewSource(fakeState, bareAttachment) === null);
+check('freshness: details-only attachments (docType null) stay unchanged',
+  resolveFiledDocumentView(fakeState, { docType: null, id: 'CTR-1', studioRecord: { a: 1 } }).source === null);
+
+const frozenBefore = JSON.stringify(filedAttachment.studioRecord);
+resolveFiledDocumentView(fakeState, filedAttachment);
+check('freshness: viewing never mutates the stored snapshot',
+  JSON.stringify(filedAttachment.studioRecord) === frozenBefore);
+
+const soAttachment = { docType: 'sale_order', docId: 'SO-1', id: 'SO-1', studioRecord: { id: 'SO-1', customerName: 'OLD' } };
+const soView = resolveFiledDocumentView(fakeState, soAttachment);
+check('freshness: sale order resolves live with studio enrichment',
+  soView.source === 'live' && soView.studioRecord?.customer?.name === 'ACME' && soView.studioRecord?.contact?.phone === '0300');
+
+check('frame tokens: every spine colour has a token set',
+  ['binder-blue-spine', 'binder-green-spine', 'binder-red-spine', 'binder-purple-spine', 'binder-amber-spine', 'binder-teal-spine']
+    .every(c => BINDER_FRAME_TOKENS[c]?.deep && BINDER_FRAME_TOKENS[c]?.mid && BINDER_FRAME_TOKENS[c]?.pale));
+check('frame tokens: the per-user override drives the interior colour',
+  resolveBinderFrameToken({ 'BND-1': 'binder-amber-spine' }, { id: 'BND-1', colorClass: 'binder-green-spine' }) === BINDER_FRAME_TOKENS['binder-amber-spine']);
+check('frame tokens: fall back to the binder colour, then blue',
+  resolveBinderFrameToken({}, { id: 'BND-1', colorClass: 'binder-teal-spine' }) === BINDER_FRAME_TOKENS['binder-teal-spine'] &&
+  resolveBinderFrameToken(null, null) === BINDER_FRAME_TOKENS['binder-blue-spine']);
+
+const searchDocs = [
+  { id: 'LVR-100', docId: 'LVR-100', title: 'Leave Request — Ahmed Raza', date: '24/10/2026', filedAt: '2026-10-24T09:30:00.000Z', details: [{ label: 'Document ID', value: 'LVR-100' }] },
+  { id: 'LVR-200', docId: 'LVR-200', title: 'Leave Request — Bilal Hussain', date: '20/10/2026', filedAt: '2026-10-20T08:00:00.000Z', details: [{ label: 'Document ID', value: 'LVR-200' }] },
+  { id: 'SO-77', docId: 'SO-77', title: 'Sales Order — ACME Textiles', date: '18/10/2026', filedAt: '2026-10-18T12:00:00.000Z', details: [] },
+];
+check('search: matches by document code/reference (docId)',
+  searchFiledDocuments(searchDocs, 'LVR-200').length === 1 && searchFiledDocuments(searchDocs, 'LVR-200')[0].index === 1);
+check('search: matches by title (case-insensitive)',
+  searchFiledDocuments(searchDocs, 'bilal').length === 1 && searchFiledDocuments(searchDocs, 'bilal')[0].index === 1);
+check('search: matches by filed date (ISO and en-GB forms)',
+  searchFiledDocuments(searchDocs, '2026-10-24')[0]?.index === 0 &&
+  searchFiledDocuments(searchDocs, '24/10/2026')[0]?.index === 0 &&
+  searchFiledDocuments(searchDocs, '18 Oct 2026')[0]?.index === 2);
+check('search: no match returns an empty list (clean no-match state)',
+  searchFiledDocuments(searchDocs, 'zzz-no-such-doc').length === 0);
+check('search: blank query returns nothing; results keep filed order',
+  searchFiledDocuments(searchDocs, '  ').length === 0 &&
+  searchFiledDocuments(searchDocs, 'leave request').map(m => m.index).join(',') === '0,1');
+check('search: scoped to the list it is given (open file only)',
+  searchFiledDocuments([searchDocs[2]], 'LVR').length === 0);
+
+// ---------------------------------------------------------------- Part 4
+console.log('Part 4 — delete fix, freshness wiring, coloured interior, search UI');
+
+const slipPopup = read('src/components/warehouse/SlipDocumentPopup.jsx');
+
+check('delete: warehouse no longer gates deletion behind a native confirm call',
+  !warehouse.includes('window.confirm('));
+check('delete: handler deletes the binder and closes the edit modal',
+  warehouse.includes('allCabinetBinders.filter(b => b.id !== editingBinder.id)') &&
+  warehouse.includes('onDelete={handleDeleteBinder}'));
+check('delete: modal confirms in-app before calling onDelete',
+  binderForm.includes('Delete this file?') && binderForm.includes('setConfirmingDelete(true)') &&
+  binderForm.includes('handleConfirmDelete'));
+check('delete: modal delete button opens the confirmation (no direct onDelete)',
+  !binderForm.includes('onClick={onDelete}'));
+
+check('freshness: warehouse resolves the print view live-first',
+  warehouse.includes('resolveFiledDocumentView(state, doc)') && warehouse.includes('viewSource: view.source'));
+check('freshness: marker states live vs filed copy on the print-view bar',
+  warehouse.includes('Live version') && warehouse.includes('Filed copy'));
+check('freshness: slip popup carries the same marker',
+  slipPopup.includes("attachment.viewSource === 'live'") && slipPopup.includes('Filed copy'));
+
+check('interior: opened file frame uses the resolved colour token',
+  warehouse.includes('resolveBinderFrameToken(binderColors, activeFolder)') && warehouse.includes('activeFrameToken.deep'));
+check('interior: file name tab rides the frame edge',
+  warehouse.includes('activeFrameToken.mid} 0%') && warehouse.includes('-top-3 left-8'));
+check('search: viewer searches the open file via the shared matcher',
+  warehouse.includes('searchFiledDocuments(activeFolder.documents || [], searchQuery)'));
+check('search: picking a result jumps to its page',
+  warehouse.includes('jumpToDocument(searchMatches[0].index)') && warehouse.includes('onClick={() => jumpToDocument(index)}'));
+check('search: clean inline no-match state (old alert gone)',
+  warehouse.includes('No documents match') && !warehouse.includes('No matching record sheet'));
+
+check('polish: cabinet shell has a min-height (first-paint collapse guard)',
+  warehouse.includes('min-h-[600px]'));
+check('polish: routing create-rule button no longer uses the near-black gradient',
+  !routingCenter.includes('#0f172a, #1e293b') && routingCenter.includes('#4f46e5, #2563eb'));
 
 console.log(`\nFiles Cabinet smoke: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

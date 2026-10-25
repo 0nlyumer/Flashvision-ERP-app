@@ -5,7 +5,8 @@ import { loadOnboardingHistory } from '../utils/onboardingHistory';
 import UniversalPrintStudioModal from '../components/ui/UniversalPrintStudioModal';
 import BinderFormModal from '../components/warehouse/BinderFormModal';
 import SlipDocumentPopup from '../components/warehouse/SlipDocumentPopup';
-import { isSlipFamilyDocType, resolveLiveStudioRecord, resolveBinderColor } from '../utils/studioSnapshot';
+import { isSlipFamilyDocType, resolveFiledDocumentView, getFiledDocumentViewSource, resolveBinderColor, resolveBinderFrameToken } from '../utils/studioSnapshot';
+import { searchFiledDocuments } from '../utils/filedDocSearch';
 import { SYSTEM_DOCUMENTS } from '../utils/printSchemaRegistry';
 
 export default function DocumentWarehouse({ insideDashboard = false }) {
@@ -16,6 +17,7 @@ export default function DocumentWarehouse({ insideDashboard = false }) {
   const [activeFolder, setActiveFolder] = useState(null);
   const [currentPage, setCurrentPage] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchFocused, setSearchFocused] = useState(false);
   const [highlightedField, setHighlightedField] = useState('');
   
   // Shelf-specific search filter state
@@ -262,33 +264,43 @@ export default function DocumentWarehouse({ insideDashboard = false }) {
     return null;
   };
 
+  // Deletion is confirmed IN-APP by the shared BinderFormModal (its
+  // confirmation panel calls this handler). The old flow gated the delete
+  // behind a native browser confirm dialog here — in the live environment
+  // that dialog never resolves true, so the Delete button did nothing at
+  // all: no confirmation, no error, the binder survived (parent's live
+  // check, 2026-10-25). By the time this handler runs, the user has
+  // already confirmed inside the modal.
   const handleDeleteBinder = () => {
     if (!editingBinder) return;
-    if (window.confirm(`Are you sure you want to delete this folder: "${editingBinder.name}"?`)) {
-      const updated = allCabinetBinders.filter(b => b.id !== editingBinder.id);
-      saveBindersToStorage(updated);
-      setShowEditModal(false);
-      setEditingBinder(null);
-    }
+    const updated = allCabinetBinders.filter(b => b.id !== editingBinder.id);
+    saveBindersToStorage(updated);
+    setShowEditModal(false);
+    setEditingBinder(null);
   };
 
   // Open the print view for the currently displayed filed document: the
   // studio modal for graphic documents, the slip popup for slip-family
-  // documents. The attachment's frozen snapshot is the content; when an
-  // older attachment has no snapshot, fall back to a live lookup by docId.
+  // documents. FRESHNESS (Omer, 2026-10-25): resolution is LIVE-FIRST —
+  // while the source record still exists, its CURRENT (edited) content is
+  // what renders; the frozen filing snapshot is only the fallback for a
+  // source record that no longer exists. `viewSource` rides along so the
+  // viewer can state plainly which version is being shown. The stored
+  // snapshot is never mutated by viewing.
   const handleOpenPrintView = () => {
     const doc = activeFolder?.documents?.[currentPage];
     if (!doc || !doc.docType) return;
-    const studioRecord = doc.studioRecord || resolveLiveStudioRecord(state, doc.docType, doc.docId || doc.id);
-    const attachment = { ...doc, studioRecord };
+    const view = resolveFiledDocumentView(state, doc);
+    const attachment = { ...doc, studioRecord: view.studioRecord, viewSource: view.source };
     if (isSlipFamilyDocType(doc.docType)) {
       setSlipAttachment(attachment);
-    } else if (studioRecord) {
+    } else if (view.studioRecord) {
       setStudioAttachment(attachment);
     } else {
       // Never let the studio fall back to a sample record for a filed
-      // document — a snapshot-less graphic document stays details-only.
-      alert('This filed document has no printable snapshot, so it can only be viewed as registry details.');
+      // document — with neither a live record nor a snapshot, a graphic
+      // document stays details-only.
+      alert('This filed document has no printable copy — its source record is gone and no snapshot was stored at filing time, so it can only be viewed as registry details.');
     }
   };
 
@@ -323,6 +335,7 @@ export default function DocumentWarehouse({ insideDashboard = false }) {
       setActiveFolder(binder);
       setCurrentPage(docCount > 0 ? docCount - 1 : 0); // Latest doc page on top
       setSearchQuery('');
+      setSearchFocused(false);
       setHighlightedField('');
       setStage('opened');
       setGrabbingBinderId(null);
@@ -337,32 +350,36 @@ export default function DocumentWarehouse({ insideDashboard = false }) {
     if (currentPage < activeFolder.documents.length - 1) setCurrentPage(prev => prev + 1);
   };
 
-  // Searching query matches inside book data sheet
+  // In-file search (Files viewer polish, 2026-10-25): scoped to the OPEN
+  // file only, matching each document's code/reference (docId), title and
+  // date (plus its registry details). Results render as a dropdown under
+  // the search bar; picking one — or pressing Enter for the first match —
+  // jumps straight to that document's page. No match is a clean inline
+  // state in the dropdown, never an alert.
+  const searchMatches = (searchQuery.trim() && activeFolder)
+    ? searchFiledDocuments(activeFolder.documents || [], searchQuery).slice(0, 8)
+    : [];
+  const searchNoMatch = !!searchQuery.trim() && !!activeFolder && searchMatches.length === 0;
+
+  const jumpToDocument = (idx) => {
+    if (!activeFolder) return;
+    setCurrentPage(idx);
+    setSearchFocused(false);
+    const matchedDoc = activeFolder.documents[idx];
+    const q = searchQuery.toLowerCase();
+    const matchedField = (matchedDoc?.details || []).find(d =>
+      d.value.toString().toLowerCase().includes(q) ||
+      d.label.toLowerCase().includes(q)
+    );
+    if (matchedField) {
+      setHighlightedField(matchedField.label);
+      setTimeout(() => setHighlightedField(''), 2000);
+    }
+  };
+
   const handleSearchSubmit = (e) => {
     e.preventDefault();
-    if (!searchQuery.trim() || !activeFolder) return;
-
-    const q = searchQuery.toLowerCase();
-    const matchedIdx = activeFolder.documents.findIndex(doc => 
-      doc.id.toLowerCase().includes(q) ||
-      doc.title.toLowerCase().includes(q) ||
-      doc.details.some(d => d.value.toString().toLowerCase().includes(q))
-    );
-
-    if (matchedIdx !== -1) {
-      setCurrentPage(matchedIdx);
-      const matchedDoc = activeFolder.documents[matchedIdx];
-      const matchedField = matchedDoc.details.find(d => 
-        d.value.toString().toLowerCase().includes(q) || 
-        d.label.toLowerCase().includes(q)
-      );
-      if (matchedField) {
-        setHighlightedField(matchedField.label);
-        setTimeout(() => setHighlightedField(''), 2000);
-      }
-    } else {
-      alert("No matching record sheet in this binder folder.");
-    }
+    if (searchMatches.length > 0) jumpToDocument(searchMatches[0].index);
   };
 
   // Filter binders based on header search bar input
@@ -388,6 +405,16 @@ export default function DocumentWarehouse({ insideDashboard = false }) {
   const activeDocTypeName = activeDoc?.docType
     ? (SYSTEM_DOCUMENTS.find(d => d.id === activeDoc.docType)?.name || activeDoc.docType)
     : null;
+
+  // Freshness marker for the displayed document: 'live' when its source
+  // record still exists (the print view will show the current version),
+  // 'snapshot' when only the filed copy remains, null when neither does.
+  const activeViewSource = activeDoc?.docType ? getFiledDocumentViewSource(state, activeDoc) : null;
+
+  // Open-file interior colour: the viewing user's resolved colour for
+  // this binder (per-user override ?? the binder's own colour) — the same
+  // resolution the spine uses, mapped to frame tokens.
+  const activeFrameToken = resolveBinderFrameToken(binderColors, activeFolder);
 
   const content = (
     <div className="w-full h-full flex-grow flex flex-col gap-0 relative overflow-hidden transition-all animate-fadeIn">
@@ -648,9 +675,9 @@ export default function DocumentWarehouse({ insideDashboard = false }) {
 
           {stage === 'browsing' || stage === 'grabbing' ? (
             /* ================= VERTICALLY SCROLLABLE 2-SHELVES WOOD CABINET ================= */
-            <div 
+            <div
               ref={cabinetRef}
-              className="relative w-full h-full wood-cabinet-outer rounded-none border-x-0 border-b-0 p-4 flex flex-col gap-6 select-none z-10 overflow-y-auto cabinet-scrollbar"
+              className="relative w-full h-full min-h-[600px] wood-cabinet-outer rounded-none border-x-0 border-b-0 p-4 flex flex-col gap-6 select-none z-10 overflow-y-auto cabinet-scrollbar"
             >
 
               {/* Chunked Cabinet Shelves row mapping - EXACTLY 2 SHELVES VISIBLE ON LOAD */}
@@ -767,8 +794,22 @@ export default function DocumentWarehouse({ insideDashboard = false }) {
             </div>
           ) : (
             /* ================= FULLSCREEN 3D BOOK reader OPEN VIEW ================= */
-            <div className="w-full max-w-4xl h-[520px] flex flex-col gap-6 animate-slideUp z-10">
-              
+            <div className="w-full max-w-4xl animate-slideUp z-10 pt-3">
+              {/* OPEN FILE FRAME — the inside of the opened binder: the book
+                  sits inside a frame tinted with the viewing user's resolved
+                  colour for this file, with the file's name on a tab on the
+                  frame's top edge. Screen presentation only — print output
+                  is unchanged. */}
+              <div
+                className="relative rounded-[30px] p-3 sm:p-4 shadow-[0_30px_60px_rgba(0,0,0,0.35)] ring-1 ring-black/25 flex flex-col gap-4 h-[560px]"
+                style={{ background: `linear-gradient(155deg, ${activeFrameToken.mid} 0%, ${activeFrameToken.deep} 80%)` }}
+              >
+                {/* File name tab on the frame's top edge */}
+                <div className="absolute -top-3 left-8 flex items-center gap-1.5 bg-white rounded-md pl-2.5 pr-3 py-1 shadow-md border border-black/10 z-30 max-w-[70%]">
+                  <span className="material-symbols-outlined text-[13px]" style={{ color: activeFrameToken.deep }}>{activeFolder.icon || 'folder_open'}</span>
+                  <span className="text-[10px] font-black uppercase tracking-wider truncate" style={{ color: activeFrameToken.deep }}>{activeFolder.name}</span>
+                </div>
+
               {/* Reader Subbar search & controls */}
               <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-white border border-outline-variant/30 rounded-2xl px-6 py-3 shadow-sm shrink-0">
                 <div className="flex items-center gap-2">
@@ -779,30 +820,80 @@ export default function DocumentWarehouse({ insideDashboard = false }) {
                   </div>
                 </div>
 
-                {/* Query document search bar */}
-                <form onSubmit={handleSearchSubmit} className="relative w-full sm:w-80">
-                  <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">search</span>
-                  <input 
-                    type="text" 
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full bg-slate-50 border border-outline-variant/20 focus:border-primary focus:bg-white focus:outline-none rounded-xl pl-9 pr-14 py-2.5 text-xs text-slate-700 placeholder:text-slate-400 shadow-inner"
-                    placeholder="Search invoice number, names, items..."
-                  />
-                  <button 
-                    type="submit" 
-                    className="absolute right-2 top-2 px-3 py-1 rounded bg-primary hover:bg-primary/10 text-primary font-bold text-[9px] transition-colors"
-                  >
-                    Scan
-                  </button>
-                </form>
+                {/* In-file search — scoped to THIS file; matches code /
+                    title / date, results drop down, a pick jumps straight
+                    to that document's page */}
+                <div
+                  className="relative w-full sm:w-80"
+                  onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setSearchFocused(false); }}
+                >
+                  <form onSubmit={handleSearchSubmit} className="relative">
+                    <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">search</span>
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => { setSearchQuery(e.target.value); setSearchFocused(true); }}
+                      onFocus={() => setSearchFocused(true)}
+                      className="w-full bg-slate-50 border border-outline-variant/20 focus:border-primary focus:bg-white focus:outline-none rounded-xl pl-9 pr-14 py-2.5 text-xs text-slate-700 placeholder:text-slate-400 shadow-inner"
+                      placeholder="Search this file by code, title or date..."
+                    />
+                    {searchQuery ? (
+                      <button
+                        type="button"
+                        onClick={() => setSearchQuery('')}
+                        className="absolute right-11 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-200/70 transition-colors cursor-pointer"
+                        title="Clear search"
+                      >
+                        <span className="material-symbols-outlined text-[13px]">close</span>
+                      </button>
+                    ) : null}
+                    <button
+                      type="submit"
+                      className="absolute right-2 top-2 px-3 py-1 rounded bg-primary hover:bg-primary/10 text-primary font-bold text-[9px] transition-colors"
+                    >
+                      Scan
+                    </button>
+                  </form>
+
+                  {searchFocused && searchQuery.trim() && (
+                    <div className="absolute left-0 right-0 top-full mt-2 bg-white border border-slate-200 rounded-2xl shadow-xl z-40 overflow-hidden animate-fadeIn">
+                      {searchNoMatch ? (
+                        <div className="px-4 py-3.5 flex items-center gap-2.5 text-slate-500">
+                          <span className="material-symbols-outlined text-base text-slate-300">search_off</span>
+                          <span className="text-xs font-bold">No documents match &ldquo;{searchQuery.trim()}&rdquo; in this file.</span>
+                        </div>
+                      ) : (
+                        searchMatches.map(({ index, doc }) => (
+                          <button
+                            key={`${doc.docId || doc.id || 'doc'}-${index}`}
+                            type="button"
+                            onClick={() => jumpToDocument(index)}
+                            className="w-full text-left px-4 py-2.5 hover:bg-slate-50 flex items-center justify-between gap-3 border-b border-slate-100 last:border-0 transition-colors cursor-pointer"
+                          >
+                            <span className="min-w-0">
+                              <span className="block text-xs font-bold text-slate-700 truncate">{doc.title}</span>
+                              <span className="block text-[10px] font-medium text-slate-400 mt-0.5">
+                                {doc.filedAt ? `Filed ${new Date(doc.filedAt).toLocaleDateString('en-GB')}` : (doc.date || '')}
+                              </span>
+                            </span>
+                            <span className="font-mono text-[9px] font-bold text-slate-400 shrink-0">{doc.docId || doc.id}</span>
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* 3D Spread Book Interface */}
-              <div className="flex-grow flex gap-2 relative">
+              <div className="flex-grow min-h-0 flex gap-2 relative">
                 
-                {/* Left Page (Folder Indexes catalog) */}
-                <div className="flex-1 bg-gradient-to-r from-slate-100 to-white text-slate-900 rounded-l-[28px] border-r border-slate-200 shadow-[-15px_15px_30px_rgba(0,0,0,0.15)] flex flex-col p-8 overflow-y-auto">
+                {/* Left Page (Folder Indexes catalog) — paper tinted with
+                    the file's colour, like the inside cover showing through */}
+                <div
+                  className="flex-1 text-slate-900 rounded-l-[28px] border-r border-slate-200 shadow-[-15px_15px_30px_rgba(0,0,0,0.15)] flex flex-col p-8 overflow-y-auto"
+                  style={{ background: `linear-gradient(to right, ${activeFrameToken.pale} 0%, #ffffff 88%)` }}
+                >
                   <div className="flex items-center justify-between pb-3 border-b border-slate-200 mb-6 shrink-0">
                     <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Document Roster Index</span>
                     <span className="text-xs font-bold text-slate-500 uppercase">{activeFolder.documents.length} entries archived</span>
@@ -823,14 +914,18 @@ export default function DocumentWarehouse({ insideDashboard = false }) {
                         <button
                           key={doc.id}
                           onClick={() => setCurrentPage(idx)}
+                          style={isActive ? { backgroundColor: activeFrameToken.soft, borderColor: activeFrameToken.mid, color: activeFrameToken.deep } : undefined}
                           className={`w-full text-left px-4 py-3 rounded-xl transition-all border flex items-center justify-between ${
-                            isActive 
-                              ? 'bg-primary/5 border-primary/20 text-primary font-black shadow-sm' 
+                            isActive
+                              ? 'font-black shadow-sm'
                               : 'bg-slate-50/50 hover:bg-slate-100 border-slate-200 text-slate-600'
                           }`}
                         >
                           <div className="flex items-center gap-2">
-                            <span className={`w-1.5 h-1.5 rounded-full ${isActive ? 'bg-primary animate-pulse' : 'bg-slate-400'}`} />
+                            <span
+                              className={`w-1.5 h-1.5 rounded-full ${isActive ? 'animate-pulse' : 'bg-slate-400'}`}
+                              style={isActive ? { backgroundColor: activeFrameToken.mid } : undefined}
+                            />
                             <span className="truncate text-xs">{doc.title}</span>
                           </div>
                           <span className="font-mono text-[9px] font-bold text-slate-400 shrink-0">{doc.id}</span>
@@ -845,8 +940,11 @@ export default function DocumentWarehouse({ insideDashboard = false }) {
                   </div>
                 </div>
 
-                {/* Opened Spine divider */}
-                <div className="w-2.5 bg-gradient-to-r from-slate-200 via-slate-400 to-slate-200 shadow-md z-20 shrink-0 relative" />
+                {/* Opened Spine divider — bound in the file's own colour */}
+                <div
+                  className="w-2.5 shadow-md z-20 shrink-0 relative"
+                  style={{ background: `linear-gradient(to right, ${activeFrameToken.deep}, ${activeFrameToken.mid}, ${activeFrameToken.deep})` }}
+                />
 
                 {/* Right Page (Active Document Presentation Sheets with 3D flips) */}
                 <div 
@@ -898,18 +996,41 @@ export default function DocumentWarehouse({ insideDashboard = false }) {
                     </span>
                   </div>
 
-                  {/* Print view — filed content, current print design. The
-                      studio (or slip popup) carries Print / Save PDF /
-                      Save Image with it. */}
+                  {/* Print view — content resolved live-first (the current
+                      version of the source document while it exists, else
+                      the filed copy), design per current Print Settings.
+                      The studio (or slip popup) carries Print / Save PDF /
+                      Save Image with it. The marker below states plainly
+                      which version will be shown. */}
                   {activeDoc.docType && (
-                    <button
-                      onClick={handleOpenPrintView}
-                      className="mb-6 w-full flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-black uppercase tracking-wider shadow-md transition-all cursor-pointer shrink-0"
-                    >
-                      <span className="material-symbols-outlined text-base">print</span>
-                      Open Print View
-                      <span className="normal-case tracking-normal font-bold text-white/60 text-[10px]">— content as filed, design as per current Print Settings</span>
-                    </button>
+                    <div className="mb-6 shrink-0">
+                      <button
+                        onClick={handleOpenPrintView}
+                        className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-black uppercase tracking-wider shadow-md transition-all cursor-pointer"
+                      >
+                        <span className="material-symbols-outlined text-base">print</span>
+                        Open Print View
+                        <span className="normal-case tracking-normal font-bold text-white/60 text-[10px]">— design as per current Print Settings</span>
+                      </button>
+                      <div className="mt-2 flex items-center gap-1.5 text-[10px] font-bold leading-snug">
+                        {activeViewSource === 'live' ? (
+                          <>
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                            <span className="text-emerald-700">Live version — this print reflects the latest edits to the source document.</span>
+                          </>
+                        ) : activeViewSource === 'snapshot' ? (
+                          <>
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
+                            <span className="text-amber-700">Filed copy — the source document no longer exists; showing the copy as filed{activeDoc.filedAt ? ` on ${new Date(activeDoc.filedAt).toLocaleDateString('en-GB')}` : ''}.</span>
+                          </>
+                        ) : (
+                          <>
+                            <span className="w-1.5 h-1.5 rounded-full bg-slate-300 shrink-0" />
+                            <span className="text-slate-400">No printable copy is available for this document.</span>
+                          </>
+                        )}
+                      </div>
+                    </div>
                   )}
 
                   {/* Metadata field maps */}
@@ -960,6 +1081,7 @@ export default function DocumentWarehouse({ insideDashboard = false }) {
                 </div>
 
               </div>
+              </div>
             </div>
           )}
 
@@ -983,8 +1105,10 @@ export default function DocumentWarehouse({ insideDashboard = false }) {
           onDelete={handleDeleteBinder}
         />
 
-        {/* FILED DOCUMENT PRINT VIEWERS — content is the frozen filing
-            snapshot; the design is the CURRENT Print Settings layout */}
+        {/* FILED DOCUMENT PRINT VIEWERS — content resolves live-first
+            (the source document's current version while it exists, else
+            the frozen filing snapshot); the design is the CURRENT Print
+            Settings layout */}
         <UniversalPrintStudioModal
           isOpen={!!studioAttachment}
           onClose={() => setStudioAttachment(null)}

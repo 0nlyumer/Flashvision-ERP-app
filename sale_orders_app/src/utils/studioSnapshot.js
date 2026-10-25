@@ -15,6 +15,13 @@
 //                  time; the print DESIGN applied in the viewer is always
 //                  the current Print Settings layout.
 //
+// VIEW RESOLUTION (freshness, 2026-10-25): the cabinet viewer resolves a
+// filed document LIVE-FIRST via `resolveFiledDocumentView` — while the
+// source record still exists, its current (edited) content is what the
+// print view renders; the frozen snapshot below is the fallback for a
+// source record that no longer exists. The stored snapshot itself is
+// never mutated by viewing.
+//
 // Document types with no studio document (or whose source record cannot be
 // found at filing time) return a null studioRecord — the attachment is still
 // filed with docType/docId and the viewer falls back to the stored
@@ -124,26 +131,69 @@ export function buildFiledDocumentSnapshot(state, routingDocType, docId) {
   return { docType: studioType, studioRecord: deepClone(snapshotSource) };
 }
 
-/**
- * Live fallback for the viewer: an attachment whose snapshot is missing
- * (filed before the snapshot upgrade, or the record was not findable at
- * filing time) can still render if the source record exists in the current
- * state. Returns the studio-shaped record or null.
- */
-export function resolveLiveStudioRecord(state, docType, docId) {
+// Raw live-source lookup shared by the viewer resolvers below: the source
+// record as it exists in the CURRENT state (no clone, no enrichment).
+const findLiveSource = (state, docType, docId) => {
   if (!state || !docType || docId === undefined || docId === null) return null;
   const entry = Object.entries(ROUTING_DOC_STUDIO_MAP).find(([, m]) => m.studioType === docType);
   if (!entry) return null;
   const [routingDocType, mapping] = entry;
+  let record = null;
   if (routingDocType === 'Onboarding Document') {
-    return deepClone(findById(loadOnboardingHistory(), docId));
+    record = findById(loadOnboardingHistory(), docId);
+  } else if (routingDocType === 'GRN Log') {
+    record = findById(state?.approvals, docId) || findById(state?.stockReceiving, docId);
+  } else if (mapping.collection) {
+    record = findById(state[mapping.collection], docId);
   }
-  if (routingDocType === 'GRN Log') {
-    return deepClone(findById(state?.approvals, docId) || findById(state?.stockReceiving, docId));
-  }
-  const record = mapping.collection ? findById(state[mapping.collection], docId) : null;
-  if (!record) return null;
-  return deepClone(routingDocType === 'Sales Order' ? enrichSaleOrder(state, record) : record);
+  return record ? { routingDocType, record } : null;
+};
+
+/**
+ * Live record for the viewer: the source record in its current state,
+ * shaped exactly as the studio renders it (deep clone + sale-order
+ * enrichment). Returns null when the source record no longer exists.
+ */
+export function resolveLiveStudioRecord(state, docType, docId) {
+  const found = findLiveSource(state, docType, docId);
+  if (!found) return null;
+  const shaped = found.routingDocType === 'Sales Order' ? enrichSaleOrder(state, found.record) : found.record;
+  return deepClone(shaped);
+}
+
+/**
+ * FRESHNESS (Omer, 2026-10-25 — "file mein hamesha taza version aye"):
+ * which version of a filed document the viewer shows.
+ *   'live'     — the source record still exists; its CURRENT content wins,
+ *                so later edits are always reflected in the filed view.
+ *   'snapshot' — the source record is gone; the frozen filing snapshot is
+ *                shown, so the file never loses its document.
+ *   null       — no docType, or neither a live record nor a snapshot.
+ * Cheap classification only (no cloning) — safe to call while rendering.
+ */
+export function getFiledDocumentViewSource(state, attachment) {
+  if (!attachment?.docType) return null;
+  const docId = attachment.docId ?? attachment.id;
+  if (findLiveSource(state, attachment.docType, docId)) return 'live';
+  if (attachment.studioRecord) return 'snapshot';
+  return null;
+}
+
+/**
+ * Resolve the record a filed document's print view renders, LIVE-FIRST:
+ * the current source record when it still exists, otherwise the frozen
+ * filing snapshot. The stored snapshot is only ever READ here — viewing a
+ * filed document never mutates what was filed.
+ *
+ * @returns {{ source: 'live'|'snapshot'|null, studioRecord: object|null }}
+ */
+export function resolveFiledDocumentView(state, attachment) {
+  if (!attachment?.docType) return { source: null, studioRecord: null };
+  const docId = attachment.docId ?? attachment.id;
+  const live = resolveLiveStudioRecord(state, attachment.docType, docId);
+  if (live) return { source: 'live', studioRecord: live };
+  if (attachment.studioRecord) return { source: 'snapshot', studioRecord: attachment.studioRecord };
+  return { source: null, studioRecord: null };
 }
 
 /**
@@ -155,4 +205,29 @@ export function resolveBinderColor(binderColors, binder) {
   if (!binder) return 'binder-blue-spine';
   const override = binderColors && typeof binderColors === 'object' ? binderColors[binder.id] : undefined;
   return override || binder.colorClass || 'binder-blue-spine';
+}
+
+// Frame tokens for the viewer's OPEN-FILE interior (Files viewer polish,
+// 2026-10-25): when a binder is opened, the inside of the book presents in
+// the binder's own colour — the same per-user resolved colour as the
+// spine. The stops mirror the spine gradients in DocumentWarehouse's CSS
+// (and the BinderFormModal colour previews), so spine and interior always
+// agree. `pale` is the near-white tint the paper pages sit against.
+export const BINDER_FRAME_TOKENS = {
+  'binder-blue-spine': { deep: '#1e3a8a', mid: '#2563eb', light: '#60a5fa', soft: 'rgba(37, 99, 235, 0.10)', pale: '#eff6ff' },
+  'binder-green-spine': { deep: '#064e3b', mid: '#059669', light: '#34d399', soft: 'rgba(5, 150, 105, 0.10)', pale: '#ecfdf5' },
+  'binder-red-spine': { deep: '#7f1d1d', mid: '#dc2626', light: '#f87171', soft: 'rgba(220, 38, 38, 0.10)', pale: '#fef2f2' },
+  'binder-purple-spine': { deep: '#4c1d95', mid: '#7c3aed', light: '#a78bfa', soft: 'rgba(124, 58, 237, 0.10)', pale: '#f5f3ff' },
+  'binder-amber-spine': { deep: '#78350f', mid: '#d97706', light: '#fbbf24', soft: 'rgba(217, 119, 6, 0.12)', pale: '#fffbeb' },
+  'binder-teal-spine': { deep: '#155e75', mid: '#0891b2', light: '#22d3ee', soft: 'rgba(8, 145, 178, 0.10)', pale: '#f0fdfa' },
+};
+
+/**
+ * The open-file frame token for the current user + binder: resolves the
+ * binder's colour exactly like the spine does (per-user override first),
+ * then maps it to its frame token set.
+ */
+export function resolveBinderFrameToken(binderColors, binder) {
+  const colorClass = resolveBinderColor(binderColors, binder);
+  return BINDER_FRAME_TOKENS[colorClass] || BINDER_FRAME_TOKENS['binder-blue-spine'];
 }
