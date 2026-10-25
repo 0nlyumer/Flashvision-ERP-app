@@ -22,6 +22,7 @@ import { getInitialPayrollMappings, normalizePayrollMappings } from '../utils/pa
 import { getInitialBatchLaborConfig, normalizeBatchLaborConfig } from '../utils/batchLaborCost';
 import { DEFAULT_CHART_OF_ACCOUNTS } from '../utils/financeEngine';
 import { invoiceSourceLabel } from '../utils/invoiceSource';
+import { buildFiledDocumentSnapshot } from '../utils/studioSnapshot';
 
 const AppContext = createContext();
 const BUILD_VERSION = '20260715_v5';
@@ -157,6 +158,11 @@ const initialMockState = {
     { i: 'calendar', x: 8, y: 4, w: 4, h: 6, type: 'calendar', static: false }
   ],
   dashboardBackground: null,
+  // FILES CABINET (2026-10-25): this user's per-user binder spine colours,
+  // { [binderId]: colorClass } — persisted per user in user_settings like
+  // themeSettings/displaySettings; the binder record's own colorClass is
+  // the default everyone sees until they pick their own.
+  binderColors: {},
   productionTarget: 50000,
   isGlobalPaginated: true,
   departments: [],
@@ -568,16 +574,15 @@ export const reconcileHRApprovalsAndLedgers = (stateObj) => {
   return stateObj;
 };
 
-// Phase C Step 6 — binders structural guard: session saves from a client
-// holding a degraded (null) documentWarehouseBinders used to wipe the server
-// copy (36 binders -> null, seen 2026-10-22 and during later sessions).
-// getSanitizedSyncState is the choke point of every blob write path, so the
-// last valid binders array seen is cached here and substituted whenever a
-// save would otherwise carry a non-array value. The
-// document_warehouse_binders table is the read source since Step 6; this
-// guard additionally protects the blob fallback copy.
-let lastGoodBindersCache = null;
-
+// Phase C Step 6 — binders structural guard, REVISED for the Files Cabinet
+// cleanup (2026-10-25): binders live ONLY in the document_warehouse_binders
+// table (the read AND write source since Step 6) — never in user_settings
+// and never resurrected from a cached copy. The old guard substituted the
+// last-good array whenever a save carried a non-array binders value, which
+// would resurrect deleted binders into the blob fallback copy forever.
+// Now: an array passes through exactly as-is (an EMPTY array persists as
+// empty — the cabinet being empty is a valid state), and a non-array value
+// normalizes to an empty array instead of an old copy.
 const getSanitizedSyncState = (stateObj) => {
   if (!stateObj) return {};
   const cleanState = { ...stateObj };
@@ -585,7 +590,9 @@ const getSanitizedSyncState = (stateObj) => {
   delete cleanState.displaySettings;
   delete cleanState.dashboardLayout;
   delete cleanState.dashboardBackground;
-  // Retain documentWarehouseBinders in cloud state so documents are never lost across devices/logins!
+  // FILES CABINET (2026-10-25): per-user binder spine colours live ONLY in
+  // user_settings (key 'binderColors') — never in the blob.
+  delete cleanState.binderColors;
   delete cleanState.currentUser;
   // FLASHAM PHASE A: the Flash AM terminal config lives ONLY in app_config
   // (key 'flashAmConfig', table copy wins on load) — never in the blob.
@@ -601,10 +608,8 @@ const getSanitizedSyncState = (stateObj) => {
   // app_config (key 'loginThemeSettings', table copy wins on load) — never
   // in the blob.
   delete cleanState.login_theme_settings;
-  if (Array.isArray(cleanState.documentWarehouseBinders)) {
-    lastGoodBindersCache = cleanState.documentWarehouseBinders;
-  } else if (lastGoodBindersCache) {
-    cleanState.documentWarehouseBinders = lastGoodBindersCache;
+  if (!Array.isArray(cleanState.documentWarehouseBinders)) {
+    cleanState.documentWarehouseBinders = [];
   }
   if (cleanState.users) {
     cleanState.users = cleanState.users.map(u => {
@@ -2589,8 +2594,11 @@ export const AppProvider = ({ children }) => {
     const cachedDisplay = localStorage.getItem(`displaySettings_${username}_${platformKey}`);
     const cachedLayout = localStorage.getItem(`dashboardLayout_${username}_${platformKey}`);
     const cachedBackground = localStorage.getItem(`dashboardBackground_${username}_${platformKey}`);
-    const cachedBinders = localStorage.getItem(`documentWarehouseBinders_${username}_${platformKey}`);
-    
+    // FILES CABINET (2026-10-25): binders are NO longer read from any
+    // per-user copy — the document_warehouse_binders table is their only
+    // source. What rides per-user now is binderColors (spine overrides).
+    const cachedBinderColors = localStorage.getItem(`binderColors_${username}_${platformKey}`);
+
     setState(prev => {
       const nextState = { ...prev };
       try {
@@ -2630,9 +2638,9 @@ export const AppProvider = ({ children }) => {
         console.warn("Error parsing cachedBackground:", e);
       }
       try {
-        nextState.documentWarehouseBinders = cachedBinders && cachedBinders !== 'undefined' ? JSON.parse(cachedBinders) : null;
+        nextState.binderColors = cachedBinderColors && cachedBinderColors !== 'undefined' ? JSON.parse(cachedBinderColors) : {};
       } catch (e) {
-        console.warn("Error parsing cachedBinders:", e);
+        console.warn("Error parsing cachedBinderColors:", e);
       }
       return nextState;
     });
@@ -2686,7 +2694,7 @@ export const AppProvider = ({ children }) => {
               { i: 'calendar', x: 8, y: 4, w: 4, h: 6, type: 'calendar', static: false }
             ]);
             assignIfDiff('dashboardBackground', sData.dashboardBackground !== undefined ? sData.dashboardBackground : null);
-            assignIfDiff('documentWarehouseBinders', sData.documentWarehouseBinders || null);
+            assignIfDiff('binderColors', sData.binderColors || {});
             return changed ? next : prev;
           });
         }
@@ -2733,7 +2741,7 @@ export const AppProvider = ({ children }) => {
               assignIfDiff('displaySettings', sData.displaySettings || prev.displaySettings);
               assignIfDiff('dashboardLayout', sData.dashboardLayout || prev.dashboardLayout);
               assignIfDiff('dashboardBackground', sData.dashboardBackground !== undefined ? sData.dashboardBackground : prev.dashboardBackground);
-              assignIfDiff('documentWarehouseBinders', sData.documentWarehouseBinders || prev.documentWarehouseBinders);
+              assignIfDiff('binderColors', sData.binderColors || prev.binderColors || {});
               return changed ? next : prev;
             });
           }
@@ -2759,15 +2767,20 @@ export const AppProvider = ({ children }) => {
     const isMobileApp = window.Capacitor || window.cordova || /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || window.screen.width < 768;
     const platformKey = isMobileApp ? 'mobile' : 'web';
     
+    // FILES CABINET (2026-10-25): binders are NOT part of user settings any
+    // more — they live only in the document_warehouse_binders table. What
+    // rides here instead is the per-user binderColors override map. (This
+    // upsert also drops the legacy documentWarehouseBinders key from the
+    // stored payload on the next save, since the payload is rebuilt here.)
     const userSettings = {
       themeSettings: state.themeSettings || null,
       displaySettings: state.displaySettings || null,
       dashboardLayout: state.dashboardLayout || null,
       dashboardBackground: state.dashboardBackground || null,
-      documentWarehouseBinders: state.documentWarehouseBinders || null,
+      binderColors: state.binderColors || {},
       lastUpdatedBy: clientId.current
     };
-    
+
     // Skip no-op saves: if the settings content is identical to the last
     // saved snapshot, writing again would only emit realtime events to this
     // user's other clients and make their theme re-apply (color flicker).
@@ -2776,7 +2789,7 @@ export const AppProvider = ({ children }) => {
       displaySettings: userSettings.displaySettings,
       dashboardLayout: userSettings.dashboardLayout,
       dashboardBackground: userSettings.dashboardBackground,
-      documentWarehouseBinders: userSettings.documentWarehouseBinders
+      binderColors: userSettings.binderColors
     });
     if (lastSavedSettingsRef.current === settingsSnapshot) return;
     lastSavedSettingsRef.current = settingsSnapshot;
@@ -2786,7 +2799,7 @@ export const AppProvider = ({ children }) => {
     localStorage.setItem(`displaySettings_${username}_${platformKey}`, JSON.stringify(state.displaySettings || null));
     localStorage.setItem(`dashboardLayout_${username}_${platformKey}`, JSON.stringify(state.dashboardLayout || null));
     localStorage.setItem(`dashboardBackground_${username}_${platformKey}`, JSON.stringify(state.dashboardBackground || null));
-    localStorage.setItem(`documentWarehouseBinders_${username}_${platformKey}`, JSON.stringify(state.documentWarehouseBinders || null));
+    localStorage.setItem(`binderColors_${username}_${platformKey}`, JSON.stringify(state.binderColors || {}));
     
     // Debounce the Supabase write by 800ms to prevent collision/jitter during reordering
     const handler = setTimeout(() => {
@@ -2810,7 +2823,7 @@ export const AppProvider = ({ children }) => {
     }, 800);
 
     return () => clearTimeout(handler);
-  }, [state.themeSettings, state.displaySettings, state.dashboardLayout, state.dashboardBackground, state.documentWarehouseBinders, state.currentUser?.username]);
+  }, [state.themeSettings, state.displaySettings, state.dashboardLayout, state.dashboardBackground, state.binderColors, state.currentUser?.username]);
 
   // Apply display scaling globally based on device/viewport and preferences
   useEffect(() => {
@@ -5419,7 +5432,7 @@ export const AppProvider = ({ children }) => {
     return matchedUser ? matchedUser.username : clean;
   };
 
-  const executeNextSteps = (task, updatedTasks, updatedApprovals, updatedChats, updatedBinders, usersList) => {
+  const executeNextSteps = (task, updatedTasks, updatedApprovals, updatedChats, updatedBinders, usersList, lookupState = null) => {
     while (task.currentStepIndex < task.steps.length) {
       const currentStep = task.steps[task.currentStepIndex];
       if (!currentStep) break;
@@ -5622,15 +5635,32 @@ export const AppProvider = ({ children }) => {
       else if (currentStep.type === 'archive_binder') {
         const selectedBinders = currentStep.config?.selectedBinders || [];
         const selectAll = currentStep.config?.selectAll || false;
-        
+
+        // FILES CABINET (2026-10-25): new selections store binder IDs;
+        // legacy rules still carry binder NAMES — match either so old
+        // rules keep filing into the same binders.
+        const filedBinderNames = [];
         if (updatedBinders && Array.isArray(updatedBinders)) {
+          // Freeze the document's printable snapshot at filing time: the
+          // cabinet viewer re-renders it later with the CURRENT print
+          // design over this frozen content.
+          const { docType, studioRecord } = buildFiledDocumentSnapshot(
+            lookupState || state,
+            task.document.type,
+            task.document.id
+          );
+          const filedAt = new Date().toISOString();
           updatedBinders.forEach(binder => {
-            if (selectAll || selectedBinders.includes(binder.name)) {
+            if (selectAll || selectedBinders.includes(binder.id) || selectedBinders.includes(binder.name)) {
               if (!binder.documents) binder.documents = [];
               binder.documents.push({
                 id: task.document.id,
                 title: task.document.title,
                 date: new Date().toLocaleDateString(),
+                filedAt,
+                docType,
+                docId: task.document.id,
+                studioRecord,
                 details: [
                   { label: 'Document ID', value: task.document.id },
                   { label: 'Document Type', value: task.document.type },
@@ -5639,6 +5669,7 @@ export const AppProvider = ({ children }) => {
                   { label: 'Workflow Rule', value: task.ruleName }
                 ]
               });
+              filedBinderNames.push(binder.name);
             }
           });
         }
@@ -5648,7 +5679,7 @@ export const AppProvider = ({ children }) => {
           stepName: currentStep.name,
           status: 'Success',
           timestamp: new Date().toLocaleTimeString(),
-          message: `Saved and attached document inside selected binders: ${selectAll ? 'All Binders' : selectedBinders.join(', ')}.`
+          message: `Saved and attached document inside selected binders: ${selectAll ? 'All Binders' : (filedBinderNames.length ? filedBinderNames.join(', ') : selectedBinders.join(', '))}.`
         });
         task.currentStepIndex += 1;
       }
@@ -5735,21 +5766,16 @@ export const AppProvider = ({ children }) => {
         const updatedApprovals = prev.approvals ? [...prev.approvals] : [];
         const updatedChats = prev.chats ? [...prev.chats] : [];
         
+        // Binders come from state only (the table is their source of
+        // truth). The old localStorage fallback copy is gone — it could
+        // resurrect binders deleted from the table (Files Cabinet,
+        // 2026-10-25). `prev` is also the snapshot-lookup state: it is the
+        // freshest state and contains the just-submitted source record.
         let updatedBinders = prev.documentWarehouseBinders ? JSON.parse(JSON.stringify(prev.documentWarehouseBinders)) : null;
-        if (!updatedBinders) {
-          const cached = localStorage.getItem(`documentWarehouseBinders_${prev.currentUser?.username || 'admin'}_web`);
-          if (cached) {
-            try { updatedBinders = JSON.parse(cached); } catch(e){}
-          }
-        }
-        
-        newTasks.forEach(task => {
-          executeNextSteps(task, updatedTasks, updatedApprovals, updatedChats, updatedBinders, prev.users || []);
-        });
 
-        if (updatedBinders && prev.currentUser?.username) {
-          localStorage.setItem(`documentWarehouseBinders_${prev.currentUser.username}_web`, JSON.stringify(updatedBinders));
-        }
+        newTasks.forEach(task => {
+          executeNextSteps(task, updatedTasks, updatedApprovals, updatedChats, updatedBinders, prev.users || [], prev);
+        });
 
         return {
           ...prev,
@@ -5826,7 +5852,7 @@ export const AppProvider = ({ children }) => {
                 }
               } else {
                 taskInList.status = 'Running';
-                executeNextSteps(taskInList, updatedTasks, updatedApprovals, updatedChats, updatedBinders, state.users || []);
+                executeNextSteps(taskInList, updatedTasks, updatedApprovals, updatedChats, updatedBinders, state.users || [], state);
               }
             } else if (decision === 'Rejected') {
               taskInList.history.push({
@@ -5853,7 +5879,7 @@ export const AppProvider = ({ children }) => {
                   taskInList.status = 'Completed';
                 } else {
                   taskInList.status = 'Running';
-                  executeNextSteps(taskInList, updatedTasks, updatedApprovals, updatedChats, updatedBinders, state.users || []);
+                  executeNextSteps(taskInList, updatedTasks, updatedApprovals, updatedChats, updatedBinders, state.users || [], state);
                 }
               } else if (onRejectAction === 'escalate') {
                 taskInList.history.push({
@@ -5882,9 +5908,6 @@ export const AppProvider = ({ children }) => {
     });
 
     if (stateChanged) {
-      if (updatedBinders && state.currentUser?.username) {
-        localStorage.setItem(`documentWarehouseBinders_${state.currentUser.username}_web`, JSON.stringify(updatedBinders));
-      }
       setState(prev => {
         const nextState = {
           ...prev,

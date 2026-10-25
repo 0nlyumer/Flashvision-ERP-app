@@ -2,6 +2,11 @@ import React, { useState, useEffect, useRef } from 'react';
 import Layout from '../components/Layout';
 import { useApp } from '../context/AppContext';
 import { loadOnboardingHistory } from '../utils/onboardingHistory';
+import UniversalPrintStudioModal from '../components/ui/UniversalPrintStudioModal';
+import BinderFormModal from '../components/warehouse/BinderFormModal';
+import SlipDocumentPopup from '../components/warehouse/SlipDocumentPopup';
+import { isSlipFamilyDocType, resolveLiveStudioRecord, resolveBinderColor } from '../utils/studioSnapshot';
+import { SYSTEM_DOCUMENTS } from '../utils/printSchemaRegistry';
 
 export default function DocumentWarehouse({ insideDashboard = false }) {
   const { state, setState } = useApp();
@@ -23,27 +28,19 @@ export default function DocumentWarehouse({ insideDashboard = false }) {
   const [hoveredBinderId, setHoveredBinderId] = useState(null);
   const [isCustomizeMode, setIsCustomizeMode] = useState(false);
 
-  // Modal display states
+  // Modal display states (the Add/Edit forms themselves live in the shared
+  // BinderFormModal — the Routing Center's Create File prompt uses it too)
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
-
-  // Form states for Add Binder
-  const [newBinderName, setNewBinderName] = useState('');
-  const [newBinderColor, setNewBinderColor] = useState('binder-blue-spine');
-
-  // Form states for Edit/Customize Binder
   const [editingBinder, setEditingBinder] = useState(null);
-  const [editBinderName, setEditBinderName] = useState('');
-  const [editBinderColor, setEditBinderColor] = useState('binder-blue-spine');
 
-  const colorSwatches = [
-    { label: 'Royal Blue', class: 'binder-blue-spine', preview: 'bg-blue-600' },
-    { label: 'Emerald Green', class: 'binder-green-spine', preview: 'bg-emerald-600' },
-    { label: 'Crimson Red', class: 'binder-red-spine', preview: 'bg-red-600' },
-    { label: 'Deep Purple', class: 'binder-purple-spine', preview: 'bg-purple-600' },
-    { label: 'Amber Gold', class: 'binder-amber-spine', preview: 'bg-amber-500' },
-    { label: 'Teal Blue', class: 'binder-teal-spine', preview: 'bg-cyan-600' }
-  ];
+  // Filed-document print viewers: the studio modal for graphic documents,
+  // the slip popup for the 12 PrintLayout (slip-family) documents.
+  const [studioAttachment, setStudioAttachment] = useState(null);
+  const [slipAttachment, setSlipAttachment] = useState(null);
+
+  // Per-user spine colours (this user's overrides from user_settings)
+  const binderColors = state?.binderColors || {};
 
   // Adapters linking system data arrays into dynamic shelves layout
   useEffect(() => {
@@ -163,38 +160,38 @@ export default function DocumentWarehouse({ insideDashboard = false }) {
       { name: 'SHIPMENT_LABELS', icon: 'category', documents: itemDocs }
     ];
 
-    // Check if customized binders exist in state.documentWarehouseBinders
+    // Binders come from state — the document_warehouse_binders table is
+    // their source of truth. An EMPTY array is a valid, stable state (the
+    // cabinet is simply empty) and must never trigger a re-seed: the demo
+    // seed below fires ONLY when binders were never initialized at all
+    // (null/undefined). (Files Cabinet cleanup, 2026-10-25 — the old
+    // "seed whenever the list is empty" branch resurrected all 36 demo
+    // binders after every cleanup.)
     const savedBinders = state.documentWarehouseBinders;
-    let parsedBinders = [];
-    
-    if (savedBinders && Array.isArray(savedBinders)) {
-      // A binder always displays its OWN stored documents — including the
-      // ones the routing archive step files into it. The generated
-      // financeDocs / hrDocs / routingDocs / itemDocs lists are used ONLY
-      // in the first-run seed below (folderTemplates, when no binders exist
-      // yet); they must never replace a binder's real documents.
-      parsedBinders = savedBinders;
-    }
 
-    if (parsedBinders.length === 0) {
-      parsedBinders = folderTemplates.map((item, idx) => ({
+    if (savedBinders === null || savedBinders === undefined) {
+      const seededBinders = folderTemplates.map((item, idx) => ({
         id: `BND-${idx}-${item.name}`,
         name: item.name,
         icon: item.icon,
         documents: item.documents,
         colorClass: 'binder-blue-spine'
       }));
-      setAllCabinetBinders(parsedBinders);
+      setAllCabinetBinders(seededBinders);
       if (state.currentUser?.username) {
         setState(prev => ({
           ...prev,
-          documentWarehouseBinders: parsedBinders
+          documentWarehouseBinders: seededBinders
         }));
       }
       return;
     }
 
-    setAllCabinetBinders(parsedBinders);
+    // A binder always displays its OWN stored documents — including the
+    // ones the routing archive step files into it. The generated
+    // financeDocs / hrDocs / routingDocs / itemDocs lists above feed ONLY
+    // the first-run seed; they never replace a binder's real documents.
+    setAllCabinetBinders(savedBinders);
   }, [state]);
 
   const saveBindersToStorage = (updatedList) => {
@@ -207,70 +204,62 @@ export default function DocumentWarehouse({ insideDashboard = false }) {
     }
   };
 
-  const handleAddBinder = (e) => {
-    e.preventDefault();
-    if (!newBinderName.trim()) return;
+  const formatBinderName = (raw) => (raw || '').trim().toUpperCase().replace(/\s+/g, '_');
 
-    const formattedName = newBinderName.toUpperCase().replace(/\s+/g, '_');
-    
+  // Shared BinderFormModal submit contract: return an error string to keep
+  // the form open, or null on success (the form closes itself).
+  const handleAddBinder = ({ name, colorClass }) => {
+    const formattedName = formatBinderName(name);
+    if (!formattedName) return 'Please enter a file name.';
+
     // Check if name already exists
     if (allCabinetBinders.some(b => b.name === formattedName)) {
-      alert("A folder with this name already exists!");
-      return;
+      return 'A folder with this name already exists!';
     }
 
+    // A new file starts EMPTY — documents arrive only when the routing
+    // archive step files real documents into it (the old synthetic
+    // "Inaugural Registry Record" placeholder is gone).
     const newBinder = {
       id: `BND-CUSTOM-${Date.now()}`,
       name: formattedName,
       icon: 'receipt_long',
-      documents: [
-        { 
-          id: `DOC-NEW-${Date.now()}`, 
-          title: 'Inaugural Registry Record', 
-          date: 'Just Now', 
-          details: [
-            { label: 'Document Name', value: newBinderName.toUpperCase() }, 
-            { label: 'Registered On', value: 'Today' }, 
-            { label: 'Cabinet ID', value: 'Warehouse Shelf' }
-          ] 
-        }
-      ],
-      colorClass: newBinderColor
+      documents: [],
+      colorClass
     };
 
-    const updated = [...allCabinetBinders, newBinder];
-    saveBindersToStorage(updated);
-    setShowAddModal(false);
-    setNewBinderName('');
-    setNewBinderColor('binder-blue-spine');
+    saveBindersToStorage([...allCabinetBinders, newBinder]);
+    return null;
   };
 
-  const handleEditBinder = (e) => {
-    e.preventDefault();
-    if (!editBinderName.trim() || !editingBinder) return;
-
-    const formattedName = editBinderName.toUpperCase().replace(/\s+/g, '_');
+  const handleEditBinder = ({ name, colorClass }) => {
+    if (!editingBinder) return 'No file selected.';
+    const formattedName = formatBinderName(name);
+    if (!formattedName) return 'Please enter a file name.';
 
     // Check if name is already taken by another binder
     if (allCabinetBinders.some(b => b.name === formattedName && b.id !== editingBinder.id)) {
-      alert("Another folder already has this name!");
-      return;
+      return 'Another folder already has this name!';
     }
 
+    // The NAME is a shared record field and renames for everyone. The
+    // COLOUR is per-user: it writes only the current user's override
+    // (user_settings `binderColors`) — the binder record itself keeps the
+    // creator's colour as the default everyone else sees.
     const updated = allCabinetBinders.map(b => {
       if (b.id === editingBinder.id) {
-        return {
-          ...b,
-          name: formattedName,
-          colorClass: editBinderColor
-        };
+        return { ...b, name: formattedName };
       }
       return b;
     });
 
     saveBindersToStorage(updated);
-    setShowEditModal(false);
+    setState(prev => ({
+      ...prev,
+      binderColors: { ...(prev.binderColors || {}), [editingBinder.id]: colorClass }
+    }));
     setEditingBinder(null);
+    return null;
   };
 
   const handleDeleteBinder = () => {
@@ -280,6 +269,26 @@ export default function DocumentWarehouse({ insideDashboard = false }) {
       saveBindersToStorage(updated);
       setShowEditModal(false);
       setEditingBinder(null);
+    }
+  };
+
+  // Open the print view for the currently displayed filed document: the
+  // studio modal for graphic documents, the slip popup for slip-family
+  // documents. The attachment's frozen snapshot is the content; when an
+  // older attachment has no snapshot, fall back to a live lookup by docId.
+  const handleOpenPrintView = () => {
+    const doc = activeFolder?.documents?.[currentPage];
+    if (!doc || !doc.docType) return;
+    const studioRecord = doc.studioRecord || resolveLiveStudioRecord(state, doc.docType, doc.docId || doc.id);
+    const attachment = { ...doc, studioRecord };
+    if (isSlipFamilyDocType(doc.docType)) {
+      setSlipAttachment(attachment);
+    } else if (studioRecord) {
+      setStudioAttachment(attachment);
+    } else {
+      // Never let the studio fall back to a sample record for a filed
+      // document — a snapshot-less graphic document stays details-only.
+      alert('This filed document has no printable snapshot, so it can only be viewed as registry details.');
     }
   };
 
@@ -299,8 +308,6 @@ export default function DocumentWarehouse({ insideDashboard = false }) {
 
     if (isCustomizeMode) {
       setEditingBinder(binder);
-      setEditBinderName(binder.name);
-      setEditBinderColor(binder.colorClass || 'binder-blue-spine');
       setShowEditModal(true);
       return;
     }
@@ -308,10 +315,13 @@ export default function DocumentWarehouse({ insideDashboard = false }) {
     setGrabbingBinderId(binder.id);
     setStage('grabbing');
 
-    // Smooth pull out delay, then 3D Book view mounts
+    // Smooth pull out delay, then 3D Book view mounts. An empty binder
+    // opens on its (empty) first page — the book view shows the clean
+    // "no documents yet" state.
+    const docCount = Array.isArray(binder.documents) ? binder.documents.length : 0;
     setTimeout(() => {
       setActiveFolder(binder);
-      setCurrentPage(binder.documents.length - 1); // Latest doc page on top
+      setCurrentPage(docCount > 0 ? docCount - 1 : 0); // Latest doc page on top
       setSearchQuery('');
       setHighlightedField('');
       setStage('opened');
@@ -369,6 +379,15 @@ export default function DocumentWarehouse({ insideDashboard = false }) {
     return chunks;
   };
   const chunkedShelves = chunkArray(filteredBinders, 15);
+
+  // The document currently on display in the opened book (filed order is
+  // the stored array order; paging moves through it one document at a time)
+  const activeDoc = activeFolder && Array.isArray(activeFolder.documents)
+    ? (activeFolder.documents[currentPage] || null)
+    : null;
+  const activeDocTypeName = activeDoc?.docType
+    ? (SYSTEM_DOCUMENTS.find(d => d.id === activeDoc.docType)?.name || activeDoc.docType)
+    : null;
 
   const content = (
     <div className="w-full h-full flex-grow flex flex-col gap-0 relative overflow-hidden transition-all animate-fadeIn">
@@ -654,8 +673,9 @@ export default function DocumentWarehouse({ insideDashboard = false }) {
                       {shelf.map((binder) => {
                         const isHovered = hoveredBinderId === binder.id;
                         
-                        // Default color style is premium dynamic customizable gradients
-                        const spineStyle = binder.colorClass || 'binder-blue-spine';
+                        // Spine colour: this user's per-user override wins;
+                        // otherwise the binder's own (creator's) colour.
+                        const spineStyle = resolveBinderColor(binderColors, binder);
 
                         // Check if this binder is pulling out (displaced downwards slightly exactly like reference screenshot!)
                         const isPulledOut = grabbingBinderId === binder.id;
@@ -703,7 +723,7 @@ export default function DocumentWarehouse({ insideDashboard = false }) {
 
                             {/* Glowing Tooltip POPUP above the hovered file */}
                             {isHovered && (
-                              <div className={`absolute -top-16 left-1/2 -translate-x-1/2 px-4 py-2 rounded-2xl text-center z-50 animate-fadeIn pointer-events-none border ${getTooltipClass(binder.colorClass)}`}>
+                              <div className={`absolute -top-16 left-1/2 -translate-x-1/2 px-4 py-2 rounded-2xl text-center z-50 animate-fadeIn pointer-events-none border ${getTooltipClass(spineStyle)}`}>
                                 <div className="text-xs font-headline font-black uppercase tracking-wider whitespace-nowrap flex items-center justify-center gap-1.5">
                                   <span className="material-symbols-outlined text-[13px]">folder</span>
                                   <span>{binder.name}</span>
@@ -733,7 +753,14 @@ export default function DocumentWarehouse({ insideDashboard = false }) {
               ) : (
                 <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 gap-2">
                   <span className="material-symbols-outlined text-4xl">folder_off</span>
-                  <p className="text-sm font-bold">No binders match your search filter.</p>
+                  {allCabinetBinders.length === 0 ? (
+                    <>
+                      <p className="text-sm font-bold">The cabinet is empty — no files yet.</p>
+                      <p className="text-xs font-medium">Use the Add File button above to create your first file; documents land here when a routing workflow archives them.</p>
+                    </>
+                  ) : (
+                    <p className="text-sm font-bold">No binders match your search filter.</p>
+                  )}
                 </div>
               )}
 
@@ -783,6 +810,13 @@ export default function DocumentWarehouse({ insideDashboard = false }) {
 
                   {/* Documents Roster list */}
                   <div className="flex-grow space-y-1.5 max-h-[260px] overflow-y-auto pr-1.5 custom-scrollbar">
+                    {activeFolder.documents.length === 0 && (
+                      <div className="px-4 py-6 text-center rounded-xl border border-dashed border-slate-300 bg-slate-50/60">
+                        <span className="material-symbols-outlined text-2xl text-slate-300">folder_open</span>
+                        <p className="text-xs font-bold text-slate-500 mt-1.5">No documents filed in this file yet.</p>
+                        <p className="text-[10px] font-medium text-slate-400 mt-1 leading-relaxed">Documents appear here when a routing workflow archives them into this file.</p>
+                      </div>
+                    )}
                     {activeFolder.documents.map((doc, idx) => {
                       const isActive = idx === currentPage;
                       return (
@@ -806,7 +840,7 @@ export default function DocumentWarehouse({ insideDashboard = false }) {
                   </div>
 
                   <div className="mt-auto pt-4 border-t border-slate-100 flex justify-between items-center text-[10px] font-mono text-slate-400 shrink-0">
-                    <span>Sheet {currentPage + 1} of {activeFolder.documents.length}</span>
+                    <span>{activeFolder.documents.length > 0 ? `Document ${currentPage + 1} of ${activeFolder.documents.length}` : 'No documents'}</span>
                     <span className="font-bold uppercase tracking-wider">DocWarehouse v1.2</span>
                   </div>
                 </div>
@@ -836,23 +870,54 @@ export default function DocumentWarehouse({ insideDashboard = false }) {
                     }
                   `}</style>
 
+                  {!activeDoc ? (
+                    /* Empty binder — clean "no documents yet" page */
+                    <div className="flex-grow flex flex-col items-center justify-center text-center gap-2 py-10">
+                      <span className="material-symbols-outlined text-5xl text-slate-200">draft</span>
+                      <p className="text-sm font-black text-slate-600">No documents yet</p>
+                      <p className="text-xs font-medium text-slate-400 max-w-[250px] leading-relaxed">
+                        This file is empty. When a routing workflow archives a document into it, the document appears here — printable in its current print design.
+                      </p>
+                    </div>
+                  ) : (
+                  <>
                   {/* Header sheet details */}
                   <div className="flex justify-between items-start pb-4 border-b border-slate-200/60 mb-6 shrink-0">
                     <div>
                       <h4 className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Active Sheet Name</h4>
-                      <p className="text-sm font-extrabold text-slate-800 mt-0.5">{activeFolder.documents[currentPage].title}</p>
+                      <p className="text-sm font-extrabold text-slate-800 mt-0.5">{activeDoc.title}</p>
+                      {activeDoc.docType && (
+                        <p className="text-[10px] font-bold text-slate-400 mt-1">
+                          {activeDocTypeName}
+                          {activeDoc.filedAt ? ` · Filed ${new Date(activeDoc.filedAt).toLocaleDateString('en-GB')}` : ''}
+                        </p>
+                      )}
                     </div>
                     <span className="text-[10px] font-mono font-black text-slate-500 uppercase bg-slate-100 px-2.5 py-0.5 rounded border border-slate-200 shrink-0">
-                      {activeFolder.documents[currentPage].id}
+                      {activeDoc.id}
                     </span>
                   </div>
+
+                  {/* Print view — filed content, current print design. The
+                      studio (or slip popup) carries Print / Save PDF /
+                      Save Image with it. */}
+                  {activeDoc.docType && (
+                    <button
+                      onClick={handleOpenPrintView}
+                      className="mb-6 w-full flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-black uppercase tracking-wider shadow-md transition-all cursor-pointer shrink-0"
+                    >
+                      <span className="material-symbols-outlined text-base">print</span>
+                      Open Print View
+                      <span className="normal-case tracking-normal font-bold text-white/60 text-[10px]">— content as filed, design as per current Print Settings</span>
+                    </button>
+                  )}
 
                   {/* Metadata field maps */}
                   <div className="flex-grow flex flex-col gap-4">
                     <h5 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Registry Data Parameters</h5>
 
                     <div className="grid grid-cols-1 gap-2.5">
-                      {activeFolder.documents[currentPage].details.map((field) => {
+                      {(activeDoc.details || []).map((field) => {
                         const isQueryHighlighted = highlightedField === field.label;
                         return (
                           <div 
@@ -890,6 +955,8 @@ export default function DocumentWarehouse({ insideDashboard = false }) {
                       <span className="material-symbols-outlined text-sm font-bold">chevron_right</span>
                     </button>
                   </div>
+                  </>
+                  )}
                 </div>
 
               </div>
@@ -898,160 +965,38 @@ export default function DocumentWarehouse({ insideDashboard = false }) {
 
         </div>
 
-        {/* ADD NEW BINDER MODAL */}
-        {showAddModal && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fadeIn">
-            <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl p-6 w-[90%] max-w-md animate-scaleUp">
-              <div className="flex justify-between items-center pb-3 border-b border-slate-100">
-                <h3 className="text-sm font-black font-headline text-slate-800 flex items-center gap-2">
-                  <span className="material-symbols-outlined text-primary text-base">create_new_folder</span>
-                  Create New Binder File
-                </h3>
-                <button 
-                  onClick={() => setShowAddModal(false)} 
-                  className="text-slate-400 hover:text-slate-600 cursor-pointer animate-pulse"
-                >
-                  <span className="material-symbols-outlined">close</span>
-                </button>
-              </div>
+        {/* ADD / EDIT FILE — the shared BinderFormModal (the Routing
+            Center's Create File prompt renders the same form) */}
+        <BinderFormModal
+          isOpen={showAddModal}
+          mode="create"
+          onClose={() => setShowAddModal(false)}
+          onSubmit={handleAddBinder}
+        />
+        <BinderFormModal
+          isOpen={showEditModal && !!editingBinder}
+          mode="edit"
+          initialName={editingBinder?.name || ''}
+          initialColor={editingBinder ? resolveBinderColor(binderColors, editingBinder) : 'binder-blue-spine'}
+          onClose={() => { setShowEditModal(false); setEditingBinder(null); }}
+          onSubmit={handleEditBinder}
+          onDelete={handleDeleteBinder}
+        />
 
-              <form onSubmit={handleAddBinder} className="mt-4 flex flex-col gap-4">
-                <div>
-                  <label className="block text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1.5">File Folder Name</label>
-                  <input 
-                    type="text"
-                    required
-                    value={newBinderName}
-                    onChange={(e) => setNewBinderName(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 focus:border-primary focus:bg-white focus:outline-none rounded-xl px-3.5 py-2 text-xs text-slate-800 shadow-inner"
-                    placeholder="e.g. INVENTORY_REPORTS"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1.5">Choose Spine Color</label>
-                  <div className="grid grid-cols-3 gap-2">
-                    {colorSwatches.map((swatch) => {
-                      const isSelected = newBinderColor === swatch.class;
-                      return (
-                        <button
-                          key={swatch.class}
-                          type="button"
-                          onClick={() => setNewBinderColor(swatch.class)}
-                          className={`p-2 rounded-xl border flex items-center gap-1.5 transition-all text-left cursor-pointer ${
-                            isSelected ? 'border-primary bg-primary/5 ring-1 ring-primary/20' : 'border-slate-200 hover:bg-slate-50'
-                          }`}
-                        >
-                          <div className={`w-3.5 h-3.5 rounded-full ${swatch.preview} shadow-sm shrink-0`} />
-                          <span className="text-[9px] font-bold text-slate-700 truncate">{swatch.label}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                <div className="mt-2 flex gap-2 justify-end">
-                  <button
-                    type="button"
-                    onClick={() => setShowAddModal(false)}
-                    className="px-4 py-2 border border-slate-200 text-slate-500 rounded-xl text-xs font-headline font-bold hover:bg-slate-50 cursor-pointer"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className="px-4 py-2 bg-primary hover:bg-primary/95 text-white rounded-xl text-xs font-headline font-bold cursor-pointer"
-                  >
-                    Add Folder
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        )}
-
-        {/* EDIT / CUSTOMIZE BINDER MODAL */}
-        {showEditModal && editingBinder && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fadeIn">
-            <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl p-6 w-[90%] max-w-md animate-scaleUp">
-              <div className="flex justify-between items-center pb-3 border-b border-slate-100">
-                <h3 className="text-sm font-black font-headline text-slate-800 flex items-center gap-2">
-                  <span className="material-symbols-outlined text-amber-500 text-base">folder_managed</span>
-                  Customize Binder File
-                </h3>
-                <button 
-                  onClick={() => setShowEditModal(false)} 
-                  className="text-slate-400 hover:text-slate-600 cursor-pointer"
-                >
-                  <span className="material-symbols-outlined">close</span>
-                </button>
-              </div>
-
-              <form onSubmit={handleEditBinder} className="mt-4 flex flex-col gap-4">
-                <div>
-                  <label className="block text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1.5">File Folder Name</label>
-                  <input 
-                    type="text"
-                    required
-                    value={editBinderName}
-                    onChange={(e) => setEditBinderName(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 focus:border-primary focus:bg-white focus:outline-none rounded-xl px-3.5 py-2 text-xs text-slate-800 shadow-inner"
-                    placeholder="Rename binder..."
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1.5">Choose Spine Color</label>
-                  <div className="grid grid-cols-3 gap-2">
-                    {colorSwatches.map((swatch) => {
-                      const isSelected = editBinderColor === swatch.class;
-                      return (
-                        <button
-                          key={swatch.class}
-                          type="button"
-                          onClick={() => setEditBinderColor(swatch.class)}
-                          className={`p-2 rounded-xl border flex items-center gap-1.5 transition-all text-left cursor-pointer ${
-                            isSelected ? 'border-primary bg-primary/5 ring-1 ring-primary/20' : 'border-slate-200 hover:bg-slate-50'
-                          }`}
-                        >
-                          <div className={`w-3.5 h-3.5 rounded-full ${swatch.preview} shadow-sm shrink-0`} />
-                          <span className="text-[9px] font-bold text-slate-700 truncate">{swatch.label}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                <div className="mt-2 flex justify-between items-center">
-                  <button
-                    type="button"
-                    onClick={handleDeleteBinder}
-                    className="px-3.5 py-2 bg-red-50 hover:bg-red-100 border border-red-200 text-red-700 rounded-xl text-xs font-headline font-bold flex items-center gap-1 cursor-pointer"
-                  >
-                    <span className="material-symbols-outlined text-xs">delete</span>
-                    Delete File
-                  </button>
-
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setShowEditModal(false)}
-                      className="px-4 py-2 border border-slate-200 text-slate-500 rounded-xl text-xs font-headline font-bold hover:bg-slate-50 cursor-pointer"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      className="px-4 py-2 bg-primary hover:bg-primary/95 text-white rounded-xl text-xs font-headline font-bold cursor-pointer"
-                    >
-                      Save Changes
-                    </button>
-                  </div>
-                </div>
-              </form>
-            </div>
-          </div>
-        )}
+        {/* FILED DOCUMENT PRINT VIEWERS — content is the frozen filing
+            snapshot; the design is the CURRENT Print Settings layout */}
+        <UniversalPrintStudioModal
+          isOpen={!!studioAttachment}
+          onClose={() => setStudioAttachment(null)}
+          documentType={studioAttachment?.docType || 'sale_order'}
+          documentData={studioAttachment?.studioRecord || null}
+          documentTitle={studioAttachment?.title || null}
+        />
+        <SlipDocumentPopup
+          isOpen={!!slipAttachment}
+          onClose={() => setSlipAttachment(null)}
+          attachment={slipAttachment}
+        />
 
       </div>
   );

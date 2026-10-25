@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useDialog } from '../../context/DialogContext';
 import { useApp } from '../../context/AppContext';
+import BinderFormModal from '../warehouse/BinderFormModal';
 
 export default function DocumentRoutingCenter() {
   const { appAlert } = useDialog();
@@ -47,21 +48,49 @@ export default function DocumentRoutingCenter() {
     'Inventory Audit'
   ];
 
-  // Predefined Binders fallback
-  const fallbackBinders = [
-    { name: 'FINANCIAL_REPORTS', icon: 'receipt_long' },
-    { name: 'SALES_INVOICES', icon: 'receipt_long' },
-    { name: 'VENDOR_LEDGERS', icon: 'receipt_long' },
-    { name: 'HR_ONBOARDING_PROFILES', icon: 'assignment_ind' },
-    { name: 'EMPLOYEE_ROSTER', icon: 'assignment_ind' },
-    { name: 'OFFICIAL_RECORDS', icon: 'assignment_ind' },
-    { name: 'PRODUCTION_BOM_RECORDS', icon: 'category' },
-    { name: 'INVENTORY_GOODS', icon: 'category' },
-    { name: 'STOCK_LEVEL_LOGS', icon: 'category' }
-  ];
-
+  // Real binders only (Files Cabinet, 2026-10-25): the old 9-name dummy
+  // fallback hid the cabinet's true empty state — when no file exists, the
+  // archive-step picker now shows the create-a-file prompt instead.
   const getBindersList = () => {
-    return state.documentWarehouseBinders || fallbackBinders;
+    return Array.isArray(state.documentWarehouseBinders) ? state.documentWarehouseBinders : [];
+  };
+
+  // A binder counts as selected when the step's list carries its ID (new
+  // selections) or its NAME (legacy rules) — the engine matches both.
+  const isBinderSelected = (selectedBinders, binder) => {
+    const list = selectedBinders || [];
+    return list.includes(binder.id) || list.includes(binder.name);
+  };
+
+  const binderDisplayName = (ref) => {
+    const found = getBindersList().find(b => b.id === ref || b.name === ref);
+    return found ? found.name : ref;
+  };
+
+  // Create File prompt (archive step, empty cabinet): the shared Warehouse
+  // form; on success the new binder is auto-selected for this step.
+  const [showCreateBinderModal, setShowCreateBinderModal] = useState(false);
+
+  const handleCreateBinderFromPrompt = ({ name, colorClass }) => {
+    const formattedName = (name || '').trim().toUpperCase().replace(/\s+/g, '_');
+    if (!formattedName) return 'Please enter a file name.';
+    const binders = getBindersList();
+    if (binders.some(b => b.name === formattedName)) {
+      return 'A folder with this name already exists!';
+    }
+    const newBinder = {
+      id: `BND-CUSTOM-${Date.now()}`,
+      name: formattedName,
+      icon: 'receipt_long',
+      documents: [],
+      colorClass
+    };
+    setCollection('documentWarehouseBinders', [...binders, newBinder]);
+    if (selectedStepIndex !== null && steps[selectedStepIndex]?.type === 'archive_binder') {
+      const current = steps[selectedStepIndex].config?.selectedBinders || [];
+      updateStepConfig({ selectedBinders: [...current, newBinder.id], selectAll: false });
+    }
+    return null;
   };
 
   const users = state.users || [
@@ -309,22 +338,33 @@ export default function DocumentRoutingCenter() {
       return;
     }
 
+    // An archive step with no file selected (and not "attach to all")
+    // would file documents nowhere — refuse the deploy (Files Cabinet,
+    // 2026-10-25; previously this saved silently with zero binders).
+    const binderStepPreCheck = steps.find(s => s.type === 'archive_binder');
+    if (binderStepPreCheck && !binderStepPreCheck.config?.selectAll && !(binderStepPreCheck.config?.selectedBinders || []).length) {
+      appAlert('The archive step needs at least one file — select a file, attach to all binders, or create a file first!');
+      return;
+    }
+
     // Compat flat variables for listing
     const audienceStep = steps.find(s => s.type === 'audience_selector');
     const triggerStep = steps.find(s => s.type === 'document_trigger');
     const binderStep = steps.find(s => s.type === 'archive_binder');
 
-    const flatUsers = audienceStep?.config?.selectAll 
-      ? 'All Users' 
+    const flatUsers = audienceStep?.config?.selectAll
+      ? 'All Users'
       : audienceStep?.config?.selectedUsers?.map(u => `@${u}`).join(', ') || 'Any';
 
     const flatTrigger = triggerStep?.config?.selectAll
       ? 'All Documents'
       : triggerStep?.config?.selectedDocTypes?.join(', ') || 'Any';
 
+    // Selections store binder IDs; the listing's flat folders field shows
+    // the binder NAMES (legacy name entries resolve to themselves).
     const flatBinders = binderStep?.config?.selectAll
       ? ['All Binders']
-      : binderStep?.config?.selectedBinders || [];
+      : (binderStep?.config?.selectedBinders || []).map(ref => binderDisplayName(ref));
 
     const updatedRule = {
       id: activeEditingRule?.id || `RUL-${Math.random().toString(36).substring(2, 5).toUpperCase()}-${Math.floor(100 + Math.random() * 900)}`,
@@ -1379,14 +1419,33 @@ export default function DocumentRoutingCenter() {
                       </div>
 
                       {!steps[selectedStepIndex].config?.selectAll && (
+                        getBindersList().length === 0 ? (
+                          /* No file exists yet — prominent create-first prompt
+                             (replaces the old dummy fallback list) */
+                          <div className="rounded-2xl border-2 border-dashed border-amber-300 bg-amber-50 p-5 text-center space-y-2.5">
+                            <span className="material-symbols-outlined text-3xl text-amber-500">folder_off</span>
+                            <p className="text-xs font-black text-amber-800">No file exists yet — create a file first</p>
+                            <p className="text-[10px] font-semibold text-amber-600 leading-relaxed">
+                              The Document Warehouse cabinet is empty, so this step has nothing to archive into. Create the file here — it will be selected for this step automatically.
+                            </p>
+                            <button
+                              type="button"
+                              onClick={() => setShowCreateBinderModal(true)}
+                              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-black uppercase tracking-wider shadow-md transition-all cursor-pointer"
+                            >
+                              <span className="material-symbols-outlined text-sm">create_new_folder</span>
+                              Create File
+                            </button>
+                          </div>
+                        ) : (
                         <div className="space-y-3">
                           <label className="block text-[10px] font-bold text-slate-400 uppercase">
                             Select target Cabinet Binders
                           </label>
                           <div className="relative">
                             <span className="material-symbols-outlined absolute left-2 top-2 text-slate-400 text-sm">search</span>
-                            <input 
-                              type="text" 
+                            <input
+                              type="text"
                               value={binderSearchTerm}
                               onChange={(e) => setBinderSearchTerm(e.target.value)}
                               className="w-full bg-slate-50 border border-slate-200 rounded-lg py-1.5 pl-8 pr-3 text-xs outline-none focus:bg-white"
@@ -1395,13 +1454,13 @@ export default function DocumentRoutingCenter() {
                           </div>
 
                           <div className="flex items-center gap-2 border-b border-slate-100 pb-2">
-                            <input 
+                            <input
                               id="selectAllBindersCheck"
                               type="checkbox"
-                              checked={getBindersList().length > 0 && (steps[selectedStepIndex].config?.selectedBinders || []).length === getBindersList().length}
+                              checked={getBindersList().every(b => isBinderSelected(steps[selectedStepIndex].config?.selectedBinders, b))}
                               onChange={(e) => {
                                 updateStepConfig({
-                                  selectedBinders: e.target.checked ? getBindersList().map(b => b.name) : []
+                                  selectedBinders: e.target.checked ? getBindersList().map(b => b.id) : []
                                 });
                               }}
                               className="w-3.5 h-3.5 rounded accent-primary cursor-pointer"
@@ -1415,15 +1474,20 @@ export default function DocumentRoutingCenter() {
                             {getBindersList()
                               .filter(b => b.name.toLowerCase().includes(binderSearchTerm.toLowerCase()))
                               .map(binder => {
-                                const isChecked = (steps[selectedStepIndex].config?.selectedBinders || []).includes(binder.name);
+                                const isChecked = isBinderSelected(steps[selectedStepIndex].config?.selectedBinders, binder);
                                 return (
-                                  <label key={binder.name} className="flex items-center gap-3 p-2.5 hover:bg-slate-50 cursor-pointer transition-colors">
-                                    <input 
+                                  <label key={binder.id} className="flex items-center gap-3 p-2.5 hover:bg-slate-50 cursor-pointer transition-colors">
+                                    <input
                                       type="checkbox"
                                       checked={isChecked}
                                       onChange={() => {
                                         const curList = steps[selectedStepIndex].config?.selectedBinders || [];
-                                        const nextList = isChecked ? curList.filter(b => b !== binder.name) : [...curList, binder.name];
+                                        // New selections store the binder ID; toggling
+                                        // also drops any legacy NAME entry for the
+                                        // same binder so the list normalizes to IDs.
+                                        const nextList = isChecked
+                                          ? curList.filter(ref => ref !== binder.id && ref !== binder.name)
+                                          : [...curList.filter(ref => ref !== binder.name), binder.id];
                                         updateStepConfig({ selectedBinders: nextList });
                                       }}
                                       className="w-3.5 h-3.5 rounded accent-primary cursor-pointer"
@@ -1437,6 +1501,7 @@ export default function DocumentRoutingCenter() {
                               })}
                           </div>
                         </div>
+                        )
                       )}
                     </div>
                   )}
@@ -1546,6 +1611,15 @@ export default function DocumentRoutingCenter() {
           </div>
         </div>
       )}
+
+      {/* Create File — the same Add File form as the Document Warehouse;
+          opened from the archive step's empty-cabinet prompt */}
+      <BinderFormModal
+        isOpen={showCreateBinderModal}
+        mode="create"
+        onClose={() => setShowCreateBinderModal(false)}
+        onSubmit={handleCreateBinderFromPrompt}
+      />
     </div>
   );
 }
