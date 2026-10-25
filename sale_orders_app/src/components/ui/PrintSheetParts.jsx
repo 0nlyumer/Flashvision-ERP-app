@@ -505,15 +505,19 @@ export function MetaGridHeader({ layout, companyName, companyLegal, companyAddre
       </div>
     );
 
-    // Duotone Split — band split horizontally: upper 62% darkest band
-    // shade, lower 38% brightest; the name straddles the split line.
+    // Duotone Split — band split horizontally ≈72/28: the identity
+    // block sits ENTIRELY inside the dark upper zone (its own solid
+    // darkest-shade container, split line below the address), and the
+    // bright lower zone is a pure accent stripe with NO text — a
+    // percentage split over the text container sliced the legal line.
     const duotoneBlock = (
-      <div data-design-shape="duotone" style={{ position: 'relative', background: `linear-gradient(180deg, ${scaleRgb(bandColor1, 0.42)} 0%, ${scaleRgb(bandColor1, 0.42)} 62%, ${mixRgb(bandColor2, '#ffffff', 0.18)} 62%, ${mixRgb(bandColor2, '#ffffff', 0.18)} 100%)`, borderRadius: '6px', overflow: 'hidden', ...exact }}>
-        <div data-design-shape="duotone-line" style={{ position: 'absolute', left: 0, right: 0, top: '62%', height: '0.6mm', background: 'rgba(255,255,255,0.4)', ...exact }} />
-        <div style={{ position: 'relative', zIndex: 1, padding: '3mm 4.5mm 3.4mm', textAlign: align }}>
+      <div data-design-shape="duotone" style={{ background: `linear-gradient(180deg, ${scaleRgb(bandColor1, 0.42)} 0%, ${scaleRgb(bandColor1, 0.42)} 72%, ${mixRgb(bandColor2, '#ffffff', 0.18)} 72%, ${mixRgb(bandColor2, '#ffffff', 0.18)} 100%)`, borderRadius: '6px', overflow: 'hidden', ...exact }}>
+        <div style={{ background: scaleRgb(bandColor1, 0.42), padding: '3mm 4.5mm 3.2mm', textAlign: align, ...exact }}>
           {eyebrow('rgba(255,255,255,0.75)')}
           {identityLines('#ffffff', 'rgba(255,255,255,0.92)')}
         </div>
+        <div data-design-shape="duotone-line" style={{ height: '0.6mm', background: 'rgba(255,255,255,0.4)', ...exact }} />
+        <div data-design-shape="duotone-stripe" style={{ height: '8mm', background: mixRgb(bandColor2, '#ffffff', 0.18), ...exact }} />
       </div>
     );
 
