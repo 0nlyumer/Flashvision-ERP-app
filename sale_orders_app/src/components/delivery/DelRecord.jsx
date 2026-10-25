@@ -78,13 +78,13 @@ export default function DelRecord() {
       <div className="flex flex-col md:flex-row justify-between items-end mb-10 gap-6 w-full">
         <div className="max-w-2xl">
           <nav className="flex items-center gap-2 text-xs font-semibold text-primary mb-2 tracking-widest uppercase">
-            <span>Logistics</span>
+            <span>Delivery</span>
             <span className="material-symbols-outlined text-[10px]" style={{ fontVariationSettings: "'FILL' 0" }}>chevron_right</span>
             <span className="text-on-surface-variant">History</span>
           </nav>
           <h2 className="font-headline text-4xl font-extrabold text-on-surface tracking-tight">Delivery Challan History</h2>
           <p className="text-on-surface-variant mt-3 text-sm leading-relaxed max-w-lg">
-            Manage and track your synthetic logistics documentation. View real-time status updates and historical data for all generated delivery challans.
+            Manage and track your synthetic delivery documentation. View real-time status updates and historical data for all generated delivery challans.
           </p>
         </div>
 
@@ -381,7 +381,7 @@ export default function DelRecord() {
                                                 <p className="text-xs">{printData.consignee?.deliveryAddress || 'N/A'}</p>
                                             </div>
                                             <div className="flex-1 p-4 border-r border-gray-300">
-                                                <h4 className="text-[10px] font-black uppercase mb-1">Logistics Info</h4>
+                                                <h4 className="text-[10px] font-black uppercase mb-1">Delivery Info</h4>
                                                 <p className="text-xs">Driver: {printData.logistics?.driverName || 'N/A'} ({printData.logistics?.driverNumber || 'N/A'})</p>
                                                 <p className="text-xs">Vehicle: {printData.logistics?.vehicleNumber || 'N/A'}</p>
                                             </div>

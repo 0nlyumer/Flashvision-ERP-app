@@ -30,6 +30,26 @@ export default function FinanceDashboard({ onNavigateTab }) {
     window.print();
   };
 
+  // Profitability label — DATA-DRIVEN (Omer, 2026-10-25). Derived from the
+  // real net margin; when nothing is posted yet there is NO profitability
+  // claim at all, just a neutral "No data yet".
+  // Thresholds (net margin %): >= 20 High · >= 10 Moderate · >= 0 Low ·
+  // < 0 Loss-making.
+  const hasFinanceData =
+    (Number(netRevenue) || 0) !== 0 ||
+    (Number(netProfit) || 0) !== 0 ||
+    (Number(grossProfit) || 0) !== 0 ||
+    (recentTransactions?.length || 0) > 0;
+  const profitability = !hasFinanceData
+    ? null
+    : netMargin >= 20
+      ? { label: 'High Profitability', cls: 'text-emerald-600' }
+      : netMargin >= 10
+        ? { label: 'Moderate Profitability', cls: 'text-amber-600' }
+        : netMargin >= 0
+          ? { label: 'Low Profitability', cls: 'text-amber-600' }
+          : { label: 'Loss-making', cls: 'text-rose-600' };
+
   // Cockpit height refinement (Omer, 2026-10-24): the ~10% dead band under
   // the GL panel was the Layout content wrapper's bottom padding (p-6 =
   // 24px, lg:p-8 = 32px) PLUS this root's own py-6 bottom (24px) = 56px of
@@ -161,7 +181,11 @@ export default function FinanceDashboard({ onNavigateTab }) {
           </div>
           <div className="mt-6 pt-4 border-t border-outline-variant/10 flex justify-between text-xs text-on-surface-variant">
             <span>Operating Health</span>
-            <span className="font-bold text-emerald-600">High Profitability</span>
+            {profitability ? (
+              <span className={`font-bold ${profitability.cls}`}>{profitability.label}</span>
+            ) : (
+              <span className="font-bold text-on-surface-variant">No data yet</span>
+            )}
           </div>
         </div>
       </div>

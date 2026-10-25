@@ -198,7 +198,7 @@ export default function Layout({ children, hideSidebar = false, subNavigation = 
     if (path.includes('/production-flow')) return 'OMS Flow';
     if (path.includes('/production')) return 'Production Module';
     if (path.includes('/inventory')) return 'Inventory Stock';
-    if (path.includes('/delivery-dashboard')) return 'Dispatch & Logistics';
+    if (path.includes('/delivery-dashboard')) return 'Dispatch & Delivery';
     if (path.includes('/hr')) return 'HR Dashboard';
     if (path.includes('/admin-setup')) return 'User Access Control';
     if (path.includes('/settings')) return 'System Settings';
@@ -302,7 +302,7 @@ export default function Layout({ children, hideSidebar = false, subNavigation = 
           </div>
           <div>
             <h4 className="text-base font-bold leading-tight text-white animate-fade-in">{state.currentUser?.name || 'Alex Sterling'}</h4>
-            <p className="text-[11px] opacity-80 mt-0.5 text-white/90">{state.currentUser?.role || 'Logistics Director'}</p>
+            <p className="text-[11px] opacity-80 mt-0.5 text-white/90">{state.currentUser?.role || 'Director'}</p>
           </div>
         </div>
 
@@ -1013,7 +1013,7 @@ export default function Layout({ children, hideSidebar = false, subNavigation = 
                     </div>
                     <div className="min-w-0 leading-tight">
                       <p className="text-xs font-bold text-on-surface truncate">{state.currentUser?.name || 'Alex Sterling'}</p>
-                      <p className="text-[10px] text-on-surface-variant truncate">{state.currentUser?.role || 'Logistics Director'}</p>
+                      <p className="text-[10px] text-on-surface-variant truncate">{state.currentUser?.role || 'Director'}</p>
                     </div>
                   </div>
                   
@@ -1138,7 +1138,7 @@ export default function Layout({ children, hideSidebar = false, subNavigation = 
                   <img className="w-10 h-10 rounded-full object-cover border-2 border-primary-fixed pointer-events-none" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCpE_7nq3cQA2WhQwuKWRDeRExnrwDZ2H4cLF9MyG5b8jJwrnmbawBaT3K0ZvtOEBBws0978SY6nNpxxcGodOkJF4gaHFTMaOSc2FXlK-TIZp-2Vgr33JIbpf0eUnfbhhr3MIq1NPxu47bJgK2ot6dCu1P9p381UKWpXqz30L-69ajlaIe17bTDt5BIAT4GFF2fOSyYtsb4IFTfqUvFtSShYTbXFw1paQT1RfoSsoH2r-XNYODxmk9Xc-XziXFtdFLNwzH_TJu_V1_6" alt="User Profile" />
                   <div className="flex-1 min-w-0 leading-tight">
                     <p className="text-sm font-bold text-on-surface truncate">{state.currentUser?.name || 'Alex Sterling'}</p>
-                    <p className="text-[11px] text-on-surface-variant truncate">{state.currentUser?.role || 'Logistics Director'}</p>
+                    <p className="text-[11px] text-on-surface-variant truncate">{state.currentUser?.role || 'Director'}</p>
                   </div>
                 </div>
                   <div className="flex flex-col items-center gap-2">

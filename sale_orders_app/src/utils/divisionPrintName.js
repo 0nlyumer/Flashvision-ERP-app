@@ -6,14 +6,14 @@
 // may carry `printFullName`, used on print headers (pay slip subtitle,
 // salary sheet header). Resolution order:
 //   1. The division record's own printFullName (set via the form).
-//   2. Built-in seed for AJ Synthetic (Omer's ordered default).
+//   2. Built-in seeds (Omer's ordered defaults): AJ Synthetic and AAA.
 //   3. '' — callers fall back (pay slip: current company text;
 //      salary sheet: the division name itself).
-// AAA has NO seed on purpose — Omer will provide its full name later;
-// never invent one.
+// AAA's full name was provided by Omer on 2026-10-25: "Triple A Industry".
 
 export const DIVISIONS_CONFIG_KEY = 'hr_divisions_config';
 export const AJ_SYNTHETIC_PRINT_NAME = 'AJ Synthetic Leather & Footwear Industries Pvt. Limited';
+export const AAA_PRINT_NAME = 'Triple A Industry';
 
 export function getDivisionPrintFullName(divisionName) {
   const target = (divisionName || '').trim().toLowerCase();
@@ -33,5 +33,6 @@ export function getDivisionPrintFullName(divisionName) {
     }
   } catch (e) { /* config unreadable — fall through to seed */ }
   if (target === 'aj synthetic') return AJ_SYNTHETIC_PRINT_NAME;
+  if (target === 'aaa') return AAA_PRINT_NAME;
   return '';
 }

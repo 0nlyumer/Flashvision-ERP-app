@@ -126,7 +126,7 @@ export const computePayrollRecords = (state, period, divisionToUse) => {
       const baseSalary = safeNum(emp.basicSalary || emp.salary || emp.baseSalary || 35000);
       const doj = emp.doj || emp.dateOfJoining || '2024-01-15';
       const designation = emp.designation || emp.jobTitle || emp.role || 'Associate';
-      const department = emp.department || 'Global Logistics';
+      const department = emp.department || 'General';
       const section = emp.section || emp.subSection || emp.division || 'Operations';
       const division = emp.division || emp.section || (divisionToUse === 'ALL' ? 'General' : divisionToUse);
 

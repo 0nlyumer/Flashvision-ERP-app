@@ -19,7 +19,7 @@ import {
   buildCsvBlob
 } from '../../utils/printExportUtils';
 import PrintStudioShell from './PrintStudioShell';
-import { resolveMargins, amountInWords, fmtQty } from '../../utils/printDesign';
+import { resolveMargins, amountInWords, fmtQty, ensurePhaseMatrixRecord } from '../../utils/printDesign';
 
 const PAPER_DIMENSIONS = {
   A4: { width: '210mm', minHeight: '297mm', label: 'A4 (210 × 297 mm)' },
@@ -363,11 +363,14 @@ function UniversalPrintStudioModalInner({
   const companyAddress = state?.adminSetup?.address || 'Plot 42-B, Industrial Zone Phase III, Karachi, Pakistan';
 
   // 1. Resolve document record: explicit data > state sample > mock.
+  //    For BOM, the sample/mock path is normalized into the phase-matrix
+  //    shape (raw BOM → real builder; nothing usable → representative
+  //    sample) so the test preview is never an empty sheet (2026-10-25).
   const resolvedRecord = useMemo(() => {
     if (documentData && typeof documentData === 'object') return documentData;
     const fromState = getSampleRecordFromState ? getSampleRecordFromState(documentType, state) : null;
-    if (fromState) return fromState;
-    return getMockPreviewData(documentType);
+    if (fromState) return ensurePhaseMatrixRecord(fromState, documentType, state);
+    return ensurePhaseMatrixRecord(getMockPreviewData(documentType), documentType, state);
   }, [documentData, documentType, state]);
 
   const isPhaseDoc = resolvedRecord?.renderMode === 'phase_matrix'

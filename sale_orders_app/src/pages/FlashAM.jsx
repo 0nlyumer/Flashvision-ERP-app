@@ -784,7 +784,12 @@ export default function FlashAM() {
     }
     return true;
   };
-  const canPunch = canFlashAm('punch');
+  // Omer (2026-10-25): there is NO dedicated guard user — the punch
+  // terminal is open to EVERY signed-in ERP user. Punch therefore needs
+  // no module/granular permission at all; the other terminal modes
+  // (deduction / overtime / fine) keep the Phase B permission gating
+  // above, so a non-admin user gets punch functions only.
+  const canPunch = !!currentUserRecord;
   const canDeduction = canFlashAm('deduction');
   const canOvertime = canFlashAm('overtime');
   const canFine = canFlashAm('fine');

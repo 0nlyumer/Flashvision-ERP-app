@@ -625,7 +625,7 @@ export default function OmsFilter({ pendingItems = [], customers = [] }) {
             <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-10 gap-4">
                 <div>
                     <h1 className="text-3xl font-manrope font-extrabold tracking-tight text-on-surface">Order Management</h1>
-                    <p className="text-on-surface-variant font-body mt-1">Real-time status tracking for synthetic logistics workflows.</p>
+                    <p className="text-on-surface-variant font-body mt-1">Real-time status tracking for synthetic order workflows.</p>
                 </div>
                 <div className="flex flex-col gap-3">
                     <div className="flex items-center gap-3 bg-surface-container-lowest p-1.5 rounded-full shadow-sm border border-outline-variant/15 w-fit">

@@ -10,7 +10,7 @@ export default function AddNewUser({ initialUser, onCancel }) {
   const [showPassword, setShowPassword] = useState(false);
 
   const [departments, setDepartments] = useState([
-    'Global Logistics',
+    'General',
     'Supply Chain Finance',
     'Quality Assurance',
     'Strategic Operations'
@@ -32,7 +32,7 @@ export default function AddNewUser({ initialUser, onCancel }) {
     phone: '',
     telegramUsername: '',
     telegramChatId: '',
-    department: 'Global Logistics',
+    department: 'General',
     jobTitle: 'Senior Operator',
     image: null,
     permissions: {
@@ -105,7 +105,7 @@ export default function AddNewUser({ initialUser, onCancel }) {
         phone: initialUser.phone || '',
         telegramUsername: normalizeTelegramUsername(initialUser.telegramUsername),
         telegramChatId: initialUser.telegramChatId || '',
-        department: initialUser.department || 'Global Logistics',
+        department: initialUser.department || 'General',
         jobTitle: initialUser.jobTitle || 'Senior Operator',
         image: initialUser.image || null,
         permissions: perms,

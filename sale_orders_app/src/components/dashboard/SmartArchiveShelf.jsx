@@ -46,11 +46,11 @@ export default function SmartArchiveShelf({ isOpen, onClose }) {
       })) : [
         {
           id: 'SO-MOCK-001',
-          title: 'Ahmad & Sons Logistics',
+          title: 'Ahmad & Sons',
           date: 'May 28, 2026',
           details: [
             { label: 'Document Number', value: 'SO-MOCK-001' },
-            { label: 'Customer Account', value: 'Ahmad & Sons Logistics' },
+            { label: 'Customer Account', value: 'Ahmad & Sons' },
             { label: 'Total Invoice Value', value: '$12,450.00' },
             { label: 'Associated Items', value: '12 raw items' },
             { label: 'Warehouse Status', value: 'Approved' }

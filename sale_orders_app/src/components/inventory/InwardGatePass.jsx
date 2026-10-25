@@ -150,7 +150,7 @@ export default function InwardGatePass() {
           <div>
               <div className="flex items-center gap-2 text-primary font-bold text-sm tracking-widest uppercase mb-1">
                   <span className="material-symbols-outlined text-sm">local_shipping</span>
-                  Security & Logistics
+                  Security & Dispatch
               </div>
               <h2 className="text-3xl font-black text-on-surface">Inward Gate Pass</h2>
           </div>

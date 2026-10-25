@@ -31,7 +31,7 @@ export default function SalaryAllowanceConfig({ isMobile, onBack }) {
       overtimeAllowance: {
         enabled: true,
         thresholdHours: 40,
-        departments: ['Operations', 'Logistics']
+        departments: ['Operations', 'General']
       },
       attendanceAllowance: {
         enabled: true,

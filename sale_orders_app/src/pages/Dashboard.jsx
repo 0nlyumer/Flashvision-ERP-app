@@ -5,7 +5,7 @@ import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
 import Layout from '../components/Layout';
 import { useApp } from '../context/AppContext';
-import { WidgetRegistry, getWidgetComponent } from '../components/dashboard/WidgetRegistry';
+import { WidgetRegistry, getWidgetComponent, isKnownWidgetType } from '../components/dashboard/WidgetRegistry';
 import { WIDGET_MODULES, MODULE_STAT_WIDGETS } from '../components/dashboard/moduleWidgetDefs';
 import ProductionHistoryModal from '../components/dashboard/ProductionHistoryModal';
 import DocumentWarehouse from './DocumentWarehouse';
@@ -260,7 +260,7 @@ export default function Dashboard() {
               compactType="vertical"
               margin={[16, 16]}
             >
-              {currentLayout.map(item => {
+              {currentLayout.filter(item => isKnownWidgetType(item.type)).map(item => {
                 const WidgetComponent = getWidgetComponent(item.type);
                 return (
                   <div 

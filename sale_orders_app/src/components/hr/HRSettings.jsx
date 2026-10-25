@@ -5,6 +5,7 @@ import PayrollAccountMapping from './PayrollAccountMapping';
 import { normalizePayrollMappings } from '../../utils/payrollAccountMapping';
 import SalaryAllowanceConfig from './SalaryAllowanceConfig';
 import FlashAMConfig from './FlashAMConfig';
+import { loadHrDepartments } from '../../utils/hrDepartments';
 
 
 
@@ -30,33 +31,12 @@ export default function HRSettings({ isMobile }) {
 
   const [newDesignation, setNewDesignation] = useState('');
 
-  // Pre-populated departments state - dynamically loaded from localStorage or state.departments
-  const [departments, setDepartments] = useState(() => {
-    try {
-      const savedConfig = localStorage.getItem('hr_departments_config');
-      if (savedConfig) {
-        const parsed = JSON.parse(savedConfig);
-        const isDummy = parsed.length === 3 && parsed.some(d => d.name === 'Production Department' || d.name === 'Assembly Division');
-        if (!isDummy && parsed.length > 0) return parsed;
-      }
-    } catch (e) {
-      console.error("Error initializing departments:", e);
-    }
-    const sDepts = (state?.departments || []).filter(d => {
-      const n = (d.name || d.label || d.value || '').toLowerCase();
-      return n !== 'production department' && n !== 'assembly division' && n !== 'quality assurance';
-    }).map((d, idx) => ({
-      id: d.id || (101 + idx),
-      name: d.name || d.label || d.value,
-      tagline: d.tagline || 'Company Department',
-      managers: d.managers || [],
-      operators: d.operators || [],
-      incharges: d.incharges || [],
-      sections: d.sections || [],
-      subSections: d.subSections || []
-    }));
-    return sDepts;
-  });
+  // HR departments state — HR's OWN canonical list (Omer, 2026-10-25):
+  // the saved 'hr_departments_config' wins; otherwise the canonical
+  // five from utils/hrDepartments. It is deliberately NOT seeded from
+  // state.departments — those are the three STOCK departments, a
+  // different list that must never leak into HR (or vice versa).
+  const [departments, setDepartments] = useState(() => loadHrDepartments());
 
   // Persist departments configuration to localStorage on change
   useEffect(() => {
@@ -65,28 +45,10 @@ export default function HRSettings({ isMobile }) {
     }
   }, [departments]);
 
-  // Synchronize state.departments if local departments is empty on mount
-  useEffect(() => {
-    if (departments.length === 0 && state?.departments && state.departments.length > 0) {
-      const sDepts = state.departments.filter(d => {
-        const n = (d.name || d.label || d.value || '').toLowerCase();
-        return n !== 'production department' && n !== 'assembly division' && n !== 'quality assurance';
-      }).map((d, idx) => ({
-        id: d.id || (101 + idx),
-        name: d.name || d.label || d.value,
-        tagline: d.tagline || 'Company Department',
-        managers: d.managers || [],
-        operators: d.operators || [],
-        incharges: d.incharges || [],
-        sections: d.sections || [],
-        subSections: d.subSections || []
-      }));
-      if (sDepts.length > 0) {
-        setDepartments(sDepts);
-        localStorage.setItem('hr_departments_config', JSON.stringify(sDepts));
-      }
-    }
-  }, [state?.departments]);
+  // NOTE (Omer, 2026-10-25): the old effect that re-imported the global
+  // stock departments (state.departments) into this HR list whenever it
+  // was empty has been removed — HR departments and stock departments
+  // are separate lists and neither may overwrite the other.
 
   useEffect(() => {
     const handleUpdate = () => {
@@ -210,12 +172,12 @@ export default function HRSettings({ isMobile }) {
       }
       return [
         { id: 1, name: 'AJ Synthetic', code: 'AJS', description: 'AJ Synthetic Core Division', head: '', printFullName: 'AJ Synthetic Leather & Footwear Industries Pvt. Limited' },
-        { id: 2, name: 'AAA', code: 'AAA', description: 'AAA Operations Wing', head: '', printFullName: '' }
+        { id: 2, name: 'AAA', code: 'AAA', description: 'AAA Operations Wing', head: '', printFullName: 'Triple A Industry' }
       ];
     } catch (e) {
       return [
         { id: 1, name: 'AJ Synthetic', code: 'AJS', description: 'AJ Synthetic Core Division', head: '', printFullName: 'AJ Synthetic Leather & Footwear Industries Pvt. Limited' },
-        { id: 2, name: 'AAA', code: 'AAA', description: 'AAA Operations Wing', head: '', printFullName: '' }
+        { id: 2, name: 'AAA', code: 'AAA', description: 'AAA Operations Wing', head: '', printFullName: 'Triple A Industry' }
       ];
     }
   });
@@ -258,7 +220,7 @@ export default function HRSettings({ isMobile }) {
       code: div.code || '',
       description: div.description || '',
       head: div.head || '',
-      printFullName: div.printFullName || (div.name === 'AJ Synthetic' ? 'AJ Synthetic Leather & Footwear Industries Pvt. Limited' : '')
+      printFullName: div.printFullName || (div.name === 'AJ Synthetic' ? 'AJ Synthetic Leather & Footwear Industries Pvt. Limited' : (div.name === 'AAA' ? 'Triple A Industry' : ''))
     });
     setShowDivisionModal(true);
   };
@@ -911,15 +873,11 @@ export default function HRSettings({ isMobile }) {
     setDepartments(nextDepts);
     localStorage.setItem('hr_departments_config', JSON.stringify(nextDepts));
     window.dispatchEvent(new Event('hr_departments_config_updated'));
-    
-    // Sync to global state.departments
-    setCollection('departments', nextDepts.map(d => ({
-      id: d.id,
-      name: d.name,
-      label: d.name,
-      value: d.name,
-      tagline: d.tagline || ''
-    })));
+
+    // NOTE (Omer, 2026-10-25): HR department saves used to also overwrite
+    // the global `departments` collection (the three STOCK departments).
+    // That cross-write is removed — HR saves now touch only the HR list,
+    // so per-department stock data can never be clobbered from HR.
     setShowModal(false);
   };
 
@@ -3908,13 +3866,9 @@ function renderFormModal() {
                 setDepartments(nextDepts);
                 localStorage.setItem('hr_departments_config', JSON.stringify(nextDepts));
                 window.dispatchEvent(new Event('hr_departments_config_updated'));
-                setCollection('departments', nextDepts.map(d => ({
-                  id: d.id,
-                  name: d.name,
-                  label: d.name,
-                  value: d.name,
-                  tagline: d.tagline || ''
-                })));
+                // NOTE (Omer, 2026-10-25): deleting an HR department used
+                // to also rewrite the global stock `departments`
+                // collection — removed; the two lists are independent.
                 setDeleteConfirm({ show: false, deptId: null, deptName: '' });
               }}
               className="px-5 py-2 bg-error text-white hover:bg-error/90 rounded-xl text-xs font-bold transition-all active:scale-[0.97] cursor-pointer"

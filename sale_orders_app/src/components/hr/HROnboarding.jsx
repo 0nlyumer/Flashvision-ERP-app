@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import CustomSelect from '../ui/CustomSelect';
 import { useApp } from '../../context/AppContext';
+import { seedHrDepartments } from '../../utils/hrDepartments';
 
 const INITIAL_WIZARD_DATA = {
   fullName: '',
@@ -140,19 +141,14 @@ export default function HROnboarding({ isMobile }) {
       if (savedConfig) {
         setDepartmentsConfig(JSON.parse(savedConfig));
       } else {
-        // Fallback / Init from global database (aj_synthetic_erp)
-        const erpState = JSON.parse(localStorage.getItem('aj_synthetic_erp') || '{}');
-        const globalDepts = (erpState.departments || []).filter(d => {
-          const n = (d.name || d.label || d.value || '').toLowerCase();
-          return n !== 'production department' && n !== 'assembly division' && n !== 'quality assurance';
-        });
-        const initialConfig = globalDepts.map((d, index) => ({
-          id: 100 + index + 1,
-          name: d.value || d.label,
-          tagline: d.value === 'Production Department' ? 'Core Manufacturing Unit' :
-                   d.value === 'Assembly Division' ? 'Precision Product Assembly' : 'Product Quality Control',
-          subSections: d.value === 'Production Department' ? ['Foam Mixing', 'Adhesive', 'Packing'] :
-                       d.value === 'Assembly Division' ? ['Line A', 'Line B'] : ['Inspection', 'Testing'],
+        // Fallback / Init = HR's canonical five (Omer, 2026-10-25) —
+        // previously this seeded HR's list from the global STOCK
+        // departments, which made the two lists fight each other.
+        const initialConfig = seedHrDepartments().map((d) => ({
+          id: d.id,
+          name: d.name,
+          tagline: d.tagline,
+          subSections: [],
           isGlobal: true
         }));
         setDepartmentsConfig(initialConfig);

@@ -934,7 +934,7 @@ export default function SaleOrderModule() {
         
         // Load company info overrides
         const logoUrl = printSettings.logoUrl || state.adminSetup?.logoUrl || '';
-        const address = printSettings.address || state.adminSetup?.address || '123 Logistics Avenue, Industrial Estate, TX 75001';
+        const address = printSettings.address || state.adminSetup?.address || '123 Industrial Avenue, Industrial Estate, TX 75001';
         const phone = printSettings.phone || state.adminSetup?.phone || '+1 (555) 123-4567';
         const email = printSettings.email || state.adminSetup?.email || 'operations@flashvision.com';
         const companyName = state.adminSetup?.companyName || 'FLASHVISION';
@@ -1563,7 +1563,7 @@ export default function SaleOrderModule() {
               </div>
               <div>
                 <h1 className="text-4xl font-extrabold tracking-tight text-on-surface font-headline">All Sale Orders</h1>
-                <p className="text-on-surface-variant mt-2 max-w-lg font-body">Manage, track, and monitor your global sales pipeline with real-time logistics intelligence.</p>
+                <p className="text-on-surface-variant mt-2 max-w-lg font-body">Manage, track, and monitor your global sales pipeline with real-time order intelligence.</p>
               </div>
             </div>
             
@@ -1957,7 +1957,7 @@ export default function SaleOrderModule() {
                </div>
                <div className="space-y-1">
                  <h1 className="text-3xl font-extrabold tracking-tight text-on-surface font-headline">New Sale Order</h1>
-                 <p className="text-on-surface-variant font-body text-sm">Create and dispatch synthetic logistics requests.</p>
+                 <p className="text-on-surface-variant font-body text-sm">Create and dispatch synthetic delivery requests.</p>
                </div>
             </div>
           </header>
@@ -2308,7 +2308,7 @@ export default function SaleOrderModule() {
           <div className="grid grid-cols-1 md:grid-cols-12 gap-8">
             <section className="md:col-span-7 bg-surface-container-low p-8 rounded-xl border border-outline-variant/10 space-y-4 shadow-sm">
               <label className="text-xs font-bold text-on-surface-variant uppercase tracking-wider flex items-center gap-2"><span className="material-symbols-outlined text-[16px]">notes</span> Overall Order Notes</label>
-              <textarea value={orderMeta.notes} onChange={(e) => handleMetaChange('notes', e.target.value)} className="w-full bg-surface-container-lowest border border-outline-variant/20 rounded-xl focus:ring-2 ring-primary/20 p-4 text-sm resize-y font-medium text-slate-700 shadow-inner" placeholder="Specify any logistical constraints, laboratory requirements, or compliance codes here..." rows="5"></textarea>
+              <textarea value={orderMeta.notes} onChange={(e) => handleMetaChange('notes', e.target.value)} className="w-full bg-surface-container-lowest border border-outline-variant/20 rounded-xl focus:ring-2 ring-primary/20 p-4 text-sm resize-y font-medium text-slate-700 shadow-inner" placeholder="Specify any delivery constraints, laboratory requirements, or compliance codes here..." rows="5"></textarea>
             </section>
             
             <section className="md:col-span-5 bg-surface-container-high border border-outline-variant/30 text-on-surface p-8 rounded-xl shadow-lg relative overflow-hidden flex flex-col justify-between">

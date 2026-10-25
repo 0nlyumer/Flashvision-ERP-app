@@ -185,7 +185,7 @@ export default function PurchaseInvoiceHistory({ onViewCreate }) {
           <div class="header-layout">
             <div class="brand-details">
               <h1 class="brand-name">FLASHVISION</h1>
-              <p>123 Logistics Avenue, Industrial Estate, TX 75001</p>
+              <p>123 Industrial Avenue, Industrial Estate, TX 75001</p>
               <p>Phone: +1 (555) 123-4567 | Email: finance@flashvision.com</p>
               <p>Reg No: US-9988-FV-A9</p>
             </div>
@@ -523,7 +523,7 @@ export default function PurchaseInvoiceHistory({ onViewCreate }) {
                 <div>
                   <h1 className="text-2xl font-black text-on-surface tracking-tight mb-1">FLASHVISION</h1>
                   <p className="text-xs text-on-surface-variant leading-relaxed">
-                    123 Logistics Avenue, Industrial Estate, TX 75001<br />
+                    123 Industrial Avenue, Industrial Estate, TX 75001<br />
                     Phone: +1 (555) 123-4567 | Email: finance@flashvision.com
                   </p>
                 </div>

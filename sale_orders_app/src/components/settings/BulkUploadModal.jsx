@@ -24,7 +24,7 @@ export default function BulkUploadModal({ isOpen, onClose, entityName, onUpload 
         headers = ['Supplier Name', 'Contact Person', 'Email', 'Address', 'Category', 'Badges'];
         rows = [
           ['Global Metals', 'John Doe', 'john@globalmetals.com', '789 Steel St', 'Materials & Commodities', 'ISO 9001'],
-          ['Swift Freight', 'Jane Smith', 'jane@swift-freight.com', '101 Cargo Ave', 'Logistics & Freight', 'SafeTransit Certified']
+          ['Swift Freight', 'Jane Smith', 'jane@swift-freight.com', '101 Cargo Ave', 'Freight & Transport', 'SafeTransit Certified']
         ];
         break;
       case 'Finished Goods':

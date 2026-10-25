@@ -159,7 +159,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS = [
 
   { id: '520000', code: '520000', name: 'Operating & Admin Expenses', rootType: 'Expense', category: 'Operating Expense', isGroup: true, parentId: '500000', isDebitNormal: true },
   { id: '521010', code: '521010', name: 'Executive & Admin Management Salaries', rootType: 'Expense', category: 'Operating Expense', isGroup: false, parentId: '520000', isDebitNormal: true, openingDebit: 0, openingCredit: 0 },
-  { id: '522010', code: '522010', name: 'Freight Outward & Logistics Deliveries', rootType: 'Expense', category: 'Operating Expense', isGroup: false, parentId: '520000', isDebitNormal: true, openingDebit: 0, openingCredit: 0 },
+  { id: '522010', code: '522010', name: 'Freight Outward & Deliveries', rootType: 'Expense', category: 'Operating Expense', isGroup: false, parentId: '520000', isDebitNormal: true, openingDebit: 0, openingCredit: 0 },
   { id: '523010', code: '523010', name: 'QC Lab Chemicals & Quality Certification', rootType: 'Expense', category: 'Operating Expense', isGroup: false, parentId: '520000', isDebitNormal: true, openingDebit: 0, openingCredit: 0 },
   { id: '524010', code: '524010', name: 'Plant Repairs, Maintenance & Lubrication', rootType: 'Expense', category: 'Operating Expense', isGroup: false, parentId: '520000', isDebitNormal: true, openingDebit: 0, openingCredit: 0 },
   { id: '525010', code: '525010', name: 'Depreciation Charge - Machinery & Equipment', rootType: 'Expense', category: 'Operating Expense', isGroup: false, parentId: '520000', isDebitNormal: true, openingDebit: 0, openingCredit: 0 },

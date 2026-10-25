@@ -25,7 +25,7 @@ export default function DelCreationSlip({ items = [], dcMode = 'Sale Orders', on
   const [selectedCustomer, setSelectedCustomer] = useState('');
   const [newItemId, setNewItemId] = useState('');
   const [consigneeDetails, setConsigneeDetails] = useState({ contactPerson: '', deliveryAddress: '', contactNumber: '' });
-  const [logisticsDetails, setLogisticsDetails] = useState({ driverName: '', driverNumber: '', vehicleNumber: '' });
+  const [deliveryDetails, setDeliveryDetails] = useState({ driverName: '', driverNumber: '', vehicleNumber: '' });
   const [showErrors, setShowErrors] = useState(false);
 
   const getAvailableTypes = (itemId) => {
@@ -258,9 +258,9 @@ export default function DelCreationSlip({ items = [], dcMode = 'Sale Orders', on
           appAlert('Please fill out all mandatory Consignee Details.');
           return;
       }
-      if (!logisticsDetails.driverName || !logisticsDetails.driverNumber || !logisticsDetails.vehicleNumber) {
+      if (!deliveryDetails.driverName || !deliveryDetails.driverNumber || !deliveryDetails.vehicleNumber) {
           setShowErrors(true);
-          appAlert('Please fill all logistics details (Driver Name, Driver Number, Vehicle Number).');
+          appAlert('Please fill all delivery details (Driver Name, Driver Number, Vehicle Number).');
           return;
       }
 
@@ -270,7 +270,7 @@ export default function DelCreationSlip({ items = [], dcMode = 'Sale Orders', on
           customerName: customerName,
           customerId: isManual ? selectedCustomer : (items.length > 0 ? items[0].customerId : null),
           consignee: consigneeDetails,
-          logistics: logisticsDetails,
+          logistics: deliveryDetails,
           status: 'Dispatched',
           dcMode: dcMode,
           items: slipItems.map(i => ({
@@ -415,22 +415,22 @@ export default function DelCreationSlip({ items = [], dcMode = 'Sale Orders', on
             </div>
           </div>
 
-          {/* Section 2: Logistics & Tracking */}
+          {/* Section 2: Delivery & Tracking */}
           <div className="col-span-12 md:col-span-5 bg-primary text-on-primary p-8 rounded-xl flex flex-col justify-between relative overflow-hidden">
             <div className="relative z-10 w-full">
-              <h2 className="text-xs font-black uppercase tracking-[0.2em] text-on-surface-fixed/60 mb-6">Logistics Section</h2>
+              <h2 className="text-xs font-black uppercase tracking-[0.2em] text-on-surface-fixed/60 mb-6">Delivery Section</h2>
               <div className="flex flex-col gap-5 w-full">
                 <div className="flex flex-col gap-1.5">
                   <label className="text-[10px] font-bold text-primary-fixed/60 uppercase tracking-wider">Vehicle Number <span className="text-error-container">*</span></label>
                   <input 
                     type="text"
                     placeholder="e.g. LXZ-1234"
-                    value={logisticsDetails.vehicleNumber}
+                    value={deliveryDetails.vehicleNumber}
                     onChange={(e) => {
-                        setLogisticsDetails(p => ({...p, vehicleNumber: e.target.value}));
+                        setDeliveryDetails(p => ({...p, vehicleNumber: e.target.value}));
                         if (showErrors) setShowErrors(false);
                     }}
-                    className={`p-3 bg-white/10 border ${showErrors && !logisticsDetails.vehicleNumber ? 'border-red-400 focus:ring-red-400 ring-1 ring-red-400' : 'border-white/20 focus:ring-white/40'} rounded-xl text-sm font-bold text-white placeholder-white/30 focus:bg-white/20 focus:ring-2 outline-none transition-all`}
+                    className={`p-3 bg-white/10 border ${showErrors && !deliveryDetails.vehicleNumber ? 'border-red-400 focus:ring-red-400 ring-1 ring-red-400' : 'border-white/20 focus:ring-white/40'} rounded-xl text-sm font-bold text-white placeholder-white/30 focus:bg-white/20 focus:ring-2 outline-none transition-all`}
                   />
                 </div>
                 
@@ -439,12 +439,12 @@ export default function DelCreationSlip({ items = [], dcMode = 'Sale Orders', on
                   <input 
                     type="text"
                     placeholder="e.g. Muhammad Ahmad"
-                    value={logisticsDetails.driverName}
+                    value={deliveryDetails.driverName}
                     onChange={(e) => {
-                        setLogisticsDetails(p => ({...p, driverName: e.target.value}));
+                        setDeliveryDetails(p => ({...p, driverName: e.target.value}));
                         if (showErrors) setShowErrors(false);
                     }}
-                    className={`p-3 bg-white/10 border ${showErrors && !logisticsDetails.driverName ? 'border-red-400 focus:ring-red-400 ring-1 ring-red-400' : 'border-white/20 focus:ring-white/40'} rounded-xl text-sm font-bold text-white placeholder-white/30 focus:bg-white/20 focus:ring-2 outline-none transition-all`}
+                    className={`p-3 bg-white/10 border ${showErrors && !deliveryDetails.driverName ? 'border-red-400 focus:ring-red-400 ring-1 ring-red-400' : 'border-white/20 focus:ring-white/40'} rounded-xl text-sm font-bold text-white placeholder-white/30 focus:bg-white/20 focus:ring-2 outline-none transition-all`}
                   />
                 </div>
 
@@ -453,12 +453,12 @@ export default function DelCreationSlip({ items = [], dcMode = 'Sale Orders', on
                   <input 
                     type="tel"
                     placeholder="0300-1234567"
-                    value={logisticsDetails.driverNumber}
+                    value={deliveryDetails.driverNumber}
                     onChange={(e) => {
-                        setLogisticsDetails(p => ({...p, driverNumber: e.target.value}));
+                        setDeliveryDetails(p => ({...p, driverNumber: e.target.value}));
                         if (showErrors) setShowErrors(false);
                     }}
-                    className={`p-3 bg-white/10 border ${showErrors && !logisticsDetails.driverNumber ? 'border-red-400 focus:ring-red-400 ring-1 ring-red-400' : 'border-white/20 focus:ring-white/40'} rounded-xl text-sm font-bold text-white placeholder-white/30 focus:bg-white/20 focus:ring-2 outline-none transition-all`}
+                    className={`p-3 bg-white/10 border ${showErrors && !deliveryDetails.driverNumber ? 'border-red-400 focus:ring-red-400 ring-1 ring-red-400' : 'border-white/20 focus:ring-white/40'} rounded-xl text-sm font-bold text-white placeholder-white/30 focus:bg-white/20 focus:ring-2 outline-none transition-all`}
                   />
                 </div>
               </div>
@@ -742,9 +742,9 @@ export default function DelCreationSlip({ items = [], dcMode = 'Sale Orders', on
                                                 <p className="text-xs">{consigneeDetails?.deliveryAddress || 'N/A'}</p>
                                             </div>
                                             <div className="flex-1 p-4 border-r border-gray-300">
-                                                <h4 className="text-[10px] font-black uppercase mb-1">Logistics Info</h4>
-                                                <p className="text-xs">Driver: {logisticsDetails?.driverName || 'N/A'} ({logisticsDetails?.driverNumber || 'N/A'})</p>
-                                                <p className="text-xs">Vehicle: {logisticsDetails?.vehicleNumber || 'N/A'}</p>
+                                                <h4 className="text-[10px] font-black uppercase mb-1">Delivery Info</h4>
+                                                <p className="text-xs">Driver: {deliveryDetails?.driverName || 'N/A'} ({deliveryDetails?.driverNumber || 'N/A'})</p>
+                                                <p className="text-xs">Vehicle: {deliveryDetails?.vehicleNumber || 'N/A'}</p>
                                             </div>
                                             <div className="w-1/3 p-4 flex flex-col justify-end text-right">
                                                 <div className="flex justify-between font-black text-sm">

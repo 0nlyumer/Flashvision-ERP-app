@@ -169,6 +169,78 @@ export function buildBomPrintRecord(bom, state) {
   };
 }
 
+// Representative SAMPLE phase-matrix record for the BOM document — used
+// ONLY by the Print Settings / studio sample path when no real BOM record
+// resolves, so the BOM test preview shows the phase panels filled instead
+// of an empty sheet (Omer, 2026-10-25). Real BOM prints never pass
+// through here: they arrive as explicit records built by
+// buildBomPrintRecord.
+export function buildSampleBomPrintRecord() {
+  const phases = [
+    {
+      name: 'TOP Phase',
+      rows: [
+        { name: 'PVC 682', qty: 480, uom: 'Kg' },
+        { name: 'MARBLE M3500', qty: 100, uom: 'Kg' },
+        { name: 'KEROSINE OIL', qty: 30, uom: 'Kg' }
+      ]
+    },
+    {
+      name: 'FOAM Phase',
+      rows: [
+        { name: 'PVC 682', qty: 100, uom: 'Kg' },
+        { name: 'EPOXY OIL', qty: 10, uom: 'Kg' },
+        { name: 'WET CARBON BLACK 8000', qty: 10, uom: 'Kg' }
+      ]
+    },
+    {
+      name: 'ADHESIVE Phase',
+      rows: [
+        { name: 'MARBLE M600', qty: 100, uom: 'Kg' },
+        { name: 'DOP', qty: 10, uom: 'Kg' },
+        { name: 'STABLIZER B.C 8020', qty: 10, uom: 'Kg' }
+      ]
+    },
+    {
+      name: 'Backing Cloth',
+      rows: [
+        { name: 'PK DTY WHITE', qty: 86.364, uom: 'Kg' }
+      ]
+    }
+  ].map((p) => ({ ...p, totals: totalsByUom(p.rows) }));
+  return {
+    renderMode: 'phase_matrix',
+    id: 'BOM-SAMPLE',
+    docSub: '170 PK DTY BLACK (WHITE)',
+    metaRows: [
+      { key: 'Item Code', value: 'FG-001' },
+      { key: 'Date', value: new Date().toLocaleDateString('en-GB') },
+      { key: 'Basis', value: 'Per 950 Meters' }
+    ],
+    sections: [{ code: 'FG-001', name: null, qtyLabel: '', phases }]
+  };
+}
+
+// Normalize a resolved studio record for phase documents. A raw BOM
+// (state.boms entry) is converted with the same builder real prints
+// use; when nothing usable resolves, the representative sample above
+// fills the preview. Non-BOM documents pass through untouched.
+export function ensurePhaseMatrixRecord(record, docType, state) {
+  if (docType !== 'bom_master') return record;
+  if (record && record.renderMode === 'phase_matrix') return record;
+  const looksLikeRawBom = record && typeof record === 'object' && (
+    record.phases || record.phaseConfig || record.finishedGoodId || record.finishedGoodName || record.clothName
+  );
+  if (looksLikeRawBom) {
+    try {
+      const built = buildBomPrintRecord(record, state);
+      const hasRows = (built.sections || []).some((s) => (s.phases || []).length > 0);
+      if (hasRows) return built;
+    } catch (e) { /* fall through to the sample */ }
+  }
+  return buildSampleBomPrintRecord();
+}
+
 // Build the phase-matrix record for a production plan's saved consumption
 // (plan.consumptions). One section per plan item, phases in plan order.
 export function buildConsumptionPrintRecord(plan, state, onlyItemCode = null) {

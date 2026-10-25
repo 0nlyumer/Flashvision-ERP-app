@@ -170,49 +170,10 @@ export default function DepartmentSettings() {
       };
     });
 
-    // Sync to HR departments configuration
-    try {
-      const savedConfig = localStorage.getItem('hr_departments_config');
-      let hrDepts = savedConfig ? JSON.parse(savedConfig) : [];
-      
-      if (editingId) {
-        // Edit mode
-        const existingIdx = hrDepts.findIndex(hrD => hrD.id === editingId || hrD.name === originalName);
-        if (existingIdx > -1) {
-          hrDepts[existingIdx].name = cleanName;
-          hrDepts[existingIdx].id = deptId;
-        } else {
-          // If not found in HR, add it
-          hrDepts.push({
-            id: deptId,
-            name: cleanName,
-            tagline: 'Custom Division',
-            managers: [],
-            operators: [],
-            incharges: [],
-            sections: [],
-            subSections: []
-          });
-        }
-      } else {
-        // Add mode
-        hrDepts.push({
-          id: deptId,
-          name: cleanName,
-          tagline: 'Custom Division',
-          managers: [],
-          operators: [],
-          incharges: [],
-          sections: [],
-          subSections: []
-        });
-      }
-      
-      localStorage.setItem('hr_departments_config', JSON.stringify(hrDepts));
-      window.dispatchEvent(new Event('hr_departments_config_updated'));
-    } catch (e) {
-      console.error("Error syncing with HR departments config:", e);
-    }
+    // NOTE (Omer, 2026-10-25): stock-department saves used to also push
+    // the department into HR's own list ('hr_departments_config'). That
+    // cross-write is removed — HR keeps its canonical five departments
+    // and stock departments are managed only here.
 
     // Save back to collections in a single batch state transaction to avoid Supabase sync race conditions
     setState(prev => ({
@@ -254,16 +215,9 @@ export default function DepartmentSettings() {
         };
       });
 
-      // Sync deletion to HR departments configuration
-      try {
-        const savedConfig = localStorage.getItem('hr_departments_config');
-        let hrDepts = savedConfig ? JSON.parse(savedConfig) : [];
-        hrDepts = hrDepts.filter(hrD => hrD.id !== dept.id && hrD.name !== name);
-        localStorage.setItem('hr_departments_config', JSON.stringify(hrDepts));
-        window.dispatchEvent(new Event('hr_departments_config_updated'));
-      } catch (e) {
-        console.error("Error syncing deletion with HR departments config:", e);
-      }
+      // NOTE (Omer, 2026-10-25): deleting a STOCK department no longer
+      // deletes anything from HR's own department list — the two lists
+      // are independent (see the save handler note above).
 
       // Save back to collections in a single batch state transaction to avoid Supabase sync race conditions
       setState(prev => ({

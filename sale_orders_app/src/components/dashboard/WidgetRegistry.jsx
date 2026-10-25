@@ -126,5 +126,10 @@ export const WidgetRegistry = {
 
 export const getWidgetComponent = (type) => {
   const widget = WidgetRegistry[type];
-  return widget ? widget.component : () => <PlaceholderWidget name={`Unknown: ${type}`} />;
+  // Unknown widget types (e.g. removed widgets lingering in an old saved
+  // layout) render NOTHING — never an "Unknown: ..." placeholder box
+  // (Omer, 2026-10-25).
+  return widget ? widget.component : () => null;
 };
+
+export const isKnownWidgetType = (type) => Boolean(WidgetRegistry[type]);

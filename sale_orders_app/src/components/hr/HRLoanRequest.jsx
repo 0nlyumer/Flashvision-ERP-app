@@ -8,7 +8,7 @@ export default function HRLoanRequest({ isMobile }) {
   // Employees list from global context
   const employees = (state.hr_employees_list || []).filter(e => (e.status || 'Active').toLowerCase() === 'active').length > 0 ? (state.hr_employees_list || []).filter(e => (e.status || 'Active').toLowerCase() === 'active') : [
     { id: 'EMP-2024-8841', name: 'Ahmed Khan', department: 'Operations', designation: 'Senior Associate' },
-    { id: 'EMP-4012', name: 'Rehan Khan', department: 'Logistics', designation: 'Foam Mixing Lead' },
+    { id: 'EMP-4012', name: 'Rehan Khan', department: 'Operations', designation: 'Foam Mixing Lead' },
     { id: 'EMP-4088', name: 'Sarah Jenkins', department: 'Quality Assurance', designation: 'QA Specialist' },
     { id: 'EMP-4033', name: 'Marcus Chen', department: 'Frontend Dev', designation: 'Software Engineer' }
   ];

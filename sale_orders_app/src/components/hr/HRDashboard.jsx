@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
+import { seedHrDepartments } from '../../utils/hrDepartments';
 
 export default function HRDashboard({ isMobile, onNavigateTab }) {
   const [approvedRequests, setApprovedRequests] = useState({});
@@ -63,15 +64,12 @@ export default function HRDashboard({ isMobile, onNavigateTab }) {
         }
       }
     } catch (e) {}
-    const sDepts = (state.departments || [])
+    // Fallback = HR's canonical five (Omer, 2026-10-25) — never the
+    // global stock departments, which are a separate list.
+    return seedHrDepartments()
       .map(d => ({ ...d, name: (d && (d.name || d.label || d.value)) || '' }))
-      .filter(d => {
-        if (!d.name || typeof d.name !== 'string' || !d.name.trim()) return false;
-        const n = d.name.trim().toLowerCase();
-        return n !== 'production department' && n !== 'assembly division' && n !== 'quality assurance';
-      });
-    return sDepts;
-  }, [state.departments, localDeptTrigger]);
+      .filter(d => typeof d.name === 'string' && d.name.trim() !== '');
+  }, [localDeptTrigger]);
 
   const [activePopupTab, setActivePopupTab] = useState(() => {
     return configuredDepartments[0]?.name || '';

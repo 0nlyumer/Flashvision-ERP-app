@@ -280,7 +280,7 @@ export default function AddNewSupplier() {
                   onChange={handleInputChange}
                   options={[
                     { label: 'Materials & Commodities', value: 'Materials & Commodities' },
-                    { label: 'Logistics & Freight', value: 'Logistics & Freight' },
+                    { label: 'Freight & Transport', value: 'Freight & Transport' },
                     { label: 'Equipment Maintenance', value: 'Equipment Maintenance' },
                     { label: 'Packaging & Consumables', value: 'Packaging & Consumables' }
                   ]}

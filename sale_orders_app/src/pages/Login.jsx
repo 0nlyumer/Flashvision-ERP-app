@@ -449,7 +449,7 @@ export default function Login() {
               </div>
 
               <p className={`text-sm sm:text-base font-normal leading-relaxed mt-4 max-w-md ${textMutedClass}`}>
-                {greeting || "Next-generation ERP architecture for mission-critical manufacturing, operations, and logistics management."}
+                {greeting || "Next-generation ERP architecture for mission-critical manufacturing and operations management."}
               </p>
             </div>
 

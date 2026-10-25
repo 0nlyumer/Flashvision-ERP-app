@@ -44,7 +44,7 @@ export const permissionsConfig = {
         description: 'Edit existing orders and line items.',
         icon: 'edit_square',
         perms: [
-          { id: 'edit', label: 'Edit Data', desc: 'Modify existing line items or logistics information.' },
+          { id: 'edit', label: 'Edit Data', desc: 'Modify existing line items or delivery information.' },
           { id: 'delete', label: 'Delete Order', desc: 'Permanent removal of records from the central database.', isError: true }
         ]
       },
