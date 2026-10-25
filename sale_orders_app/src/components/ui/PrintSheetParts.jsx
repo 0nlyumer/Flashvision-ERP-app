@@ -84,6 +84,156 @@ export function MetaGridHeader({ layout, companyName, companyLegal, companyAddre
     </div>
   );
 
+  // Meta grid strip (shared by the classic box and the graphic header
+  // designs): label ABOVE the value, up to 4 fields per row; a long value
+  // (address / contact) takes 2 columns when the field count leaves room.
+  const metaSpanFor = (row) => {
+    const isLong = /address|contact/i.test(row.label || '') || String(row.value || '').length > 34;
+    return isLong && metaRows.length <= 7 ? 2 : 1;
+  };
+  const metaGrid = (withTopBorder) => (metaRows.length > 0 ? (
+    <div
+      style={{
+        display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)',
+        ...(withTopBorder ? { borderTop: `1px solid ${DESIGN.line}` } : {}), background: '#fbfcfe'
+      }}
+    >
+      {metaRows.map((row, i) => (
+        <div
+          key={i}
+          style={{ padding: '1.9mm 4mm 2.1mm', gridColumn: `span ${metaSpanFor(row)}`, minWidth: 0, ...(onSelectMeta ? { cursor: 'pointer', boxShadow: selectedMetaKey && row.key === selectedMetaKey ? 'inset 0 0 0 2px #3b82f6' : 'none' } : {}) }}
+          onClick={onSelectMeta ? () => onSelectMeta(row, i) : undefined}
+        >
+          <div style={{ fontSize: '6.3pt', fontWeight: 700, letterSpacing: '1.2px', color: DESIGN.muted, textTransform: 'uppercase', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{row.label}</div>
+          <div style={{ fontSize: '9.3pt', fontWeight: row.strong ? 800 : 600, color: DESIGN.ink, lineHeight: 1.3, marginTop: '0.5mm', fontVariantNumeric: 'tabular-nums', overflowWrap: 'break-word' }}>{row.value}</div>
+        </div>
+      ))}
+    </div>
+  ) : null);
+
+  // ------------------------------------------------------------------
+  // Graphic header designs (Omer, 2026-10-25): opt-in per document via
+  // layout.headerDesign. 'classic' (the default, and the fallback for
+  // any unknown value) renders EXACTLY the header below — the graphic
+  // branch only runs when a design was deliberately picked in Print
+  // Settings. Every design takes its colors from the document's band
+  // colors, anchors/mirrors with headerAlign, and renders the SAME
+  // identity fields as classic (division/company eyebrow, company name,
+  // division sub-line, legal name, address) plus the same party + meta
+  // fields — compact and in-line per the standing print rules.
+  // ------------------------------------------------------------------
+  const design = ['ribbon', 'wave', 'sideblock', 'topstrip', 'frame'].includes(layout.headerDesign) ? layout.headerDesign : 'classic';
+  if (design !== 'classic') {
+    const initials = String(companyName || 'F').trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase() || 'F';
+    const monogramText = planVariant ? 'AJ' : initials;
+    const eyebrow = (color) => (
+      <div style={{ fontSize: '6.5pt', fontWeight: 700, letterSpacing: '1.6px', color, textTransform: 'uppercase', marginBottom: '1.4mm' }}>
+        {planVariant ? 'Division' : 'Company'}
+      </div>
+    );
+    const identityLines = (mainColor, subColor) => (
+      <>
+        <div style={{ fontSize: '13.5pt', fontWeight: 800, letterSpacing: '.4px', lineHeight: 1.2, color: mainColor }}>{companyName}</div>
+        {planVariant && (
+          <div style={{ fontSize: '8pt', color: subColor, marginTop: '0.8mm' }}>Production &amp; Planning Division</div>
+        )}
+        {companyLegal && (
+          <div style={{ fontSize: '7.5pt', color: subColor, lineHeight: 1.45, marginTop: '1mm' }}>{companyLegal}</div>
+        )}
+        {!planVariant && layout.showHeaderDetails !== false && companyAddress && (
+          <div style={{ fontSize: '7.5pt', color: subColor, lineHeight: 1.45, marginTop: '1mm' }}>{companyAddress}</div>
+        )}
+      </>
+    );
+    const exact = { printColorAdjust: 'exact', WebkitPrintColorAdjust: 'exact' };
+
+    const ribbonBlock = (
+      <div data-design-shape="ribbon" style={{ position: 'relative', background: band, borderRadius: '6px', overflow: 'hidden', padding: '3mm 4.5mm 3.4mm', ...exact }}>
+        <div style={{ position: 'absolute', top: 0, bottom: 0, width: '18mm', background: layout.bandColor2 || layout.bandColor || '#4f46e5', opacity: 0.35, transform: align === 'right' ? 'skewX(18deg)' : 'skewX(-18deg)', ...(align === 'right' ? { left: '-7mm' } : { right: '-7mm' }), ...exact }} />
+        <div style={{ position: 'relative', textAlign: align }}>
+          {eyebrow('rgba(255,255,255,0.75)')}
+          {identityLines('#ffffff', 'rgba(255,255,255,0.85)')}
+        </div>
+      </div>
+    );
+
+    const waveBlock = (
+      <div data-design-shape="wave" style={{ position: 'relative', background: band, borderRadius: '6px', overflow: 'hidden', ...exact }}>
+        <div style={{ position: 'relative', zIndex: 1, padding: '3mm 4.5mm 6.5mm', textAlign: align }}>
+          {eyebrow('rgba(255,255,255,0.75)')}
+          {identityLines('#ffffff', 'rgba(255,255,255,0.85)')}
+        </div>
+        <svg data-design-shape="wave-svg" aria-hidden="true" preserveAspectRatio="none" viewBox="0 0 100 10" style={{ position: 'absolute', left: 0, bottom: 0, width: '100%', height: '5mm', display: 'block', transform: align === 'right' ? 'scaleX(-1)' : 'none' }}>
+          <path d="M0,5 C22,9.5 38,0.5 60,3 C78,5 90,7.5 100,4.5 L100,10 L0,10 Z" fill="#ffffff" opacity="0.3" />
+          <path d="M0,7.5 C28,10.5 52,3.5 100,6.5 L100,10 L0,10 Z" fill="#ffffff" />
+        </svg>
+      </div>
+    );
+
+    const sideBlock = (
+      <div style={{ display: 'flex', flexDirection: align === 'right' ? 'row-reverse' : 'row', border: `1px solid ${DESIGN.line}`, borderRadius: '8px', overflow: 'hidden' }}>
+        <div data-design-shape="sideblock" style={{ background: band, width: '27mm', flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '3.2mm 2mm', ...exact }}>
+          <div style={{ width: '11mm', height: '9mm', border: '1.6px solid rgba(255,255,255,0.92)', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 900, fontSize: '11pt', color: '#ffffff' }}>{monogramText}</div>
+          <div style={{ fontSize: '6pt', fontWeight: 700, letterSpacing: '1.8px', color: 'rgba(255,255,255,0.85)', textTransform: 'uppercase', marginTop: '1.4mm' }}>{planVariant ? 'Division' : 'Company'}</div>
+        </div>
+        <div style={{ flex: 1, padding: '3.2mm 4mm 3.4mm', textAlign: align === 'center' ? 'center' : 'left' }}>
+          {identityLines(DESIGN.ink, DESIGN.muted)}
+        </div>
+      </div>
+    );
+
+    const topStripBlock = (
+      <div style={{ border: `1px solid ${DESIGN.line}`, borderRadius: '8px', overflow: 'hidden' }}>
+        <div data-design-shape="topstrip" style={{ height: '2.4mm', background: band, ...exact }} />
+        <div style={{ padding: '2.8mm 4mm 3.2mm', textAlign: align }}>
+          {eyebrow(accent)}
+          {identityLines(DESIGN.ink, DESIGN.muted)}
+        </div>
+      </div>
+    );
+
+    const frameBlock = (
+      <div data-design-shape="frame" style={{ border: `2px solid ${accent}`, borderRadius: '4px', padding: '1.1mm', ...exact }}>
+        <div style={{ border: `1px solid ${accent}`, borderRadius: '2px', padding: '2.6mm 4mm 3mm', textAlign: 'center' }}>
+          {eyebrow(accent)}
+          {identityLines(DESIGN.ink, DESIGN.muted)}
+          <div style={{ height: '0.7mm', width: '38mm', maxWidth: '60%', background: band, margin: '2.2mm auto 0', ...exact }} />
+        </div>
+      </div>
+    );
+
+    const graphicBlock = design === 'ribbon' ? ribbonBlock
+      : design === 'wave' ? waveBlock
+      : design === 'sideblock' ? sideBlock
+      : design === 'topstrip' ? topStripBlock
+      : frameBlock;
+
+    const partyStrip = party ? (
+      <div
+        onClick={onSelectParty || undefined}
+        style={{ marginTop: '2mm', background: DESIGN.soft, border: `1px solid ${DESIGN.line}`, borderRadius: '6px', padding: '1.8mm 4mm', display: 'flex', gap: '3mm', alignItems: 'baseline', justifyContent: align === 'center' ? 'center' : align === 'right' ? 'flex-end' : 'flex-start', ...(onSelectParty ? { cursor: 'pointer', boxShadow: partySelected ? 'inset 0 0 0 2px #3b82f6' : 'none' } : {}) }}
+      >
+        <span style={{ fontSize: '6.5pt', fontWeight: 700, letterSpacing: '1.6px', color: accent, textTransform: 'uppercase' }}>{party.label}</span>
+        <span style={{ fontSize: '11.5pt', fontWeight: 700, lineHeight: 1.25, color: DESIGN.ink }}>{party.value}</span>
+      </div>
+    ) : null;
+
+    return (
+      <>
+        <div data-header-design={design}>
+          {graphicBlock}
+          {partyStrip}
+          {metaRows.length > 0 && (
+            <div style={{ border: `1px solid ${DESIGN.line}`, borderRadius: '8px', overflow: 'hidden', marginTop: '2mm' }}>
+              {metaGrid(false)}
+            </div>
+          )}
+        </div>
+        {bandEl}
+      </>
+    );
+  }
+
   if (align === 'center') {
     return (
       <>
@@ -121,14 +271,7 @@ export function MetaGridHeader({ layout, companyName, companyLegal, companyAddre
   // Meta fields: full-width compact grid strip UNDER the party/company
   // row, inside the same bordered box (Omer, 2026-10-25 — the old 33%
   // side rail crushed 8 Sale Order fields into per-word wraps and ate
-  // ~40% of the page). Label sits ABOVE the value; up to 4 fields per
-  // row; a long value (address / contact) takes 2 columns when the
-  // field count leaves room in the 2-row budget for typical documents.
-  const metaSpanFor = (row) => {
-    const isLong = /address|contact/i.test(row.label || '') || String(row.value || '').length > 34;
-    return isLong && metaRows.length <= 7 ? 2 : 1;
-  };
-
+  // ~40% of the page). The grid itself is the shared metaGrid above.
   return (
     <>
       <div style={{ border: `1px solid ${DESIGN.line}`, borderRadius: '8px', overflow: 'hidden' }}>
@@ -146,25 +289,7 @@ export function MetaGridHeader({ layout, companyName, companyLegal, companyAddre
             {companyBlock(!party)}
           </div>
         </div>
-        {metaRows.length > 0 && (
-          <div
-            style={{
-              display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)',
-              borderTop: `1px solid ${DESIGN.line}`, background: '#fbfcfe'
-            }}
-          >
-            {metaRows.map((row, i) => (
-              <div
-                key={i}
-                style={{ padding: '1.9mm 4mm 2.1mm', gridColumn: `span ${metaSpanFor(row)}`, minWidth: 0, ...(onSelectMeta ? { cursor: 'pointer', boxShadow: selectedMetaKey && row.key === selectedMetaKey ? 'inset 0 0 0 2px #3b82f6' : 'none' } : {}) }}
-                onClick={onSelectMeta ? () => onSelectMeta(row, i) : undefined}
-              >
-                <div style={{ fontSize: '6.3pt', fontWeight: 700, letterSpacing: '1.2px', color: DESIGN.muted, textTransform: 'uppercase', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{row.label}</div>
-                <div style={{ fontSize: '9.3pt', fontWeight: row.strong ? 800 : 600, color: DESIGN.ink, lineHeight: 1.3, marginTop: '0.5mm', fontVariantNumeric: 'tabular-nums', overflowWrap: 'break-word' }}>{row.value}</div>
-              </div>
-            ))}
-          </div>
-        )}
+        {metaGrid(true)}
       </div>
       {bandEl}
     </>

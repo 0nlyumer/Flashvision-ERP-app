@@ -12,6 +12,7 @@ import {
   DOCUMENT_MODULES,
   DEFAULT_DOCUMENT_SCHEMAS,
   DEFAULT_LAYOUT_SETTINGS,
+  HEADER_DESIGNS,
   discoverDocumentSchema,
   getMockPreviewData,
   getSampleRecordFromState
@@ -846,26 +847,59 @@ export default function PrintSettings() {
                 <div>
                   <label className="text-xs font-bold text-slate-700 block mb-2">Header Theme</label>
                   <div className="space-y-1.5">
-                    {HEADER_THEMES.map((theme) => (
-                      <label
-                        key={theme.id}
-                        className={`flex items-center gap-2 p-2.5 rounded-xl border text-xs font-semibold cursor-pointer transition-all ${
-                          activeLayout.headerTheme === theme.id
-                            ? 'bg-blue-50 border-blue-500 text-blue-900'
-                            : 'bg-slate-50 border-slate-200 text-slate-600 hover:border-slate-300'
-                        }`}
-                      >
-                        <input
-                          type="radio"
-                          name="theme"
-                          value={theme.id}
-                          checked={activeLayout.headerTheme === theme.id}
-                          onChange={() => updateActiveLayout({ headerTheme: theme.id })}
-                          className="text-blue-600"
-                        />
-                        {theme.name}
-                      </label>
-                    ))}
+                    {HEADER_THEMES.map((theme) => {
+                      const isActive = (activeLayout.headerDesign || 'classic') === 'classic' && activeLayout.headerTheme === theme.id;
+                      return (
+                        <label
+                          key={theme.id}
+                          className={`flex items-center gap-2 p-2.5 rounded-xl border text-xs font-semibold cursor-pointer transition-all ${
+                            isActive
+                              ? 'bg-blue-50 border-blue-500 text-blue-900'
+                              : 'bg-slate-50 border-slate-200 text-slate-600 hover:border-slate-300'
+                          }`}
+                        >
+                          <input
+                            type="radio"
+                            name="theme"
+                            value={theme.id}
+                            checked={isActive}
+                            onChange={() => updateActiveLayout({ headerTheme: theme.id, headerDesign: 'classic' })}
+                            className="text-blue-600"
+                          />
+                          {theme.name}
+                        </label>
+                      );
+                    })}
+                    {/* Graphic header designs (Omer, 2026-10-25): the company
+                        block renders as a graphic shape in the document's
+                        band colors. Opt-in per document; picking one sets
+                        layout.headerDesign, picking any classic theme above
+                        resets it to 'classic'. Live-previews on the canvas
+                        because the designer renders the shared sheet
+                        components. */}
+                    {HEADER_DESIGNS.filter((d) => d.id !== 'classic').map((d) => {
+                      const isActive = (activeLayout.headerDesign || 'classic') === d.id;
+                      return (
+                        <label
+                          key={d.id}
+                          className={`flex items-center gap-2 p-2.5 rounded-xl border text-xs font-semibold cursor-pointer transition-all ${
+                            isActive
+                              ? 'bg-blue-50 border-blue-500 text-blue-900'
+                              : 'bg-slate-50 border-slate-200 text-slate-600 hover:border-slate-300'
+                          }`}
+                        >
+                          <input
+                            type="radio"
+                            name="theme"
+                            value={`graphic_${d.id}`}
+                            checked={isActive}
+                            onChange={() => updateActiveLayout({ headerDesign: d.id })}
+                            className="text-blue-600"
+                          />
+                          {d.name}
+                        </label>
+                      );
+                    })}
                   </div>
                 </div>
 
@@ -967,6 +1001,45 @@ export default function PrintSettings() {
                       <input
                         value={activeLayout.totalsColor || '#232946'}
                         onChange={(e) => updateActiveLayout({ totalsColor: e.target.value })}
+                        className="w-full bg-slate-50 border border-slate-300 rounded-xl px-2 py-2 text-xs font-mono font-bold text-slate-800"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Table header colors (audit fix, 2026-10-25): these drove
+                    rendering all along but had no dedicated editor — only
+                    the wholesale Brand Preset touched the background. The
+                    text color stays contrast-guarded at render time. */}
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-xs font-bold text-slate-700 block mb-1">Table Header</label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="color"
+                        value={activeLayout.tableHeaderBgColor || '#004277'}
+                        onChange={(e) => updateActiveLayout({ tableHeaderBgColor: e.target.value })}
+                        className="w-9 h-9 rounded-lg border border-slate-300 cursor-pointer shrink-0"
+                      />
+                      <input
+                        value={activeLayout.tableHeaderBgColor || '#004277'}
+                        onChange={(e) => updateActiveLayout({ tableHeaderBgColor: e.target.value })}
+                        className="w-full bg-slate-50 border border-slate-300 rounded-xl px-2 py-2 text-xs font-mono font-bold text-slate-800"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-slate-700 block mb-1">Table Header Text</label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="color"
+                        value={activeLayout.tableHeaderTextColor || '#ffffff'}
+                        onChange={(e) => updateActiveLayout({ tableHeaderTextColor: e.target.value })}
+                        className="w-9 h-9 rounded-lg border border-slate-300 cursor-pointer shrink-0"
+                      />
+                      <input
+                        value={activeLayout.tableHeaderTextColor || '#ffffff'}
+                        onChange={(e) => updateActiveLayout({ tableHeaderTextColor: e.target.value })}
                         className="w-full bg-slate-50 border border-slate-300 rounded-xl px-2 py-2 text-xs font-mono font-bold text-slate-800"
                       />
                     </div>

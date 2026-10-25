@@ -60,6 +60,22 @@ export const SYSTEM_DOCUMENTS = [
   { id: 'hr_payslip', name: 'Salary Generation / Payslip', module: 'hr', icon: 'payments', code: 'PAY' }
 ];
 
+// Graphic header designs for the print family (Omer, 2026-10-25): the
+// company-name block at the top of a sheet can render as a graphic shape
+// (ribbon / wave / side block / top strip / corporate frame) instead of
+// the classic plain box. Per-document opt-in via the layout field
+// `headerDesign`; 'classic' is the default for EVERY document and renders
+// exactly the pre-design header. One list shared by the Print Settings
+// designer (and any future picker) so names never drift.
+export const HEADER_DESIGNS = [
+  { id: 'classic', name: 'Classic (current header)' },
+  { id: 'ribbon', name: 'Graphic — Ribbon' },
+  { id: 'wave', name: 'Graphic — Wave' },
+  { id: 'sideblock', name: 'Graphic — Side Block' },
+  { id: 'topstrip', name: 'Graphic — Top Strip' },
+  { id: 'frame', name: 'Graphic — Corporate Frame' }
+];
+
 // Font choices for the print studio's Font Family picker (same list the
 // Print Settings designer offers — one source so the two never drift).
 export const FONT_OPTIONS = [
@@ -114,6 +130,7 @@ export const DEFAULT_LAYOUT_SETTINGS = {
   bandTextColor: '#ffffff',
   totalsColor: '#232946',
   headerAlign: 'left', // 'left' | 'center' | 'right'
+  headerDesign: 'classic', // graphic header design (HEADER_DESIGNS); 'classic' = today's header, unchanged
   marginPreset: 'default', // 'default' | 'minimum' | 'low' | 'custom'
   scaleMode: 'fill', // 'fill' | 'fit' | 'actual'
   phasesPerRow: 4, // phase-matrix documents (BOM / Consumption)

@@ -9,7 +9,8 @@ import {
   discoverDocumentSchema,
   getMockPreviewData,
   getSampleRecordFromState,
-  FONT_OPTIONS
+  FONT_OPTIONS,
+  HEADER_DESIGNS
 } from '../../utils/printSchemaRegistry';
 import {
   exportDocumentToPdf,
@@ -645,6 +646,16 @@ function UniversalPrintStudioModalInner({
                 <input type="color" value={layoutConfig.totalsColor || '#232946'} onChange={(e) => updateLayout('totalsColor', e.target.value)} className="w-10 h-8 rounded cursor-pointer" />
                 <input value={layoutConfig.totalsColor || '#232946'} onChange={(e) => updateLayout('totalsColor', e.target.value)} className="flex-1 bg-white dark:bg-slate-900 border rounded-lg px-2 py-1.5 font-mono text-[11px]" />
               </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-medium w-24 shrink-0">Table Header</span>
+                <input type="color" value={layoutConfig.tableHeaderBgColor || '#004277'} onChange={(e) => updateLayout('tableHeaderBgColor', e.target.value)} className="w-10 h-8 rounded cursor-pointer" />
+                <input value={layoutConfig.tableHeaderBgColor || '#004277'} onChange={(e) => updateLayout('tableHeaderBgColor', e.target.value)} className="flex-1 bg-white dark:bg-slate-900 border rounded-lg px-2 py-1.5 font-mono text-[11px]" />
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-medium w-24 shrink-0">Table Hdr Text</span>
+                <input type="color" value={layoutConfig.tableHeaderTextColor || '#ffffff'} onChange={(e) => updateLayout('tableHeaderTextColor', e.target.value)} className="w-10 h-8 rounded cursor-pointer" />
+                <input value={layoutConfig.tableHeaderTextColor || '#ffffff'} onChange={(e) => updateLayout('tableHeaderTextColor', e.target.value)} className="flex-1 bg-white dark:bg-slate-900 border rounded-lg px-2 py-1.5 font-mono text-[11px]" />
+              </div>
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-[11px] font-medium w-24 shrink-0">Presets</span>
                 {BRAND_PALETTES.map((p) => (
@@ -666,6 +677,12 @@ function UniversalPrintStudioModalInner({
                 <span className="text-[11px] font-medium">Header Theme</span>
                 <select value={layoutConfig.headerTheme || 'classic_split'} onChange={(e) => updateLayout('headerTheme', e.target.value)} className="bg-white dark:bg-slate-900 border rounded-lg px-2 py-1.5 text-[11px] font-bold cursor-pointer">
                   {HEADER_THEMES.map((t) => (<option key={t.id} value={t.id}>{t.name}</option>))}
+                </select>
+              </label>
+              <label className="flex items-center justify-between gap-2">
+                <span className="text-[11px] font-medium">Header Design</span>
+                <select value={layoutConfig.headerDesign || 'classic'} onChange={(e) => updateLayout('headerDesign', e.target.value)} className="bg-white dark:bg-slate-900 border rounded-lg px-2 py-1.5 text-[11px] font-bold cursor-pointer">
+                  {HEADER_DESIGNS.map((d) => (<option key={d.id} value={d.id}>{d.name}</option>))}
                 </select>
               </label>
               <label className="flex items-center justify-between gap-2">
