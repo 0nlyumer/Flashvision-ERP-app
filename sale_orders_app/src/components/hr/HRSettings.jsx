@@ -2240,9 +2240,10 @@ export default function HRSettings({ isMobile }) {
   // ==========================================
 // Duty handlers hoisted above render
 
-  // Weekly Off (Sunday) Cut Rules card — rendered inside the
-  // status_rules sub-tab (desktop + mobile blocks). Saves through the
-  // same saveDutySettings path as every other duty setting.
+  // Weekly Off (Sunday) Cut Rules card — rendered exactly once,
+  // inside the status_rules sub-tab, below the status cards + info
+  // box. Saves through the same saveDutySettings path as every
+  // other duty setting.
   function renderSundayCutRulesCard() {
     const rules = normalizeSundayCutRules(dutySettings.sundayCutRules);
     const empList = (employees || []).filter(e => e && e.id);
@@ -3378,8 +3379,6 @@ export default function HRSettings({ isMobile }) {
                 );
               })}
             </div>
-
-            {renderSundayCutRulesCard()}
           </div>
         )}
       </div>
