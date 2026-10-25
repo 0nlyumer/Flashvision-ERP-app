@@ -2,9 +2,12 @@ import React, { useState } from 'react';
 import ResizableHeader from '../ui/ResizableHeader';
 import { useApp } from '../../context/AppContext';
 import GlobalPagination from '../ui/GlobalPagination';
+import UniversalPrintStudioModal from '../ui/UniversalPrintStudioModal';
+import { buildStockReceivingRecord } from '../../utils/printRecords';
 
 export default function StockReceivingHistory({ onNewReceiptClick }) {
     const { state, deleteStockReceivingNote } = useApp();
+    const [printReceipt, setPrintReceipt] = useState(null);
     const [currentPage, setCurrentPage] = useState(1);
     const itemsPerPage = 20;
 
@@ -134,7 +137,7 @@ export default function StockReceivingHistory({ onNewReceiptClick }) {
                                             <button 
                                                 className="text-on-surface-variant hover:text-secondary transition-colors p-1" 
                                                 title="Print"
-                                                onClick={() => window.print()}
+                                                onClick={() => setPrintReceipt(item.originalTransfer)}
                                             >
                                                 <span className="material-symbols-outlined text-sm">print</span>
                                             </button>
@@ -165,6 +168,15 @@ export default function StockReceivingHistory({ onNewReceiptClick }) {
                     setCurrentPage={setCurrentPage}
                 />
             </div>
+
+            {printReceipt && (
+                <UniversalPrintStudioModal
+                    isOpen={!!printReceipt}
+                    onClose={() => setPrintReceipt(null)}
+                    documentType="stock_receiving_history"
+                    documentData={buildStockReceivingRecord(printReceipt)}
+                />
+            )}
         </div>
     );
 }

@@ -194,14 +194,17 @@ export const DEFAULT_DOCUMENT_SCHEMAS = {
 
   production_plan: {
     // Sheet-based plan format (approved): landscape, ORDER (M) before STATUS,
-    // dark title band, golden total row, 'Production & Planning Division'.
+    // dark title band, system dark-navy total row (2026-10-25: the sheet's
+    // golden total row was replaced with the ERP system totals style —
+    // totalsColor #232946, white bold text, same as the band),
+    // 'Production & Planning Division'.
     ...DEFAULT_LAYOUT_SETTINGS,
     orientation: 'landscape',
     bandColor: '#232946',
     bandColor2: '#232946',
     tableHeaderBgColor: '#232946',
     primaryColor: '#232946',
-    goldenTotalRow: true,
+    goldenTotalRow: false,
     firstPageRows: 16,
     continuationPageRows: 20,
     headerFields: [
@@ -425,11 +428,18 @@ export const DEFAULT_DOCUMENT_SCHEMAS = {
       { key: 'category', label: 'Consumption Category', enabled: true, width: 'span-1' }
     ],
     gridColumns: [
-      { key: 'serial_no', label: 'Sr #', enabled: true, width: '8%', align: 'center' },
-      { key: 'item_name', label: 'Material / Chemical Name', enabled: true, width: '42%', align: 'left' },
-      { key: 'qty', label: 'Qty Used', enabled: true, width: '16%', align: 'right' },
-      { key: 'uom', label: 'UOM', enabled: true, width: '14%', align: 'center' },
-      { key: 'remarks', label: 'Remarks / Purpose', enabled: true, width: '20%', align: 'left' }
+      { key: 'serial_no', label: 'Sr #', enabled: true, width: '7%', align: 'center' },
+      { key: 'item_code', label: 'Item Code', enabled: true, width: '13%', align: 'left' },
+      { key: 'item_name', label: 'Material / Chemical Name', enabled: true, width: '28%', align: 'left' },
+      { key: 'qty', label: 'Qty Used', enabled: true, width: '11%', align: 'right', total: true },
+      { key: 'uom', label: 'UOM', enabled: true, width: '9%', align: 'center' },
+      { key: 'unit_price', label: 'Unit Price', enabled: true, width: '12%', align: 'right' },
+      { key: 'amount', label: 'Total Cost', enabled: true, width: '12%', align: 'right', total: true },
+      { key: 'remarks', label: 'Remarks / Purpose', enabled: true, width: '8%', align: 'left' }
+    ],
+    signatures: [
+      { key: 'sig_prepared', label: 'Prepared By', size: '1/3', type: 'text' },
+      { key: 'sig_authorized', label: 'Authorized Signature', size: '1/3', type: 'text' }
     ]
   },
 
@@ -532,13 +542,14 @@ export const DEFAULT_DOCUMENT_SCHEMAS = {
       { key: 'transfer_no', label: 'Transfer Note #', enabled: true, width: 'span-1' },
       { key: 'date', label: 'Transfer Date', enabled: true, width: 'span-1' },
       { key: 'from_warehouse', label: 'Source Warehouse', enabled: true, width: 'span-1' },
-      { key: 'to_warehouse', label: 'Destination Warehouse', enabled: true, width: 'span-1' }
+      { key: 'to_warehouse', label: 'Destination Warehouse', enabled: true, width: 'span-1' },
+      { key: 'status', label: 'Status', enabled: true, width: 'span-1' }
     ],
     gridColumns: [
       { key: 'serial_no', label: 'Sr #', enabled: true, width: '8%', align: 'center' },
       { key: 'item_code', label: 'Item Code', enabled: true, width: '22%', align: 'left' },
       { key: 'item_name', label: 'Item Description', enabled: true, width: '38%', align: 'left' },
-      { key: 'transfer_qty', label: 'Transfer Qty', enabled: true, width: '16%', align: 'right' },
+      { key: 'transfer_qty', label: 'Transfer Qty', enabled: true, width: '16%', align: 'right', total: true },
       { key: 'uom', label: 'UOM', enabled: true, width: '16%', align: 'center' }
     ]
   },
@@ -1066,6 +1077,56 @@ export function getMockPreviewData(docType) {
           { entry_date: '24/10/2026', voucher: 'Journal Voucher JV-2026-007', account: '521010 — Executive & Admin Management Salaries', party: 'Staff Payroll', narration: 'October 2026 salary accrual — Admin department', debit: 45000, credit: 0, balance: '210,000.00 Dr' }
         ],
         totals: { debit: 330000, credit: 120000, balance: '210,000.00 Dr' }
+      };
+
+    case 'other_consumptions':
+      return {
+        header: {
+          ...commonHeader,
+          ref_no: 'OC-2026-0042',
+          date: '2026-10-24',
+          cost_center: 'Production Department',
+          category: 'Plan PLN-2026-0142'
+        },
+        items: [
+          { item_code: 'RM-091', item_name: 'Diesel (HSD)', qty: 120, uom: 'Liters', unit_price: 282, amount: 33840, remarks: 'Generator fuel' },
+          { item_code: 'RM-104', item_name: 'LPG Gas', qty: 45, uom: 'kg', unit_price: 320, amount: 14400, remarks: 'Heating' }
+        ],
+        totals: { qty: 165, amount: 48240 }
+      };
+
+    case 'stock_transfer':
+      return {
+        header: {
+          ...commonHeader,
+          transfer_no: 'ST-2026-0018',
+          date: '2026-10-24',
+          from_warehouse: 'Raw Material Department',
+          to_warehouse: 'Production Department',
+          status: 'Pending Receipt'
+        },
+        items: [
+          { item_code: 'RM-004', item_name: 'PK DTY BLACK', transfer_qty: 500, uom: 'kg' },
+          { item_code: 'RM-003', item_name: 'PC WHITE', transfer_qty: 350, uom: 'kg' },
+          { item_code: 'RM-026', item_name: 'Polyester Silk 120g', transfer_qty: 1000, uom: 'Meters' }
+        ],
+        totals: { transfer_qty: 1850 }
+      };
+
+    case 'stock_receiving_history':
+      return {
+        header: {
+          ...commonHeader,
+          receiving_no: 'ST-2026-0015',
+          date: '2026-10-23',
+          supplier: 'Production Department',
+          grn_ref: 'ST-2026-0015'
+        },
+        items: [
+          { item_code: 'RM-004', item_name: 'PK DTY BLACK', received_qty: 500, accepted_qty: 500, rejected_qty: 0 },
+          { item_code: 'RM-003', item_name: 'PC WHITE', received_qty: 350, accepted_qty: 340, rejected_qty: 10 }
+        ],
+        totals: { received_qty: 850, accepted_qty: 840, rejected_qty: 10 }
       };
 
     case 'planning_history':

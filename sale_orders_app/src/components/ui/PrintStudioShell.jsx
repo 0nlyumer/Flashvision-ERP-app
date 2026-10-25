@@ -33,6 +33,8 @@ export default function PrintStudioShell({
   onExportPdf,
   exporting = null,
   sendConfig = null, // { documentTitle, filenameBase, makeFile, csvAvailable }
+  customizeActive = false,
+  onToggleCustomize = null, // when provided, a "Customize" toolbar button toggles the settings panel
   settingsPanel = null,
   extraPrintCss = '',
   children
@@ -171,6 +173,19 @@ export default function PrintStudioShell({
                   ))}
                 </select>
               </label>
+            )}
+
+            {/* Customize — toggles the settings panel (hidden by default) */}
+            {onToggleCustomize && (
+              <button
+                type="button"
+                onClick={onToggleCustomize}
+                className={`px-2.5 py-1.5 rounded-lg border text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-all ${customizeActive ? 'bg-blue-600 text-white border-blue-600 shadow-sm' : 'bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'}`}
+                title="Show or hide the print settings panel"
+              >
+                <span className="material-symbols-outlined text-sm">settings</span>
+                Customize
+              </button>
             )}
 
             {/* Preview zoom */}

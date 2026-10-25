@@ -5,6 +5,8 @@ import useDynamicColumns from '../../hooks/useDynamicColumns';
 import { useApp } from '../../context/AppContext';
 import { useDialog } from '../../context/DialogContext';
 import GlobalPagination from '../ui/GlobalPagination';
+import UniversalPrintStudioModal from '../ui/UniversalPrintStudioModal';
+import { buildStockTransferRecord } from '../../utils/printRecords';
 
 const DEFAULT_COLUMNS = [
   { id: 'transferId', label: 'Transfer ID & Date', visible: true, width: 250 },
@@ -18,6 +20,7 @@ export default function StockTransferHistory({ onNewTransferClick }) {
     const { state, deleteStockTransfer, addNotification } = useApp();
     const { appConfirm, appAlert } = useDialog();
     const [searchQuery, setSearchQuery] = useState('');
+    const [printTransfer, setPrintTransfer] = useState(null);
     const [currentPage, setCurrentPage] = useState(1);
     const itemsPerPage = 20;
     
@@ -189,7 +192,7 @@ export default function StockTransferHistory({ onNewTransferClick }) {
                                                     return (
                                                         <td key={col.id} className="py-4 px-6 align-middle text-right opacity-0 group-hover:opacity-100 transition-opacity">
                                                             <div className="flex items-center justify-end gap-2">
-                                                                <button className="p-1.5 text-secondary hover:bg-secondary-container hover:text-on-secondary-container rounded-md transition-colors" title="Print" onClick={() => window.print()}>
+                                                                <button className="p-1.5 text-secondary hover:bg-secondary-container hover:text-on-secondary-container rounded-md transition-colors" title="Print" onClick={() => setPrintTransfer(t)}>
                                                                     <span className="material-symbols-outlined text-[1.25rem]">print</span>
                                                                 </button>
                                                                 <button className="p-1.5 text-secondary hover:bg-secondary-container hover:text-on-secondary-container rounded-md transition-colors" title="View">
@@ -231,6 +234,15 @@ export default function StockTransferHistory({ onNewTransferClick }) {
                     />
                 </div>
             </div>
+
+            {printTransfer && (
+                <UniversalPrintStudioModal
+                    isOpen={!!printTransfer}
+                    onClose={() => setPrintTransfer(null)}
+                    documentType="stock_transfer"
+                    documentData={buildStockTransferRecord(printTransfer, state.items || [])}
+                />
+            )}
         </div>
     );
 }

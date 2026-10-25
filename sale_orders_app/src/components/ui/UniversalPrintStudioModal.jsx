@@ -74,6 +74,11 @@ function UniversalPrintStudioModalInner({
   const pageRefs = useRef([]);
 
   const [activeTab, setActiveTab] = useState('pagination');
+  // Settings panel is hidden by default (2026-10-25, Omer): the popup opens
+  // as a clean sheet preview; the toolbar "Customize" button toggles the
+  // panel, and it resets to hidden on every new open.
+  const [showCustomize, setShowCustomize] = useState(false);
+  useEffect(() => { if (isOpen) setShowCustomize(false); }, [isOpen]);
   const [saving, setSaving] = useState(false);
   const [exporting, setExporting] = useState(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
@@ -830,7 +835,9 @@ function UniversalPrintStudioModalInner({
         makeFile: makeSendFile,
         csvAvailable: isPhaseDoc ? flattenedPhaseRows.length > 0 : resolvedLineItems.length > 0
       }}
-      settingsPanel={settingsPanel}
+      customizeActive={showCustomize}
+      onToggleCustomize={() => setShowCustomize((v) => !v)}
+      settingsPanel={showCustomize ? settingsPanel : null}
       extraPrintCss={extraPrintCss}
     >
       <div ref={printContainerRef} className="flex flex-col gap-8 items-center w-full">

@@ -69,3 +69,123 @@ export function buildGeneralLedgerRecord(entries = [], filters = {}) {
     }
   };
 }
+
+/**
+ * Other Consumption studio record (document `other_consumptions`).
+ * Accepts ONE saved otherConsumptions record (the history row being
+ * printed — the same single voucher the old window.open print produced)
+ * or an array of records (printed as one multi-line voucher).
+ *
+ * Record shape: { id, planId, itemCode, itemName, unit, price, quantity,
+ *                 cost, department, date }
+ */
+export function buildOtherConsumptionRecord(input) {
+  const list = (Array.isArray(input) ? input : [input]).filter(Boolean);
+  const first = list[0] || {};
+  const sameDept = list.every((r) => r.department === first.department);
+  const samePlan = list.every((r) => r.planId === first.planId);
+
+  const items = list.map((r) => {
+    const qty = Number(r.quantity) || 0;
+    const price = Number(r.price) || 0;
+    return {
+      item_code: r.itemCode || '',
+      item_name: r.itemName || '',
+      qty,
+      uom: r.unit || '',
+      unit_price: price,
+      amount: r.cost !== undefined && r.cost !== null && r.cost !== '' ? Number(r.cost) || 0 : qty * price,
+      remarks: r.remarks || ''
+    };
+  });
+
+  return {
+    id: list.length === 1 ? first.id : undefined,
+    header: {
+      ref_no: list.length === 1 ? (first.id || '') : `${list.length} Records`,
+      date: first.date || new Date().toISOString(),
+      cost_center: sameDept ? (first.department || '') : 'Multiple Departments',
+      category: samePlan && first.planId ? `Plan ${first.planId}` : 'General Consumption'
+    },
+    items,
+    totals: {
+      qty: items.reduce((s, i) => s + i.qty, 0),
+      amount: Math.round(items.reduce((s, i) => s + i.amount, 0) * 100) / 100
+    }
+  };
+}
+
+/**
+ * Stock Transfer note studio record (document `stock_transfer`), built from
+ * the actual transfer record: { id, date, source, destination, status,
+ * items: [{ itemCode, itemName, quantity, uom? }] }.
+ * `catalogItems` (state.items) resolves each line's UOM when the transfer
+ * line itself carries none.
+ */
+export function buildStockTransferRecord(transfer = {}, catalogItems = []) {
+  const lines = Array.isArray(transfer.items) ? transfer.items : [];
+  const catalog = Array.isArray(catalogItems) ? catalogItems : [];
+  const items = lines.map((line) => {
+    const cat = catalog.find((i) => String(i.sku) === String(line.itemCode) || String(i.id) === String(line.itemCode));
+    return {
+      item_code: line.itemCode || '',
+      item_name: line.itemName || line.name || '',
+      transfer_qty: Number(line.quantity ?? line.qty) || 0,
+      uom: line.uom || line.unit || cat?.uom || cat?.unit || '—'
+    };
+  });
+
+  return {
+    id: transfer.id,
+    header: {
+      transfer_no: transfer.id || '',
+      date: transfer.date || '',
+      from_warehouse: transfer.source || '',
+      to_warehouse: transfer.destination || '',
+      status: transfer.status || ''
+    },
+    items,
+    totals: {
+      transfer_qty: items.reduce((s, i) => s + i.transfer_qty, 0)
+    }
+  };
+}
+
+/**
+ * Stock Receiving note studio record (document `stock_receiving_history`),
+ * built from a RECEIVED transfer record: received quantities come from
+ * transfer.receivedItems ([{ itemCode, receivedQty }]); accepted = received,
+ * rejected = transferred − received (never below 0).
+ */
+export function buildStockReceivingRecord(transfer = {}) {
+  const lines = Array.isArray(transfer.items) ? transfer.items : [];
+  const received = Array.isArray(transfer.receivedItems) ? transfer.receivedItems : [];
+  const items = lines.map((line) => {
+    const rec = received.find((r) => String(r.itemCode) === String(line.itemCode));
+    const sentQty = Number(line.quantity ?? line.qty) || 0;
+    const receivedQty = rec ? (Number(rec.receivedQty) || 0) : sentQty;
+    return {
+      item_code: line.itemCode || '',
+      item_name: line.itemName || line.name || '',
+      received_qty: receivedQty,
+      accepted_qty: receivedQty,
+      rejected_qty: Math.max(0, sentQty - receivedQty)
+    };
+  });
+
+  return {
+    id: transfer.id,
+    header: {
+      receiving_no: String(transfer.id || '').replace('TRF', 'RCV'),
+      date: transfer.date || '',
+      supplier: transfer.source || '',
+      grn_ref: transfer.id || ''
+    },
+    items,
+    totals: {
+      received_qty: items.reduce((s, i) => s + i.received_qty, 0),
+      accepted_qty: items.reduce((s, i) => s + i.accepted_qty, 0),
+      rejected_qty: items.reduce((s, i) => s + i.rejected_qty, 0)
+    }
+  };
+}
