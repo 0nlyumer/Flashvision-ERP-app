@@ -9,7 +9,7 @@ import { normalizeFlashAmConfig } from '../../utils/flashAmConfig';
 // — deliberately NOT localStorage, so the rules are identical on every
 // terminal and survive browser changes.
 
-function Toggle({ value, onChange, disabled }) {
+export function Toggle({ value, onChange, disabled }) {
   return (
     <button
       type="button"
@@ -35,7 +35,7 @@ function FieldRow({ label, hint, children }) {
   );
 }
 
-function EmployeeMultiSelect({ employees, selectedIds, onChange, disabled, emptyNote }) {
+export function EmployeeMultiSelect({ employees, selectedIds, onChange, disabled, emptyNote }) {
   const [query, setQuery] = useState('');
   const selected = useMemo(() => new Set((selectedIds || []).map(String)), [selectedIds]);
   const filtered = useMemo(() => {

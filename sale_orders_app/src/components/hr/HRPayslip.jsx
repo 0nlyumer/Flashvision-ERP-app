@@ -2,6 +2,7 @@ import HRPayslipModal from './HRPayslipModal';
 import React, { useState, useMemo, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
 import { computePayrollRecords } from '../../utils/payrollCalc';
+import { getCutSundays, normalizeSundayCutRules } from '../../utils/sundayCut';
 import { getDivisionPrintFullName } from '../../utils/divisionPrintName';
 
 // Safe date normalizer (converts DD/MM/YYYY, MM/DD/YYYY, YYYY-MM-DD into standard YYYY-MM-DD)
@@ -335,6 +336,19 @@ export default function HRPayslip({ isMobile }) {
 
     const overtimeRequests = state.hr_overtime_requests || [];
 
+    // Sunday Cut Rules (display only): cut Sundays print as ABS /
+    // 'Sunday Cut' in this register, matching the payroll engine.
+    let slipDutySettings = state.hr_duty_settings || null;
+    try {
+      if (!slipDutySettings) {
+        const savedDuty = localStorage.getItem('hr_duty_settings');
+        if (savedDuty) slipDutySettings = JSON.parse(savedDuty);
+      }
+    } catch (e) {}
+    const cutSundays = empObj
+      ? getCutSundays(empObj, selectedPeriod, state, normalizeSundayCutRules(slipDutySettings?.sundayCutRules), uploadedLogs)
+      : new Set();
+
     const dailyRecords = [];
     for (let d = 1; d <= currentMonthDays; d++) {
       const dateStr = String(d).padStart(2, '0');
@@ -380,6 +394,9 @@ export default function HRPayslip({ isMobile }) {
       else if (s.includes('half')) att = 'HLD';
       else att = 'ABS';
 
+      const isCutSunday = dayOfWeek === 0 && cutSundays.has(fullDate);
+      if (isCutSunday) att = 'ABS';
+
       let otVal = parseFloat(dayRecord?.ot || punch?.ot || punch?.overtimeHours || otReq?.hours || 0) || 0;
       if (otReq && parseFloat(otReq.hours || 0) > 0) {
         otVal = Math.max(otVal, parseFloat(otReq.hours || 0));
@@ -389,7 +406,7 @@ export default function HRPayslip({ isMobile }) {
       let dtVal = parseFloat(dayRecord?.deductions || punch?.dt || punch?.lateHours || 0) || 0;
       const dt = dtVal > 0 ? `-${dtVal.toFixed(1)}h` : '-';
 
-      const remarks = dayRecord?.remarks || punch?.remarks || (att === 'OFF' || dayOfWeek === 0 ? 'Weekly Off' : (att === 'HOL' ? 'Public Holiday' : '-'));
+      const remarks = isCutSunday ? 'Sunday Cut' : (dayRecord?.remarks || punch?.remarks || (att === 'OFF' || dayOfWeek === 0 ? 'Weekly Off' : (att === 'HOL' ? 'Public Holiday' : '-')));
 
       dailyRecords.push({ dateStr, att, ot, dt, remarks });
     }

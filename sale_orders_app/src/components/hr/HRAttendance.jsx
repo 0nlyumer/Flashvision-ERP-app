@@ -1,4 +1,22 @@
 import { getEffectiveDutyHours, getEffectiveOvertimeMultiplier } from '../../utils/hrDutyHours';
+import { getCutSundays, normalizeSundayCutRules } from '../../utils/sundayCut';
+
+// Sunday Cut display cache for the monthly grid: emp object -> { sig, set }.
+// Employee objects are replaced wholesale on data updates, so stale
+// entries die with the old object; the signature also covers the
+// period + rules + log count.
+const EMPTY_CUT_SET = new Set();
+const sundayCutGridCache = new WeakMap();
+const getGridCutSundays = (emp, period, state, rulesRaw, logs) => {
+  const rules = normalizeSundayCutRules(rulesRaw);
+  if (!rules.twoAbsence.enabled && !rules.continuous.enabled) return EMPTY_CUT_SET;
+  const sig = `${period}|${JSON.stringify(rules)}|${logs ? logs.length : 0}`;
+  const hit = sundayCutGridCache.get(emp);
+  if (hit && hit.sig === sig) return hit.set;
+  const set = getCutSundays(emp, period, state, rules, logs);
+  sundayCutGridCache.set(emp, { sig, set });
+  return set;
+};
 import HRPayslipModal from './HRPayslipModal';
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { supabase } from '../../utils/supabaseClient';
@@ -1113,6 +1131,12 @@ export default function HRAttendance({ isMobile }) {
     const dutyInfo = getEffectiveDutyHours(emp, dutySettings);
     const empDutyHours = Number(dutyInfo?.hours) || 8;
 
+    // Sunday Cut Rules overlay: a cut Sunday is tallied Absent in this
+    // modal too (same shared helper as the payroll engine). Everything
+    // else about this modal's pre-existing behaviour is unchanged.
+    const sundayCutRules = normalizeSundayCutRules(dutySettings?.sundayCutRules);
+    const cutSundays = getCutSundays(emp, `${y}-${String(m).padStart(2, '0')}`, appState, sundayCutRules, liveUploadedAttendance || uploadedAttendance || []);
+
     const baseSalary = Number(emp.basicSalary || emp.salary || emp.baseSalary || 20000);
     const oneDayAmount = currentMonthDays > 0 ? (baseSalary / currentMonthDays) : 0;
     const oneHourAmount = empDutyHours > 0 ? (oneDayAmount / empDutyHours) : 0;
@@ -1167,7 +1191,13 @@ export default function HRAttendance({ isMobile }) {
 
       const statLower = String(status).toLowerCase();
       let attCode = 'ABS';
-      if (statLower.includes('present') || statLower === 'p') {
+      if (dayOfWeek === 0 && cutSundays.has(dayDateStr)) {
+        // Sunday Cut — counts as Absent, never as a paid Off Day here.
+        attCode = 'ABS';
+        if (dutySettings?.attendanceStatusRules?.absent?.isPaid === true) paidDays += 1;
+        else absentDays += 1;
+        remarks = 'Sunday Cut';
+      } else if (statLower.includes('present') || statLower === 'p') {
         attCode = 'P';
         presentDays++;
         if (dutySettings?.attendanceStatusRules?.present?.isPaid !== false) paidDays += 1;
@@ -3516,6 +3546,22 @@ export default function HRAttendance({ isMobile }) {
                           if (isSunday) {
                             rec = { ...rec, status: 'off day' };
                           } else if (rec.status === 'present') {
+                            rec = { ...rec, status: 'absent' };
+                          }
+                        }
+                        // Sunday Cut Rules (display only — the stored record
+                        // is never changed): a cut Sunday shows as Absent,
+                        // whether it was unrecorded or recorded 'off day'.
+                        if (isSunday && day.date) {
+                          let gridDutySettings = appState?.hr_duty_settings || null;
+                          try {
+                            if (!gridDutySettings) {
+                              const savedDuty = localStorage.getItem('hr_duty_settings');
+                              if (savedDuty) gridDutySettings = JSON.parse(savedDuty);
+                            }
+                          } catch (e) {}
+                          const gridCutSundays = getGridCutSundays(emp, activeMonthKey, appState, gridDutySettings?.sundayCutRules, liveUploadedAttendance || uploadedAttendance || []);
+                          if (gridCutSundays.has(normalizeDate(day.date))) {
                             rec = { ...rec, status: 'absent' };
                           }
                         }

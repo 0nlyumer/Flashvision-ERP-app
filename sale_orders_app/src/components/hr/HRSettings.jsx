@@ -4,7 +4,8 @@ import { useApp } from '../../context/AppContext';
 import PayrollAccountMapping from './PayrollAccountMapping';
 import { normalizePayrollMappings } from '../../utils/payrollAccountMapping';
 import SalaryAllowanceConfig from './SalaryAllowanceConfig';
-import FlashAMConfig from './FlashAMConfig';
+import FlashAMConfig, { EmployeeMultiSelect, Toggle as SettingsToggle } from './FlashAMConfig';
+import { normalizeSundayCutRules } from '../../utils/sundayCut';
 import BatchLaborConfig from './BatchLaborConfig';
 import { loadHrDepartments } from '../../utils/hrDepartments';
 
@@ -307,6 +308,7 @@ export default function HRSettings({ isMobile }) {
         offday: { label: 'Off Day', urduLabel: 'ہفتہ وار چھٹی (Sunday)', isPaid: true, code: 'OFF', color: 'indigo', description: 'Sunday & scheduled weekly off days (Paid by default)' },
         halfday: { label: 'Half Day', urduLabel: 'نصف دن', isPaid: true, paidRatio: 0.5, code: 'HLD', color: 'cyan', description: 'Half working day (50% pay ratio)' }
       },
+      sundayCutRules: normalizeSundayCutRules(null),
       shifts: [
         { id: 1, name: 'GENERAL SHIFT', startTime: '09:00', endTime: '17:00', hours: 8, status: 'Active' },
         { id: 2, name: 'MORNING SHIFT', startTime: '06:00', endTime: '14:00', hours: 8, status: 'Active' },
@@ -329,6 +331,9 @@ export default function HRSettings({ isMobile }) {
             ...parsed.attendanceStatusRules
           };
         }
+        // Sunday Cut Rules: older saved settings gain the block with
+        // both rules disabled (no behaviour change until configured).
+        parsed.sundayCutRules = normalizeSundayCutRules(parsed.sundayCutRules);
         return parsed;
       }
     } catch (e) {}
@@ -469,6 +474,18 @@ export default function HRSettings({ isMobile }) {
           ...(currentRules[statusKey] || {}),
           isPaid: isPaid
         }
+      }
+    };
+    saveDutySettings(updated);
+  };
+
+  const handleUpdateSundayCutRule = (ruleKey, patch) => {
+    const current = normalizeSundayCutRules(dutySettings.sundayCutRules);
+    const updated = {
+      ...dutySettings,
+      sundayCutRules: {
+        ...current,
+        [ruleKey]: { ...current[ruleKey], ...patch }
       }
     };
     saveDutySettings(updated);
@@ -2223,6 +2240,98 @@ export default function HRSettings({ isMobile }) {
   // ==========================================
 // Duty handlers hoisted above render
 
+  // Weekly Off (Sunday) Cut Rules card — rendered inside the
+  // status_rules sub-tab (desktop + mobile blocks). Saves through the
+  // same saveDutySettings path as every other duty setting.
+  function renderSundayCutRulesCard() {
+    const rules = normalizeSundayCutRules(dutySettings.sundayCutRules);
+    const empList = (employees || []).filter(e => e && e.id);
+    const numInputCls = "w-24 bg-surface-container-low border border-outline-variant/30 rounded-xl px-3 py-2 text-xs font-bold text-on-surface focus:ring-2 focus:ring-primary/20 outline-none";
+
+    const renderScope = (ruleKey, rule) => (
+      <div className="pt-3 mt-3 border-t border-outline-variant/10">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <div className="text-xs font-bold text-on-surface">Apply to all employees</div>
+            <div className="text-[11px] text-on-surface-variant mt-0.5">ON: the rule applies to everyone. OFF: only the employees selected below.</div>
+          </div>
+          <SettingsToggle value={rule.applyToAll} onChange={(v) => handleUpdateSundayCutRule(ruleKey, { applyToAll: v })} />
+        </div>
+        {rule.enabled && !rule.applyToAll && (
+          <div className="mt-4">
+            <div className="text-xs font-bold text-on-surface mb-2">Employees this rule applies to</div>
+            <EmployeeMultiSelect
+              employees={empList}
+              selectedIds={rule.employeeIds}
+              onChange={(ids) => handleUpdateSundayCutRule(ruleKey, { employeeIds: ids })}
+            />
+          </div>
+        )}
+      </div>
+    );
+
+    return (
+      <div className="bg-surface-container-lowest p-6 rounded-3xl border border-outline-variant/15 shadow-sm space-y-6">
+        <div className="flex items-start gap-4">
+          <div className="w-12 h-12 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-600 flex items-center justify-center shrink-0">
+            <span className="material-symbols-outlined text-[28px]">event_busy</span>
+          </div>
+          <div>
+            <h4 className="font-headline text-base font-bold text-on-surface">Weekly Off (Sunday) Cut Rules</h4>
+            <p className="text-xs text-on-surface-variant mt-1 leading-relaxed max-w-2xl">
+              By default every Sunday is a paid Off Day. With a rule below enabled, a Sunday is <strong>cut</strong> for the selected
+              employees — it counts as <strong>Absent (unpaid)</strong> in salary and shows as Absent in attendance and payslips.
+              Only <strong>Absent</strong> days trigger a cut; Leave days never count. Both rules are off by default.
+            </p>
+          </div>
+        </div>
+
+        {/* Rule 1 — repeated absences in the week */}
+        <div className="p-5 rounded-2xl border border-outline-variant/15 bg-surface-container-low/40">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h5 className="font-headline font-bold text-sm text-on-surface">Rule 1 — Repeated absences in the week</h5>
+              <p className="text-[11px] text-on-surface-variant mt-0.5 leading-relaxed">
+                If the employee is Absent on at least the set number of days in the Monday–Saturday week before a Sunday, that Sunday is cut.
+              </p>
+            </div>
+            <SettingsToggle value={rules.twoAbsence.enabled} onChange={(v) => handleUpdateSundayCutRule('twoAbsence', { enabled: v })} />
+          </div>
+          {rules.twoAbsence.enabled && (
+            <>
+              <div className="flex items-center justify-between gap-3 pt-3 mt-3 border-t border-outline-variant/10">
+                <div>
+                  <div className="text-xs font-bold text-on-surface">Absent days in the week that cut the Sunday</div>
+                  <div className="text-[11px] text-on-surface-variant mt-0.5">Counted Monday to Saturday, Absent days only.</div>
+                </div>
+                <input
+                  type="number" min="1" step="1" className={numInputCls}
+                  value={rules.twoAbsence.minAbsences}
+                  onChange={(e) => handleUpdateSundayCutRule('twoAbsence', { minAbsences: Math.max(1, Number(e.target.value) || 1) })}
+                />
+              </div>
+              {renderScope('twoAbsence', rules.twoAbsence)}
+            </>
+          )}
+        </div>
+
+        {/* Rule 2 — continuous absence across the Sunday */}
+        <div className="p-5 rounded-2xl border border-outline-variant/15 bg-surface-container-low/40">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h5 className="font-headline font-bold text-sm text-on-surface">Rule 2 — Continuous absence across the Sunday</h5>
+              <p className="text-[11px] text-on-surface-variant mt-0.5 leading-relaxed">
+                If the employee is Absent on the Saturday before a Sunday and still Absent on the Monday after it, the Sunday in between is cut.
+              </p>
+            </div>
+            <SettingsToggle value={rules.continuous.enabled} onChange={(v) => handleUpdateSundayCutRule('continuous', { enabled: v })} />
+          </div>
+          {rules.continuous.enabled && renderScope('continuous', rules.continuous)}
+        </div>
+      </div>
+    );
+  }
+
     function renderDesktopDutyHours() {
     const ALPHABET_KEYS = ['ALL', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z'];
     
@@ -3088,6 +3197,7 @@ export default function HRSettings({ isMobile }) {
                   <p className="text-xs text-on-surface-variant mt-1 leading-relaxed max-w-2xl">
                     Configure whether each attendance status (Present, Absent, Leave, Holiday, Off Day) is calculated as <strong>Paid</strong> (included in salary) or <strong>Unpaid</strong> (deducted from salary). 
                     Sundays are automatically assigned the <strong>Off Day</strong> status. When Off Day is set to Paid, weekly Sundays will not be deducted from employees' pay.
+                    Sundays can be cut for selected employees under the Weekly Off (Sunday) Cut Rules below.
                   </p>
                 </div>
               </div>
@@ -3211,6 +3321,8 @@ export default function HRSettings({ isMobile }) {
                 When "Off Day" is configured as Paid (Recommended), staff members will receive 100% pay for Sundays and it will appear as <em>OFF (Weekly Off)</em> in Payslips.
               </span>
             </div>
+
+            {renderSundayCutRulesCard()}
           </div>
         )}
 
@@ -3266,6 +3378,8 @@ export default function HRSettings({ isMobile }) {
                 );
               })}
             </div>
+
+            {renderSundayCutRulesCard()}
           </div>
         )}
       </div>

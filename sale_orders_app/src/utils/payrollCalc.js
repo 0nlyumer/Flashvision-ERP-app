@@ -21,6 +21,7 @@
 // the original component code did.
 
 import { getEffectiveDutyHours, getEffectiveOvertimeMultiplier } from './hrDutyHours';
+import { getCutSundays, normalizeSundayCutRules } from './sundayCut';
 
 // Defensive number helpers to guarantee 0 crashes
 const safeNum = (val) => {
@@ -117,6 +118,14 @@ export const computePayrollRecords = (state, period, divisionToUse) => {
       }
     } catch (e) {}
 
+    // Sunday Cut Rules (hr_duty_settings.sundayCutRules): when a rule is
+    // enabled for an employee, a cut Sunday is classified Absent below
+    // instead of taking the paid Off-Day branch. Both rules ship
+    // disabled — with them off, no cut set is ever computed and this
+    // engine's output is exactly what it was before the feature.
+    const sundayCutRules = normalizeSundayCutRules(dutySettings?.sundayCutRules);
+    const sundayCutActive = Boolean(sundayCutRules.twoAbsence.enabled || sundayCutRules.continuous.enabled);
+
     const [yearStr, monthStr] = period.split('-');
     const currentMonthDays = new Date(parseInt(yearStr), parseInt(monthStr), 0).getDate();
     const daysInMonth = currentMonthDays;
@@ -209,12 +218,22 @@ export const computePayrollRecords = (state, period, divisionToUse) => {
         return null; // Skip employee with 0 attendance
       }
 
+      // Sunday Cut Rules: this employee's cut Sundays for the period
+      // (empty unless a rule is enabled and in scope for them). The
+      // helper reads the FULL attendance data, so week windows and the
+      // continuous-absence sandwich can reach into neighbouring months.
+      const cutSundays = sundayCutActive ? getCutSundays(emp, period, state, sundayCutRules, attendanceLogs) : null;
+
       // Aggregate mapped attendance (supports Flash AM 'Completed', 'Present', 'inTime', etc.)
-      Object.values(dailyMap).forEach(rec => {
+      Object.entries(dailyMap).forEach(([dateKey, rec]) => {
         const st = String(rec.status || '').toLowerCase().trim();
         const hasPunch = Boolean(rec.inTime || rec.outTime);
 
-        if (rec.shortPunch) {
+        if (cutSundays && cutSundays.has(dateKey)) {
+          // Cut Sunday — counts as Absent (unpaid); OT / late / fines on
+          // the record still aggregate below like any other day.
+          absentsCount += 1;
+        } else if (rec.shortPunch) {
           // FLASHAM PHASE A: a short punch the terminal marked not-counted
           // (status 'Absent' + shortPunch flag) is never a worked day, even
           // though the record still carries its punch times for audit.

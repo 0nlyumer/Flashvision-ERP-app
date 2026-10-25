@@ -3,6 +3,7 @@ import SalaryPrintStudio from './SalaryPrintStudio';
 import { normalizeSalaryPrintSettings } from '../../utils/salaryPrintSettings';
 import { getEffectiveDutyHours, getEffectiveOvertimeMultiplier } from '../../utils/hrDutyHours';
 import { computePayrollRecords } from '../../utils/payrollCalc';
+import { getCutSundays, normalizeSundayCutRules } from '../../utils/sundayCut';
 import { nextVoucherNumber, formatVoucherId, voucherCounterKey } from '../../utils/voucherNumbering';
 import { resolvePayrollAccountCode } from '../../utils/payrollAccountMapping';
 import { isSalaryBatchPaid, salaryBatchNet, canDeleteSalaryBatch, buildSalaryClearingVoucher } from '../../utils/paidMark';
@@ -670,6 +671,19 @@ export default function HRSalaryGeneration({ isMobile }) {
     const empAttendance = empObj?.attendance || {};
     const overtimeRequests = state.hr_overtime_requests || [];
 
+    // Sunday Cut Rules (display only): cut Sundays print as ABS /
+    // 'Sunday Cut' in this register, matching the payroll engine.
+    let slipDutySettings = state.hr_duty_settings || null;
+    try {
+      if (!slipDutySettings) {
+        const savedDuty = localStorage.getItem('hr_duty_settings');
+        if (savedDuty) slipDutySettings = JSON.parse(savedDuty);
+      }
+    } catch (e) {}
+    const cutSundays = empObj
+      ? getCutSundays(empObj, payrollPeriod, state, normalizeSundayCutRules(slipDutySettings?.sundayCutRules), attendanceLogs)
+      : new Set();
+
     const dailyRecords = [];
     for (let d = 1; d <= currentMonthDays; d++) {
       const dateStr = String(d).padStart(2, '0');
@@ -708,6 +722,9 @@ export default function HRSalaryGeneration({ isMobile }) {
       else if (s.includes('half')) att = 'HLD';
       else att = 'ABS';
 
+      const isCutSunday = dayOfWeek === 0 && cutSundays.has(fullDate);
+      if (isCutSunday) att = 'ABS';
+
       let otVal = parseFloat(dayRecord?.ot || log?.ot || log?.overtimeHours || otReq?.hours || 0) || 0;
       if (otReq && parseFloat(otReq.hours || 0) > 0) {
         otVal = Math.max(otVal, parseFloat(otReq.hours || 0));
@@ -717,7 +734,7 @@ export default function HRSalaryGeneration({ isMobile }) {
       let dtVal = parseFloat(dayRecord?.deductions || log?.dt || log?.lateHours || 0) || 0;
       const dt = dtVal > 0 ? `-${dtVal.toFixed(1)}h` : '-';
 
-      const remarks = dayRecord?.remarks || log?.remarks || (att === 'OFF' || dayOfWeek === 0 ? 'Weekly Off' : (att === 'HOL' ? 'Public Holiday' : '-'));
+      const remarks = isCutSunday ? 'Sunday Cut' : (dayRecord?.remarks || log?.remarks || (att === 'OFF' || dayOfWeek === 0 ? 'Weekly Off' : (att === 'HOL' ? 'Public Holiday' : '-')));
 
       dailyRecords.push({ dateStr, att, ot, dt, remarks });
     }
