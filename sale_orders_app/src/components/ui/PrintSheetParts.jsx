@@ -122,7 +122,7 @@ export function MetaGridHeader({ layout, companyName, companyLegal, companyAddre
   // division sub-line, legal name, address) plus the same party + meta
   // fields — compact and in-line per the standing print rules.
   // ------------------------------------------------------------------
-  const design = ['ribbon', 'wave', 'sideblock', 'topstrip', 'frame', 'diagonal', 'ribbonfold', 'medallion', 'swoosh', 'watermark', 'premium'].includes(layout.headerDesign) ? layout.headerDesign : 'classic';
+  const design = ['ribbon', 'wave', 'sideblock', 'topstrip', 'frame', 'diagonal', 'ribbonfold', 'medallion', 'swoosh', 'watermark', 'premium', 'aurora', 'facet', 'cornerslash', 'arch', 'hexbadge', 'blueprint', 'crest', 'steps', 'duotone', 'pinstripe'].includes(layout.headerDesign) ? layout.headerDesign : 'classic';
   if (design !== 'classic') {
     const initials = String(companyName || 'F').trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase() || 'F';
     const monogramText = planVariant ? 'AJ' : initials;
@@ -165,6 +165,13 @@ export function MetaGridHeader({ layout, companyName, companyLegal, companyAddre
     const rgbaOf = (color, a) => {
       const rgb = rgbOf(color);
       return rgb ? `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${a})` : color;
+    };
+    // Round 6 helper: lerp a layout color toward a target hex (white
+    // for glow/bright shades) so the premium set skins from band colors.
+    const mixRgb = (color, targetHex, t) => {
+      const a = rgbOf(color);
+      const b = rgbOf(targetHex);
+      return a && b ? `rgb(${a.map((v, i) => Math.round(v + (b[i] - v) * t)).join(', ')})` : color;
     };
     const bandColor1 = layout.bandColor || '#4338ca';
     const bandColor2 = layout.bandColor2 || layout.bandColor || '#4f46e5';
@@ -355,6 +362,174 @@ export function MetaGridHeader({ layout, companyName, companyLegal, companyAddre
       </div>
     );
 
+    // --------------------------------------------------------------
+    // Round 6 — TOP TEN premium set (Omer, 2026-10-25): shortlisted
+    // from web research over premium invoice/letterhead headers.
+    // Same rules as Rounds 3/5: band-color skinned, alignment
+    // mirrored/anchored, same identity fields, compact, light text
+    // on dark shapes.
+    // --------------------------------------------------------------
+
+    // Aurora Gradient — band gradient with 2–3 large soft translucent
+    // glow blobs (lightened band shades) drifting across; name white.
+    const auroraBlock = (
+      <div data-design-shape="aurora" style={{ position: 'relative', background: `linear-gradient(115deg, ${bandColor1}, ${bandColor2})`, borderRadius: '6px', overflow: 'hidden', ...exact }}>
+        <div data-design-shape="aurora-blob" style={{ position: 'absolute', top: '-16mm', width: '38mm', height: '38mm', borderRadius: '50%', background: `radial-gradient(circle at center, ${rgbaOf(mixRgb(bandColor2, '#ffffff', 0.55), 0.55)}, transparent 70%)`, ...(align === 'right' ? { right: '16mm' } : { left: '16mm' }), ...exact }} />
+        <div data-design-shape="aurora-blob" style={{ position: 'absolute', bottom: '-18mm', width: '30mm', height: '30mm', borderRadius: '50%', background: `radial-gradient(circle at center, ${rgbaOf(mixRgb(bandColor1, '#ffffff', 0.5), 0.5)}, transparent 70%)`, ...(align === 'right' ? { left: '30mm' } : { right: '30mm' }), ...exact }} />
+        <div data-design-shape="aurora-blob" style={{ position: 'absolute', top: '-10mm', width: '20mm', height: '20mm', borderRadius: '50%', background: `radial-gradient(circle at center, ${rgbaOf(mixRgb(bandColor1, '#ffffff', 0.75), 0.45)}, transparent 70%)`, ...(align === 'right' ? { left: '-4mm' } : { right: '-4mm' }), ...exact }} />
+        <div style={{ position: 'relative', zIndex: 1, padding: '3mm 4.5mm 3.4mm', textAlign: align }}>
+          {eyebrow('rgba(255,255,255,0.78)')}
+          {identityLines('#ffffff', 'rgba(255,255,255,0.88)')}
+        </div>
+      </div>
+    );
+
+    // Geometric Facet — band filled with low-poly triangular facets
+    // (SVG polygons in band shades); name white on top.
+    const facetBlock = (
+      <div data-design-shape="facet" style={{ position: 'relative', background: bandColor1, borderRadius: '6px', overflow: 'hidden', ...exact }}>
+        <svg data-design-shape="facet-svg" aria-hidden="true" preserveAspectRatio="none" viewBox="0 0 100 24" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', display: 'block', transform: align === 'right' ? 'scaleX(-1)' : 'none' }}>
+          <polygon points="0,0 26,0 12,13" fill={scaleRgb(bandColor1, 0.78)} />
+          <polygon points="26,0 52,0 38,11 12,13" fill={mixRgb(bandColor1, '#ffffff', 0.14)} />
+          <polygon points="52,0 78,0 64,13 38,11" fill={bandColor2} />
+          <polygon points="78,0 100,0 100,12 64,13" fill={scaleRgb(bandColor2, 0.8)} />
+          <polygon points="0,0 12,13 0,24" fill={mixRgb(bandColor2, '#ffffff', 0.1)} />
+          <polygon points="12,13 38,11 30,24 0,24" fill={scaleRgb(bandColor1, 0.62)} />
+          <polygon points="38,11 64,13 56,24 30,24" fill={mixRgb(bandColor1, '#ffffff', 0.22)} />
+          <polygon points="64,13 100,12 100,24 56,24" fill={scaleRgb(bandColor2, 0.66)} />
+        </svg>
+        <div style={{ position: 'relative', zIndex: 1, padding: '3mm 4.5mm 3.4mm', textAlign: align }}>
+          {eyebrow('rgba(255,255,255,0.78)')}
+          {identityLines('#ffffff', 'rgba(255,255,255,0.88)')}
+        </div>
+      </div>
+    );
+
+    // Corner Slash — white header; a bold band-gradient diagonal
+    // slash block in the aligned top corner + a second smaller slash
+    // + a gradient rule under the ink identity.
+    const cornerSlashBlock = (
+      <div style={{ position: 'relative', border: `1px solid ${DESIGN.line}`, borderRadius: '8px', overflow: 'hidden', background: '#ffffff', padding: '3mm 4mm 0' }}>
+        <div data-design-shape="cornerslash" style={{ position: 'absolute', top: 0, bottom: 0, width: '26mm', background: band, ...(align === 'right' ? { right: '-6mm', transform: 'skewX(16deg)' } : { left: '-6mm', transform: 'skewX(-16deg)' }), ...exact }} />
+        <div data-design-shape="cornerslash-2" style={{ position: 'absolute', top: 0, bottom: 0, width: '2.6mm', background: scaleRgb(bandColor2, 0.62), ...(align === 'right' ? { right: '17.5mm', transform: 'skewX(16deg)' } : { left: '17.5mm', transform: 'skewX(-16deg)' }), ...exact }} />
+        <div style={{ position: 'relative', textAlign: align, ...(align === 'right' ? { paddingRight: '27mm' } : { paddingLeft: '27mm' }) }}>
+          {eyebrow(accent)}
+          {identityLines(DESIGN.ink, DESIGN.muted)}
+        </div>
+        <div data-design-shape="cornerslash-rule" style={{ height: '1.4mm', background: band, margin: '2.6mm -4mm 0', ...exact }} />
+      </div>
+    );
+
+    // Modern Arch — an arch-topped gradient panel holding the
+    // identity, anchored per alignment, with an inner arch outline.
+    const archBlock = (
+      <div style={{ display: 'flex', justifyContent: align === 'center' ? 'center' : align === 'right' ? 'flex-end' : 'flex-start' }}>
+        <div data-design-shape="arch" style={{ background: band, borderTopLeftRadius: '24mm', borderTopRightRadius: '24mm', borderBottomLeftRadius: '6px', borderBottomRightRadius: '6px', padding: '1.6mm', width: '76%', maxWidth: '150mm', ...exact }}>
+          <div data-design-shape="arch-ring" style={{ border: '1px solid rgba(255,255,255,0.55)', borderTopLeftRadius: '22mm', borderTopRightRadius: '22mm', borderBottomLeftRadius: '4px', borderBottomRightRadius: '4px', padding: '3.4mm 4mm 3mm', textAlign: 'center' }}>
+            {eyebrow('rgba(255,255,255,0.78)')}
+            {identityLines('#ffffff', 'rgba(255,255,255,0.88)')}
+          </div>
+        </div>
+      </div>
+    );
+
+    // Hexagon Badge — band whose far end is cut at an angle, with a
+    // hexagonal monogram badge (white outer ring, gradient inner) on
+    // the aligned side.
+    const hexBadgeBlock = (
+      <div data-design-shape="hexbadge-band" style={{ background: band, padding: '3mm 4.5mm 3.4mm', display: 'flex', flexDirection: align === 'right' ? 'row-reverse' : 'row', alignItems: 'center', gap: '3.6mm', clipPath: align === 'right' ? 'polygon(3% 0, 100% 0, 100% 100%, 0 100%)' : 'polygon(0 0, 100% 0, 97% 100%, 0 100%)', ...exact }}>
+        <div data-design-shape="hexbadge" style={{ position: 'relative', width: '13.5mm', height: '12.5mm', flexShrink: 0, background: '#ffffff', clipPath: 'polygon(50% 0, 93% 25%, 93% 75%, 50% 100%, 7% 75%, 7% 25%)', ...exact }}>
+          <div data-design-shape="hexbadge-inner" style={{ position: 'absolute', inset: '1.1mm', background: band, clipPath: 'polygon(50% 0, 93% 25%, 93% 75%, 50% 100%, 7% 75%, 7% 25%)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 900, fontSize: '10.5pt', color: '#ffffff', ...exact }}>{monogramText}</div>
+        </div>
+        <div style={{ flex: 1, textAlign: align }}>
+          {eyebrow('rgba(255,255,255,0.78)')}
+          {identityLines('#ffffff', 'rgba(255,255,255,0.88)')}
+        </div>
+      </div>
+    );
+
+    // Blueprint — deep darkest-band block with a fine light grid and
+    // crosshair plus marks in the corners; technical feel, name white.
+    const blueprintBlock = (
+      <div data-design-shape="blueprint" style={{ position: 'relative', background: scaleRgb(bandColor1, 0.32), borderRadius: '6px', overflow: 'hidden', ...exact }}>
+        <div data-design-shape="blueprint-grid" style={{ position: 'absolute', inset: 0, backgroundImage: 'linear-gradient(rgba(255,255,255,0.13) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.13) 1px, transparent 1px)', backgroundSize: '6mm 6mm', ...exact }} />
+        <div data-design-shape="blueprint-cross" aria-hidden="true" style={{ position: 'absolute', top: '1mm', fontSize: '10pt', fontWeight: 700, color: 'rgba(255,255,255,0.55)', lineHeight: 1, ...(align === 'right' ? { left: '2.4mm' } : { right: '2.4mm' }) }}>+</div>
+        <div data-design-shape="blueprint-cross" aria-hidden="true" style={{ position: 'absolute', bottom: '1.2mm', fontSize: '10pt', fontWeight: 700, color: 'rgba(255,255,255,0.55)', lineHeight: 1, ...(align === 'right' ? { right: '2.4mm' } : { left: '2.4mm' }) }}>+</div>
+        <div style={{ position: 'relative', zIndex: 1, padding: '3mm 4.5mm 3.4mm', textAlign: align }}>
+          {eyebrow('rgba(255,255,255,0.72)')}
+          {identityLines('#ffffff', 'rgba(255,255,255,0.85)')}
+        </div>
+      </div>
+    );
+
+    // Executive Crest — shield monogram flanked by ornamental double
+    // rules with diamond centers; the crest group anchors per
+    // alignment and the identity sits under it in ink.
+    const crestRule = (
+      <>
+        <div data-design-shape="crest-rule" style={{ width: '17mm', height: '1.7mm', borderTop: `0.55mm solid ${accent}`, borderBottom: `0.55mm solid ${accent}`, flexShrink: 0, ...exact }} />
+        <div data-design-shape="crest-diamond" style={{ width: '2.2mm', height: '2.2mm', background: accent, transform: 'rotate(45deg)', flexShrink: 0, ...exact }} />
+        <div data-design-shape="crest-rule" style={{ width: '17mm', height: '1.7mm', borderTop: `0.55mm solid ${accent}`, borderBottom: `0.55mm solid ${accent}`, flexShrink: 0, ...exact }} />
+      </>
+    );
+    const crestBlock = (
+      <div style={{ border: `1px solid ${DESIGN.line}`, borderRadius: '8px', padding: '3mm 4mm 3.4mm', display: 'flex', flexDirection: 'column', alignItems: align === 'center' ? 'center' : align === 'right' ? 'flex-end' : 'flex-start' }}>
+        {eyebrow(accent)}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '2.2mm', marginBottom: '2mm' }}>
+          {crestRule}
+          <svg data-design-shape="crest-shield" aria-hidden="true" viewBox="0 0 24 28" style={{ width: '10mm', height: '11.7mm', display: 'block', flexShrink: 0 }}>
+            <path d="M12 1 L21 4 V13 C21 20.2 17.2 24.6 12 27 C6.8 24.6 3 20.2 3 13 V4 Z" fill={bandColor1} stroke={mixRgb(bandColor1, '#ffffff', 0.35)} strokeWidth="1" />
+            <text x="12" y="16.5" textAnchor="middle" fontSize="8" fontWeight="900" fill="#ffffff">{monogramText}</text>
+          </svg>
+          {crestRule}
+        </div>
+        <div style={{ textAlign: align }}>
+          {identityLines(DESIGN.ink, DESIGN.muted)}
+        </div>
+      </div>
+    );
+
+    // Stacked Steps — three offset stacked rectangles in band shades
+    // ascending behind the monogram box; identity in ink beside it.
+    const stepsBlock = (
+      <div style={{ display: 'flex', flexDirection: align === 'right' ? 'row-reverse' : 'row', alignItems: 'center', gap: '5mm', border: `1px solid ${DESIGN.line}`, borderRadius: '8px', padding: '3.4mm 4.5mm 3.6mm' }}>
+        <div style={{ position: 'relative', width: '15mm', height: '13mm', flexShrink: 0 }}>
+          <div data-design-shape="steps" style={{ position: 'absolute', width: '11.5mm', height: '10mm', background: scaleRgb(bandColor1, 0.55), borderRadius: '3px', ...(align === 'right' ? { right: 0, bottom: 0 } : { left: 0, bottom: 0 }), ...exact }} />
+          <div data-design-shape="steps" style={{ position: 'absolute', width: '11.5mm', height: '10mm', background: scaleRgb(bandColor2, 0.8), borderRadius: '3px', ...(align === 'right' ? { right: '1.7mm', bottom: '1.5mm' } : { left: '1.7mm', bottom: '1.5mm' }), ...exact }} />
+          <div data-design-shape="steps" style={{ position: 'absolute', width: '11.5mm', height: '10mm', background: band, borderRadius: '3px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 900, fontSize: '11pt', color: '#ffffff', ...(align === 'right' ? { right: '3.4mm', bottom: '3mm' } : { left: '3.4mm', bottom: '3mm' }), ...exact }}>{monogramText}</div>
+        </div>
+        <div style={{ flex: 1, textAlign: align }}>
+          {eyebrow(accent)}
+          {identityLines(DESIGN.ink, DESIGN.muted)}
+        </div>
+      </div>
+    );
+
+    // Duotone Split — band split horizontally: upper 62% darkest band
+    // shade, lower 38% brightest; the name straddles the split line.
+    const duotoneBlock = (
+      <div data-design-shape="duotone" style={{ position: 'relative', background: `linear-gradient(180deg, ${scaleRgb(bandColor1, 0.42)} 0%, ${scaleRgb(bandColor1, 0.42)} 62%, ${mixRgb(bandColor2, '#ffffff', 0.18)} 62%, ${mixRgb(bandColor2, '#ffffff', 0.18)} 100%)`, borderRadius: '6px', overflow: 'hidden', ...exact }}>
+        <div data-design-shape="duotone-line" style={{ position: 'absolute', left: 0, right: 0, top: '62%', height: '0.6mm', background: 'rgba(255,255,255,0.4)', ...exact }} />
+        <div style={{ position: 'relative', zIndex: 1, padding: '3mm 4.5mm 3.4mm', textAlign: align }}>
+          {eyebrow('rgba(255,255,255,0.75)')}
+          {identityLines('#ffffff', 'rgba(255,255,255,0.92)')}
+        </div>
+      </div>
+    );
+
+    // Pinstripe Edge — gradient band whose aligned side carries thin
+    // diagonal pinstripes (translucent white) fading toward the
+    // center; name white over the band.
+    const pinstripeBlock = (
+      <div data-design-shape="pinstripe" style={{ position: 'relative', background: band, borderRadius: '6px', overflow: 'hidden', ...exact }}>
+        <div data-design-shape="pinstripe-stripes" style={{ position: 'absolute', top: 0, bottom: 0, width: '46%', backgroundImage: 'repeating-linear-gradient(115deg, rgba(255,255,255,0.22) 0, rgba(255,255,255,0.22) 1.1mm, transparent 1.1mm, transparent 3.1mm)', ...(align === 'right' ? { right: 0, WebkitMaskImage: 'linear-gradient(270deg, black 55%, transparent)', maskImage: 'linear-gradient(270deg, black 55%, transparent)' } : { left: 0, WebkitMaskImage: 'linear-gradient(90deg, black 55%, transparent)', maskImage: 'linear-gradient(90deg, black 55%, transparent)' }), ...exact }} />
+        <div style={{ position: 'relative', zIndex: 1, padding: '3mm 4.5mm 3.4mm', textAlign: align }}>
+          {eyebrow('rgba(255,255,255,0.78)')}
+          {identityLines('#ffffff', 'rgba(255,255,255,0.88)')}
+        </div>
+      </div>
+    );
+
     const graphicBlock = design === 'ribbon' ? ribbonBlock
       : design === 'wave' ? waveBlock
       : design === 'sideblock' ? sideBlock
@@ -365,6 +540,16 @@ export function MetaGridHeader({ layout, companyName, companyLegal, companyAddre
       : design === 'swoosh' ? swooshBlock
       : design === 'watermark' ? watermarkBlock
       : design === 'premium' ? premiumBlock
+      : design === 'aurora' ? auroraBlock
+      : design === 'facet' ? facetBlock
+      : design === 'cornerslash' ? cornerSlashBlock
+      : design === 'arch' ? archBlock
+      : design === 'hexbadge' ? hexBadgeBlock
+      : design === 'blueprint' ? blueprintBlock
+      : design === 'crest' ? crestBlock
+      : design === 'steps' ? stepsBlock
+      : design === 'duotone' ? duotoneBlock
+      : design === 'pinstripe' ? pinstripeBlock
       : frameBlock;
 
     const partyStrip = party ? (

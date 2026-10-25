@@ -5,7 +5,7 @@ import { useApp } from '../../context/AppContext';
 import { useDialog } from '../../context/DialogContext';
 import { supabase } from '../../utils/supabaseClient';
 import { ensureContrastText, resolveMargins, ensurePhaseMatrixRecord, uomSymbol } from '../../utils/printDesign';
-import { PhaseMatrixSheet, PrintTableSheet } from '../ui/PrintSheetParts';
+import { MetaGridHeader, PhaseMatrixSheet, PrintTableSheet } from '../ui/PrintSheetParts';
 import { getDivisionPrintFullName } from '../../utils/divisionPrintName';
 import {
   SYSTEM_DOCUMENTS,
@@ -870,34 +870,51 @@ export default function PrintSettings() {
                         </label>
                       );
                     })}
-                    {/* Graphic header designs (Omer, 2026-10-25): the company
-                        block renders as a graphic shape in the document's
-                        band colors. Opt-in per document; picking one sets
-                        layout.headerDesign, picking any classic theme above
-                        resets it to 'classic'. Live-previews on the canvas
-                        because the designer renders the shared sheet
-                        components. */}
-                    {HEADER_DESIGNS.filter((d) => d.id !== 'classic').map((d) => {
+                  </div>
+                </div>
+
+                {/* Header design GALLERY (Omer, 2026-10-25, Round 6): the
+                    designs pick from live visual cards, not names. Every
+                    card renders the REAL shared MetaGridHeader with the
+                    ACTIVE document's own colors/alignment (only the
+                    design overridden), so changing the band color
+                    editors below re-skins every card live, and each
+                    document keeps its own design + colors. Picking a
+                    card sets layout.headerDesign ('classic' card sets
+                    'classic'); picking any classic theme above also
+                    resets it to 'classic'. */}
+                <div>
+                  <label className="text-xs font-bold text-slate-700 block mb-2">Header Design Gallery — click a design to apply it to this document</label>
+                  <div className="grid grid-cols-2 gap-2" data-design-gallery>
+                    {HEADER_DESIGNS.map((d) => {
                       const isActive = (activeLayout.headerDesign || 'classic') === d.id;
                       return (
-                        <label
+                        <button
+                          type="button"
                           key={d.id}
-                          className={`flex items-center gap-2 p-2.5 rounded-xl border text-xs font-semibold cursor-pointer transition-all ${
+                          onClick={() => updateActiveLayout({ headerDesign: d.id })}
+                          className={`text-left rounded-xl border overflow-hidden transition-all ${
                             isActive
-                              ? 'bg-blue-50 border-blue-500 text-blue-900'
-                              : 'bg-slate-50 border-slate-200 text-slate-600 hover:border-slate-300'
+                              ? 'ring-2 ring-blue-500 border-blue-500 bg-blue-50'
+                              : 'border-slate-200 bg-white hover:border-slate-300'
                           }`}
                         >
-                          <input
-                            type="radio"
-                            name="theme"
-                            value={`graphic_${d.id}`}
-                            checked={isActive}
-                            onChange={() => updateActiveLayout({ headerDesign: d.id })}
-                            className="text-blue-600"
-                          />
-                          {d.name}
-                        </label>
+                          <span className="block relative overflow-hidden bg-white" style={{ height: '62px' }}>
+                            <span className="block absolute top-0 left-0" style={{ width: '303%', transform: 'scale(0.33)', transformOrigin: 'top left', pointerEvents: 'none' }}>
+                              <MetaGridHeader
+                                layout={{ ...activeLayout, headerDesign: d.id }}
+                                companyName="FLASHVISION"
+                                companyLegal="Flashvision (Pvt) Limited"
+                                companyAddress="Plot 42-B, Industrial Zone Phase III, Karachi, Pakistan"
+                                party={null}
+                                metaRows={[]}
+                                docTitle="SALE ORDER"
+                                docSub="ORDER LIST"
+                              />
+                            </span>
+                          </span>
+                          <span className={`block px-2 py-1.5 text-[11px] font-semibold ${isActive ? 'text-blue-900' : 'text-slate-600'}`}>{d.name}</span>
+                        </button>
                       );
                     })}
                   </div>

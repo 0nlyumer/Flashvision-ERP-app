@@ -82,7 +82,22 @@ export const HEADER_DESIGNS = [
   { id: 'medallion', name: 'Graphic — Medallion' },
   { id: 'swoosh', name: 'Graphic — Double Swoosh' },
   { id: 'watermark', name: 'Graphic — Watermark' },
-  { id: 'premium', name: 'Graphic — Premium Dark' }
+  { id: 'premium', name: 'Graphic — Premium Dark' },
+  // Round 6 (Omer, 2026-10-25): TOP TEN premium designs shortlisted
+  // from web research over premium invoice/letterhead header sets
+  // (gradient mesh, geometric/angular, executive, blueprint/technical,
+  // arch, hexagon, duotone patterns). Same opt-in field, same classic
+  // default everywhere.
+  { id: 'aurora', name: 'Graphic — Aurora Gradient' },
+  { id: 'facet', name: 'Graphic — Geometric Facet' },
+  { id: 'cornerslash', name: 'Graphic — Corner Slash' },
+  { id: 'arch', name: 'Graphic — Modern Arch' },
+  { id: 'hexbadge', name: 'Graphic — Hexagon Badge' },
+  { id: 'blueprint', name: 'Graphic — Blueprint' },
+  { id: 'crest', name: 'Graphic — Executive Crest' },
+  { id: 'steps', name: 'Graphic — Stacked Steps' },
+  { id: 'duotone', name: 'Graphic — Duotone Split' },
+  { id: 'pinstripe', name: 'Graphic — Pinstripe Edge' }
 ];
 
 // Font choices for the print studio's Font Family picker (same list the
