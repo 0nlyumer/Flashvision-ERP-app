@@ -392,6 +392,9 @@ export default function HRPayslipModal({ isOpen, onClose, slip }) {
             margin: 0 !important;
             padding: 0 !important;
             background: #ffffff !important;
+            zoom: 1 !important;
+            width: auto !important;
+            height: auto !important;
           }
           body > *:not(#fv-payslip-print-root) {
             display: none !important;

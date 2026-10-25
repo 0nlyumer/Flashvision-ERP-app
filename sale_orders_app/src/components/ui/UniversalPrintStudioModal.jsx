@@ -339,7 +339,7 @@ function UniversalPrintStudioModalInner({
   }, [isPendingDoc, layoutConfig.groupBy, resolvedLineItems, activeCols]);
 
   // 5. Multi-page chunking over display rows.
-  const pages = useMemo(() => {
+  const basePages = useMemo(() => {
     if (isPhaseDoc) return [[]];
     const items = displayRows || [];
     const firstPageLimit = Math.max(1, Number(layoutConfig.firstPageRows || 8));
@@ -351,6 +351,17 @@ function UniversalPrintStudioModalInner({
     while (copy.length > 0) chunks.push(copy.splice(0, continuationLimit));
     return chunks;
   }, [displayRows, isPhaseDoc, layoutConfig.firstPageRows, layoutConfig.continuationPageRows]);
+
+  // Measured pagination (Browser Print Program, 2026-10-25): the row-count
+  // chunks above are estimates. The effect below (after the paper/scale
+  // constants) measures each rendered sheet and moves rows down from any
+  // sheet whose content is taller than the printable area, so in 'fill'
+  // mode every sheet is exactly one printed page — page labels stay true
+  // and no row is ever dropped. The grow-don't-clip print CSS remains as a
+  // safety net for a single row taller than a page.
+  const [fittedPages, setFittedPages] = useState(null);
+  const pages = fittedPages || basePages;
+  useEffect(() => { setFittedPages(null); }, [basePages]);
 
   const columnTotals = useMemo(() => {
     const totals = {};
@@ -387,6 +398,46 @@ function UniversalPrintStudioModalInner({
     .filter((f) => f !== partyField)
     .map((f) => ({ label: f.label || f.key, value: getHeaderFieldValue(f.key) }));
 
+  // Measured pagination: in 'fill' mode, move rows down from any sheet
+  // whose rendered content exceeds the printable height (see basePages).
+  useEffect(() => {
+    if (scaleMode !== 'fill' || isPhaseDoc) return;
+    let cancelled = false;
+    const raf = requestAnimationFrame(() => {
+      if (cancelled) return;
+      // A sheet left holding only a group header merges into the next sheet.
+      for (let i = 0; i < pages.length - 1; i++) {
+        if (pages[i].length === 1 && pages[i][0]?._isGroup) {
+          const next = pages.map((p) => [...p]);
+          const [head] = next.splice(i, 1);
+          next[i] = [...head, ...next[i]];
+          setFittedPages(next);
+          return;
+        }
+      }
+      for (let i = 0; i < pages.length; i++) {
+        const el = pageRefs.current[i];
+        if (!el) continue;
+        const inner = el.querySelector('[data-fit-content]');
+        if (!inner) continue;
+        const avail = (parseFloat(getComputedStyle(el).minHeight) || el.clientHeight)
+          - parseFloat(getComputedStyle(el).paddingTop || 0)
+          - parseFloat(getComputedStyle(el).paddingBottom || 0);
+        if (inner.scrollHeight > avail + 2 && pages[i].length > 1) {
+          const next = pages.map((p) => [...p]);
+          const moved = [];
+          moved.unshift(next[i].pop());
+          while (next[i].length > 1 && next[i][next[i].length - 1]?._isGroup) moved.unshift(next[i].pop());
+          if (i + 1 < next.length) next[i + 1] = [...moved, ...next[i + 1]];
+          else next.push(moved);
+          setFittedPages(next);
+          return;
+        }
+      }
+    });
+    return () => { cancelled = true; cancelAnimationFrame(raf); };
+  }, [pages, scaleMode, isPhaseDoc, layoutConfig, paperWidth, paperHeight]);
+
   // Fit-to-page: measure each page's content and shrink (never enlarge).
   useEffect(() => {
     if (scaleMode !== 'fit') { setFitScales([]); return; }
@@ -395,7 +446,7 @@ function UniversalPrintStudioModalInner({
         if (!el) return 1;
         const inner = el.querySelector('[data-fit-content]');
         if (!inner) return 1;
-        const avail = el.clientHeight
+        const avail = (parseFloat(getComputedStyle(el).minHeight) || el.clientHeight)
           - parseFloat(getComputedStyle(el).paddingTop || 0)
           - parseFloat(getComputedStyle(el).paddingBottom || 0);
         const content = inner.scrollHeight;
@@ -497,9 +548,17 @@ function UniversalPrintStudioModalInner({
 
   // Phase-matrix print CSS: long sheets flow to further printed pages
   // instead of being clipped at one page height.
+  // Print pagination contract (Browser Print Program, 2026-10-25): sheets
+  // GROW, never clip. Row-count chunking is only an estimate — when wrapped
+  // rows make a chunk taller than one page, the sheet flows onto the next
+  // page (table headers repeat) instead of silently dropping rows under
+  // overflow:hidden. 'fit' is the exception: it shrink-scales each sheet to
+  // one page by measurement, so it keeps the fixed page box.
   const extraPrintCss = (isPhaseDoc || scaleMode === 'actual')
     ? `.print-preview-page { height: auto !important; min-height: ${paperHeight} !important; overflow: visible !important; page-break-after: auto !important; break-after: auto !important; }`
-    : '';
+    : scaleMode === 'fit'
+      ? ''
+      : `.print-preview-page { height: auto !important; min-height: ${paperHeight} !important; overflow: visible !important; } .print-preview-page tr { break-inside: avoid !important; }`;
 
   // ---- Settings toolbox (left column inside the shell frame) ----
   const tabBtn = (id, label, icon) => (
@@ -821,7 +880,7 @@ function UniversalPrintStudioModalInner({
         margins={margins}
         paperWidth={paperWidth}
         paperHeight={paperHeight}
-        fixedHeight={scaleMode !== 'actual'}
+        fixedHeight={scaleMode === 'fit'}
         fitScale={fitScale}
       />
     );

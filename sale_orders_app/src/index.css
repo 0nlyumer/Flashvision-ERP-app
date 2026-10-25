@@ -484,6 +484,20 @@
   body {
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
+    /* The display scale (AppContext applies the user's webScale, default 75%,
+       as body zoom + compensating width/height) is a screen-only preference.
+       Print must always lay out at 100% so the printed geometry is exactly
+       the Print Settings geometry (Browser Print Program, 2026-10-25). */
+    zoom: 1 !important;
+    width: auto !important;
+    height: auto !important;
+  }
+
+  /* Colours are part of the finalized designs: print them exactly, even when
+     the browser's "Background graphics" option is off. */
+  *, *::before, *::after {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
   
   /* Auto-hide standard UI and utility classes system-wide to prevent page pollution */

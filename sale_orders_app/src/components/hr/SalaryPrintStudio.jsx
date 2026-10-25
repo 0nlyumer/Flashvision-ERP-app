@@ -71,7 +71,7 @@ export default function SalaryPrintStudio({
   const paper = PAPER[orientation];
   const rowsPerPage = Math.max(1, Math.round(safeNum(draft.rowsPerPage)) || 25);
 
-  const pages = useMemo(() => {
+  const basePages = useMemo(() => {
     if (!rows || rows.length === 0) return [[]];
     const chunks = [];
     for (let i = 0; i < rows.length; i += rowsPerPage) {
@@ -79,6 +79,36 @@ export default function SalaryPrintStudio({
     }
     return chunks;
   }, [rows, rowsPerPage]);
+
+  // Measured pagination (Browser Print Program, 2026-10-25): rowsPerPage is
+  // an estimate — measure each rendered sheet and move rows down from any
+  // sheet taller than the printable height, so every sheet is exactly one
+  // printed page and no row is dropped. Grow-don't-clip CSS is the net.
+  const [fittedPages, setFittedPages] = useState(null);
+  const pages = fittedPages || basePages;
+  const pageElsRef = useRef([]);
+  useEffect(() => { setFittedPages(null); }, [basePages]);
+  useEffect(() => {
+    if ((draft.scaleMode || 'fill') === 'actual') return;
+    let cancelled = false;
+    const raf = requestAnimationFrame(() => {
+      if (cancelled) return;
+      for (let i = 0; i < pages.length; i++) {
+        const el = pageElsRef.current[i];
+        if (!el) continue;
+        const limit = parseFloat(getComputedStyle(el).minHeight) || el.clientHeight;
+        if (el.scrollHeight > limit + 2 && pages[i].length > 1) {
+          const next = pages.map((p) => [...p]);
+          const moved = [next[i].pop()];
+          if (i + 1 < next.length) next[i + 1] = [...moved, ...next[i + 1]];
+          else next.push(moved);
+          setFittedPages(next);
+          return;
+        }
+      }
+    });
+    return () => { cancelled = true; cancelAnimationFrame(raf); };
+  }, [pages, draft]);
 
   // Totals — mirrors the Salary Generation screen's footer totals exactly:
   // per numeric column a straight sum over the printed rows; Paid Days
@@ -230,7 +260,7 @@ export default function SalaryPrintStudio({
           __html: `
             @media print {
               @page { size: ${paper.width} ${paper.height} !important; margin: 0 !important; }
-              body { margin: 0 !important; padding: 0 !important; background: #ffffff !important; }
+              body { margin: 0 !important; padding: 0 !important; background: #ffffff !important; zoom: 1 !important; width: auto !important; height: auto !important; }
               body > *:not(#fv-salary-print-container) { display: none !important; }
               #fv-salary-print-container, #fv-salary-print-container * { visibility: visible !important; }
               #fv-salary-print-container {
@@ -242,10 +272,11 @@ export default function SalaryPrintStudio({
               #fv-salary-print-pages { overflow: visible !important; display: block !important; padding: 0 !important; background: #ffffff !important; }
               .salary-print-page {
                 box-shadow: none !important; border: none !important; margin: 0 !important;
-                width: ${paper.width} !important; height: ${paper.height} !important;
+                width: ${paper.width} !important; height: auto !important; min-height: ${paper.height} !important;
                 page-break-after: always !important; break-after: page !important;
-                overflow: hidden !important;
+                overflow: visible !important;
               }
+              .salary-print-page tr { break-inside: avoid !important; }
               .salary-print-page:last-child { page-break-after: auto !important; break-after: auto !important; }
               #fv-salary-print-container .fv-salary-frame { display: block !important; width: auto !important; height: auto !important; max-width: none !important; border: none !important; box-shadow: none !important; border-radius: 0 !important; overflow: visible !important; }
               #fv-salary-print-container .fv-salary-body { display: block !important; overflow: visible !important; }
@@ -552,12 +583,13 @@ export default function SalaryPrintStudio({
         <div id="fv-salary-print-pages" ref={printContainerRef} className="flex-1 min-w-0 overflow-y-auto bg-slate-300/50 p-4 md:p-8 space-y-8">
           {pages.map((pageRows, pageIdx) => {
             const isLastPage = pageIdx === pages.length - 1;
-            const pageStartIndex = pageIdx * rowsPerPage;
+            const pageStartIndex = pages.slice(0, pageIdx).reduce((s, p) => s + p.length, 0);
             return (
               <div
                 key={pageIdx}
+                ref={(el) => { pageElsRef.current[pageIdx] = el; }}
                 className="salary-print-page print-preview-page mx-auto bg-white shadow-2xl flex flex-col"
-                style={{ width: paper.width, height: draft.scaleMode === 'actual' ? 'auto' : paper.height, minHeight: paper.height, padding: `${resolveMargins(draft).top} ${resolveMargins(draft).right} ${resolveMargins(draft).bottom} ${resolveMargins(draft).left}`, color: '#111827', fontFamily: 'Arial, sans-serif', overflow: draft.scaleMode === 'actual' ? 'visible' : 'hidden' }}
+                style={{ width: paper.width, height: 'auto', minHeight: paper.height, padding: `${resolveMargins(draft).top} ${resolveMargins(draft).right} ${resolveMargins(draft).bottom} ${resolveMargins(draft).left}`, color: '#111827', fontFamily: 'Arial, sans-serif', overflow: 'visible' }}
               >
                 {/* Header (first page only) */}
                 {pageIdx === 0 && (

@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { exportDocumentToPdf, exportDocumentToImage } from '../../utils/printExportUtils';
 
@@ -32,7 +32,7 @@ export default function StockReportStudio({ isOpen, onClose, model }) {
 
   const paper = PAPER[orientation];
 
-  const pages = useMemo(() => {
+  const basePages = useMemo(() => {
     if (!model) return [];
     const flat = [];
     (model.groups || []).forEach((g) => {
@@ -46,6 +46,39 @@ export default function StockReportStudio({ isOpen, onClose, model }) {
     }
     return chunks;
   }, [model, paper.rowsPerPage]);
+
+  // Measured pagination (Browser Print Program, 2026-10-25): rowsPerPage is
+  // an estimate — measure each rendered sheet and move data rows down from
+  // any sheet taller than the printable height (group heads travel with
+  // their rows; subtotal/grand rows are never moved — the grow-don't-clip
+  // print CSS covers those rare edges), so every sheet is exactly one
+  // printed page and no row is dropped.
+  const [fittedPages, setFittedPages] = useState(null);
+  const pages = fittedPages || basePages;
+  const pageElsRef = useRef([]);
+  useEffect(() => { setFittedPages(null); }, [basePages]);
+  useEffect(() => {
+    let cancelled = false;
+    const raf = requestAnimationFrame(() => {
+      if (cancelled) return;
+      for (let i = 0; i < pages.length; i++) {
+        const el = pageElsRef.current[i];
+        if (!el) continue;
+        const limit = parseFloat(getComputedStyle(el).minHeight) || el.clientHeight;
+        if (el.scrollHeight <= limit + 2 || pages[i].length <= 1) continue;
+        const lastKind = pages[i][pages[i].length - 1]?.kind;
+        if (lastKind === 'subtotal' || lastKind === 'grand') continue;
+        const next = pages.map((p) => [...p]);
+        const moved = [next[i].pop()];
+        while (next[i].length > 1 && ['grouphead', 'subhead'].includes(next[i][next[i].length - 1]?.kind)) moved.unshift(next[i].pop());
+        if (i + 1 < next.length) next[i + 1] = [...moved, ...next[i + 1]];
+        else next.push(moved);
+        setFittedPages(next);
+        return;
+      }
+    });
+    return () => { cancelled = true; cancelAnimationFrame(raf); };
+  }, [pages, orientation]);
 
   if (!isOpen || !model) return null;
 
@@ -112,7 +145,7 @@ export default function StockReportStudio({ isOpen, onClose, model }) {
           __html: `
             @media print {
               @page { size: ${paper.width} ${paper.height} !important; margin: 0 !important; }
-              body { margin: 0 !important; padding: 0 !important; background: #ffffff !important; }
+              body { margin: 0 !important; padding: 0 !important; background: #ffffff !important; zoom: 1 !important; width: auto !important; height: auto !important; }
               body > *:not(#fv-stock-report-container) { display: none !important; }
               #fv-stock-report-container, #fv-stock-report-container * { visibility: visible !important; }
               #fv-stock-report-container {
@@ -124,10 +157,11 @@ export default function StockReportStudio({ isOpen, onClose, model }) {
               #fv-stock-report-pages { overflow: visible !important; display: block !important; padding: 0 !important; background: #ffffff !important; }
               .stock-report-page {
                 box-shadow: none !important; border: none !important; margin: 0 !important;
-                width: ${paper.width} !important; height: ${paper.height} !important;
+                width: ${paper.width} !important; height: auto !important; min-height: ${paper.height} !important;
                 page-break-after: always !important; break-after: page !important;
-                overflow: hidden !important;
+                overflow: visible !important;
               }
+              .stock-report-page tr { break-inside: avoid !important; }
               .stock-report-page:last-child { page-break-after: auto !important; break-after: auto !important; }
               * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
             }
@@ -226,6 +260,7 @@ export default function StockReportStudio({ isOpen, onClose, model }) {
         {pages.map((pageRows, pageIdx) => (
           <div
             key={pageIdx}
+            ref={(el) => { pageElsRef.current[pageIdx] = el; }}
             className="stock-report-page print-preview-page mx-auto bg-white shadow-2xl flex flex-col"
             style={{ width: paper.width, minHeight: paper.height, padding: '10mm', color: '#111827', fontFamily: 'Arial, sans-serif' }}
           >

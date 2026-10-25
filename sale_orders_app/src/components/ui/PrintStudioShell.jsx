@@ -69,7 +69,7 @@ export default function PrintStudioShell({
           __html: `
             @media print {
               @page { size: ${paperWidth} ${paperHeight} !important; margin: 0 !important; }
-              body { margin: 0 !important; padding: 0 !important; background: #ffffff !important; }
+              body { margin: 0 !important; padding: 0 !important; background: #ffffff !important; zoom: 1 !important; width: auto !important; height: auto !important; }
               body > *:not(#${containerId}) { display: none !important; }
               #${containerId}, #${containerId} * { visibility: visible !important; }
               #${containerId} {
@@ -224,7 +224,7 @@ export default function PrintStudioShell({
         <div className="no-print w-full bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 px-4 md:px-5 py-3 flex flex-wrap items-center justify-between gap-3 shrink-0 z-20">
           <span className="text-[10px] text-slate-400 hidden md:flex items-center gap-1.5">
             <span className="material-symbols-outlined text-sm">info</span>
-            For an exact match in Chrome print: Margins = None, Scale = 100%, Background graphics = ON.
+            For an exact match in Chrome print: Margins = None, Scale = 100%. (Colours print automatically.)
           </span>
           <div className="flex items-center gap-2 flex-wrap ml-auto">
             {onExportCsv && (
