@@ -45,6 +45,7 @@ export const SYSTEM_DOCUMENTS = [
   { id: 'purchase_invoice', name: 'Purchase Invoice', module: 'finance', icon: 'receipt', code: 'PINV' },
   { id: 'chart_of_accounts', name: 'Chart of Accounts', module: 'finance', icon: 'account_tree', code: 'COA' },
   { id: 'tax_ledger_reports', name: 'Tax & Ledger Reports', module: 'finance', icon: 'analytics', code: 'TLR' },
+  { id: 'general_ledger', name: 'General Ledger', module: 'finance', icon: 'menu_book', code: 'GL' },
   { id: 'voucher_receipt', name: 'Receipt Voucher', module: 'finance', icon: 'price_check', code: 'RVR' },
   { id: 'voucher_payment', name: 'Payment Voucher', module: 'finance', icon: 'payments', code: 'PVR' },
   { id: 'voucher_journal', name: 'Journal Voucher', module: 'finance', icon: 'book', code: 'JVR' },
@@ -634,6 +635,33 @@ export const DEFAULT_DOCUMENT_SCHEMAS = {
     ]
   },
 
+  general_ledger: {
+    // Finance → General Ledger studio print (2026-10-25): wide double-entry
+    // book, landscape, totals row from the filtered debit/credit columns.
+    ...DEFAULT_LAYOUT_SETTINGS,
+    orientation: 'landscape',
+    firstPageRows: 22,
+    continuationPageRows: 28,
+    headerFields: [
+      { key: 'account', label: 'Account', enabled: true, width: 'span-2' },
+      { key: 'period', label: 'Period', enabled: true, width: 'span-1' },
+      { key: 'voucher_type', label: 'Voucher Type', enabled: true, width: 'span-1' },
+      { key: 'party', label: 'Party', enabled: true, width: 'span-1' },
+      { key: 'generated_on', label: 'Generated On', enabled: true, width: 'span-1' }
+    ],
+    gridColumns: [
+      { key: 'entry_date', label: 'Date', enabled: true, width: '9%', align: 'center' },
+      { key: 'voucher', label: 'Voucher', enabled: true, width: '13%', align: 'left' },
+      { key: 'account', label: 'Account', enabled: true, width: '20%', align: 'left' },
+      { key: 'party', label: 'Party', enabled: true, width: '13%', align: 'left' },
+      { key: 'narration', label: 'Narration', enabled: true, width: '19%', align: 'left' },
+      { key: 'debit', label: 'Debit', enabled: true, width: '9%', align: 'right', total: true },
+      { key: 'credit', label: 'Credit', enabled: true, width: '9%', align: 'right', total: true },
+      { key: 'balance', label: 'Running Balance', enabled: true, width: '10%', align: 'right' }
+    ],
+    signatures: []
+  },
+
   voucher_receipt: {
     ...DEFAULT_LAYOUT_SETTINGS,
     headerFields: [
@@ -1019,6 +1047,25 @@ export function getMockPreviewData(docType) {
           { sr_no: 3, order_date: '23/10/2026', order_id: 'SO-009', customer_name: 'IMRAN LEATHER', item_name: '106 SHINE MISMA REGULAR BLACK (PC BLACK)', order_m: 500, produced_m: 0, status: 'PENDING', _group: 'IMRAN LEATHER' }
         ],
         totals: { order_m: 4500, produced_m: 0 }
+      };
+
+    case 'general_ledger':
+      return {
+        docSub: 'DOUBLE-ENTRY ACCOUNTING BOOK',
+        header: {
+          ...commonHeader,
+          account: 'All Accounts (Consolidated)',
+          period: '01/10/2026 – 25/10/2026',
+          voucher_type: 'All Voucher Types',
+          party: 'All',
+          generated_on: '25/10/2026'
+        },
+        items: [
+          { entry_date: '20/10/2026', voucher: 'Sales Invoice INV-2026-031', account: '113010 — Accounts Receivable', party: 'NADEEM LEATHER STORE', narration: 'Sale of 170 PK DTY BLACK (BLACK) — 1,500 m', debit: 285000, credit: 0, balance: '285,000.00 Dr' },
+          { entry_date: '22/10/2026', voucher: 'Bank Payment Voucher PVR-2026-014', account: '112010 — Bank Account', party: 'Apex Chemicals Ltd.', narration: 'Payment against Purchase Invoice PINV-2026-009', debit: 0, credit: 120000, balance: '165,000.00 Dr' },
+          { entry_date: '24/10/2026', voucher: 'Journal Voucher JV-2026-007', account: '521010 — Executive & Admin Management Salaries', party: 'Staff Payroll', narration: 'October 2026 salary accrual — Admin department', debit: 45000, credit: 0, balance: '210,000.00 Dr' }
+        ],
+        totals: { debit: 330000, credit: 120000, balance: '210,000.00 Dr' }
       };
 
     case 'planning_history':

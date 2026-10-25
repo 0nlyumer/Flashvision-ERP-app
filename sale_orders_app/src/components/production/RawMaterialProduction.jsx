@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useDialog } from '../../context/DialogContext';
+import { stripPhaseFromItems } from '../../utils/phaseStrip';
 
 export default function RawMaterialProduction() {
   const { state, setCollection, setDirty, isDirty } = useApp();
@@ -173,7 +174,7 @@ export default function RawMaterialProduction() {
   // Delete Phase (Registers app-wide)
   const handleDeletePhase = async (phaseId, phaseTitle) => {
     const confirmDelete = await appConfirm(
-      `Are you sure you want to delete the phase "${phaseTitle}"?\nThis will remove it globally from all raw material configurations.`,
+      `Are you sure you want to delete the phase "${phaseTitle}"?\nThis will remove it globally from all raw material configurations, and its ticks will be removed from every material's phase mapping.`,
       "Delete Phase", "Delete", "Cancel"
     );
     if (!confirmDelete) return;
@@ -181,6 +182,13 @@ export default function RawMaterialProduction() {
     const nextPhases = productionPhases.filter(p => p.id !== phaseId);
     setProductionPhases(nextPhases);
     setCollection('rawMaterialPhases', nextPhases);
+
+    // Clean the deleted phase's ticks off every item, so no orphan phase
+    // id is left behind in items' consumptionPhases (2026-10-25).
+    const cleanedItems = stripPhaseFromItems(state.items || [], phaseId);
+    if (cleanedItems !== (state.items || [])) {
+      setCollection('items', cleanedItems);
+    }
 
     setMaterialsData(prev => {
       const updated = { ...prev };

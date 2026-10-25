@@ -783,7 +783,7 @@ function UniversalPrintStudioModalInner({
         party={party}
         metaRows={metaRows}
         docTitle={docTitleDisplay}
-        docSub={isPlanDoc ? 'ORDER LIST' : null}
+        docSub={isPlanDoc ? 'ORDER LIST' : documentType === 'general_ledger' ? (resolvedRecord?.docSub || null) : null}
         planVariant={isPlanDoc}
         columns={activeCols}
         items={pageItems}

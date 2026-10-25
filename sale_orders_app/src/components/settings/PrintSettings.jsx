@@ -1179,7 +1179,7 @@ export default function PrintSettings() {
                   party={previewParty}
                   metaRows={previewMetaRows}
                   docTitle={currentDocMeta.name}
-                  docSub={previewIsPlanDoc ? 'ORDER LIST' : null}
+                  docSub={previewIsPlanDoc ? 'ORDER LIST' : selectedDocId === 'general_ledger' ? (mockData.docSub || null) : null}
                   planVariant={previewIsPlanDoc}
                   columns={previewColumns}
                   items={mockData.items || []}

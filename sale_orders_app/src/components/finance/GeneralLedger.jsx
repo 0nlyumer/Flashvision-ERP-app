@@ -1,7 +1,9 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { generateGeneralLedger, formatMoney, round2 } from '../../utils/financeEngine';
+import { buildGeneralLedgerRecord } from '../../utils/printRecords';
 import ResizableHeader from '../ui/ResizableHeader';
+import UniversalPrintStudioModal from '../ui/UniversalPrintStudioModal';
 
 export default function GeneralLedger() {
   const { state } = useApp();
@@ -21,6 +23,9 @@ export default function GeneralLedger() {
 
   // Selected Entry for Modal
   const [viewEntry, setViewEntry] = useState(null);
+
+  // Print Studio (General Ledger sheet, 2026-10-25)
+  const [showPrintStudio, setShowPrintStudio] = useState(false);
 
   // Column Visibility
   const [visibleColumns, setVisibleColumns] = useState({
@@ -99,8 +104,23 @@ export default function GeneralLedger() {
     document.body.removeChild(link);
   };
 
+  // Studio print record: ALL filtered entries (not just the visible page),
+  // meta mirrors the active filters.
+  const printRecord = useMemo(() => {
+    const account = chartAccounts.find(a => String(a.id || a.code) === String(selectedAccountId));
+    return buildGeneralLedgerRecord(entries, {
+      accountLabel: selectedAccountId === 'all'
+        ? 'All Accounts (Consolidated)'
+        : (account ? `${account.code} - ${account.name}` : selectedAccountId),
+      voucherType: selectedVoucherType,
+      party: partySearch,
+      fromDate,
+      toDate
+    });
+  }, [entries, chartAccounts, selectedAccountId, selectedVoucherType, partySearch, fromDate, toDate]);
+
   const handlePrint = () => {
-    window.print();
+    setShowPrintStudio(true);
   };
 
   return (
@@ -577,6 +597,15 @@ export default function GeneralLedger() {
             </div>
           </div>
         </div>
+      )}
+
+      {showPrintStudio && (
+        <UniversalPrintStudioModal
+          isOpen={showPrintStudio}
+          onClose={() => setShowPrintStudio(false)}
+          documentType="general_ledger"
+          documentData={printRecord}
+        />
       )}
     </div>
   );
