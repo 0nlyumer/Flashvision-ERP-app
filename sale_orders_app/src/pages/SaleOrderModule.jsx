@@ -10,6 +10,7 @@ import { useDialog } from '../context/DialogContext';
 import ResizableHeader from '../components/ui/ResizableHeader';
 import UniversalPrintStudioModal from '../components/ui/UniversalPrintStudioModal';
 import { buildSaleOrderRecord } from '../utils/printRecords';
+import { getLineInStock, inStockCoversOrder, formatStockMeters } from '../utils/omsInStock';
 
 // Reusable status badge with popup for cancellation
 const StatusBadgeWithAction = ({ orderId, itemCode, status, updateStatus }) => {
@@ -1111,6 +1112,7 @@ export default function SaleOrderModule() {
                       <ResizableHeader className="px-6 py-4 text-[10px] uppercase tracking-widest font-bold text-on-surface-variant w-1">Order Details</ResizableHeader>
                       <ResizableHeader className="px-6 py-4 text-[10px] uppercase tracking-widest font-bold text-on-surface-variant">Item Info</ResizableHeader>
                       <ResizableHeader className="px-6 py-4 text-[10px] uppercase tracking-widest font-bold text-on-surface-variant text-right w-24">Order Metres</ResizableHeader>
+                      <ResizableHeader className="px-6 py-4 text-[10px] uppercase tracking-widest font-bold text-on-surface-variant text-right w-28">In Stock (m)</ResizableHeader>
                       <ResizableHeader className="px-6 py-4 text-[10px] uppercase tracking-widest font-bold text-slate-700 text-right w-32">Output (m)</ResizableHeader>
                       <ResizableHeader className="px-6 py-4 text-[10px] uppercase tracking-widest font-bold text-tertiary text-right w-32">Dispatched (m)</ResizableHeader>
                       <ResizableHeader className="px-6 py-4 text-[10px] uppercase tracking-widest font-bold text-on-surface-variant text-right w-24">Pending</ResizableHeader>
@@ -1135,6 +1137,23 @@ export default function SaleOrderModule() {
                           <div className="text-sm font-semibold text-slate-700">{prodObj?.name || 'Unknown Item'}</div>
                         </td>
                         <td className="px-6 py-5 text-right font-extrabold text-slate-800">{item.quantity}</td>
+                        <td className="px-6 py-5 text-right">
+                          {(() => {
+                            const inStock = getLineInStock(prodObj, state.batchOutputTypes);
+                            const covers = inStockCoversOrder(inStock.meters, item.quantity);
+                            return (
+                              <div className="flex flex-col items-end">
+                                <span className={`font-extrabold flex items-center gap-1 ${covers ? 'text-emerald-600' : 'text-slate-600'}`}>
+                                  {covers && <span className="material-symbols-outlined text-[14px]">check_circle</span>}
+                                  {formatStockMeters(inStock.meters)} m
+                                </span>
+                                {inStock.rolls != null && inStock.meters > 0 && (
+                                  <span className="text-[10px] font-bold text-slate-400 mt-0.5">≈ {formatStockMeters(inStock.rolls)} rolls</span>
+                                )}
+                              </div>
+                            );
+                          })()}
+                        </td>
                         <td className="px-6 py-5 text-right">
                           <div className="flex flex-col items-end">
                             <span className="font-bold text-slate-700 text-xs">{item.producedQty || 0} / {item.quantity}</span>
@@ -1164,7 +1183,7 @@ export default function SaleOrderModule() {
                       );
                     }) : (
                        <tr>
-                          <td colSpan="8" className="px-6 py-16 text-center text-slate-500 font-bold italic">No items found matching the selected filters.</td>
+                          <td colSpan="10" className="px-6 py-16 text-center text-slate-500 font-bold italic">No items found matching the selected filters.</td>
                        </tr>
                     )}
                   </tbody>
