@@ -23,6 +23,7 @@ import { getInitialBatchLaborConfig, normalizeBatchLaborConfig } from '../utils/
 import { DEFAULT_CHART_OF_ACCOUNTS } from '../utils/financeEngine';
 import { invoiceSourceLabel } from '../utils/invoiceSource';
 import { buildFiledDocumentSnapshot } from '../utils/studioSnapshot';
+import { buildArchiveEntry, applyFilingToBinders, findUnverifiedFilings, fileEntryIntoBindersById } from '../utils/routingArchive';
 import { findUserByLoginIdentifier } from '../utils/loginIdentifier';
 
 const AppContext = createContext();
@@ -5687,13 +5688,23 @@ export const AppProvider = ({ children }) => {
         task.currentStepIndex += 1;
       }
       else if (currentStep.type === 'archive_binder') {
-        const selectedBinders = currentStep.config?.selectedBinders || [];
         const selectAll = currentStep.config?.selectAll || false;
 
         // FILES CABINET (2026-10-25): new selections store binder IDs;
-        // legacy rules still carry binder NAMES — match either so old
-        // rules keep filing into the same binders.
-        const filedBinderNames = [];
+        // legacy rules still carry binder NAMES — the shared helper
+        // (utils/routingArchive) matches either so old rules keep filing
+        // into the same binders.
+        //
+        // FILES FIX (2026-10-26): success is claimed ONLY for binders the
+        // document verifiably landed in (the helper reports them after
+        // the push, deduped by docId). The old code fell back to printing
+        // the raw selection list when nothing had been filed, so the log
+        // could claim "Saved and attached" for a filing that never
+        // happened (leave LVR-1792956775880). A no-match filing now
+        // records Failed, and the reconciliation effect below re-files +
+        // annotates any claimed filing that is missing from the
+        // committed binder state.
+        let filedBinderNames = [];
         if (updatedBinders && Array.isArray(updatedBinders)) {
           // Freeze the document's printable snapshot at filing time: the
           // cabinet viewer re-renders it later with the CURRENT print
@@ -5703,38 +5714,28 @@ export const AppProvider = ({ children }) => {
             task.document.type,
             task.document.id
           );
-          const filedAt = new Date().toISOString();
-          updatedBinders.forEach(binder => {
-            if (selectAll || selectedBinders.includes(binder.id) || selectedBinders.includes(binder.name)) {
-              if (!binder.documents) binder.documents = [];
-              binder.documents.push({
-                id: task.document.id,
-                title: task.document.title,
-                date: new Date().toLocaleDateString(),
-                filedAt,
-                docType,
-                docId: task.document.id,
-                studioRecord,
-                details: [
-                  { label: 'Document ID', value: task.document.id },
-                  { label: 'Document Type', value: task.document.type },
-                  { label: 'Creator Entity', value: task.document.createdBy },
-                  { label: 'Status', value: 'Archived via Routing' },
-                  { label: 'Workflow Rule', value: task.ruleName }
-                ]
-              });
-              filedBinderNames.push(binder.name);
-            }
-          });
+          const entry = buildArchiveEntry(task, docType, studioRecord);
+          const res = applyFilingToBinders(updatedBinders, currentStep, entry);
+          filedBinderNames = res.filedNames;
         }
 
-        task.history.push({
-          stepId: currentStep.id,
-          stepName: currentStep.name,
-          status: 'Success',
-          timestamp: new Date().toLocaleTimeString(),
-          message: `Saved and attached document inside selected binders: ${selectAll ? 'All Binders' : (filedBinderNames.length ? filedBinderNames.join(', ') : selectedBinders.join(', '))}.`
-        });
+        if (filedBinderNames.length > 0) {
+          task.history.push({
+            stepId: currentStep.id,
+            stepName: currentStep.name,
+            status: 'Success',
+            timestamp: new Date().toLocaleTimeString(),
+            message: `Saved and attached document inside selected binders: ${selectAll ? 'All Binders' : filedBinderNames.join(', ')}.`
+          });
+        } else {
+          task.history.push({
+            stepId: currentStep.id,
+            stepName: currentStep.name,
+            status: 'Failed',
+            timestamp: new Date().toLocaleTimeString(),
+            message: 'Archive step could NOT file the document — no matching binder was available, so the document was NOT saved into any binder.'
+          });
+        }
         task.currentStepIndex += 1;
       }
     }
@@ -5977,6 +5978,75 @@ export const AppProvider = ({ children }) => {
       });
     }
   }, [state.approvals]);
+
+  // FILES FIX (2026-10-26) — archive filing reconciliation. The routing
+  // engine records an archive step's success from the filing it makes
+  // inside its own setState updater; on 2026-10-26 a claimed filing
+  // (leave LVR-1792956775880) was lost when a competing write restored
+  // the pre-filing binder list, and nothing noticed — the binder stayed
+  // empty while the execution log claimed success. This pass verifies
+  // every claimed filing against the committed binder state: a document
+  // missing from a still-existing target binder is re-filed (idempotent,
+  // deduped by docId, snapshot rebuilt from the live source record) and
+  // the task history is annotated, so a success claim can never stand
+  // while the document is verifiably absent. Filings whose binders were
+  // deleted are skipped — their documents went away with the binder.
+  const archiveReconcileAttemptsRef = useRef(new Set());
+  useEffect(() => {
+    if (!step1TablesReadyRef.current) return;
+    const tasks = state.routingTasks || [];
+    const binders = state.documentWarehouseBinders;
+    if (!tasks.length || !Array.isArray(binders)) return;
+
+    const missing = findUnverifiedFilings(tasks, binders);
+    // Prune session attempts whose filings verify again, so a genuinely
+    // new loss later in the same session can still be repaired.
+    if (archiveReconcileAttemptsRef.current.size > 0) {
+      const missingKeys = new Set(missing.map(m => `${m.taskId}:${m.docId}`));
+      archiveReconcileAttemptsRef.current.forEach(k => {
+        if (!missingKeys.has(k)) archiveReconcileAttemptsRef.current.delete(k);
+      });
+    }
+    const actionable = missing.filter(m => !archiveReconcileAttemptsRef.current.has(`${m.taskId}:${m.docId}`));
+    if (!actionable.length) return;
+    actionable.forEach(m => archiveReconcileAttemptsRef.current.add(`${m.taskId}:${m.docId}`));
+
+    setState(prev => {
+      const prevBinders = prev.documentWarehouseBinders;
+      if (!Array.isArray(prevBinders)) return prev;
+      // Re-verify against the freshest state inside the updater.
+      const stillMissing = findUnverifiedFilings(prev.routingTasks || [], prevBinders)
+        .filter(m => actionable.some(a => a.taskId === m.taskId && a.docId === m.docId));
+      if (!stillMissing.length) return prev;
+
+      const nextBinders = JSON.parse(JSON.stringify(prevBinders));
+      const taskCopies = new Map();
+      stillMissing.forEach(m => {
+        const orig = (prev.routingTasks || []).find(t => t.id === m.taskId);
+        if (!orig) return;
+        const { docType, studioRecord } = buildFiledDocumentSnapshot(prev, orig.document.type, orig.document.id);
+        const entry = buildArchiveEntry(orig, docType, studioRecord);
+        const res = fileEntryIntoBindersById(nextBinders, m.targetBinderIds, entry);
+        if (res.filedIds.length > 0) {
+          if (!taskCopies.has(m.taskId)) {
+            taskCopies.set(m.taskId, { ...orig, history: [...(orig.history || [])] });
+          }
+          taskCopies.get(m.taskId).history.push({
+            stepId: m.stepId,
+            stepName: 'Folder Storage Archiver',
+            status: 'Success',
+            timestamp: new Date().toLocaleTimeString(),
+            message: `Filing verified & recovered: the document was missing from ${res.filedNames.join(', ')} although the workflow had recorded it as filed; it has now been filed.`,
+            recovered: true
+          });
+        }
+      });
+
+      if (taskCopies.size === 0) return prev;
+      const nextTasks = (prev.routingTasks || []).map(t => taskCopies.get(t.id) || t);
+      return { ...prev, documentWarehouseBinders: nextBinders, routingTasks: nextTasks };
+    });
+  }, [state.routingTasks, state.documentWarehouseBinders]);
 
   const baseCurrencySetting = state.adminSetup?.baseCurrency || 'USD ($)';
   const currencyCode = baseCurrencySetting.split(' ')[0] || 'USD';

@@ -20,6 +20,28 @@ export default function HRLeaveRequest({ isMobile }) {
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef(null);
 
+  // Edit / Delete states (2026-10-26, Omer's order): submitted requests
+  // can be edited and deleted from Leave History. Delete uses the in-app
+  // confirmation modal below — never window.confirm (known live failure
+  // pattern in this codebase).
+  const [editingRequest, setEditingRequest] = useState(null);
+  const [editLeaveType, setEditLeaveType] = useState('');
+  const [editStartDate, setEditStartDate] = useState('');
+  const [editEndDate, setEditEndDate] = useState('');
+  const [editCategory, setEditCategory] = useState('paid');
+  const [editReason, setEditReason] = useState('');
+  const [editError, setEditError] = useState('');
+  const [deletingRequest, setDeletingRequest] = useState(null);
+
+  const computeDays = (startStr, endStr) => {
+    if (!startStr || !endStr) return '--';
+    const start = new Date(startStr);
+    const end = new Date(endStr);
+    if (end < start) return '--';
+    return Math.ceil(Math.abs(end - start) / (1000 * 60 * 60 * 24)) + 1;
+  };
+  const editDays = computeDays(editStartDate, editEndDate);
+
   // Dynamic days calculation
   useEffect(() => {
     if (startDate && endDate) {
@@ -198,6 +220,75 @@ export default function HRLeaveRequest({ isMobile }) {
     }
 
     setSuccessToast('Draft leave request submitted for approval!');
+    setTimeout(() => setSuccessToast(''), 4000);
+  };
+
+  const openEditRequest = (req) => {
+    setEditingRequest(req);
+    setEditLeaveType(req.leaveType || '');
+    setEditStartDate(req.startDate || '');
+    setEditEndDate(req.endDate || '');
+    setEditCategory(req.category || 'paid');
+    setEditReason(req.reason || '');
+    setEditError('');
+  };
+
+  // Edit uses the exact same fields + validation as the request form
+  // (reason minimum 5 characters included). Only the editable fields
+  // change — id, employee, status, attachments and createdAt are
+  // preserved, and the record shape is untouched. The write-through
+  // syncs the updated row to hr_leave_requests, and routing-filed views
+  // resolve live-first, so they show the edited record. Attendance and
+  // payroll never read this collection (they classify emp.attendance
+  // day records), so editing a request cannot disturb payroll or
+  // finalized months.
+  const handleEditSave = () => {
+    setEditError('');
+
+    if (!editLeaveType) {
+      setEditError('Please select a leave type.');
+      return;
+    }
+    if (!editStartDate || !editEndDate) {
+      setEditError('Please select start and end dates.');
+      return;
+    }
+    if (new Date(editEndDate) < new Date(editStartDate)) {
+      setEditError('End Date must be after or equal to Start Date.');
+      return;
+    }
+    if (!editReason.trim() || editReason.trim().length < 5) {
+      setEditError('Please provide a reason (minimum 5 characters).');
+      return;
+    }
+
+    const updated = (state.hr_leave_requests || []).map(r => {
+      if (r.id !== editingRequest.id) return r;
+      return {
+        ...r,
+        leaveType: editLeaveType,
+        startDate: editStartDate,
+        endDate: editEndDate,
+        category: editCategory,
+        days: computeDays(editStartDate, editEndDate),
+        reason: editReason.trim()
+      };
+    });
+    setCollection('hr_leave_requests', updated);
+    setEditingRequest(null);
+    setSuccessToast('Leave request updated successfully!');
+    setTimeout(() => setSuccessToast(''), 4000);
+  };
+
+  // Delete removes the request (the write-through deletes its table
+  // row). Documents already filed into binders stay as filed copies —
+  // the cabinet's freshness resolver then shows "Filed copy", which is
+  // the designed behaviour.
+  const handleDeleteRequest = () => {
+    const updated = (state.hr_leave_requests || []).filter(r => r.id !== deletingRequest.id);
+    setCollection('hr_leave_requests', updated);
+    setDeletingRequest(null);
+    setSuccessToast('Leave request deleted.');
     setTimeout(() => setSuccessToast(''), 4000);
   };
 
@@ -525,17 +616,33 @@ export default function HRLeaveRequest({ isMobile }) {
                         {formatAppliedDate(req.createdAt)}
                       </td>
                       <td className="px-6 py-4 text-right">
-                        {req.status === 'Draft' ? (
+                        <div className="flex items-center justify-end gap-2">
+                          {req.status === 'Draft' && (
+                            <button
+                              type="button"
+                              onClick={() => handleSubmitDraft(req)}
+                              className="px-3 py-1 bg-primary text-white text-xs font-bold rounded-lg hover:bg-primary/90 transition-colors cursor-pointer"
+                            >
+                              Submit Now
+                            </button>
+                          )}
                           <button
                             type="button"
-                            onClick={() => handleSubmitDraft(req)}
-                            className="px-3 py-1 bg-primary text-white text-xs font-bold rounded-lg hover:bg-primary/90 transition-colors cursor-pointer"
+                            onClick={() => openEditRequest(req)}
+                            title="Edit leave request"
+                            className="p-1.5 rounded-lg text-primary hover:bg-primary/10 transition-colors cursor-pointer"
                           >
-                            Submit Now
+                            <span className="material-symbols-outlined text-[18px]">edit</span>
                           </button>
-                        ) : (
-                          <span className="text-xs text-on-surface-variant/40">—</span>
-                        )}
+                          <button
+                            type="button"
+                            onClick={() => setDeletingRequest(req)}
+                            title="Delete leave request"
+                            className="p-1.5 rounded-lg text-error hover:bg-error/10 transition-colors cursor-pointer"
+                          >
+                            <span className="material-symbols-outlined text-[18px]">delete</span>
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ));
@@ -546,6 +653,219 @@ export default function HRLeaveRequest({ isMobile }) {
         </section>
 
       </div>
+
+      {/* Edit Leave Request Modal — same fields + validation as the form */}
+      {editingRequest && (
+        <div
+          className="fixed inset-0 z-[9000] flex items-center justify-center bg-black/50 p-4"
+          onClick={() => setEditingRequest(null)}
+        >
+          <div
+            className="bg-surface-container-lowest rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 sm:p-8 space-y-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-outline-variant/10 pb-4">
+              <div className="flex items-center gap-2 text-primary">
+                <span className="material-symbols-outlined text-2xl">edit_note</span>
+                <h3 className="text-lg font-bold text-on-surface font-headline">Edit Leave Request</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingRequest(null)}
+                className="p-1.5 rounded-lg hover:bg-surface-container-high text-on-surface-variant transition-colors"
+              >
+                <span className="material-symbols-outlined text-[20px]">close</span>
+              </button>
+            </div>
+
+            <p className="text-xs text-on-surface-variant font-medium">
+              {editingRequest.employeeName} · {editingRequest.id} · Status: {editingRequest.status}
+            </p>
+
+            {editError && (
+              <div className="p-4 bg-error-container text-error rounded-xl flex items-center gap-3 border border-error/20 text-sm font-semibold">
+                <span className="material-symbols-outlined text-[20px]">error</span>
+                <span>{editError}</span>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Leave Type */}
+              <div className="flex flex-col gap-2">
+                <label className="text-xs font-bold text-on-surface-variant uppercase tracking-wider">
+                  Leave Type <span className="text-primary">*</span>
+                </label>
+                <select
+                  value={editLeaveType}
+                  onChange={(e) => setEditLeaveType(e.target.value)}
+                  className="w-full border border-outline-variant rounded-xl p-3 text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all bg-surface-container-lowest text-on-surface"
+                  required
+                >
+                  <option value="" disabled>Select Type</option>
+                  <option value="annual">Annual Leave</option>
+                  <option value="sick">Sick Leave</option>
+                  <option value="casual">Casual Leave</option>
+                  <option value="maternity">Maternity/Paternity Leave</option>
+                  <option value="unpaid">Unpaid Leave</option>
+                </select>
+              </div>
+
+              {/* Date Ranges */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-bold text-on-surface-variant uppercase tracking-wider">
+                    Start Date
+                  </label>
+                  <input
+                    type="date"
+                    value={editStartDate}
+                    onChange={(e) => setEditStartDate(e.target.value)}
+                    className="w-full border border-outline-variant rounded-xl p-3 text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all bg-surface-container-lowest"
+                    required
+                  />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-bold text-on-surface-variant uppercase tracking-wider">
+                    End Date
+                  </label>
+                  <input
+                    type="date"
+                    value={editEndDate}
+                    onChange={(e) => setEditEndDate(e.target.value)}
+                    className="w-full border border-outline-variant rounded-xl p-3 text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all bg-surface-container-lowest"
+                    required
+                  />
+                </div>
+              </div>
+
+              {/* Leave Category */}
+              <div className="flex flex-col gap-2 col-span-1">
+                <label className="text-xs font-bold text-on-surface-variant uppercase tracking-wider">
+                  Leave Category <span className="text-primary">*</span>
+                </label>
+                <div className="flex gap-4">
+                  <label className="flex-1 flex items-center gap-3 p-3 bg-surface-container-low border border-outline-variant/30 rounded-xl cursor-pointer hover:bg-surface-container-high transition-all">
+                    <input
+                      type="radio"
+                      name="edit-leave-category"
+                      value="paid"
+                      checked={editCategory === 'paid'}
+                      onChange={() => setEditCategory('paid')}
+                      className="w-4 h-4 text-primary focus:ring-primary/20 border-outline-variant"
+                    />
+                    <span className="text-xs font-semibold text-on-surface">Paid Leave</span>
+                  </label>
+                  <label className="flex-1 flex items-center gap-3 p-3 bg-surface-container-low border border-outline-variant/30 rounded-xl cursor-pointer hover:bg-surface-container-high transition-all">
+                    <input
+                      type="radio"
+                      name="edit-leave-category"
+                      value="unpaid"
+                      checked={editCategory === 'unpaid'}
+                      onChange={() => setEditCategory('unpaid')}
+                      className="w-4 h-4 text-primary focus:ring-primary/20 border-outline-variant"
+                    />
+                    <span className="text-xs font-semibold text-on-surface">Unpaid Leave</span>
+                  </label>
+                </div>
+              </div>
+
+              {/* Days Calculation */}
+              <div className="bg-primary/5 rounded-xl p-4 flex justify-between items-center border border-primary/10">
+                <span className="text-sm font-semibold text-primary">Total Estimated Days:</span>
+                <span className="text-3xl font-black text-primary font-headline">
+                  {editDays}
+                </span>
+              </div>
+
+              {/* Reason */}
+              <div className="col-span-full flex flex-col gap-2">
+                <label className="text-xs font-bold text-on-surface-variant uppercase tracking-wider">
+                  Reason / Description
+                </label>
+                <textarea
+                  value={editReason}
+                  onChange={(e) => setEditReason(e.target.value)}
+                  placeholder="Briefly describe the reason for your leave request..."
+                  rows="3"
+                  className="w-full border border-outline-variant rounded-xl p-3 text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all resize-none bg-surface-container-lowest"
+                  required
+                />
+              </div>
+
+              <p className="col-span-full text-[11px] text-on-surface-variant font-medium">
+                Attachments on this request stay as they are: {(editingRequest.attachments || []).length ? editingRequest.attachments.join(', ') : 'none'}.
+              </p>
+            </div>
+
+            {/* Modal Actions */}
+            <div className="flex items-center gap-4 pt-4 border-t border-outline-variant/10">
+              <button
+                type="button"
+                onClick={handleEditSave}
+                className="bg-primary text-on-primary px-8 py-3 rounded-xl font-bold text-xs hover:bg-primary-container transition-all active:scale-95 shadow-sm"
+              >
+                Save Changes
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditingRequest(null)}
+                className="border border-outline-variant text-on-surface px-8 py-3 rounded-xl font-semibold text-xs hover:bg-surface-container-high transition-all active:scale-95"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal — in-app, never window.confirm */}
+      {deletingRequest && (
+        <div
+          className="fixed inset-0 z-[9000] flex items-center justify-center bg-black/50 p-4"
+          onClick={() => setDeletingRequest(null)}
+        >
+          <div
+            className="bg-surface-container-lowest rounded-2xl shadow-2xl w-full max-w-md p-6 sm:p-8 space-y-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-full bg-error/10 flex items-center justify-center shrink-0">
+                <span className="material-symbols-outlined text-error text-[22px]">delete</span>
+              </div>
+              <h3 className="text-lg font-bold text-on-surface font-headline">Delete this leave request?</h3>
+            </div>
+
+            <div className="text-sm text-on-surface-variant space-y-1">
+              <p className="font-semibold text-on-surface">
+                {formatLeaveType(deletingRequest.leaveType)} — {formatDateRange(deletingRequest.startDate, deletingRequest.endDate)} ({deletingRequest.days} days)
+              </p>
+              <p>{deletingRequest.employeeName} · {deletingRequest.id}</p>
+              {deletingRequest.reason && <p className="italic">“{deletingRequest.reason}”</p>}
+            </div>
+
+            <p className="text-xs text-on-surface-variant">
+              This cannot be undone. Any copy already filed in the Document Warehouse stays there as a filed copy.
+            </p>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setDeletingRequest(null)}
+                className="border border-outline-variant text-on-surface px-5 py-2.5 rounded-xl font-semibold text-xs hover:bg-surface-container-high transition-all active:scale-95"
+              >
+                Keep Request
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteRequest}
+                className="bg-error text-white px-5 py-2.5 rounded-xl font-bold text-xs hover:opacity-90 transition-all active:scale-95 shadow-sm"
+              >
+                Delete Request
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

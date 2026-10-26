@@ -172,12 +172,16 @@ check('routing: startRoutingWorkflow has no localStorage binder fallback',
   !appCtx.includes("localStorage.getItem(`documentWarehouseBinders_"));
 
 // Archive upgrade
+// (2026-10-26: the entry builder + binder matching moved into the shared
+// utils/routingArchive helper — the same contract is asserted there, and
+// AppContext must file through it.)
+const routingArchiveSrc = read('src/utils/routingArchive.js');
 check('archive: attachment carries docType/docId/filedAt/studioRecord',
-  appCtx.includes('filedAt,') && appCtx.includes('docType,') && appCtx.includes('docId: task.document.id') && appCtx.includes('studioRecord,'));
+  routingArchiveSrc.includes('filedAt,') && routingArchiveSrc.includes('docType,') && routingArchiveSrc.includes('docId: task.document.id') && routingArchiveSrc.includes('studioRecord,'));
 check('archive: snapshot built via buildFiledDocumentSnapshot',
   appCtx.includes('buildFiledDocumentSnapshot('));
 check('archive: binder match accepts id OR legacy name',
-  appCtx.includes('selectedBinders.includes(binder.id) || selectedBinders.includes(binder.name)'));
+  routingArchiveSrc.includes('sel.includes(binder.id) || sel.includes(binder.name)') && appCtx.includes('applyFilingToBinders(updatedBinders, currentStep, entry)'));
 
 // Viewer
 check('viewer: studio modal wired with the frozen snapshot',
