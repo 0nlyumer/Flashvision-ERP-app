@@ -71,6 +71,41 @@ export function buildGeneralLedgerRecord(entries = [], filters = {}) {
 }
 
 /**
+ * Chart of Accounts studio record, built from the accounts exactly as the
+ * CoA screen displays them (live GL balances merged, filters applied, tree
+ * order: root type → group → children → standalones).
+ *
+ * accounts: enriched rows { code, name, rootType, category, isGroup,
+ *           netBalance, isDebitNormal } in final display order.
+ * options:  { filteredBy, generatedOn }
+ */
+export function buildChartOfAccountsRecord(accounts = [], options = {}) {
+  const list = Array.isArray(accounts) ? accounts : [];
+  const items = list.map((acc) => {
+    const net = Number(acc.netBalance) || 0;
+    const debitNormal = acc.isDebitNormal !== false;
+    const drCr = net >= 0 ? (debitNormal ? 'Dr' : 'Cr') : (debitNormal ? 'Cr' : 'Dr');
+    return {
+      account_code: acc.code || acc.id || '',
+      account_name: acc.isGroup ? `${acc.name} (Group)` : (acc.name || ''),
+      type: acc.rootType || '',
+      current_balance: `${fmtMoney2(Math.abs(net))} ${drCr}`
+    };
+  });
+
+  return {
+    docSub: 'MASTER CHART OF ACCOUNTS',
+    header: {
+      report_title: 'Chart of Accounts',
+      print_date: options.generatedOn || fmtDateGB(new Date()),
+      filtered_by: options.filteredBy || 'All Categories'
+    },
+    items,
+    totals: {}
+  };
+}
+
+/**
  * Other Consumption studio record (document `other_consumptions`).
  * Accepts ONE saved otherConsumptions record (the history row being
  * printed — the same single voucher the old window.open print produced)

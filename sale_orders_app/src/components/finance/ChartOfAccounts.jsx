@@ -2,6 +2,8 @@ import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useDialog } from '../../context/DialogContext';
 import { generateTrialBalance, formatMoney, round2, DEFAULT_CHART_OF_ACCOUNTS } from '../../utils/financeEngine';
+import { buildChartOfAccountsRecord } from '../../utils/printRecords';
+import UniversalPrintStudioModal from '../ui/UniversalPrintStudioModal';
 import ResizableHeader from '../ui/ResizableHeader';
 
 export default function ChartOfAccounts() {
@@ -17,6 +19,9 @@ export default function ChartOfAccounts() {
   const [filterId, setFilterId] = useState('');
   const [filterName, setFilterName] = useState('');
   const [filterCategory, setFilterCategory] = useState('All Categories');
+
+  // Print Studio (Chart of Accounts sheet — wired 2026-10-26, Omer approved)
+  const [showPrintStudio, setShowPrintStudio] = useState(false);
 
   // Modals state
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -127,6 +132,25 @@ export default function ChartOfAccounts() {
 
     return tree;
   }, [enrichedAccounts]);
+
+  // Studio print record: the accounts in the screen's tree order, with the
+  // active root-type + text filters applied — the print shows exactly the
+  // rows the screen shows.
+  const printRecord = useMemo(() => {
+    const allowed = new Set(filteredAccounts.map(a => a.code));
+    const ordered = [];
+    Object.entries(hierarchicalTree).forEach(([root, content]) => {
+      if (activeRootType !== 'All' && activeRootType !== root) return;
+      content.groups.forEach(g => {
+        if (allowed.has(g.code)) ordered.push(g);
+        g.children.forEach(c => { if (allowed.has(c.code)) ordered.push(c); });
+      });
+      content.standaloneLedgers.forEach(a => { if (allowed.has(a.code)) ordered.push(a); });
+    });
+    return buildChartOfAccountsRecord(ordered, {
+      filteredBy: activeRootType === 'All' ? 'All Categories' : `${activeRootType} Accounts`
+    });
+  }, [hierarchicalTree, filteredAccounts, activeRootType]);
 
   const handleResetFilters = () => {
     setFilterId('');
@@ -266,6 +290,14 @@ export default function ChartOfAccounts() {
               Table View
             </button>
           </div>
+
+          <button
+            onClick={() => setShowPrintStudio(true)}
+            className="flex items-center gap-1.5 px-4 py-2.5 bg-primary text-on-primary rounded-xl font-bold text-xs hover:opacity-90 transition-all shadow-md cursor-pointer"
+          >
+            <span className="material-symbols-outlined text-[16px]">print</span>
+            Print
+          </button>
 
           <button
             onClick={openCreateModal}
@@ -629,6 +661,15 @@ export default function ChartOfAccounts() {
             </div>
           </div>
         </div>
+      )}
+
+      {showPrintStudio && (
+        <UniversalPrintStudioModal
+          isOpen={showPrintStudio}
+          onClose={() => setShowPrintStudio(false)}
+          documentType="chart_of_accounts"
+          documentData={printRecord}
+        />
       )}
 
       {/* EDIT MODAL */}
