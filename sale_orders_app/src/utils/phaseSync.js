@@ -30,6 +30,48 @@ export function mergePhasesIntoGlobal(globalList, phases) {
   return changed ? base : (Array.isArray(globalList) ? globalList : base);
 }
 
+// Rename propagation (Omer, 2026-10-26 — approved batch Part 3).
+//
+// Round 4 deliberately NEVER overwrote an existing global phase (a stale
+// plan copy must not clobber the global record). Omer's follow-up decision:
+// a phase RENAME is the one exception — when a phase is renamed in Plan
+// Consumption and the plan is saved, the matching global column (same id)
+// takes the new name, so Raw Material Configuration shows the new title too.
+// ONLY the name moves: every other global field (tank, unit, width, enabled,
+// type) keeps the global record's own value, and item ticks — stored as
+// phase ids in item.consumptionPhases — are untouched by construction.
+// Old plans/BOMs keep their own snapshot phaseConfig (history never
+// rewritten): these helpers are pure and mutate nothing they are given.
+
+export function renamePhaseInGlobal(globalList, phaseId, newTitle) {
+  if (!Array.isArray(globalList) || !phaseId) return globalList;
+  const title = String(newTitle ?? '').trim();
+  if (!title) return globalList;
+  let changed = false;
+  const next = globalList.map((p) => {
+    if (!p || p.id !== phaseId || p.title === title) return p;
+    changed = true;
+    const out = { ...p, title };
+    // Some phase records mirror the name in `label` (the RM editor writes
+    // both); keep a mirrored label in step, never invent one.
+    if (p.label !== undefined && p.label === p.title) out.label = title;
+    return out;
+  });
+  return changed ? next : globalList;
+}
+
+export function applyPhaseRenamesToGlobal(globalList, phases) {
+  if (!Array.isArray(globalList) || !Array.isArray(phases) || phases.length === 0) {
+    return globalList;
+  }
+  let out = globalList;
+  for (const phase of phases) {
+    if (!phase || !phase.id) continue;
+    out = renamePhaseInGlobal(out, phase.id, phase.title);
+  }
+  return out;
+}
+
 export function collectPhasesFromConsumption(consumptionData) {
   const out = [];
   if (!consumptionData || typeof consumptionData !== 'object') return out;

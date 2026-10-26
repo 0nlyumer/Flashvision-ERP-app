@@ -4,12 +4,15 @@ import { useDialog } from '../../context/DialogContext';
 import CustomMultiSelect from '../ui/CustomMultiSelect';
 import UniversalPrintStudioModal from '../ui/UniversalPrintStudioModal';
 import { buildConsumptionPrintRecord } from '../../utils/printDesign';
-import { mergePhasesIntoGlobal, collectPhasesFromConsumption } from '../../utils/phaseSync';
+import { mergePhasesIntoGlobal, collectPhasesFromConsumption, applyPhaseRenamesToGlobal } from '../../utils/phaseSync';
 
 export default function PlanConsumption({ plan, onClose }) {
   const { state, setCollection, setDirty, isDirty } = useApp();
   const { appConfirm, appAlert } = useDialog();
   const fileInputRef = useRef(null);
+  // Part 3 (2026-10-26): phase titles renamed during this editing session,
+  // phaseId -> latest title; propagated to the global list on save.
+  const phaseRenamesRef = useRef({});
 
   const [consumptionData, setConsumptionData] = useState({});
   const [printRecord, setPrintRecord] = useState(null);
@@ -461,9 +464,22 @@ export default function PlanConsumption({ plan, onClose }) {
             // this plan's phaseConfigs (e.g. via a BOM or an older saved plan)
             // into the global finishedGoodPhases list — dedupe by id, never
             // overwrite an existing global record.
-            const syncedGlobalPhases = mergePhasesIntoGlobal(
+            // Approved batch Part 3 (Omer, 2026-10-26): a RENAME is the one
+            // exception — but only renames actually made in THIS editing
+            // session (tracked by handlePhaseUpdate) propagate, so re-saving
+            // an untouched old plan can never push its stale snapshot names
+            // back over a newer global rename. Name only; ticks are keyed by
+            // phase id and stay intact; other plans keep their snapshots.
+            const collectedPhases = collectPhasesFromConsumption(consumptionData);
+            const sessionRenames = Object.entries(phaseRenamesRef.current)
+                .map(([id, title]) => ({ id, title }));
+            const renamedGlobalPhases = applyPhaseRenamesToGlobal(
                 state.finishedGoodPhases || [],
-                collectPhasesFromConsumption(consumptionData)
+                sessionRenames
+            );
+            const syncedGlobalPhases = mergePhasesIntoGlobal(
+                renamedGlobalPhases,
+                collectedPhases
             );
             if (syncedGlobalPhases !== (state.finishedGoodPhases || [])) {
                 setCollection('finishedGoodPhases', syncedGlobalPhases);
@@ -620,6 +636,11 @@ export default function PlanConsumption({ plan, onClose }) {
   };
 
   const handlePhaseUpdate = (itemCode, phaseId, updates) => {
+      // Part 3: remember title edits made in this session so the save
+      // handler can propagate exactly those renames to the global list.
+      if (updates && updates.title !== undefined) {
+          phaseRenamesRef.current[phaseId] = updates.title;
+      }
       setConsumptionData(prev => {
           const updated = { ...prev };
           const targetItem = { ...updated[itemCode] };
