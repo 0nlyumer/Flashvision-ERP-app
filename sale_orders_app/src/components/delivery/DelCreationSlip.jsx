@@ -4,6 +4,7 @@ import { useDialog } from '../../context/DialogContext';
 import ResizableHeader from '../ui/ResizableHeader';
 import PrintLayout from '../ui/PrintLayout';
 import { resolveDcLineRate, resolveTypeRate } from '../../utils/typePricing';
+import { fromStockPrintSuffix } from '../../utils/stockOutput';
 
 export default function DelCreationSlip({ items = [], dcMode = 'Sale Orders', onBack, onFinalize }) {
   const { state, addDelivery } = useApp();
@@ -277,7 +278,10 @@ export default function DelCreationSlip({ items = [], dcMode = 'Sale Orders', on
               ...i,
               dispatchedQty: parseFloat(i.editedQty) || 0,
               dispatchedRolls: parseFloat(i.rolls) || 0,
-              stockType: i.type
+              stockType: i.type,
+              // Portion of THIS dispatch fulfilled from existing stock
+              // (deliveries consume the from-stock portion first).
+              fromStockQty: isManual ? 0 : Math.min(parseFloat(i.fromStockQty) || 0, parseFloat(i.editedQty) || 0)
           })),
           totals
       };
@@ -720,7 +724,7 @@ export default function DelCreationSlip({ items = [], dcMode = 'Sale Orders', on
                                           {chunk.map((it, iIdx) => (
                                               <tr key={iIdx}>
                                                   <td className={`${cellPadding} text-[11px] font-mono border border-gray-300`}>{it.itemCode || it.itemId}</td>
-                                                  <td className={`${cellPadding} text-[11px] border border-gray-300 font-bold`}>{it.productName || it.itemCode}</td>
+                                                  <td className={`${cellPadding} text-[11px] border border-gray-300 font-bold`}>{it.productName || it.itemCode}{fromStockPrintSuffix(it.dispatchedQty || it.editedQty, it.fromStockQty)}</td>
                                                   <td className={`${cellPadding} text-[11px] border border-gray-300 text-center`}>{it.stockType || it.type || 'Fresh'}</td>
                                                   <td className={`${cellPadding} text-[11px] border border-gray-300 text-right`}>{it.dispatchedRolls || it.rolls || 0}</td>
                                                   <td className={`${cellPadding} text-[11px] font-bold border border-gray-300 text-right`}>{it.dispatchedQty || it.editedQty || 0}</td>

@@ -1,6 +1,7 @@
 import FGCombinationBuilder from "../ui/FGCombinationBuilder";
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
+import { isStockOutput, splitRemainingBySource } from '../../utils/stockOutput';
 import ResizableHeader from '../ui/ResizableHeader';
 import InvStock from '../inventory/InvStock';
 
@@ -124,6 +125,8 @@ export default function DelCreation({ onGenerateChallan }) {
       if (item.orderId && dcMode === 'Sale Orders') {
           const producedAll = {};
           const producedDept = {};
+          const stockAll = {};
+          const stockDept = {};
           let sawAnyOutput = false;
 
           (state?.productionPlans || []).forEach(plan => {
@@ -135,10 +138,15 @@ export default function DelCreation({ onGenerateChallan }) {
                           if (qty > 0 && out.typeName) {
                               sawAnyOutput = true;
                               if (out.isDeliverable) {
-                                  producedAll[out.typeName] = (producedAll[out.typeName] || 0) + qty;
+                                  // From-stock outputs join the same
+                                  // deliverable pool, tracked separately
+                                  // so the FROM STOCK tag survives.
+                                  const allMap = isStockOutput(out) ? stockAll : producedAll;
+                                  const deptMap = isStockOutput(out) ? stockDept : producedDept;
+                                  allMap[out.typeName] = (allMap[out.typeName] || 0) + qty;
                                   const outDept = out.department || plan.department || '';
                                   if (selectedDept && outDept === selectedDept) {
-                                      producedDept[out.typeName] = (producedDept[out.typeName] || 0) + qty;
+                                      deptMap[out.typeName] = (deptMap[out.typeName] || 0) + qty;
                                   }
                               }
                           }
@@ -167,20 +175,36 @@ export default function DelCreation({ onGenerateChallan }) {
               }
           });
 
-          let entries;
+          // Remaining per type, split by source: deliveries consume the
+          // from-stock portion first, so what stays tagged FROM STOCK is
+          // the from-stock quantity not yet delivered (utils/stockOutput).
+          const typeNames = new Set([...Object.keys(producedAll), ...Object.keys(stockAll)]);
+          const entries = [];
           if (selectedDept) {
-              entries = Object.entries(producedDept).map(([t, q]) => { const deptRemaining = q - (deliveredDept[t] || 0); const allRemaining = (producedAll[t] || 0) - (deliveredAll[t] || 0); return [t, Math.max(0, Math.min(deptRemaining, allRemaining))]; }).filter(([_, q]) => q > 0);
+              typeNames.forEach(t => {
+                  const allSplit = splitRemainingBySource(producedAll[t] || 0, stockAll[t] || 0, deliveredAll[t] || 0);
+                  if (allSplit.total <= 0) return;
+                  const deptSplit = splitRemainingBySource(producedDept[t] || 0, stockDept[t] || 0, deliveredDept[t] || 0);
+                  const qty = Math.max(0, Math.min(deptSplit.total, allSplit.total));
+                  if (qty <= 0) return;
+                  const fromStockQty = Math.min(qty, deptSplit.stockRemaining, allSplit.stockRemaining);
+                  entries.push({ typeName: t, qty, fromStockQty, uniqueId: item.uniqueId + ':::' + t, department: selectedDept || null });
+              });
           } else {
-              entries = Object.entries(producedAll).map(([t, q]) => [t, Math.max(0, q - (deliveredAll[t] || 0))]).filter(([_, q]) => q > 0);
-              if (entries.length === 0 && !sawAnyOutput) { const remaining = item.readyQty || 0; if (remaining > 0) entries = [['Fresh', remaining]]; }
+              typeNames.forEach(t => {
+                  const split = splitRemainingBySource(producedAll[t] || 0, stockAll[t] || 0, deliveredAll[t] || 0);
+                  if (split.total <= 0) return;
+                  entries.push({ typeName: t, qty: split.total, fromStockQty: split.stockRemaining, uniqueId: item.uniqueId + ':::' + t, department: null });
+              });
+              if (entries.length === 0 && !sawAnyOutput) { const remaining = item.readyQty || 0; if (remaining > 0) entries.push({ typeName: 'Fresh', qty: remaining, fromStockQty: 0, uniqueId: item.uniqueId + ':::Fresh', department: null }); }
           }
 
-          return entries.map(([t, q]) => ({ typeName: t, qty: q, uniqueId: item.uniqueId + ':::' + t, department: selectedDept || null }));
+          return entries;
       } else {
           // Manual mode
           const itemObj = state?.items?.find(x => x.id === item.itemId || x.sku === item.itemCode);
           const types = itemObj?.stockByType ? Object.entries(itemObj.stockByType) : [['Fresh', item.stock || 0]];
-          return types.filter(([_, q]) => q > 0).map(([t, q]) => ({ typeName: t, qty: q, uniqueId: `${item.uniqueId}:::${t}` }));
+          return types.filter(([_, q]) => q > 0).map(([t, q]) => ({ typeName: t, qty: q, fromStockQty: 0, uniqueId: `${item.uniqueId}:::${t}` }));
       }
   };
 
@@ -278,11 +302,13 @@ export default function DelCreation({ onGenerateChallan }) {
               const outputTypes = getOutputTypesForItem(i);
               outputTypes.forEach(out => {
                   if (selectedItemIds.includes(out.uniqueId)) {
+                      const readyQty = out.qty > 0 ? Math.min(i.readyQty, out.qty) : i.readyQty;
                       selected.push({
                           ...i,
                           uniqueId: out.uniqueId,
                           stockType: out.typeName,
-                          readyQty: out.qty > 0 ? Math.min(i.readyQty, out.qty) : i.readyQty,
+                          readyQty,
+                          fromStockQty: Math.min(out.fromStockQty || 0, readyQty),
                           stock: out.qty,
                           department: out.department || ''
                       });
@@ -608,6 +634,7 @@ export default function DelCreation({ onGenerateChallan }) {
                             const deliveredPercentage = item.totalOutput > 0 ? Math.min(100, (item.totalDelivered / item.totalOutput) * 100) : (item.totalDelivered > 0 ? 100 : 0);
 
                             const outputTypes = getOutputTypesForItem(item);
+                            const totalFromStock = outputTypes.reduce((s, t) => s + (t.fromStockQty || 0), 0);
                             const itemTypeIds = outputTypes.map(t => t.uniqueId);
                             const isAllItemTypesSelected = itemTypeIds.length > 0 && itemTypeIds.every(id => selectedItemIds.includes(id));
                             const isSomeItemTypesSelected = itemTypeIds.some(id => selectedItemIds.includes(id)) && !isAllItemTypesSelected;
@@ -639,6 +666,9 @@ export default function DelCreation({ onGenerateChallan }) {
                                         <td className="py-5 px-4 font-bold text-primary text-sm whitespace-nowrap">{item.orderId}</td>
                                         <td className="py-5 px-4">
                                             <span className="text-sm font-bold text-on-surface">{item.productName || item.itemCode}</span>
+                                            {totalFromStock > 0 && (
+                                                <span className="ml-2 text-[10px] font-bold text-amber-700 bg-amber-100 border border-amber-200 px-1.5 py-0.5 rounded whitespace-nowrap" title="This quantity is fulfilled from existing stock — it was not produced for this order">FROM STOCK {totalFromStock} MTRS</span>
+                                            )}
                                         </td>
                                         <td className="py-5 px-4">
                                             <span className="text-sm text-on-surface-variant font-medium bg-surface-container px-2 py-1 rounded">{item.itemCode}</span>
@@ -684,6 +714,9 @@ export default function DelCreation({ onGenerateChallan }) {
                                                 <div className="flex flex-col items-center gap-1.5">
                                                     <span className="text-[10px] font-bold uppercase text-on-surface-variant">Available Stock</span>
                                                     <span className="bg-secondary-fixed text-on-secondary-fixed px-2.5 py-1 rounded-full text-xs font-bold whitespace-nowrap">{out.qty} MTRS</span>
+                                                    {(out.fromStockQty || 0) > 0 && (
+                                                        <span className="bg-amber-100 text-amber-800 border border-amber-200 px-2.5 py-1 rounded-full text-xs font-bold whitespace-nowrap" title="Fulfilled from existing stock — not produced for this order">{out.fromStockQty >= out.qty ? 'FROM STOCK' : `FROM STOCK ${out.fromStockQty} MTRS`}</span>
+                                                    )}
                                                 </div>
                                             </td>
                                         </tr>

@@ -27,6 +27,7 @@ import { buildFiledDocumentSnapshot } from '../utils/studioSnapshot';
 import { buildArchiveEntry, applyFilingToBinders, findUnverifiedFilings, fileEntryIntoBindersById } from '../utils/routingArchive';
 import { findUserByLoginIdentifier } from '../utils/loginIdentifier';
 import { findProbationNotificationsDue, getProbationInfo } from '../utils/probation';
+import { isStockOutput } from '../utils/stockOutput';
 
 const AppContext = createContext();
 const BUILD_VERSION = '20260715_v5';
@@ -841,6 +842,10 @@ export const AppProvider = ({ children }) => {
                                     if (pi.itemCode === item.sku || pi.itemCode === item.id || pi.productName === item.name) {
                                         if (pi.outputs) {
                                             pi.outputs.forEach(out => {
+                                                // From-stock outputs never added to
+                                                // stockByType — they must not be
+                                                // replayed into it here either.
+                                                if (isStockOutput(out)) return;
                                                 const qty = parseFloat(out.quantity) || 0;
                                                 if (qty > 0 && out.typeName) {
                                                     item.stockByType[out.typeName] = (item.stockByType[out.typeName] || 0) + qty;
@@ -4088,6 +4093,8 @@ export const AppProvider = ({ children }) => {
           oldOutputs.forEach(out => {
               const qty = parseFloat(out.quantity) || 0;
               if (qty <= 0) return;
+              // From-stock outputs never entered stock — nothing to reverse.
+              if (isStockOutput(out)) return;
               updatedItems = updatedItems.map(item => {
                   if (item.sku === itemCode || item.id === itemCode) {
                       const currentStockByType = item.stockByType || {};
@@ -4123,7 +4130,11 @@ export const AppProvider = ({ children }) => {
           outputs.forEach(out => {
               const qty = parseFloat(out.quantity) || 0;
               if (qty <= 0) return;
-              
+              // From-stock outputs draw on stock that is already counted —
+              // adding them again would double-count. They still count
+              // toward the sale order's producedQty in step 5 below.
+              if (isStockOutput(out)) return;
+
               updatedItems = updatedItems.map(item => {
                   if (item.sku === itemCode || item.id === itemCode) {
                       const currentStockByType = item.stockByType || {};
@@ -4294,6 +4305,9 @@ export const AppProvider = ({ children }) => {
               oldOutputs.forEach(out => {
                   const qty = parseFloat(out.quantity) || 0;
                   if (qty <= 0) return;
+                  // From-stock outputs never entered stock — deleting them
+                  // releases the claim only; stock stays exactly as it was.
+                  if (isStockOutput(out)) return;
                   updatedItems = updatedItems.map(item => {
                       if (item.sku === pi.itemCode || item.id === pi.itemCode) {
                           const currentStockByType = item.stockByType || {};

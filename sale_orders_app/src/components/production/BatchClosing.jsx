@@ -3,6 +3,7 @@ import { useApp } from '../../context/AppContext';
 import { useDialog } from '../../context/DialogContext';
 import PrintLayout from '../ui/PrintLayout';
 import GlobalPagination from '../ui/GlobalPagination';
+import { validateStockClaims, resolveFromStockDepartment, isStockOutput } from '../../utils/stockOutput';
 
 export default function BatchClosing() {
     const { state, setCollection, handleProductionOutput, deleteProductionOutputs, setDirty, isDirty } = useApp();
@@ -619,6 +620,7 @@ function BatchClosingForm({ plan, onBack, outputTypes, setCollection, isReadOnly
                 typeName: initialType.name, 
                 uom: initialType.uom, 
                 remarks: '', 
+                source: 'production',
                 isDeliverable: !isWastage 
             }]
         }));
@@ -637,11 +639,25 @@ function BatchClosingForm({ plan, onBack, outputTypes, setCollection, isReadOnly
                     arr[index].uom = typeObj.uom;
                     const isWastage = typeObj.category === 'Wastage' || typeObj.name?.toLowerCase().includes('wastage');
                     arr[index].isDeliverable = !isWastage;
+                    // Wastage is a production byproduct — it can never be
+                    // drawn from stock.
+                    if (isWastage) arr[index].source = 'production';
                 }
+            }
+            if (field === 'source' && value === 'stock') {
+                // A from-stock fulfilment is deliverable by definition.
+                arr[index].isDeliverable = true;
             }
             return { ...prev, [itemCode]: arr };
         });
         setDirty(true);
+    };
+
+    const isWastageRow = (row) => {
+        const typeObj = outputTypes.find(t => String(t.id) === String(row.typeId) || t.name === row.typeName);
+        return typeObj
+            ? (typeObj.category === 'Wastage' || typeObj.name?.toLowerCase().includes('wastage'))
+            : !!row.typeName?.toLowerCase().includes('wastage');
     };
 
     const handleRemoveRow = (itemCode, index) => {
@@ -660,6 +676,33 @@ function BatchClosingForm({ plan, onBack, outputTypes, setCollection, isReadOnly
             appAlert("Please select a department before submitting the batch closing.", "Department Required");
             return;
         }
+        // From-stock guard: a from-stock entry may only claim stock that
+        // physically exists and is not already promised as deliverable to
+        // other sale-order lines — otherwise two orders could consume the
+        // same physical stock twice. The whole batch is validated before
+        // anything is saved, so a rejected batch changes nothing.
+        const stockRequestsByItem = {};
+        plan.items?.forEach(item => {
+            const stockEntries = (outputs[item.lineCode || item.itemCode] || []).filter(e => parseFloat(e.quantity) > 0 && isStockOutput(e));
+            if (stockEntries.length === 0) return;
+            const byType = {};
+            stockEntries.forEach(e => { byType[e.typeName] = (byType[e.typeName] || 0) + parseFloat(e.quantity); });
+            (stockRequestsByItem[item.itemCode] = stockRequestsByItem[item.itemCode] || []).push({
+                planId: plan.id, lineCode: item.lineCode || null, itemCode: item.itemCode, stockByType: byType
+            });
+        });
+        for (const [itemCode, requests] of Object.entries(stockRequestsByItem)) {
+            const itemMaster = (state.items || []).find(i => i.sku === itemCode || i.id === itemCode);
+            const { ok, violations } = validateStockClaims(state, itemMaster, requests);
+            if (!ok) {
+                const v = violations[0];
+                const productName = plan.items?.find(i => i.itemCode === itemCode)?.productName || itemCode;
+                appAlert(`From-stock quantity for ${productName} (${v.typeName}) is ${v.requested}, but only ${v.available} is available from existing stock — the rest is either not in stock or already promised as deliverable to other orders. Reduce the from-stock quantity, or produce the remaining quantity instead.`, "From Stock — Quantity Exceeds Available Stock");
+                return;
+            }
+        }
+        const fromStockDepartment = resolveFromStockDepartment(state, selectedDepartment);
+
         let hasConsumptionMissing = false;
         let anyEntryAdded = false;
         
@@ -675,7 +718,11 @@ function BatchClosingForm({ plan, onBack, outputTypes, setCollection, isReadOnly
                     anyEntryAdded = true;
                     const entriesWithTimestamp = validEntries.map(e => ({
                         ...e,
-                        createdAt: e.createdAt || new Date().toISOString()
+                        createdAt: e.createdAt || new Date().toISOString(),
+                        // From-stock goods physically sit in Finishing —
+                        // stamp the row so Delivery's department filter
+                        // shows the claim where the stock actually is.
+                        ...(isStockOutput(e) ? { department: fromStockDepartment } : {})
                     }));
                     handleProductionOutput(plan.id, item.itemCode, entriesWithTimestamp, !hasConsumptionMissing, overallRemarks, selectedDepartment, item.lineCode || null);
                 }
@@ -841,16 +888,31 @@ function BatchClosingForm({ plan, onBack, outputTypes, setCollection, isReadOnly
                                                 </div>
                                             </td>
                                             <td className="px-6 py-3 text-center">
-                                                <label className="inline-flex items-center gap-2 cursor-pointer">
-                                                    <input 
-                                                        type="checkbox" 
-                                                        checked={row.isDeliverable ?? true}
-                                                        onChange={e => handleUpdateRow(item.lineCode || item.itemCode, idx, 'isDeliverable', e.target.checked)}
-                                                        disabled={isReadOnly}
-                                                        className="rounded text-primary focus:ring-primary/20 border-outline-variant/50 w-4 h-4 cursor-pointer" 
-                                                    />
-                                                    <span className="text-xs font-bold text-on-surface-variant">Deliverable</span>
-                                                </label>
+                                                <div className="flex flex-col items-center gap-1.5">
+                                                    <select
+                                                        value={row.source || 'production'}
+                                                        onChange={e => handleUpdateRow(item.lineCode || item.itemCode, idx, 'source', e.target.value)}
+                                                        disabled={isReadOnly || isWastageRow(row)}
+                                                        title={isWastageRow(row) ? 'Wastage always comes from production' : 'Production: freshly produced output, added to stock. From Stock: fulfilled from existing finished-goods stock — no production, and stock is NOT increased.'}
+                                                        className="bg-surface border border-outline-variant/30 rounded-lg px-2 py-1 text-xs font-bold text-on-surface focus:outline-none focus:border-primary disabled:opacity-60"
+                                                    >
+                                                        <option value="production">Production</option>
+                                                        <option value="stock">From Stock</option>
+                                                    </select>
+                                                    <label className="inline-flex items-center gap-2 cursor-pointer">
+                                                        <input 
+                                                            type="checkbox" 
+                                                            checked={row.isDeliverable ?? true}
+                                                            onChange={e => handleUpdateRow(item.lineCode || item.itemCode, idx, 'isDeliverable', e.target.checked)}
+                                                            disabled={isReadOnly || isStockOutput(row)}
+                                                            className="rounded text-primary focus:ring-primary/20 border-outline-variant/50 w-4 h-4 cursor-pointer" 
+                                                        />
+                                                        <span className="text-xs font-bold text-on-surface-variant">Deliverable</span>
+                                                    </label>
+                                                    {isStockOutput(row) && (
+                                                        <span className="text-[10px] font-bold text-amber-700 bg-amber-100 border border-amber-200 px-1.5 py-0.5 rounded whitespace-nowrap">FROM STOCK — no production</span>
+                                                    )}
+                                                </div>
                                             </td>
                                             <td className="px-6 py-3">
                                                 <input 

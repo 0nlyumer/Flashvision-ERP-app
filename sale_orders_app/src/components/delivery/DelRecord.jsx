@@ -3,6 +3,7 @@ import { useApp } from '../../context/AppContext';
 import { useDialog } from '../../context/DialogContext';
 import ResizableHeader from '../ui/ResizableHeader';
 import PrintLayout from '../ui/PrintLayout';
+import { fromStockPrintSuffix } from '../../utils/stockOutput';
 
 export default function DelRecord() {
   const { state, deleteDelivery } = useApp();
@@ -359,7 +360,7 @@ export default function DelRecord() {
                                           {chunk.map((it, iIdx) => (
                                               <tr key={iIdx}>
                                                   <td className={`${cellPadding} text-[11px] font-mono border border-gray-300`}>{it.itemCode || it.itemId}</td>
-                                                  <td className={`${cellPadding} text-[11px] border border-gray-300 font-bold`}>{it.productName || it.itemCode}</td>
+                                                  <td className={`${cellPadding} text-[11px] border border-gray-300 font-bold`}>{it.productName || it.itemCode}{fromStockPrintSuffix(it.dispatchedQty || it.editedQty, it.fromStockQty)}</td>
                                                   <td className={`${cellPadding} text-[11px] border border-gray-300 text-center`}>{it.stockType || it.type || 'Fresh'}</td>
                                                   <td className={`${cellPadding} text-[11px] border border-gray-300 text-right`}>{it.dispatchedRolls || it.rolls || 0}</td>
                                                   <td className={`${cellPadding} text-[11px] font-bold border border-gray-300 text-right`}>{it.dispatchedQty || it.editedQty || 0}</td>
