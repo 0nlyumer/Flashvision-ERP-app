@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
 import HRRequestPrintPopup from './HRRequestPrintPopup';
 import { buildLeaveRequestPrintRecord } from '../../utils/hrPrintRecords';
+import { ownRequests } from '../../utils/requestOwnership';
 
 export default function HRLeaveRequest({ isMobile }) {
   const { state, setCollection, startRoutingWorkflow } = useApp();
@@ -560,7 +561,12 @@ export default function HRLeaveRequest({ isMobile }) {
               </thead>
               <tbody className="divide-y divide-outline-variant/10">
                 {(() => {
-                  const requests = (state.hr_leave_requests || []).filter(req => {
+                  // Privacy (Omer, 2026-10-26): Leave History shows ONLY
+                  // the signed-in user's own requests — the scoped list
+                  // feeds the rows and every Print/Edit/Delete action on
+                  // them, so another employee's record can never be
+                  // opened from this screen.
+                  const requests = ownRequests(state.hr_leave_requests, state.currentUser, state.hr_employees_list).filter(req => {
                     if (activeTabFilter === 'Drafts') return req.status === 'Draft';
                     if (activeTabFilter === 'Pending') return req.status === 'Pending';
                     if (activeTabFilter === 'Approved') return req.status === 'Approved';

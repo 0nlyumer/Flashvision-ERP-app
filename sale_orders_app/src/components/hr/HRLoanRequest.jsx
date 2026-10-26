@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import HRRequestPrintPopup from './HRRequestPrintPopup';
 import { buildLoanRequestPrintRecord } from '../../utils/hrPrintRecords';
+import { ownRequests } from '../../utils/requestOwnership';
 
 export default function HRLoanRequest({ isMobile }) {
   const { state, setCollection, startRoutingWorkflow, currencySymbol } = useApp();
@@ -67,6 +68,13 @@ export default function HRLoanRequest({ isMobile }) {
 
   // Loan requests list from global state
   const loanRequests = state.hr_loan_requests || [];
+
+  // Privacy (Omer, 2026-10-26): the "Recent Loan Requests" history on
+  // this screen shows ONLY the signed-in user's own requests. Approvals
+  // happen in the Chat Approvals Center, not here, so no approver queue
+  // is kept on this screen; the full list above stays untouched for the
+  // submit flow and the AppContext ledger sync.
+  const myLoanRequests = ownRequests(loanRequests, state.currentUser, state.hr_employees_list);
 
   // Approval Handlers
   const handleApproveRequest = (reqId) => {
@@ -198,8 +206,9 @@ export default function HRLoanRequest({ isMobile }) {
     return ['ALL', ...Array.from(set).sort()];
   }, [employees, departmentFilter]);
 
-  // Filtered loan requests
-  const filteredRequests = loanRequests.filter(item => {
+  // Filtered loan requests (scoped to my own requests first — the
+  // detail modal and Print Loan Slip are only reachable from these rows)
+  const filteredRequests = myLoanRequests.filter(item => {
     const emp = employees.find(e => String(e.id) === String(item.employeeId) || e.name === item.employeeName);
     const itemDept = item.department || emp?.department || '';
     const itemDiv = item.division || item.section || emp?.division || emp?.section || '';

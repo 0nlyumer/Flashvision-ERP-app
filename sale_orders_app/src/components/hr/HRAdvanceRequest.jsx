@@ -3,6 +3,7 @@ import { useApp } from '../../context/AppContext';
 import { useDialog } from '../../context/DialogContext';
 import HRRequestPrintPopup from './HRRequestPrintPopup';
 import { buildAdvanceRequestPrintRecord } from '../../utils/hrPrintRecords';
+import { ownRequests } from '../../utils/requestOwnership';
 
 export default function HRAdvanceRequest({ isMobile }) {
   const { state, setCollection, startRoutingWorkflow, currencySymbol, currentUser } = useApp();
@@ -131,8 +132,17 @@ export default function HRAdvanceRequest({ isMobile }) {
   // Requests list from global state
   const advanceRequests = state.hr_advance_requests || [];
 
+  // Privacy (Omer, 2026-10-26): the Salary Advance History on this
+  // screen shows ONLY the signed-in user's own requests — the scoped
+  // list feeds the rows, the count badge, detail view, prints and the
+  // header "Print Document" button (which previously printed the latest
+  // request in the whole company, whoever it belonged to). Approvals
+  // happen in the Chat Approvals Center, not here; the full list above
+  // stays untouched for the submit flow.
+  const myAdvanceRequests = ownRequests(advanceRequests, currentUser, state.hr_employees_list);
+
   // Filtered requests for table
-  const filteredRequests = advanceRequests.filter(r => {
+  const filteredRequests = myAdvanceRequests.filter(r => {
     const matchesTab = statusTabFilter === 'All' || r.status === statusTabFilter;
     const matchesSearch = !searchTerm || 
       (r.id && r.id.toLowerCase().includes(searchTerm.toLowerCase())) ||
@@ -275,9 +285,9 @@ export default function HRAdvanceRequest({ isMobile }) {
           <div className="flex items-center gap-3 w-full md:w-auto">
             <button
               type="button"
-              onClick={() => handlePrintRequest(advanceRequests[0])}
-              disabled={advanceRequests.length === 0}
-              title={advanceRequests.length === 0 ? 'No advance requests to print yet' : 'Print the most recent advance request'}
+              onClick={() => handlePrintRequest(myAdvanceRequests[0])}
+              disabled={myAdvanceRequests.length === 0}
+              title={myAdvanceRequests.length === 0 ? 'No advance requests to print yet' : 'Print my most recent advance request'}
               className="flex-1 md:flex-none primary-gradient text-on-primary px-5 py-2.5 rounded-xl text-xs font-bold shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <span className="material-symbols-outlined text-[18px]">print</span>

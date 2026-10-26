@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
 import HRRequestPrintPopup from './HRRequestPrintPopup';
 import { buildOvertimeRequestPrintRecord } from '../../utils/hrPrintRecords';
+import { ownRequests } from '../../utils/requestOwnership';
 
 export default function HROvertime({ isMobile }) {
   const { state, setCollection, startRoutingWorkflow } = useApp();
@@ -61,13 +62,15 @@ export default function HROvertime({ isMobile }) {
     setCalculatedHours((diffMins / 60).toFixed(2));
   }, [startTime, endTime]);
 
-  // Approved hours this month calculation
+  // Approved hours this month calculation — MY OWN approved overtime
+  // only (privacy, Omer 2026-10-26: this total used to sum every
+  // employee's approved overtime in the company).
   const getApprovedHoursThisMonth = () => {
     const today = new Date();
     const currentYear = today.getFullYear();
     const currentMonth = today.getMonth(); // 0-11
-    
-    const total = (state.hr_overtime_requests || []).reduce((acc, req) => {
+
+    const total = ownRequests(state.hr_overtime_requests, state.currentUser, state.hr_employees_list).reduce((acc, req) => {
       if (req.status !== 'Approved') return acc;
       const reqDate = new Date(req.date);
       if (reqDate.getFullYear() === currentYear && reqDate.getMonth() === currentMonth) {
@@ -658,7 +661,10 @@ export default function HROvertime({ isMobile }) {
             
             <div className="space-y-3 max-h-[360px] overflow-y-auto pr-1">
               {(() => {
-                const requests = (state.hr_overtime_requests || []).filter(req => {
+                // Privacy (Omer, 2026-10-26): the overtime history shows
+                // ONLY the signed-in user's own requests — the scoped
+                // list feeds the rows and their Print/Submit actions.
+                const requests = ownRequests(state.hr_overtime_requests, state.currentUser, state.hr_employees_list).filter(req => {
                   if (activeTabFilter === 'Drafts') return req.status === 'Draft';
                   if (activeTabFilter === 'Pending') return req.status === 'Pending';
                   if (activeTabFilter === 'Approved') return req.status === 'Approved';
