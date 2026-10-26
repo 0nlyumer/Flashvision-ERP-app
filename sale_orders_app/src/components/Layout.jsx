@@ -1098,8 +1098,22 @@ export default function Layout({ children, hideSidebar = false, subNavigation = 
 
                {/* Right Section: Actions */}
                <div className="flex flex-row items-center gap-2 shrink-0">
-                 
-                 <button 
+
+                 {/* Notifications bell — desktop shell (the panel existed
+                     only in the mobile shell; gate-add + probation entries
+                     must be visible on the Dashboard too, Omer 2026-10-26) */}
+                 <button
+                     type="button"
+                     onClick={(e) => { e.stopPropagation(); setShowNotifications(!showNotifications); }}
+                     className="w-8 h-8 rounded-lg flex items-center justify-center text-on-surface-variant hover:text-primary hover:bg-primary/5 transition-colors cursor-pointer relative"
+                     title="Notifications"
+                 >
+                     <span className="material-symbols-outlined text-[18px]">notifications</span>
+                     {unreadCount > 0 && (
+                       <span className="absolute top-1 right-1 min-w-3.5 h-3.5 px-0.5 rounded-full bg-error text-white text-[8px] font-black flex items-center justify-center">{unreadCount}</span>
+                     )}
+                 </button>
+                 <button
                      type="button"
                      onClick={toggleThemeMode}
                      className="w-8 h-8 rounded-lg flex items-center justify-center text-on-surface-variant hover:text-primary hover:bg-primary/5 transition-colors cursor-pointer"
@@ -1244,7 +1258,19 @@ export default function Layout({ children, hideSidebar = false, subNavigation = 
               
               {/* Quick Action Links */}
               <div className="p-4 border-t border-outline-variant/10 flex gap-2">
-                 <button 
+                 <button
+                     type="button"
+                     onClick={(e) => { e.stopPropagation(); setShowNotifications(!showNotifications); }}
+                     className="flex-1 flex flex-col items-center justify-center gap-1 py-2 rounded-xl transition-colors text-[10px] font-bold uppercase tracking-wider text-on-surface-variant hover:text-primary hover:bg-primary/5 cursor-pointer relative"
+                     title="Notifications"
+                 >
+                     <span className="material-symbols-outlined text-[18px]">notifications</span>
+                     Alerts
+                     {unreadCount > 0 && (
+                       <span className="absolute top-1 right-2 min-w-4 h-4 px-0.5 rounded-full bg-error text-white text-[9px] font-black flex items-center justify-center">{unreadCount}</span>
+                     )}
+                 </button>
+                 <button
                      type="button"
                      onClick={toggleThemeMode}
                      className="flex-1 flex flex-col items-center justify-center gap-1 py-2 rounded-xl transition-colors text-[10px] font-bold uppercase tracking-wider text-on-surface-variant hover:text-primary hover:bg-primary/5 cursor-pointer"
@@ -1272,7 +1298,39 @@ export default function Layout({ children, hideSidebar = false, subNavigation = 
         </div>
       )}
 
-      <main 
+      {/* Notifications overlay — desktop shell (same entries + behaviour
+          as the mobile shell's panel; state.notifications is server-synced) */}
+      {showNotifications && (
+        <div className="fixed right-4 top-4 sm:right-6 sm:top-6 w-[380px] max-w-[92vw] max-h-[80vh] bg-surface border border-outline-variant/30 shadow-2xl rounded-2xl overflow-hidden z-[900] flex flex-col animate-slide-up print:hidden">
+          <div className="p-3 border-b border-outline-variant/15 flex justify-between items-center bg-surface-container-low">
+            <span className="text-xs font-bold uppercase tracking-wider text-on-surface">Notifications</span>
+            {unreadCount > 0 && (
+              <button onClick={markAllNotificationsAsRead} className="text-[10px] text-primary hover:underline font-semibold cursor-pointer">Mark all read</button>
+            )}
+          </div>
+          <div className="overflow-y-auto custom-scrollbar flex-1 bg-surface-container-lowest/50">
+            {notifications.length === 0 ? (
+              <div className="p-6 text-center text-on-surface-variant text-xs">No notifications</div>
+            ) : (
+              notifications.map(notif => (
+                <div key={notif.id} className={`p-3 border-b border-outline-variant/5 last:border-0 hover:bg-surface-container-low transition-colors ${!notif.read ? 'bg-primary/5' : ''}`}>
+                  <div className="flex gap-2 items-start">
+                    <span className={`material-symbols-outlined text-base mt-0.5 ${notif.type === 'success' ? 'text-emerald-500' : notif.type === 'error' ? 'text-error' : 'text-primary'}`} style={{ fontVariationSettings: "'FILL' 1" }}>
+                      {notif.type === 'success' ? 'check_circle' : notif.type === 'error' ? 'error' : 'info'}
+                    </span>
+                    <div>
+                      <div className="text-xs font-bold text-on-surface">{notif.title}</div>
+                      <div className="text-[10px] text-on-surface-variant mt-0.5 leading-tight">{notif.message}</div>
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+
+      <main
         onClick={() => { if (!isPinnedActive) setIsHovered(false); setShowNotifications(false); }}
         style={workspaceStyles}
         className={`flex-grow flex flex-col relative overflow-y-auto w-full max-h-full h-full transition-all duration-500 ease-[cubic-bezier(0.2,0,0,1)] cursor-default print:!p-0 print:bg-white print:max-h-none print:overflow-visible print:block ${

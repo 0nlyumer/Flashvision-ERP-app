@@ -815,14 +815,9 @@ export default function HRDirectory({ isMobile }) {
               )}
             </div>
 
-            {/* Custom CTA Add Employee */}
-            <button 
-              onClick={openAddDialog}
-              className="bg-gradient-to-br from-primary to-primary-container text-on-primary font-headline font-bold text-xs py-2.5 px-5 rounded-xl shadow-[0_8px_16px_rgba(0,66,119,0.1)] hover:shadow-[0_12px_24px_rgba(0,66,119,0.15)] transition-all active:scale-[0.97] flex items-center gap-1.5 cursor-pointer"
-            >
-              <span className="material-symbols-outlined text-[16px]">person_add</span>
-              Add Employee
-            </button>
+            {/* Add Employee CTA removed (Omer, 2026-10-26): new employees
+                are added in FlashAM (gate) or Attendance Management; the
+                Directory manages existing profiles. */}
           </div>
         </div>
 
@@ -1234,12 +1229,7 @@ export default function HRDirectory({ isMobile }) {
               className="w-full bg-surface-container-lowest border border-outline-variant/15 rounded-xl py-2 pl-9 pr-4 text-xs text-on-surface outline-none focus:border-primary/50 transition-all font-body"
             />
           </div>
-          <button 
-            onClick={openAddDialog}
-            className="h-9 w-9 rounded-xl bg-gradient-to-br from-primary to-primary-container text-on-primary flex items-center justify-center shadow-md active:scale-90 transition-transform cursor-pointer"
-          >
-            <span className="material-symbols-outlined text-[18px]">add</span>
-          </button>
+          {/* Mobile Add button removed with the desktop CTA (Omer, 2026-10-26). */}
         </div>
 
         {/* Mobile Dropdowns (Division & Department) */}

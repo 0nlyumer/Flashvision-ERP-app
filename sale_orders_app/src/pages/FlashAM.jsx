@@ -6,6 +6,8 @@ import { supabase } from '../utils/supabaseClient';
 import { buildEntityRow, recordKeyWithFallback } from '../utils/entityTables';
 import { verifyPassword } from '../utils/securityAuth';
 import { normalizeFlashAmConfig } from '../utils/flashAmConfig';
+import FlashAmAddEmployee from '../components/flasham/FlashAmAddEmployee';
+import { isProbationEmployee, getProbationInfo } from '../utils/probation';
 
 // Audio feedback engine for tactile punch & biometric confirmation
 const playChime = (type = 'in') => {
@@ -192,6 +194,18 @@ export default function FlashAM() {
   const [pendingQueue, setPendingQueue] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem('flasham_pending_queue') || '[]');
+    } catch (e) {
+      return [];
+    }
+  });
+
+  // GATE ADD EMPLOYEE (Omer, 2026-10-26): the Add New Employee modal +
+  // the ids of employees added offline whose ADD_EMPLOYEE queue item
+  // has not synced yet (roster shows them with a "Queued" chip).
+  const [showAddEmployee, setShowAddEmployee] = useState(false);
+  const [pendingAddIds, setPendingAddIds] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('flasham_pending_employee_adds') || '[]');
     } catch (e) {
       return [];
     }
@@ -666,9 +680,32 @@ export default function FlashAM() {
       if (queue.length === 0) return;
 
       setSyncStatus('saving');
+
+      // GATE ADD EMPLOYEE items first: upsert the employee row into
+      // hr_employees + write his dashboard notification. A failed add
+      // stays in the queue (below) and retries on the next reconnect.
+      const addItems = queue.filter((i) => i.action === 'ADD_EMPLOYEE');
+      const punchItems = queue.filter((i) => i.action !== 'ADD_EMPLOYEE');
+      const failedItems = [];
+      for (const item of addItems) {
+        try {
+          const row = buildEntityRow('hr_employees', item.employee);
+          if (!row) throw new Error('Could not build employee row');
+          const { error } = await supabase.from('hr_employees').upsert([row], { onConflict: 'id' });
+          if (error) throw error;
+          if (item.notification) {
+            try { await insertGateNotification(item.notification); } catch (e) { console.warn('Queued gate-add notification failed:', e); }
+          }
+          markAddPending(item.employee.id, false);
+        } catch (e) {
+          console.error('Queued employee add failed, will retry:', e);
+          failedItems.push(item);
+        }
+      }
+
       let currentAttendance = (await fetchTableList('hr_uploaded_attendance')) || dbAttendance;
-      
-      for (const item of queue) {
+
+      for (const item of punchItems) {
         if (item.action === 'PUNCH_IN') {
           const idx = currentAttendance.findIndex(
             (r) => (r.employeeId === item.empId || r.employeeCode === item.empCode) && r.date === item.date
@@ -726,12 +763,21 @@ export default function FlashAM() {
 
       await persistAttendanceList(currentAttendance);
 
+      if (failedItems.length > 0) {
+        localStorage.setItem('flasham_pending_queue', JSON.stringify(failedItems));
+        setPendingQueue(failedItems);
+        setDbAttendance(currentAttendance);
+        setSyncStatus('error');
+        showToast('Some offline records could not sync yet — they will retry on the next reconnect.', 'warning');
+        return;
+      }
+
       localStorage.removeItem('flasham_pending_queue');
       setPendingQueue([]);
       setDbAttendance(currentAttendance);
       setSyncStatus('synced');
       setLastSyncTime(new Date().toLocaleTimeString());
-      showToast('All offline punches successfully synchronized!', 'success');
+      showToast('All offline records successfully synchronized!', 'success');
     } catch (e) {
       console.error('Queue replay failed:', e);
       setSyncStatus('error');
@@ -743,6 +789,65 @@ export default function FlashAM() {
     const queue = [...pendingQueue, { ...actionItem, timestamp: new Date().toISOString() }];
     setPendingQueue(queue);
     localStorage.setItem('flasham_pending_queue', JSON.stringify(queue));
+  };
+
+  // ---------------------------------------------------------------------------
+  // GATE ADD EMPLOYEE (Omer, 2026-10-26) — persistence for the Add New
+  // Employee modal. The employee lands in the hr_employees TABLE (the
+  // server source of truth — never the frozen blob, never browser-only)
+  // and a dashboard notification naming him is written to the
+  // notifications table. Offline (or if the write fails) the add rides
+  // the SAME pending queue as punches and syncs on reconnect; the man
+  // is on the roster immediately either way, badged "Queued" until his
+  // add has synced.
+  // ---------------------------------------------------------------------------
+  const insertGateNotification = async (notif) => {
+    const row = buildEntityRow('notifications', notif);
+    if (!row) return;
+    const { error } = await supabase.from('notifications').upsert([row], { onConflict: 'id' });
+    if (error) throw error;
+  };
+
+  const gateAddNotificationFor = (record) => ({
+    id: `gateadd-${record.id}`,
+    title: 'New Employee Added',
+    message: `${record.name} was added at the Flash AM gate (${record.division} • ${record.department}). 7-day probation started ${record.dateOfJoining}.`,
+    type: 'info',
+    timestamp: new Date().toISOString(),
+    read: false
+  });
+
+  const markAddPending = (empId, on) => {
+    setPendingAddIds((prev) => {
+      const next = on ? [...new Set([...prev, empId])] : prev.filter((x) => x !== empId);
+      try { localStorage.setItem('flasham_pending_employee_adds', JSON.stringify(next)); } catch (e) {}
+      return next;
+    });
+  };
+
+  const handleGateAddEmployee = async (record) => {
+    const updated = [record, ...dbEmployees];
+    setDbEmployees(updated);
+    try { localStorage.setItem('flasham_cached_employees', JSON.stringify(updated)); } catch (e) {}
+    const notif = gateAddNotificationFor(record);
+    if (navigator.onLine) {
+      try {
+        const row = buildEntityRow('hr_employees', record);
+        if (!row) throw new Error('Could not build employee row');
+        const { error } = await supabase.from('hr_employees').upsert([row], { onConflict: 'id' });
+        if (error) throw error;
+        try { await insertGateNotification(notif); } catch (e) { console.warn('Gate-add notification insert failed:', e); }
+        setSyncStatus('synced');
+        setLastSyncTime(new Date().toLocaleTimeString());
+        showToast(`${record.name} added — 7-day probation started`, 'success');
+        return;
+      } catch (e) {
+        console.warn('Gate add online save failed — queueing instead:', e);
+      }
+    }
+    enqueueAction({ action: 'ADD_EMPLOYEE', employee: record, notification: notif });
+    markAddPending(record.id, true);
+    showToast(`${record.name} added offline — will sync when the connection returns`, 'warning');
   };
 
   // ---------------------------------------------------------------------------
@@ -2731,7 +2836,20 @@ export default function FlashAM() {
                   )}
                 </div>
 
-                <div className="flex items-center gap-1 overflow-x-auto pb-1 max-w-full">
+                <div className="flex items-center gap-2">
+                  {/* GATE ADD EMPLOYEE (Omer, 2026-10-26): a new man at the
+                      gate is added right here. Same permission as punch —
+                      every signed-in terminal user. */}
+                  <button
+                    type="button"
+                    onClick={() => setShowAddEmployee(true)}
+                    className="px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-[11px] flex items-center gap-1.5 transition-all active:scale-95 shadow-md shadow-cyan-600/20 cursor-pointer whitespace-nowrap"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">person_add</span>
+                    <span className="hidden sm:inline">Add New Employee</span>
+                    <span className="sm:hidden">Add</span>
+                  </button>
+                  <div className="flex items-center gap-1 overflow-x-auto pb-1 max-w-full">
                   {['ALL', 'PRESENT', 'COMPLETED', 'ABSENT'].map((st) => (
                     <button
                       key={st}
@@ -2747,6 +2865,7 @@ export default function FlashAM() {
                       {st}
                     </button>
                   ))}
+                  </div>
                 </div>
               </div>
 
@@ -2885,6 +3004,30 @@ export default function FlashAM() {
                                 {emp.division}
                               </span>
                             )}
+                            {pendingAddIds.includes(emp.id) && (
+                              <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-amber-500/10 text-amber-500 border border-amber-500/20 shrink-0">
+                                Queued — will sync
+                              </span>
+                            )}
+                            {isProbationEmployee(emp) && (() => {
+                              const info = getProbationInfo(emp);
+                              if (!info.applicable) return null;
+                              if (info.passed && emp.onboarding !== 'completed') {
+                                return (
+                                  <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-amber-500/15 text-amber-400 border border-amber-500/30 shrink-0">
+                                    Onboarding pending
+                                  </span>
+                                );
+                              }
+                              if (!info.windowComplete) {
+                                return (
+                                  <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 shrink-0">
+                                    Probation day {Math.min(info.daysElapsed + 1, 7)}/7
+                                  </span>
+                                );
+                              }
+                              return null;
+                            })()}
                           </div>
                           <div className="flex items-center gap-2 text-xs text-slate-400 mt-0.5 truncate">
                             <span className="truncate">{emp.department || 'Staff'}</span>
@@ -3397,7 +3540,7 @@ export default function FlashAM() {
                   <div className={`text-xs font-bold mt-1 font-mono ${isDark ? 'text-white' : 'text-slate-900'}`}>{lastSyncTime || 'Just now'}</div>
                 </div>
                 <div className={`p-3 rounded-xl border ${isDark ? 'bg-slate-900/40 border-slate-800' : 'bg-white border-slate-200'}`}>
-                  <div className={`text-[10px] uppercase font-bold ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Pending Offline Punches</div>
+                  <div className={`text-[10px] uppercase font-bold ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Pending Offline Records</div>
                   <div className={`text-xs font-bold mt-1 ${isDark ? 'text-amber-400' : 'text-amber-600'}`}>{pendingQueue.length} records</div>
                 </div>
               </div>
@@ -3580,6 +3723,16 @@ export default function FlashAM() {
           </button>
         </div>
       </footer>
+
+      {/* MODAL: GATE ADD NEW EMPLOYEE (Omer, 2026-10-26) */}
+      <FlashAmAddEmployee
+        open={showAddEmployee}
+        onClose={() => setShowAddEmployee(false)}
+        onSubmit={handleGateAddEmployee}
+        employees={dbEmployees}
+        isDark={isDark}
+        isOnline={isOnline}
+      />
 
       {/* MODAL 1: UNDO CONFIRMATION DIALOG */}
       {undoModal.isOpen && undoModal.employee && (

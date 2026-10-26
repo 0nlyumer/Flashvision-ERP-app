@@ -26,6 +26,7 @@ import { invoiceSourceLabel } from '../utils/invoiceSource';
 import { buildFiledDocumentSnapshot } from '../utils/studioSnapshot';
 import { buildArchiveEntry, applyFilingToBinders, findUnverifiedFilings, fileEntryIntoBindersById } from '../utils/routingArchive';
 import { findUserByLoginIdentifier } from '../utils/loginIdentifier';
+import { findProbationNotificationsDue, getProbationInfo } from '../utils/probation';
 
 const AppContext = createContext();
 const BUILD_VERSION = '20260715_v5';
@@ -3803,6 +3804,41 @@ export const AppProvider = ({ children }) => {
       notifications: (prev.notifications || []).map(n => ({ ...n, read: true }))
     }));
   };
+
+  // PROBATION -> ONBOARDING PENDING (Omer, 2026-10-26): when a
+  // gate-added employee's 7-day probation completes and he kept coming
+  // (utils/probation.js), his onboarding becomes pending — the record
+  // is flagged through the normal hr_employees write-through and ONE
+  // dashboard notification with his name is fired. The persisted
+  // probationOnboardingNotified flag makes it fire exactly once, on
+  // whichever ERP session first loads the data after the window ends.
+  const probationNotifiedRef = useRef(new Set());
+  useEffect(() => {
+    if (!state.currentUser) return;
+    const employees = state.hr_employees_list;
+    if (!Array.isArray(employees) || employees.length === 0) return;
+    const due = findProbationNotificationsDue(employees)
+      .filter((e) => !probationNotifiedRef.current.has(e.id))
+      // Belt-and-braces: never duplicate an Onboarding Pending entry
+      // that is already in the panel (e.g. flag write lost in a restore).
+      .filter((e) => !(state.notifications || []).some((n) =>
+        n.title === 'Onboarding Pending' && typeof n.message === 'string' && n.message.includes(`${e.name} completed his 7-day probation`)));
+    if (due.length === 0) return;
+    due.forEach((e) => probationNotifiedRef.current.add(e.id));
+    const dueIds = new Set(due.map((e) => e.id));
+    setCollection('hr_employees_list', employees.map((e) => (dueIds.has(e.id)
+      ? { ...e, onboarding: e.onboarding || 'pending', probationOnboardingNotified: true, probationPassedAt: new Date().toISOString() }
+      : e)));
+    due.forEach((e) => {
+      const info = getProbationInfo(e);
+      addNotification(
+        'Onboarding Pending',
+        `${e.name} completed his 7-day probation (${info.cameDays} days present) — onboarding is now pending. Please call him in to complete onboarding.`,
+        'info'
+      );
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.hr_employees_list, state.currentUser]);
 
   const addAuditLog = (action, module, details, status = 'Success', user = 'System') => {
     const newLog = {

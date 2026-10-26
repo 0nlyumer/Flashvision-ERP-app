@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { seedHrDepartments } from '../../utils/hrDepartments';
 import { loadOnboardingHistory } from '../../utils/onboardingHistory';
+import { isProbationEmployee, isOnboardingPending } from '../../utils/probation';
 
 export default function HRDashboard({ isMobile, onNavigateTab }) {
   const [approvedRequests, setApprovedRequests] = useState({});
@@ -174,7 +175,12 @@ export default function HRDashboard({ isMobile, onNavigateTab }) {
     const historyList = loadOnboardingHistory();
     const isCompleted = historyList.some(item => (item.id === emp.id || item.fullName === emp.name) && item.status === 'Submitted');
     if (isCompleted) return false;
-    
+
+    // Gate-added employees (Omer, 2026-10-26): pending is decided by
+    // the probation rule — 7 days over AND he kept coming (attendance-
+    // based, utils/probation.js) — not by the joined-date alone.
+    if (isProbationEmployee(emp)) return isOnboardingPending(emp);
+
     // Check if joined > 7 days ago
     const joinDateStr = emp.joiningDate || emp.startDate || '2023-10-20';
     const joinDate = new Date(joinDateStr);

@@ -3,6 +3,7 @@ import { loadOnboardingHistory, saveOnboardingHistory as persistOnboardingHistor
 import CustomSelect from '../ui/CustomSelect';
 import { useApp } from '../../context/AppContext';
 import { seedHrDepartments } from '../../utils/hrDepartments';
+import ProbationPendingPanel from './ProbationPendingPanel';
 
 const INITIAL_WIZARD_DATA = {
   fullName: '',
@@ -519,8 +520,27 @@ export default function HROnboarding({ isMobile }) {
         </div>
       </div>
 
+      {/* Probation cleared at the gate — onboarding pending (Omer, 2026-10-26) */}
+      <ProbationPendingPanel
+        employees={employees}
+        onStartOnboarding={(emp) => {
+          setEditingEntryId(null);
+          setFormData((prev) => ({
+            ...prev,
+            fullName: emp.name || '',
+            phone: emp.phone || '',
+            joiningDate: emp.dateOfJoining || emp.joiningDate || '',
+            department: emp.department || '',
+            section: emp.division || emp.section || '',
+            designation: emp.designation || ''
+          }));
+          if (emp.photo || emp.avatar) setPhoto(emp.photo || emp.avatar);
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }}
+      />
+
       <form onSubmit={handleSubmit} className="space-y-8">
-        
+
         {/* SECTION 1: Personal Info */}
         <section className="wizard-section" id="section-1">
           <div className="flex items-center gap-3 mb-6 pb-4 border-b border-outline-variant/10">
