@@ -13,8 +13,10 @@ import BankReconciliation from '../components/finance/BankReconciliation';
 import CostCenters from '../components/finance/CostCenters';
 import ChartOfAccounts from '../components/finance/ChartOfAccounts';
 import { useSearchParams } from 'react-router-dom';
+import { useApp } from '../context/AppContext';
 
 export default function FinanceModule() {
+  const { hasPermission } = useApp();
   const [searchParams, setSearchParams] = useSearchParams();
   const rawTab = searchParams.get('tab');
   
@@ -65,9 +67,19 @@ export default function FinanceModule() {
     setSearchParams({ tab: id }, { replace: true });
   };
 
+  // Permissions redesign (2026-10-27): only screens this user may open are
+  // listed, and a denied active screen falls back to the first permitted one.
+  const permittedTabs = tabs.filter(t => (hasPermission ? hasPermission('finance', t.id) : true));
+  useEffect(() => {
+    if (permittedTabs.length && !permittedTabs.find(t => t.id === activeTab)) {
+      handleTabSelect(permittedTabs[0].id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, permittedTabs.length]);
+
   const subNavConfig = {
     title: "Finance & Accounts",
-    items: tabs,
+    items: permittedTabs,
     activeId: activeTab,
     onSelect: handleTabSelect,
     moduleName: "finance"

@@ -295,7 +295,7 @@ const router = createBrowserRouter([
       { path: "/hr", element: <ProtectedRoute moduleName="hr"><HRModule /></ProtectedRoute> },
       { path: "/flash-am", element: <Suspense fallback={<PageLoadingSkeleton />}><FlashAM /></Suspense> },
       { path: "/flasham", element: <Navigate to="/flash-am" replace /> },
-      { path: "/document-warehouse", element: <ProtectedRoute><DocumentWarehouse /></ProtectedRoute> },
+      { path: "/document-warehouse", element: <ProtectedRoute moduleName="files"><DocumentWarehouse /></ProtectedRoute> },
       { path: "/chat", element: <ProtectedRoute moduleName="chat"><ChatModule /></ProtectedRoute> },
       { path: "/profile", element: <ProtectedRoute><UserProfile /></ProtectedRoute> }
     ]

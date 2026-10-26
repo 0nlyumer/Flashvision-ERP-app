@@ -70,7 +70,7 @@ const StatusBadgeWithAction = ({ orderId, itemCode, status, updateStatus }) => {
 
 export default function SaleOrderModule() {
   const navigate = useNavigate();
-  const { state, setState, setCollection, addSaleOrder, updateSaleOrderItemStatus, toggleGlobalPagination } = useApp();
+  const { state, setState, setCollection, addSaleOrder, updateSaleOrderItemStatus, toggleGlobalPagination, hasPermission } = useApp();
   const { appConfirm, appAlert } = useDialog();
   const currencyCode = state.adminSetup?.baseCurrency ? state.adminSetup.baseCurrency.split(' ')[0] : 'PKR';
   const currencySymbol = state.adminSetup?.baseCurrency ? (state.adminSetup.baseCurrency.match(/\(([^)]+)\)/)?.[1] || '$') : '$';
@@ -196,13 +196,34 @@ export default function SaleOrderModule() {
     setSearchParams({ tab: tabId }, { replace: true });
   };
 
+  // Permissions redesign (2026-10-27): tab ids ARE the registry screen ids
+  // for this module — only permitted screens are listed, and a denied active
+  // tab falls back to the first permitted one.
+  const permittedSoTabs = tabs.filter(t => (hasPermission ? hasPermission('salesOrders', t) : true));
+  useEffect(() => {
+    if (permittedSoTabs.length && !permittedSoTabs.includes(activeTab)) {
+      setActiveTab(permittedSoTabs[0]);
+      setSearchParams({ tab: permittedSoTabs[0] }, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, permittedSoTabs.length]);
+
+  // Action-level gates (permissions redesign): a disabled action stays
+  // visible but grey/dead for this user — exactly as the admin preview shows.
+  const canDashboardPrint = hasPermission ? hasPermission('salesOrders', 'dashboard', 'print') : true;
+  const canHistoryPrint = hasPermission ? hasPermission('salesOrders', 'history', 'print') : true;
+  const canOrderEdit = hasPermission ? hasPermission('salesOrders', 'orderDetails', 'edit') : true;
+  const canOrderDelete = hasPermission ? hasPermission('salesOrders', 'orderDetails', 'delete') : true;
+  const deadBtn = 'opacity-40 grayscale cursor-not-allowed pointer-events-none';
+
   const subNavConfig = {
     title: 'Sale Orders',
+    moduleName: 'salesOrders',
     items: [
       { id: 'dashboard', label: 'Dashboard', icon: 'dashboard' },
       { id: 'create', label: 'Create Sale Order', icon: 'add_shopping_cart' },
       { id: 'history', label: 'Order History', icon: 'history' }
-    ],
+    ].filter(item => permittedSoTabs.includes(item.id)),
     activeId: activeTab,
     onSelect: handleTabChange
   };
@@ -1089,9 +1110,9 @@ export default function SaleOrderModule() {
                         <td className="px-6 py-5 text-right">
                           <div className="flex items-center justify-end space-x-1 opacity-90 group-hover:opacity-100 transition-opacity">
                             <button onClick={() => { setTimelineOrderInfo({ orderId: order.id, itemCode: null, type: 'order' }); setShowTimelineModal(true); }} className="p-2 hover:text-primary transition-colors hover:bg-primary/10 rounded-lg" title="Timeline View"><span className="material-symbols-outlined text-[20px]">history</span></button>
-                            <button onClick={() => handleEditOrder(order)} className="p-2 hover:text-primary transition-colors hover:bg-primary/10 rounded-lg" title="Modify"><span className="material-symbols-outlined text-[20px]">edit</span></button>
-                            
-                              <button onClick={() => setStudioOrder(order)} className="p-2 hover:text-primary transition-colors hover:bg-primary/10 rounded-lg" title="Print"><span className="material-symbols-outlined text-[20px]">print</span></button>
+                            <button onClick={() => handleEditOrder(order)} disabled={!canOrderEdit} className={`p-2 hover:text-primary transition-colors hover:bg-primary/10 rounded-lg ${!canOrderEdit ? deadBtn : ''}`} title="Modify"><span className="material-symbols-outlined text-[20px]">edit</span></button>
+
+                              <button onClick={() => setStudioOrder(order)} disabled={!canDashboardPrint} className={`p-2 hover:text-primary transition-colors hover:bg-primary/10 rounded-lg ${!canDashboardPrint ? deadBtn : ''}`} title="Print"><span className="material-symbols-outlined text-[20px]">print</span></button>
                           </div>
                         </td>
                       </tr>
@@ -1743,13 +1764,13 @@ export default function SaleOrderModule() {
                                 <td className="px-6 py-6 overflow-visible"><StatusBadgeWithAction orderId={order.id} itemCode={null} status={order.status} updateStatus={updateSaleOrderItemStatus} /></td>
                                 <td className="px-8 py-6 text-right">
                                    <div className="flex items-center justify-end gap-2">
-                                      <button onClick={() => setStudioOrder(order)} className="text-primary hover:bg-primary/10 p-2 rounded-lg transition-colors flex items-center justify-center" title="Print Record">
+                                      <button onClick={() => setStudioOrder(order)} disabled={!canHistoryPrint} className={`text-primary hover:bg-primary/10 p-2 rounded-lg transition-colors flex items-center justify-center ${!canHistoryPrint ? deadBtn : ''}`} title="Print Record">
                                         <span className="material-symbols-outlined text-[20px]">print</span>
                                      </button>
-                                     <button onClick={() => handleEditOrder(order)} title="Edit Order" className="text-on-surface-variant hover:text-primary hover:bg-surface-container-high p-2 rounded-lg transition-colors flex items-center justify-center">
+                                     <button onClick={() => handleEditOrder(order)} disabled={!canOrderEdit} title="Edit Order" className={`text-on-surface-variant hover:text-primary hover:bg-surface-container-high p-2 rounded-lg transition-colors flex items-center justify-center ${!canOrderEdit ? deadBtn : ''}`}>
                                        <span className="material-symbols-outlined text-[20px]">edit</span>
                                      </button>
-                                     <button onClick={() => updateSaleOrderItemStatus(order.id, null, 'Deleted')} title="Delete Order" className="text-red-400 hover:text-red-700 hover:bg-red-50 p-2 rounded-lg transition-colors flex items-center justify-center">
+                                     <button onClick={() => updateSaleOrderItemStatus(order.id, null, 'Deleted')} disabled={!canOrderDelete} title="Delete Order" className={`text-red-400 hover:text-red-700 hover:bg-red-50 p-2 rounded-lg transition-colors flex items-center justify-center ${!canOrderDelete ? deadBtn : ''}`}>
                                        <span className="material-symbols-outlined text-[20px]">delete</span>
                                      </button>
                                    </div>

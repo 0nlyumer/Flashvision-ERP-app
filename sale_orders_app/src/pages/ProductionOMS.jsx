@@ -16,7 +16,7 @@ export default function ProductionOMS() {
   const [selectedPlanItems, setSelectedPlanItems] = useState([]); // Tracking selection
   const [editingPlanId, setEditingPlanId] = useState(null); // Track plan being edited
   const [editingPlanDate, setEditingPlanDate] = useState(''); // Track plan date
-  const { state, updateSaleOrderItemStatus, setCollection } = useApp();
+  const { state, updateSaleOrderItemStatus, setCollection, hasPermission } = useApp();
 
   const pendingItems = useMemo(() => {
     // 1. Sale order items
@@ -292,9 +292,20 @@ export default function ProductionOMS() {
     }
   };
 
+  // Permissions redesign (2026-10-27): only screens this user may open are
+  // listed, and a denied active screen falls back to the first permitted one.
+  const permittedTabs = tabs.filter(t => (hasPermission ? hasPermission('oms', t.id) : true));
+  useEffect(() => {
+    if (permittedTabs.length && !permittedTabs.find(t => t.id === activeTab)) {
+      setActiveTab(permittedTabs[0].id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, permittedTabs.length]);
+
   const subNavConfig = {
       title: "OMS",
-      items: tabs,
+      moduleName: 'oms',
+      items: permittedTabs,
       activeId: activeTab,
       onSelect: handleTabChange
   };

@@ -24,7 +24,7 @@ import { useSearchParams } from 'react-router-dom';
 import OtherConsumption from '../components/production/OtherConsumption';
 
 export default function ProductionModule() {
-  const { state, setCollection, updateSaleOrderItemStatus, isDirty, setDirty, toggleGlobalPagination, updateProductionTarget } = useApp();
+  const { state, setCollection, updateSaleOrderItemStatus, isDirty, setDirty, toggleGlobalPagination, updateProductionTarget, hasPermission } = useApp();
   const { appConfirm, appAlert } = useDialog();
   
   // Pagination
@@ -106,10 +106,23 @@ export default function ProductionModule() {
       { id: 'raw-material-production', label: 'Raw Material Production', icon: 'manufacturing' },
   ];
 
+  // Permissions redesign (2026-10-27): only screens this user may open are
+  // listed, and a denied active screen falls back to the first permitted one.
+  const permittedTabs = tabs.filter(t => (hasPermission ? hasPermission('productionPlanning', t.id) : true));
+  useEffect(() => {
+      const baseView = viewMode === 'stock-demand-history' ? 'stock-demand' :
+                       viewMode === 'stock-receiving-history' ? 'stock-receiving-note' :
+                       viewMode === 'create-bom' ? 'bom-master' : viewMode;
+      if (permittedTabs.length && !permittedTabs.find(t => t.id === baseView) && !permittedTabs.find(t => t.id === viewMode)) {
+          handleViewChange(permittedTabs[0].id);
+      }
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewMode, permittedTabs.length]);
+
   const subNavConfig = {
       title: 'Production',
       moduleName: 'productionPlanning',
-      items: tabs,
+      items: permittedTabs,
       activeId: viewMode === 'stock-demand-history' ? 'stock-demand' : 
                 viewMode === 'stock-receiving-history' ? 'stock-receiving-note' : 
                 viewMode === 'create-bom' ? 'bom-master' : viewMode,

@@ -21,7 +21,7 @@ import StockTransferHistory from '../components/inventory/StockTransferHistory';
 import { useSearchParams } from 'react-router-dom';
 
 export default function InventoryDashboard() {
-  const { state } = useApp();
+  const { state, hasPermission } = useApp();
   const [searchParams, setSearchParams] = useSearchParams();
   const tabInUrl = searchParams.get('tab');
   const [activeTab, setActiveTab] = useState(() => tabInUrl || 'dashboard');
@@ -76,9 +76,20 @@ export default function InventoryDashboard() {
      setSearchParams({ tab: id }, { replace: true });
   };
 
+  // Permissions redesign (2026-10-27): only screens this user may open are
+  // listed, and a denied active screen falls back to the first permitted one.
+  const permittedTabs = tabs.filter(t => (hasPermission ? hasPermission('inventory', t.id) : true));
+  useEffect(() => {
+      if (permittedTabs.length && activeTab !== 'stock-transfer-history' && !permittedTabs.find(t => t.id === activeTab)) {
+          handleTabSelect(permittedTabs[0].id);
+      }
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, permittedTabs.length]);
+
   const subNavConfig = {
       title: 'Inventory',
-      items: tabs.map(tab => ({
+      moduleName: 'inventory',
+      items: permittedTabs.map(tab => ({
           ...tab,
           icon: tab.id === 'dashboard' ? 'dashboard' : 
                 tab.id === 'stock' ? 'inventory_2' : 

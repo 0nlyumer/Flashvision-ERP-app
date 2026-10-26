@@ -206,6 +206,20 @@ export default function Dashboard() {
 
   const removeBackground = () => updateDashboardBackground(null);
 
+  // Permissions redesign (2026-10-27): the Main Dashboard screen itself can
+  // be switched off per user — show a clear no-access notice instead.
+  if (activeTab !== 'e-files' && hasPermission && !hasPermission('dashboard', 'mainDashboard')) {
+    return (
+      <Layout subNavConfig={subNavConfig}>
+        <div className="flex flex-col items-center justify-center gap-3 py-24 text-center">
+          <span className="material-symbols-outlined text-5xl text-error/60">block</span>
+          <h2 className="font-headline font-black text-xl text-on-surface">No Access</h2>
+          <p className="text-sm text-on-surface-variant max-w-sm">The Main Dashboard is switched off for your account. Please contact your administrator if you need access.</p>
+        </div>
+      </Layout>
+    );
+  }
+
   return (
     <Layout subNavConfig={subNavConfig} hasDashboardBackground={!!state.dashboardBackground && activeTab === 'overview'}>
       {activeTab === 'e-files' ? (

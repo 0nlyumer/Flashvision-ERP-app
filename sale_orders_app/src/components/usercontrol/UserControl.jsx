@@ -1,13 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import AddNewUser from './AddNewUser';
+import PermissionsAdmin from './PermissionsAdmin';
 import { isTelegramLinked } from '../../utils/telegram';
 import GlobalPagination from '../ui/GlobalPagination';
 
 export default function UserControl() {
-  const { state, deleteUser, updateUser } = useApp();
+  const { state, deleteUser, updateUser, hasPermission } = useApp();
   const [activeUserView, setActiveUserView] = useState(null); // null, 'new', or user object
+  const [showPermissions, setShowPermissions] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  // Permissions redesign (2026-10-27): User Control action gates.
+  const canCreateUser = hasPermission ? hasPermission('userManagement', 'userControl', 'create') : true;
+  const canDeleteUser = hasPermission ? hasPermission('userManagement', 'userControl', 'delete') : true;
+  const canEditPermissions = hasPermission ? hasPermission('userManagement', 'permissionsAdmin', 'edit') : true;
 
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 20;
@@ -50,7 +56,15 @@ export default function UserControl() {
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
-          <button onClick={() => setActiveUserView('new')} className="flex items-center justify-center gap-2 px-4 py-2.5 bg-primary text-on-primary rounded-xl font-bold shadow-sm hover:shadow-md transition-all active:scale-95 text-sm w-full sm:w-auto shrink-0">
+          <button
+            onClick={() => setShowPermissions(true)}
+            disabled={!canEditPermissions}
+            className={`flex items-center justify-center gap-2 px-4 py-2.5 bg-secondary-container text-on-secondary-container rounded-xl font-bold shadow-sm hover:shadow-md transition-all active:scale-95 text-sm w-full sm:w-auto shrink-0 ${!canEditPermissions ? 'opacity-40 grayscale cursor-not-allowed pointer-events-none' : ''}`}
+          >
+            <span className="material-symbols-outlined text-sm" style={{ fontVariationSettings: "'FILL' 0" }}>shield_person</span>
+            Permissions & Access
+          </button>
+          <button onClick={() => setActiveUserView('new')} disabled={!canCreateUser} className={`flex items-center justify-center gap-2 px-4 py-2.5 bg-primary text-on-primary rounded-xl font-bold shadow-sm hover:shadow-md transition-all active:scale-95 text-sm w-full sm:w-auto shrink-0 ${!canCreateUser ? 'opacity-40 grayscale cursor-not-allowed pointer-events-none' : ''}`}>
             <span className="material-symbols-outlined text-sm" style={{ fontVariationSettings: "'FILL' 0" }}>person_add</span>
             New User
           </button>
@@ -131,14 +145,15 @@ export default function UserControl() {
                   >
                     <span className="material-symbols-outlined text-lg">shield_person</span>
                   </button>
-                  <button 
-                    onClick={(e) => { 
-                      e.stopPropagation(); 
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
                       if(window.confirm(`Are you sure you want to delete ${user.name}?`)) {
                         deleteUser(user.id);
                       }
                     }}
-                    className="flex items-center justify-center w-9 h-9 rounded-xl bg-error/10 text-error hover:bg-error hover:text-white transition-all duration-200" 
+                    disabled={!canDeleteUser}
+                    className={`flex items-center justify-center w-9 h-9 rounded-xl bg-error/10 text-error hover:bg-error hover:text-white transition-all duration-200 ${!canDeleteUser ? 'opacity-40 grayscale cursor-not-allowed pointer-events-none' : ''}`}
                     title="Delete User"
                   >
                     <span className="material-symbols-outlined text-lg">delete</span>
@@ -150,7 +165,7 @@ export default function UserControl() {
         )}
 
         <div className="mt-4">
-          <GlobalPagination 
+          <GlobalPagination
             totalItems={filteredUsers.length}
             itemsPerPage={itemsPerPage}
             currentPage={currentPage}
@@ -158,6 +173,10 @@ export default function UserControl() {
           />
         </div>
       </div>
+
+      {showPermissions && (
+        <PermissionsAdmin onClose={() => setShowPermissions(false)} />
+      )}
     </div>
   );
 }

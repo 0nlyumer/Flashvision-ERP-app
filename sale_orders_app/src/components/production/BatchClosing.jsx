@@ -6,7 +6,13 @@ import GlobalPagination from '../ui/GlobalPagination';
 import { validateStockClaims, resolveFromStockDepartment, isStockOutput } from '../../utils/stockOutput';
 
 export default function BatchClosing() {
-    const { state, setCollection, handleProductionOutput, deleteProductionOutputs, setDirty, isDirty } = useApp();
+    const { state, setCollection, handleProductionOutput, deleteProductionOutputs, setDirty, isDirty, hasPermission } = useApp();
+    // Permissions redesign (2026-10-27): Batch Closing action gates — a
+    // disabled action stays visible but grey/dead for this user.
+    const canBatchEdit = hasPermission ? hasPermission('productionPlanning', 'batch-closing', 'edit') : true;
+    const canBatchDelete = hasPermission ? hasPermission('productionPlanning', 'batch-closing', 'delete') : true;
+    const canBatchPrint = hasPermission ? hasPermission('productionPlanning', 'batch-closing', 'print') : true;
+    const deadBtn = 'opacity-40 grayscale cursor-not-allowed pointer-events-none';
     const { appAlert, appConfirm } = useDialog();
 
     const defaultTypes = [
@@ -276,7 +282,8 @@ export default function BatchClosing() {
                                                                 setActiveView('form');
                                                             }
                                                         }} 
-                                                        className="p-1.5 rounded-lg border border-primary/20 text-primary hover:bg-primary/10 transition-colors flex items-center justify-center animate-all" 
+                                                        disabled={!canBatchEdit}
+                                                        className={`p-1.5 rounded-lg border border-primary/20 text-primary hover:bg-primary/10 transition-colors flex items-center justify-center animate-all ${!canBatchEdit ? deadBtn : ''}`}
                                                         title="Edit Outputs"
                                                     >
                                                         <span className="material-symbols-outlined text-[18px]">edit</span>
@@ -306,16 +313,18 @@ export default function BatchClosing() {
                                                                 }
                                                             }
                                                         }} 
-                                                        className="p-1.5 rounded-lg border border-error/20 text-error hover:bg-error/10 transition-colors flex items-center justify-center animate-all" 
+                                                        disabled={!canBatchDelete}
+                                                        className={`p-1.5 rounded-lg border border-error/20 text-error hover:bg-error/10 transition-colors flex items-center justify-center animate-all ${!canBatchDelete ? deadBtn : ''}`}
                                                         title="Delete Outputs"
                                                     >
                                                         <span className="material-symbols-outlined text-[18px]">delete</span>
                                                     </button>
 
                                                     {/* Print Button */}
-                                                    <button 
-                                                        onClick={() => handlePrint(plan)} 
-                                                        className="p-1.5 rounded-lg border border-outline-variant/30 text-on-surface-variant hover:bg-surface-container transition-colors flex items-center justify-center animate-all" 
+                                                    <button
+                                                        onClick={() => handlePrint(plan)}
+                                                        disabled={!canBatchPrint}
+                                                        className={`p-1.5 rounded-lg border border-outline-variant/30 text-on-surface-variant hover:bg-surface-container transition-colors flex items-center justify-center animate-all ${!canBatchPrint ? deadBtn : ''}`}
                                                         title="Print"
                                                     >
                                                         <span className="material-symbols-outlined text-[18px]">print</span>

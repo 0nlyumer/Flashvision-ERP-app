@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
-import GranularPermissionsModal from './GranularPermissionsModal';
+import PermissionsAdmin from './PermissionsAdmin';
+import { permissionsRegistry } from '../../constants/permissionsRegistry';
 import TelegramFields from './TelegramFields';
 import { normalizeTelegramUsername, isValidTelegramChatId } from '../../utils/telegram';
 
@@ -47,6 +48,7 @@ export default function AddNewUser({ initialUser, onCancel }) {
       hr: false,
       chat: false,
       finance: false,
+      files: false,
       flasham: false
     },
     granularPermissions: {
@@ -83,6 +85,7 @@ export default function AddNewUser({ initialUser, onCancel }) {
         hr: false,
         chat: false,
         finance: false,
+        files: false,
         flasham: false
       };
       if (Array.isArray(initialUser.permissions)) {
@@ -162,13 +165,23 @@ export default function AddNewUser({ initialUser, onCancel }) {
   };
 
   const handlePermissionChange = (perm) => {
-    setFormData(prev => ({
-      ...prev,
-      permissions: {
-        ...prev.permissions,
-        [perm]: !prev.permissions[perm]
+    setFormData(prev => {
+      const nextOn = !prev.permissions[perm];
+      // Keep the granular set's module switch in sync with this checkbox
+      // (permissions redesign, 2026-10-27 — one model everywhere).
+      const granularPermissions = { ...(prev.granularPermissions || {}) };
+      if (granularPermissions[perm] && typeof granularPermissions[perm] === 'object') {
+        granularPermissions[perm] = { ...granularPermissions[perm], _moduleEnabled: nextOn };
       }
-    }));
+      return {
+        ...prev,
+        permissions: {
+          ...prev.permissions,
+          [perm]: nextOn
+        },
+        granularPermissions
+      };
+    });
   };
 
   const handleDeptPermissionChange = (deptName) => {
@@ -247,18 +260,17 @@ export default function AddNewUser({ initialUser, onCancel }) {
     if (onCancel) onCancel();
   };
 
-  const handleSaveGranular = (moduleKey, savedPermissions) => {
-    setFormData(prev => ({
-      ...prev,
-      permissions: {
-        ...prev.permissions,
-        [moduleKey]: true
-      },
-      granularPermissions: {
-        ...prev.granularPermissions,
-        [moduleKey]: savedPermissions
-      }
-    }));
+  // Permissions redesign (2026-10-27): the PermissionsAdmin editor saves the
+  // COMPLETE set; the module checkboxes above simply mirror its module
+  // switches.
+  const handleSavePermissionSet = (fullSet) => {
+    setFormData(prev => {
+      const permissions = { ...prev.permissions };
+      permissionsRegistry.forEach((mod) => {
+        permissions[mod.id] = fullSet?.[mod.id]?._moduleEnabled !== false;
+      });
+      return { ...prev, permissions, granularPermissions: fullSet };
+    });
     setActiveModal(null);
   };
 
@@ -519,7 +531,8 @@ export default function AddNewUser({ initialUser, onCancel }) {
                     </div>
                   </div>
                   <span className={`text-sm font-semibold transition-colors ${formData.permissions[perm] ? 'text-primary' : 'text-on-surface group-hover:text-primary'}`}>
-                    {perm === 'salesOrders' ? 'Sales Orders' : 
+                    {perm === 'dashboard' ? 'Main Dashboard' :
+                     perm === 'salesOrders' ? 'Sales Orders' :
                      perm === 'oms' ? 'OMS' :
                      perm === 'productionPlanning' ? 'Production Planning' :
                      perm === 'inventory' ? 'Inventory' :
@@ -528,8 +541,10 @@ export default function AddNewUser({ initialUser, onCancel }) {
                      perm === 'hr' ? 'HR Management' :
                      perm === 'chat' ? 'Chat Module' :
                      perm === 'finance' ? 'Finance Module' :
+                     perm === 'files' ? 'Files — Document Warehouse' :
                      perm === 'flasham' ? 'Flash AM Terminal' :
-                     'User Management'}
+                     perm === 'userManagement' ? 'User Management' :
+                     perm}
                   </span>
                 </label>
                 
@@ -537,20 +552,15 @@ export default function AddNewUser({ initialUser, onCancel }) {
                   type="button"
                   onClick={(e) => {
                     e.preventDefault();
-                    if (formData.permissions[perm]) {
-                      setActiveModal(perm);
-                    } else {
-                      addNotification('Enable Module First', 'Please enable the module before configuring granular permissions.', 'info');
-                    }
+                    // Permissions redesign (2026-10-27): opens the full
+                    // Permissions & Access editor focused on this module —
+                    // module on/off is set inside the editor itself.
+                    setActiveModal(perm);
                   }}
-                  className={`ml-2 px-3 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1 shrink-0 ${
-                    formData.permissions[perm] 
-                      ? 'bg-primary/10 text-primary hover:bg-primary hover:text-on-primary' 
-                      : 'bg-surface-dim text-on-surface-variant/40 hover:bg-surface-variant/10 cursor-pointer'
-                  }`}
+                  className="ml-2 px-3 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1 shrink-0 bg-primary/10 text-primary hover:bg-primary hover:text-on-primary cursor-pointer"
                 >
-                  <span className="material-symbols-outlined text-[14px]">open_in_new</span>
-                  Open
+                  <span className="material-symbols-outlined text-[14px]">shield_person</span>
+                  Permissions
                 </button>
               </div>
             ))}
@@ -706,11 +716,19 @@ export default function AddNewUser({ initialUser, onCancel }) {
       </div>
 
       {activeModal && (
-        <GranularPermissionsModal
-          moduleKey={activeModal}
-          initialPermissions={formData.granularPermissions[activeModal] || {}}
-          userName={formData.name || formData.username}
-          onSave={(perms) => handleSaveGranular(activeModal, perms)}
+        <PermissionsAdmin
+          embedded={{
+            user: {
+              id: initialUser?.id ?? 'new-user',
+              name: formData.name || 'New User',
+              username: formData.username || 'new-user',
+              role: initialUser?.role || 'User',
+              permissions: Object.keys(formData.permissions).filter(k => formData.permissions[k]),
+            },
+            initialSet: formData.granularPermissions,
+            focusModule: activeModal,
+          }}
+          onSaveSet={handleSavePermissionSet}
           onClose={() => setActiveModal(null)}
         />
       )}

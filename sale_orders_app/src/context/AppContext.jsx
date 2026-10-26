@@ -5613,16 +5613,30 @@ export const AppProvider = ({ children }) => {
       hasModuleAccess = !!user.permissions[moduleName];
     }
 
+    // Files (Document Warehouse) was reachable by every signed-in user before
+    // the 2026-10-27 permissions redesign (its route had no module gate).
+    // Keep that safe default until an admin saves an explicit set for this
+    // user — an explicit set (synced module array + granular entry) is the
+    // only way the Files module turns off.
+    if (!hasModuleAccess && moduleName === 'files' && !user.granularPermissions?.files) {
+      hasModuleAccess = true;
+    }
+
     if (!hasModuleAccess) return false;
     if (!screenName) return true; // Module level granted
 
-    // Check granular screen level if module granular permissions exist
+    // Check granular screen level if module granular permissions exist.
+    // SAFE-DEFAULT (permissions redesign, 2026-10-27): anything not explicitly
+    // disabled is allowed — a screen/action missing from a saved set falls
+    // back to module access instead of denying, so a screen added later can
+    // never silently lock a user out. The admin screen always saves COMPLETE
+    // sets (src/utils/permissions.js normalizeSet), so real "off" choices
+    // are always explicit values, never absences.
     const moduleGranular = user.granularPermissions?.[moduleName];
     if (moduleGranular && typeof moduleGranular === 'object') {
       const screenPerms = moduleGranular[screenName];
       if (screenPerms === undefined) {
-        // If granular permissions exist for this module, but this screen is NOT defined -> DENIED!
-        return false;
+        return true; // not configured for this screen -> module access decides
       }
       if (typeof screenPerms === 'boolean') {
         return screenPerms;
@@ -5637,7 +5651,7 @@ export const AppProvider = ({ children }) => {
         if (action === 'view') {
           return Object.keys(screenPerms).filter(k => k !== '_enabled').some(k => screenPerms[k]);
         }
-        return false;
+        return true; // action not explicitly configured -> allowed
       }
     }
 

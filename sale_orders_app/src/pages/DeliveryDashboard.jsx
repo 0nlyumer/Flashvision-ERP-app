@@ -5,8 +5,10 @@ import DelDashboard from '../components/delivery/DelDashboard';
 import DelCreation from '../components/delivery/DelCreation';
 import DelCreationSlip from '../components/delivery/DelCreationSlip';
 import DelRecord from '../components/delivery/DelRecord';
+import { useApp } from '../context/AppContext';
 
 export default function DeliveryDashboard() {
+  const { hasPermission } = useApp();
   const [activeTab, setActiveTab] = useState('dashboard');
   const [challanItems, setChallanItems] = useState([]);
   const [dcMode, setDcMode] = useState('Sale Orders');
@@ -22,8 +24,18 @@ export default function DeliveryDashboard() {
       setActiveTab('dc_record');
   };
 
+  // Permissions redesign (2026-10-27): a screen this user may not open is
+  // never rendered — fall back to the first permitted delivery screen. The
+  // challan slip (button-opened sub-screen) needs its own or DC Creation's
+  // permission.
+  const canTab = (id) => (hasPermission ? hasPermission('delivery', id) : true);
+  const permittedTabIds = ['dashboard', 'dc_creation', 'dc_record'].filter(canTab);
+  const effectiveTab = activeTab === 'dc_creation_slip'
+    ? ((canTab('dc_creation_slip') || canTab('dc_creation')) ? 'dc_creation_slip' : (permittedTabIds[0] || 'dashboard'))
+    : (canTab(activeTab) ? activeTab : (permittedTabIds[0] || 'dashboard'));
+
   const renderContent = () => {
-    switch (activeTab) {
+    switch (effectiveTab) {
       case 'dashboard':
         return <DelDashboard setActiveTab={handleTabChange} />;
       case 'dc_creation':
@@ -59,7 +71,8 @@ export default function DeliveryDashboard() {
 
   const subNavConfig = {
       title: "Delivery",
-      items: tabs,
+      moduleName: 'delivery',
+      items: tabs.filter(t => permittedTabIds.includes(t.id)),
       activeId: activeTab === 'dc_creation_slip' ? 'dc_creation' : activeTab,
       onSelect: handleTabChange
   };

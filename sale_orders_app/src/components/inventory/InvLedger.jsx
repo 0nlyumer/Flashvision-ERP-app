@@ -251,6 +251,9 @@ export default function InvLedger({ selectedDepartments = [], onBack }) {
   };
 
   const handlePrint = () => {
+    // Permission gate (User Control → Inventory → Inventory Ledger → Print):
+    // every print entry point on this screen funnels through here.
+    if (hasPermission && !hasPermission('inventory', 'ledger', 'print')) return;
       if (reportMode === 'stock') {
           openReportStudio();
           return;
@@ -644,13 +647,13 @@ export default function InvLedger({ selectedDepartments = [], onBack }) {
               {isExportDropdownOpen && (
                   <div className="absolute right-0 mt-2 w-48 bg-surface-container-lowest border border-outline-variant/20 rounded-xl shadow-lg z-50 animate-in fade-in slide-in-from-top-2">
                       <button onClick={() => { handleExport(); setIsExportDropdownOpen(false); }} className="w-full text-left px-4 py-3 hover:bg-surface-container-low transition-colors font-semibold text-sm rounded-t-xl">Export CSV</button>
-                      <button onClick={() => { handlePrint(); setIsExportDropdownOpen(false); }} className="w-full text-left px-4 py-3 hover:bg-surface-container-low transition-colors font-semibold text-sm">Export PDF (via Print)</button>
-                      <button onClick={() => { handlePrint(); setIsExportDropdownOpen(false); }} className="w-full text-left px-4 py-3 hover:bg-surface-container-low transition-colors font-semibold text-sm rounded-b-xl">Export PNG (via Print)</button>
+                      <button onClick={() => { handlePrint(); setIsExportDropdownOpen(false); }} disabled={hasPermission ? !hasPermission('inventory', 'ledger', 'print') : false} className={`w-full text-left px-4 py-3 hover:bg-surface-container-low transition-colors font-semibold text-sm ${(hasPermission && !hasPermission('inventory', 'ledger', 'print')) ? 'opacity-40 grayscale cursor-not-allowed pointer-events-none' : ''}`}>Export PDF (via Print)</button>
+                      <button onClick={() => { handlePrint(); setIsExportDropdownOpen(false); }} disabled={hasPermission ? !hasPermission('inventory', 'ledger', 'print') : false} className={`w-full text-left px-4 py-3 hover:bg-surface-container-low transition-colors font-semibold text-sm rounded-b-xl ${(hasPermission && !hasPermission('inventory', 'ledger', 'print')) ? 'opacity-40 grayscale cursor-not-allowed pointer-events-none' : ''}`}>Export PNG (via Print)</button>
                   </div>
               )}
           </div>
 
-          <button onClick={handlePrint} className="flex items-center gap-2 px-6 py-3 bg-gradient-to-br from-primary to-primary-container rounded-xl font-bold text-white shadow-lg shadow-primary/20 hover:-translate-y-0.5 transition-all">
+          <button onClick={handlePrint} disabled={hasPermission ? !hasPermission('inventory', 'ledger', 'print') : false} className={`flex items-center gap-2 px-6 py-3 bg-gradient-to-br from-primary to-primary-container rounded-xl font-bold text-white shadow-lg shadow-primary/20 hover:-translate-y-0.5 transition-all ${(hasPermission && !hasPermission('inventory', 'ledger', 'print')) ? 'opacity-40 grayscale cursor-not-allowed pointer-events-none' : ''}`}>
             <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 0" }}>print</span>
             <span>Print Ledger</span>
           </button>
@@ -760,7 +763,8 @@ export default function InvLedger({ selectedDepartments = [], onBack }) {
             )}
             <button
                 onClick={openReportStudio}
-                className="flex items-center gap-2 px-6 py-3 bg-gradient-to-br from-primary to-primary-container rounded-xl font-bold text-white shadow-lg shadow-primary/20 hover:-translate-y-0.5 transition-all"
+                disabled={hasPermission ? !hasPermission('inventory', 'ledger', 'print') : false}
+                className={`flex items-center gap-2 px-6 py-3 bg-gradient-to-br from-primary to-primary-container rounded-xl font-bold text-white shadow-lg shadow-primary/20 hover:-translate-y-0.5 transition-all ${(hasPermission && !hasPermission('inventory', 'ledger', 'print')) ? 'opacity-40 grayscale cursor-not-allowed pointer-events-none' : ''}`}
             >
               <span className="material-symbols-outlined text-sm" style={{ fontVariationSettings: "'FILL' 0" }}>print</span>
               <span>Preview / Export Report</span>

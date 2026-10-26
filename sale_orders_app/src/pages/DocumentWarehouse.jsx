@@ -10,7 +10,11 @@ import { searchFiledDocuments } from '../utils/filedDocSearch';
 import { SYSTEM_DOCUMENTS } from '../utils/printSchemaRegistry';
 
 export default function DocumentWarehouse({ insideDashboard = false }) {
-  const { state, setState } = useApp();
+  const { state, setState, hasPermission } = useApp();
+  // Permissions redesign (2026-10-27): Files cabinet action gates.
+  const canCreateBinder = hasPermission ? hasPermission('files', 'cabinet', 'createBinder') : true;
+  const canEditBinder = hasPermission ? hasPermission('files', 'cabinet', 'editBinder') : true;
+  const canDeleteBinder = hasPermission ? hasPermission('files', 'cabinet', 'deleteBinder') : true;
 
   // Stage states: 'browsing' | 'grabbing' | 'opened'
   const [stage, setStage] = useState('browsing');
@@ -272,6 +276,7 @@ export default function DocumentWarehouse({ insideDashboard = false }) {
   // check, 2026-10-25). By the time this handler runs, the user has
   // already confirmed inside the modal.
   const handleDeleteBinder = () => {
+    if (!canDeleteBinder) return; // permissions redesign: Delete Binder off for this user
     if (!editingBinder) return;
     const updated = allCabinetBinders.filter(b => b.id !== editingBinder.id);
     saveBindersToStorage(updated);
@@ -319,6 +324,7 @@ export default function DocumentWarehouse({ insideDashboard = false }) {
     if (stage !== 'browsing') return;
 
     if (isCustomizeMode) {
+      if (!canEditBinder) return; // permissions redesign: Edit Binder off for this user
       setEditingBinder(binder);
       setShowEditModal(true);
       return;
@@ -623,9 +629,10 @@ export default function DocumentWarehouse({ insideDashboard = false }) {
             {stage !== 'opened' && (
               <div className="flex items-center gap-2">
                 {/* Add new binder file button */}
-                <button 
+                <button
                   onClick={() => setShowAddModal(true)}
-                  className="px-3.5 py-1.5 bg-primary hover:bg-primary/95 text-white font-headline font-bold text-xs rounded-xl transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
+                  disabled={!canCreateBinder}
+                  className={`px-3.5 py-1.5 bg-primary hover:bg-primary/95 text-white font-headline font-bold text-xs rounded-xl transition-all shadow-sm flex items-center gap-1.5 cursor-pointer ${!canCreateBinder ? 'opacity-40 grayscale cursor-not-allowed pointer-events-none' : ''}`}
                 >
                   <span className="material-symbols-outlined text-xs">add_box</span>
                   Add File
