@@ -765,7 +765,7 @@ export default function Login() {
                 <span>Protected Enterprise Gateway</span>
               </div>
               <p className={`text-[10px] mt-2 ${textMutedClass}`}>
-                Synthetic Leather Manufacturing ERP
+                Advanced Production, Sales, HR & Finance Management System
               </p>
             </div>
 
