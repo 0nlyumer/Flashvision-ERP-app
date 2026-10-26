@@ -191,6 +191,7 @@ check('advance dead /print navigation removed', !advSrc.includes('`/print?docTyp
 check('advance header button no longer raw window.print', !/onClick=\{\(\) => window\.print\(\)\}/.test(advSrc));
 check('ledger modal has Print Ledger Statement button', ledgerSrc.includes('Print Ledger Statement') && ledgerSrc.includes('LoanLedgerPrintPopup'));
 check('slip popup filed-view default preserved', slipSrc.includes("titleSuffix = 'Filed Print'"));
+check('slip popup: no duplicate serial column (width alignment)', slipSrc.includes('hasSerialCol') && slipSrc.includes("cols[0]?.key === 'serial_no'"));
 check('ledger schema registered (defaults only)', registrySrc.includes('hr_loan_ledger: {'));
 
 console.log(`\n${pass} passed, ${fail} failed`);

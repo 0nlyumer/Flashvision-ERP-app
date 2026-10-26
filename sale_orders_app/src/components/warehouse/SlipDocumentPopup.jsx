@@ -167,12 +167,19 @@ export default function SlipDocumentPopup({ isOpen, onClose, attachment, titleSu
               </div>
             ))}
 
-            {items.length > 0 && (
+            {items.length > 0 && (() => {
+              // When the document schema's first column IS the serial
+              // column, render it alone — a hardcoded extra "Sr #" used to
+              // duplicate it AND shift every PrintLayout column width one
+              // position (request prints final, 2026-10-26).
+              const cols = itemColumns.length ? itemColumns : [{ key: 'name', label: 'Description' }, { key: 'qty', label: 'Qty' }, { key: 'rate', label: 'Rate' }, { key: 'amount', label: 'Amount' }];
+              const hasSerialCol = cols[0]?.key === 'serial_no';
+              return (
               <table className="w-full border-collapse border border-slate-300 text-xs my-4">
                 <thead>
                   <tr className="bg-slate-800 text-white font-bold">
-                    <th className="border border-slate-300 p-2 text-center">Sr #</th>
-                    {(itemColumns.length ? itemColumns : [{ key: 'name', label: 'Description' }, { key: 'qty', label: 'Qty' }, { key: 'rate', label: 'Rate' }, { key: 'amount', label: 'Amount' }]).map((col) => (
+                    {!hasSerialCol && <th className="border border-slate-300 p-2 text-center">Sr #</th>}
+                    {cols.map((col) => (
                       <th key={col.key} className="border border-slate-300 p-2 text-left">{col.label || col.key}</th>
                     ))}
                   </tr>
@@ -180,17 +187,18 @@ export default function SlipDocumentPopup({ isOpen, onClose, attachment, titleSu
                 <tbody>
                   {items.map((item, idx) => (
                     <tr key={idx}>
-                      <td className="border border-slate-300 p-2 text-center">{idx + 1}</td>
-                      {(itemColumns.length ? itemColumns : [{ key: 'name' }, { key: 'qty' }, { key: 'rate' }, { key: 'amount' }]).map((col) => (
+                      {!hasSerialCol && <td className="border border-slate-300 p-2 text-center">{idx + 1}</td>}
+                      {cols.map((col) => (
                         <td key={col.key} className="border border-slate-300 p-2">
-                          {formatValue(item?.[col.key] ?? item?.[col.field])}
+                          {formatValue(col.key === 'serial_no' ? (item?.[col.key] ?? idx + 1) : (item?.[col.key] ?? item?.[col.field]))}
                         </td>
                       ))}
                     </tr>
                   ))}
                 </tbody>
               </table>
-            )}
+              );
+            })()}
 
             {metaFields.length === 0 && longTexts.length === 0 && items.length === 0 && (
               <div className="my-6 text-center text-xs font-semibold text-slate-500">
