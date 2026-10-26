@@ -8,6 +8,7 @@ import FlashAMConfig, { EmployeeMultiSelect, Toggle as SettingsToggle } from './
 import { normalizeSundayCutRules } from '../../utils/sundayCut';
 import BatchLaborConfig from './BatchLaborConfig';
 import { loadHrDepartments } from '../../utils/hrDepartments';
+import { getInitialDutySettings, normalizeDutySettings } from '../../utils/dutySettings';
 
 
 
@@ -285,59 +286,21 @@ export default function HRSettings({ isMobile }) {
   const [batchOtMultiplier, setBatchOtMultiplier] = useState(1.0);
 
   const [dutySettings, setDutySettings] = useState(() => {
-    const defaultDuty = {
-      standardHours: 8,
-      gracePeriodMinutes: 15,
-      halfDayThresholdHours: 4,
-      dutyHoursAdjustable: true,
-      divisionDutyHours: {},
-      departmentDutyHours: {},
-      employeeDutyHours: {},
-      overtimeCalculation: {
-        rateMultiplier: 1.0,
-        weekendMultiplier: 1.0,
-        holidayMultiplier: 1.0,
-        type: 'formula'
-      },
-      employeeOvertimeMultipliers: {},
-      attendanceStatusRules: {
-        present: { label: 'Present', urduLabel: 'حاضر', isPaid: true, code: 'P', color: 'emerald', description: 'Standard duty attended by staff (100% Paid)' },
-        absent: { label: 'Absent', urduLabel: 'غیر حاضر', isPaid: false, code: 'ABS', color: 'rose', description: 'Unapproved absence without pay (Deducted from salary)' },
-        leave: { label: 'Leave', urduLabel: 'رخصت', isPaid: true, code: 'L', color: 'amber', description: 'Approved employee leave request (Paid / Unpaid)' },
-        holiday: { label: 'Holiday', urduLabel: 'تعطیل', isPaid: true, code: 'HOL', color: 'purple', description: 'Gazetted public holiday (Paid by default)' },
-        offday: { label: 'Off Day', urduLabel: 'ہفتہ وار چھٹی (Sunday)', isPaid: true, code: 'OFF', color: 'indigo', description: 'Sunday & scheduled weekly off days (Paid by default)' },
-        halfday: { label: 'Half Day', urduLabel: 'نصف دن', isPaid: true, paidRatio: 0.5, code: 'HLD', color: 'cyan', description: 'Half working day (50% pay ratio)' }
-      },
-      sundayCutRules: normalizeSundayCutRules(null),
-      shifts: [
-        { id: 1, name: 'GENERAL SHIFT', startTime: '09:00', endTime: '17:00', hours: 8, status: 'Active' },
-        { id: 2, name: 'MORNING SHIFT', startTime: '06:00', endTime: '14:00', hours: 8, status: 'Active' },
-        { id: 3, name: 'EVENING SHIFT', startTime: '14:00', endTime: '22:00', hours: 8, status: 'Active' },
-        { id: 4, name: 'NIGHT SHIFT', startTime: '22:00', endTime: '06:00', hours: 8, status: 'Active' }
-      ]
-    };
+    // SERVER RULE (Omer, 2026-10-26): duty settings are server-saved
+    // (app_config 'hrDutySettings'); AppContext loads the server copy into
+    // state at login and writes every saveDutySettings change through.
+    // Precedence here: server state → localStorage read cache → defaults.
+    // Defaults + normalization live in utils/dutySettings (one source).
+    const fromServer = normalizeDutySettings(state?.hr_duty_settings);
+    if (fromServer) return fromServer;
     try {
       const saved = localStorage.getItem('hr_duty_settings');
       if (saved) {
-        const parsed = JSON.parse(saved);
-        if (!parsed.overtimeCalculation) {
-          parsed.overtimeCalculation = defaultDuty.overtimeCalculation;
-        }
-        if (!parsed.attendanceStatusRules) {
-          parsed.attendanceStatusRules = defaultDuty.attendanceStatusRules;
-        } else {
-          parsed.attendanceStatusRules = {
-            ...defaultDuty.attendanceStatusRules,
-            ...parsed.attendanceStatusRules
-          };
-        }
-        // Sunday Cut Rules: older saved settings gain the block with
-        // both rules disabled (no behaviour change until configured).
-        parsed.sundayCutRules = normalizeSundayCutRules(parsed.sundayCutRules);
-        return parsed;
+        const parsed = normalizeDutySettings(JSON.parse(saved));
+        if (parsed) return parsed;
       }
     } catch (e) {}
-    return defaultDuty;
+    return getInitialDutySettings();
   });
 
   function getEmpEffectiveDutyHours(emp) {

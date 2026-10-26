@@ -5,8 +5,12 @@ export default function SalaryAllowanceConfig({ isMobile, onBack }) {
   const { state, setCollection, currencySymbol } = useApp() || {};
   const currSym = currencySymbol || state?.adminSetup?.baseCurrency?.match(/\(([^)]+)\)/)?.[1] || 'Rs';
 
-  // Initial State with localStorage & AppContext fallback
+  // Initial State — SERVER RULE (2026-10-26): the server copy in state
+  // (app_config 'hrSalaryAllowanceConfig', loaded by AppContext at login)
+  // wins; localStorage is only the read cache payrollCalc uses.
   const [config, setConfig] = useState(() => {
+    const fromServer = state?.hr_salary_allowance_config;
+    if (Array.isArray(fromServer) && fromServer.length) return fromServer[fromServer.length - 1];
     try {
       const saved = localStorage.getItem('hr_salary_allowance_config');
       if (saved) return JSON.parse(saved);
@@ -59,6 +63,9 @@ export default function SalaryAllowanceConfig({ isMobile, onBack }) {
   const [allowanceDepartmentFilter, setAllowanceDepartmentFilter] = useState('ALL');
   const [allowanceSearchQuery, setAllowanceSearchQuery] = useState('');
   const [employeeAllowanceMap, setEmployeeAllowanceMap] = useState(() => {
+    // SERVER RULE (2026-10-26): server copy in state wins over the cache.
+    const fromServer = state?.hr_employee_allowance_map;
+    if (fromServer && typeof fromServer === 'object' && Object.keys(fromServer).length) return fromServer;
     try {
       const saved = localStorage.getItem('hr_employee_allowance_map');
       if (saved) return JSON.parse(saved);
@@ -128,6 +135,11 @@ export default function SalaryAllowanceConfig({ isMobile, onBack }) {
   const handleSaveEmployeeAllowances = () => {
     try {
       localStorage.setItem('hr_employee_allowance_map', JSON.stringify(employeeAllowanceMap));
+      // SERVER RULE (2026-10-26): also put the map in state — AppContext
+      // writes it through to app_config 'hrSalaryAllowanceConfig'.
+      if (setCollection) {
+        setCollection('hr_employee_allowance_map', employeeAllowanceMap);
+      }
       if (setCollection && state?.hr_employees_list) {
         const updatedEmployees = state.hr_employees_list.map(emp => ({
           ...emp,

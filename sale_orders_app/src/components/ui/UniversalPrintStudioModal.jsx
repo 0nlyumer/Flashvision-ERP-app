@@ -114,11 +114,17 @@ function UniversalPrintStudioModalInner({
       localSaved = item ? JSON.parse(item) : null;
     } catch (e) { localSaved = null; }
     const stateLayout = state?.adminSetup?.printSettings?.documentLayouts?.[documentType];
+    // SERVER RULE (Omer, 2026-10-26): the server layout (print_layout_settings
+    // / adminSetup.printSettings, one source of truth) WINS over the
+    // per-browser fv_print_layout_<doc> copy — that copy is only a fallback
+    // cache for when the server has nothing for this document. (Before this
+    // fix a stale local copy silently overrode newer server layouts, e.g.
+    // the Premium Dark apply, until the user re-saved from the designer.)
     const initial = {
       ...DEFAULT_LAYOUT_SETTINGS,
       ...defaultSchema,
-      ...(stateLayout || {}),
-      ...(localSaved || {})
+      ...(localSaved || {}),
+      ...(stateLayout || {})
     };
     return discoverDocumentSchema(documentType, record, initial, state);
   };

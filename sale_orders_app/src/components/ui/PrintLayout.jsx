@@ -37,7 +37,9 @@ export default function PrintLayout({
     } catch(e) { return null; }
   })();
 
-  const layoutConfig = savedLocalConfig || printSettings.documentLayouts?.[activeDocType] || fallbackSchema;
+  // SERVER RULE (Omer, 2026-10-26): the server layout wins; the per-browser
+  // fv_print_layout_<doc> copy is only a fallback cache.
+  const layoutConfig = printSettings.documentLayouts?.[activeDocType] || savedLocalConfig || fallbackSchema;
 
   // Layout Properties — sheet model (2026-10-24): @page margin is 0 and
   // the margins live as padding on this sheet, so the on-screen layout and

@@ -12,12 +12,13 @@ import {
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { applyTheme } from '../utils/theme';
 import { supabase } from '../utils/supabaseClient';
-import { STEP1_ENTITY_TABLES, loadStep1EntitiesFromTables, syncEntityDiffToTable, recordKeyWithFallback, loadAdminSetupFromTable, syncAdminSetupToTable, loadFGComboConfigFromTable, syncFGComboConfigToTable, loadFlashAmConfigFromTable, syncFlashAmConfigToTable, loadSalaryPrintSettingsFromTable, syncSalaryPrintSettingsToTable, loadPayrollAccountMappingFromTable, syncPayrollAccountMappingToTable, loadCategoryPrefixesFromTable, syncCategoryPrefixesToTable, loadScalarsFromTable, syncScalarsToTable, loadCountersFromTable, syncCountersToTable, loadBatchOutputTypesFromTable, syncBatchOutputTypesToTable, loadBatchLaborConfigFromTable, syncBatchLaborConfigToTable, loadLoginThemeSettingsFromTable, syncLoginThemeSettingsToTable } from '../utils/entityTables';
+import { STEP1_ENTITY_TABLES, loadStep1EntitiesFromTables, syncEntityDiffToTable, recordKeyWithFallback, loadAdminSetupFromTable, syncAdminSetupToTable, loadFGComboConfigFromTable, syncFGComboConfigToTable, loadFlashAmConfigFromTable, syncFlashAmConfigToTable, loadSalaryPrintSettingsFromTable, syncSalaryPrintSettingsToTable, loadPayrollAccountMappingFromTable, syncPayrollAccountMappingToTable, loadCategoryPrefixesFromTable, syncCategoryPrefixesToTable, loadScalarsFromTable, syncScalarsToTable, loadCountersFromTable, syncCountersToTable, loadBatchOutputTypesFromTable, syncBatchOutputTypesToTable, loadBatchLaborConfigFromTable, syncBatchLaborConfigToTable, loadLoginThemeSettingsFromTable, syncLoginThemeSettingsToTable, loadDutySettingsFromTable, syncDutySettingsToTable, loadSalaryAllowanceConfigFromTable, syncSalaryAllowanceConfigToTable } from '../utils/entityTables';
 import { formatLineCode, maxLineCodeNumber } from '../utils/itemCodes';
 import { getInitialFGConfig, saveFGConfig, normalizeFGConfig } from '../utils/fgCombinationUtils';
 import { getInitialFlashAmConfig, normalizeFlashAmConfig } from '../utils/flashAmConfig';
 import { getInitialLoginThemeSettings, normalizeLoginThemeSettings } from '../utils/loginThemes';
 import { getInitialSalaryPrintSettings, normalizeSalaryPrintSettings } from '../utils/salaryPrintSettings';
+import { getInitialDutySettings, normalizeDutySettings } from '../utils/dutySettings';
 import { getInitialPayrollMappings, normalizePayrollMappings } from '../utils/payrollAccountMapping';
 import { getInitialBatchLaborConfig, normalizeBatchLaborConfig } from '../utils/batchLaborCost';
 import { DEFAULT_CHART_OF_ACCOUNTS } from '../utils/financeEngine';
@@ -41,6 +42,7 @@ const initialMockState = {
   flash_am_config: getInitialFlashAmConfig(),
   login_theme_settings: getInitialLoginThemeSettings(),
   salary_print_settings: getInitialSalaryPrintSettings(),
+  hr_duty_settings: getInitialDutySettings(),
   payroll_account_mapping: getInitialPayrollMappings(),
   batch_labor_config: getInitialBatchLaborConfig(),
   customers: [],
@@ -610,6 +612,14 @@ const getSanitizedSyncState = (stateObj) => {
   // app_config (key 'loginThemeSettings', table copy wins on load) — never
   // in the blob.
   delete cleanState.login_theme_settings;
+  // SERVER RULE (2026-10-26): HR duty settings live ONLY in app_config
+  // (key 'hrDutySettings', table copy wins on load) — never in the blob.
+  delete cleanState.hr_duty_settings;
+  // SERVER RULE (2026-10-26): the Salary & Allowance config + per-employee
+  // allowance map live ONLY in app_config (key 'hrSalaryAllowanceConfig',
+  // table copy wins on load) — never in the blob.
+  delete cleanState.hr_salary_allowance_config;
+  delete cleanState.hr_employee_allowance_map;
   if (!Array.isArray(cleanState.documentWarehouseBinders)) {
     cleanState.documentWarehouseBinders = [];
   }
@@ -679,6 +689,10 @@ export const AppProvider = ({ children }) => {
   const loginThemeSettingsSnapshotRef = useRef(null);
   const salaryPrintSettingsLoadedRef = useRef(false);
   const salaryPrintSettingsSnapshotRef = useRef(null);
+  const dutySettingsLoadedRef = useRef(false);
+  const dutySettingsSnapshotRef = useRef(null);
+  const salaryAllowanceLoadedRef = useRef(false);
+  const salaryAllowanceSnapshotRef = useRef(null);
   const payrollMappingLoadedRef = useRef(false);
   const payrollMappingSnapshotRef = useRef(null);
   const categoryPrefixesLoadedRef = useRef(false);
@@ -1464,6 +1478,28 @@ export const AppProvider = ({ children }) => {
         const batchOutputTypesFromTable = await loadBatchOutputTypesFromTable();
         const batchLaborConfigFromTable = await loadBatchLaborConfigFromTable();
         const loginThemeSettingsFromTable = await loadLoginThemeSettingsFromTable();
+        const dutySettingsFromTable = await loadDutySettingsFromTable();
+        const salaryAllowanceFromTable = await loadSalaryAllowanceConfigFromTable();
+        // SERVER RULE migration seeds (2026-10-26): when the server has no
+        // copy yet, a browser's localStorage cache is the one-time upload
+        // source — read it here so the apply blocks below can seed state
+        // (and the write-through effects then persist it to app_config).
+        const dutySettingsLocalSeed = (() => {
+          try {
+            const raw = localStorage.getItem('hr_duty_settings');
+            return raw ? normalizeDutySettings(JSON.parse(raw)) : null;
+          } catch (_) { return null; }
+        })();
+        const salaryAllowanceLocalSeed = (() => {
+          try {
+            const cfgRaw = localStorage.getItem('hr_salary_allowance_config');
+            const mapRaw = localStorage.getItem('hr_employee_allowance_map');
+            const config = cfgRaw ? JSON.parse(cfgRaw) : null;
+            const employeeAllowanceMap = mapRaw ? JSON.parse(mapRaw) : null;
+            if (!config && !employeeAllowanceMap) return null;
+            return { config: config || null, employeeAllowanceMap: employeeAllowanceMap || {} };
+          } catch (_) { return null; }
+        })();
         setState(prev => {
           const next = { ...prev };
           const seedSource = {};
@@ -1598,6 +1634,50 @@ export const AppProvider = ({ children }) => {
             loginThemeSettingsSnapshotRef.current = null;
           }
           loginThemeSettingsLoadedRef.current = true;
+          // SERVER RULE — HR DUTY SETTINGS (2026-10-26): the app_config copy
+          // (key 'hrDutySettings') wins on load; when the table has none yet,
+          // the browser's localStorage cache uploads once (migration), else
+          // the defaults seed state — in both seed cases the snapshot stays
+          // null so the write-through effect persists the seed to the table.
+          // The localStorage cache is refreshed from the winning value.
+          {
+            const fromTableDuty = normalizeDutySettings(dutySettingsFromTable);
+            if (fromTableDuty) {
+              next.hr_duty_settings = fromTableDuty;
+              dutySettingsSnapshotRef.current = fromTableDuty;
+              try { localStorage.setItem('hr_duty_settings', JSON.stringify(fromTableDuty)); } catch (_) {}
+            } else if (dutySettingsLocalSeed) {
+              next.hr_duty_settings = dutySettingsLocalSeed;
+              dutySettingsSnapshotRef.current = null;
+            } else {
+              next.hr_duty_settings = getInitialDutySettings();
+              dutySettingsSnapshotRef.current = null;
+            }
+            dutySettingsLoadedRef.current = true;
+          }
+          // SERVER RULE — SALARY & ALLOWANCE CONFIG (2026-10-26): the
+          // app_config copy (key 'hrSalaryAllowanceConfig') wins on load and
+          // is mirrored into state + the localStorage caches payrollCalc
+          // reads; when the table has none yet, the local caches upload once
+          // via the write-through effect (snapshot stays null).
+          {
+            if (salaryAllowanceFromTable) {
+              const cfg = salaryAllowanceFromTable.config || null;
+              const map = salaryAllowanceFromTable.employeeAllowanceMap || {};
+              next.hr_salary_allowance_config = cfg ? [cfg] : [];
+              next.hr_employee_allowance_map = map;
+              salaryAllowanceSnapshotRef.current = JSON.stringify({ config: cfg, employeeAllowanceMap: map });
+              try {
+                if (cfg) localStorage.setItem('hr_salary_allowance_config', JSON.stringify(cfg));
+                localStorage.setItem('hr_employee_allowance_map', JSON.stringify(map));
+              } catch (_) {}
+            } else if (salaryAllowanceLocalSeed) {
+              next.hr_salary_allowance_config = salaryAllowanceLocalSeed.config ? [salaryAllowanceLocalSeed.config] : [];
+              next.hr_employee_allowance_map = salaryAllowanceLocalSeed.employeeAllowanceMap || {};
+              salaryAllowanceSnapshotRef.current = null;
+            }
+            salaryAllowanceLoadedRef.current = true;
+          }
           seedSnapshots(seedSource);
           return next;
         });
@@ -5104,6 +5184,7 @@ export const AppProvider = ({ children }) => {
   const adminSetupForSync = state.adminSetup;
   const fgComboConfigForSync = state.fg_combinations_config;
   const flashAmConfigForSync = state.flash_am_config;
+  const dutySettingsForSync = state.hr_duty_settings;
   const salaryPrintSettingsForSync = state.salary_print_settings;
   const payrollMappingForSync = state.payroll_account_mapping;
   const categoryPrefixesForSync = state.categoryPrefixes;
@@ -5237,6 +5318,43 @@ export const AppProvider = ({ children }) => {
     }, 250);
     return () => clearTimeout(timer);
   }, [payrollMappingForSync]);
+
+  // SERVER RULE — HR DUTY SETTINGS: write-through to app_config on change
+  // (same durable pattern as flashAmConfig) + refresh the localStorage read
+  // cache. A null snapshot means "table had no copy at load", so the first
+  // effect run seeds it (localStorage migration or defaults).
+  useEffect(() => {
+    if (!dutySettingsLoadedRef.current) return;
+    if (!dutySettingsForSync || typeof dutySettingsForSync !== 'object') return;
+    if (dutySettingsSnapshotRef.current === dutySettingsForSync) return;
+    const timer = setTimeout(() => {
+      dutySettingsSnapshotRef.current = dutySettingsForSync;
+      syncDutySettingsToTable(dutySettingsForSync);
+      try { localStorage.setItem('hr_duty_settings', JSON.stringify(dutySettingsForSync)); } catch (_) {}
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [dutySettingsForSync]);
+
+  // SERVER RULE — SALARY & ALLOWANCE CONFIG: write-through to app_config
+  // whenever the saved config or the per-employee allowance map changes in
+  // state. Snapshot is the payload JSON, so only real changes write.
+  useEffect(() => {
+    if (!salaryAllowanceLoadedRef.current) return;
+    const cfgArr = state.hr_salary_allowance_config;
+    const config = Array.isArray(cfgArr) && cfgArr.length ? cfgArr[cfgArr.length - 1] : null;
+    const map = state.hr_employee_allowance_map;
+    const hasMap = map && typeof map === 'object' && !Array.isArray(map);
+    if (!config && !hasMap) return;
+    const payload = { config: config || null, employeeAllowanceMap: hasMap ? map : {} };
+    const json = JSON.stringify(payload);
+    if (salaryAllowanceSnapshotRef.current === json) return;
+    const timer = setTimeout(() => {
+      salaryAllowanceSnapshotRef.current = json;
+      syncSalaryAllowanceConfigToTable(payload);
+    }, 250);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.hr_salary_allowance_config, state.hr_employee_allowance_map]);
 
   // PHASE C STEP 6: categoryPrefixes ride in app_config like adminSetup —
   // the table copy wins on load; changes write through (debounced).

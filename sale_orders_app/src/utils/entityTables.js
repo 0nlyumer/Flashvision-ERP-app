@@ -730,3 +730,72 @@ export const syncBatchLaborConfigToTable = async (config) => {
     console.warn('[EntityTables] batchLaborConfig write-through failed:', err?.message || err);
   }
 };
+
+// --- HR Duty Settings (app_config) — SERVER RULE, 2026-10-26 ---------------
+// Duty settings (incl. Sunday Cut rules) used to persist ONLY in each
+// browser's localStorage ('hr_duty_settings'). Per Omer's server rule they
+// now ride in app_config under key 'hrDutySettings', mirroring
+// flashAmConfig: the table copy wins on load, localStorage is only a cache
+// refreshed from the server value, and changes write through.
+
+export const loadDutySettingsFromTable = async () => {
+  try {
+    const { data, error } = await supabase
+      .from('app_config')
+      .select('data')
+      .eq('key', 'hrDutySettings')
+      .maybeSingle();
+    if (error || !data || typeof data.data !== 'object' || data.data === null) return null;
+    return data.data;
+  } catch (_) {
+    return null;
+  }
+};
+
+export const syncDutySettingsToTable = async (settings) => {
+  if (!settings || typeof settings !== 'object') return;
+  try {
+    const { error } = await supabase
+      .from('app_config')
+      .upsert({ key: 'hrDutySettings', data: settings, updated_at: new Date().toISOString() }, { onConflict: 'key' });
+    if (error) throw error;
+  } catch (err) {
+    console.warn('[EntityTables] hrDutySettings write-through failed:', err?.message || err);
+  }
+};
+
+// --- HR Salary & Allowance Config (app_config) — SERVER RULE, 2026-10-26 ---
+// The Salary & Allowance configuration (payrollCalc reads it, plus the
+// per-employee allowance map) used to persist ONLY in localStorage
+// ('hr_salary_allowance_config' / 'hr_employee_allowance_map'). It now rides
+// in app_config under key 'hrSalaryAllowanceConfig' as one object
+// { config, employeeAllowanceMap }: the table copy wins on load and is
+// mirrored back into the localStorage caches (payrollCalc keeps reading the
+// cache, which is refreshed from the server at every login), and saved
+// changes write through.
+
+export const loadSalaryAllowanceConfigFromTable = async () => {
+  try {
+    const { data, error } = await supabase
+      .from('app_config')
+      .select('data')
+      .eq('key', 'hrSalaryAllowanceConfig')
+      .maybeSingle();
+    if (error || !data || typeof data.data !== 'object' || data.data === null) return null;
+    return data.data;
+  } catch (_) {
+    return null;
+  }
+};
+
+export const syncSalaryAllowanceConfigToTable = async (payload) => {
+  if (!payload || typeof payload !== 'object') return;
+  try {
+    const { error } = await supabase
+      .from('app_config')
+      .upsert({ key: 'hrSalaryAllowanceConfig', data: payload, updated_at: new Date().toISOString() }, { onConflict: 'key' });
+    if (error) throw error;
+  } catch (err) {
+    console.warn('[EntityTables] hrSalaryAllowanceConfig write-through failed:', err?.message || err);
+  }
+};

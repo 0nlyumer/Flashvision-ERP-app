@@ -247,10 +247,18 @@ const hrGen = read('src/components/hr/HRSalaryGeneration.jsx');
 const flashCfg = read('src/components/hr/FlashAMConfig.jsx');
 const helper = read('src/utils/sundayCut.js');
 
+// Part 4 (2026-10-26): the duty-settings defaults + normalization moved to
+// utils/dutySettings.js (single source for the server-save pattern); the
+// contract asserted is unchanged — defaults carry the block (via
+// getInitialDutySettings) and the load path normalizes it (older saves gain
+// it via normalizeDutySettings).
+const dutySettingsUtil = read('src/utils/dutySettings.js');
 check('HR Settings default duty settings carry the sundayCutRules block',
-  hrSettings.includes('sundayCutRules: normalizeSundayCutRules(null)'));
+  dutySettingsUtil.includes('out.sundayCutRules = normalizeSundayCutRules(null)')
+  && hrSettings.includes('getInitialDutySettings()'));
 check('HR Settings load path merges/normalizes the block (older saves gain it)',
-  hrSettings.includes('parsed.sundayCutRules = normalizeSundayCutRules(parsed.sundayCutRules)'));
+  dutySettingsUtil.includes('out.sundayCutRules = normalizeSundayCutRules(raw.sundayCutRules)')
+  && hrSettings.includes('normalizeDutySettings(state?.hr_duty_settings)'));
 check('HR Settings renders the Sunday Cut Rules card in the status_rules tab',
   hrSettings.includes('Weekly Off (Sunday) Cut Rules') && hrSettings.includes('renderSundayCutRulesCard()'));
 check('HR Settings note mentions Sunday Cut Rules', hrSettings.includes('Sundays can be cut for selected employees'));
