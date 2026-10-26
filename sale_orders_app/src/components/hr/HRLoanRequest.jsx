@@ -1,5 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
+import HRRequestPrintPopup from './HRRequestPrintPopup';
+import { buildLoanRequestPrintRecord } from '../../utils/hrPrintRecords';
 
 export default function HRLoanRequest({ isMobile }) {
   const { state, setCollection, startRoutingWorkflow, currencySymbol } = useApp();
@@ -36,6 +38,7 @@ export default function HRLoanRequest({ isMobile }) {
   // Toast alert & status messages
   const [toastMessage, setToastMessage] = useState('');
   const [selectedRequestForDetail, setSelectedRequestForDetail] = useState(null);
+  const [printingRequest, setPrintingRequest] = useState(null);
   const [statusTabFilter, setStatusTabFilter] = useState('All');
   const [departmentFilter, setDepartmentFilter] = useState('ALL');
   const [divisionFilter, setDivisionFilter] = useState('ALL');
@@ -588,6 +591,13 @@ export default function HRLoanRequest({ isMobile }) {
                         </td>
                         <td className="p-4 text-right">
                           <div className="flex items-center justify-end gap-1">
+                            <button
+                              onClick={() => setPrintingRequest(req)}
+                              className="p-1.5 hover:bg-primary/10 rounded-lg text-primary transition-colors cursor-pointer"
+                              title="Print Loan Slip"
+                            >
+                              <span className="material-symbols-outlined text-[18px]">print</span>
+                            </button>
                             <button 
                               onClick={() => setSelectedRequestForDetail(req)}
                               className="p-1.5 hover:bg-primary/10 rounded-lg text-primary transition-colors cursor-pointer"
@@ -678,7 +688,14 @@ export default function HRLoanRequest({ isMobile }) {
               )}
             </div>
 
-            <div className="p-4 bg-surface-container-low/50 border-t border-outline-variant/10 flex justify-end items-center">
+            <div className="p-4 bg-surface-container-low/50 border-t border-outline-variant/10 flex justify-end items-center gap-2">
+              <button
+                onClick={() => setPrintingRequest(selectedRequestForDetail)}
+                className="bg-surface-container-high text-on-surface px-5 py-2 rounded-xl text-xs font-bold hover:bg-surface-container-highest transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <span className="material-symbols-outlined text-[16px]">print</span>
+                Print Loan Slip
+              </button>
               <button
                 onClick={() => setSelectedRequestForDetail(null)}
                 className="bg-primary text-on-primary px-5 py-2 rounded-xl text-xs font-bold hover:bg-primary-container transition-all cursor-pointer"
@@ -690,6 +707,15 @@ export default function HRLoanRequest({ isMobile }) {
           </div>
         </div>
       )}
+
+      {/* Print — shared slip popup (Print Settings design for hr_loan_request) */}
+      <HRRequestPrintPopup
+        isOpen={!!printingRequest}
+        onClose={() => setPrintingRequest(null)}
+        docType="hr_loan_request"
+        record={printingRequest ? buildLoanRequestPrintRecord(printingRequest) : null}
+        sourceRecord={printingRequest}
+      />
 
     </div>
   );

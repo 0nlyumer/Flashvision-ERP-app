@@ -26,6 +26,23 @@ const FIELD_ALIASES = {
   date: ['requestDate', 'createdAt'],
   customerName: ['customer', 'partyName'],
   amount: ['totalAmount', 'netAmount', 'total'],
+  // HR raw-record keys (request prints final, 2026-10-26): the HR modules'
+  // records carry camelCase fields while the Print Settings schemas name
+  // them snake_case — these aliases let a raw record resolve its schema
+  // fields in the filed view exactly as the in-module print does.
+  emp_name: ['employeeName'],
+  employee_name: ['employeeName'],
+  emp_id: ['employeeId'],
+  employee_id: ['employeeId'],
+  leave_id: ['id'],
+  request_id: ['id'],
+  ot_id: ['id'],
+  ledger_id: ['id'],
+  loan_type: ['type'],
+  loan_amount: ['amount'],
+  advance_amount: ['amount'],
+  repayment_term: ['termMonths'],
+  date_applied: ['dateApplied'],
 };
 
 const LONG_TEXT_KEYS = ['reason', 'description', 'remarks', 'notes', 'note', 'purpose', 'details_text'];
@@ -50,7 +67,7 @@ const formatValue = (value) => {
   return String(value);
 };
 
-export default function SlipDocumentPopup({ isOpen, onClose, attachment }) {
+export default function SlipDocumentPopup({ isOpen, onClose, attachment, titleSuffix = 'Filed Print' }) {
   const docType = attachment?.docType || null;
   const record = attachment?.studioRecord || null;
 
@@ -94,7 +111,7 @@ export default function SlipDocumentPopup({ isOpen, onClose, attachment }) {
         <div className="p-4 border-b border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/[0.02] shrink-0 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span className="material-symbols-outlined text-xl text-indigo-600 dark:text-indigo-400">print</span>
-            <span className="font-bold text-sm">{docName} — Filed Print</span>
+            <span className="font-bold text-sm">{docName} — {titleSuffix}</span>
             {attachment.viewSource === 'live' && (
               <span className="px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-500/30 text-[9px] font-black uppercase tracking-wider">
                 Live version

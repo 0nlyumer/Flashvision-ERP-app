@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
+import HRRequestPrintPopup from './HRRequestPrintPopup';
+import { buildLeaveRequestPrintRecord } from '../../utils/hrPrintRecords';
 
 export default function HRLeaveRequest({ isMobile }) {
   const { state, setCollection, startRoutingWorkflow } = useApp();
@@ -24,6 +26,7 @@ export default function HRLeaveRequest({ isMobile }) {
   // can be edited and deleted from Leave History. Delete uses the in-app
   // confirmation modal below — never window.confirm (known live failure
   // pattern in this codebase).
+  const [printingRequest, setPrintingRequest] = useState(null);
   const [editingRequest, setEditingRequest] = useState(null);
   const [editLeaveType, setEditLeaveType] = useState('');
   const [editStartDate, setEditStartDate] = useState('');
@@ -628,6 +631,14 @@ export default function HRLeaveRequest({ isMobile }) {
                           )}
                           <button
                             type="button"
+                            onClick={() => setPrintingRequest(req)}
+                            title="Print leave request form"
+                            className="p-1.5 rounded-lg text-slate-500 hover:text-primary hover:bg-primary/10 transition-colors cursor-pointer"
+                          >
+                            <span className="material-symbols-outlined text-[18px]">print</span>
+                          </button>
+                          <button
+                            type="button"
                             onClick={() => openEditRequest(req)}
                             title="Edit leave request"
                             className="p-1.5 rounded-lg text-primary hover:bg-primary/10 transition-colors cursor-pointer"
@@ -653,6 +664,15 @@ export default function HRLeaveRequest({ isMobile }) {
         </section>
 
       </div>
+
+      {/* Print — shared slip popup (Print Settings design for hr_leave_request) */}
+      <HRRequestPrintPopup
+        isOpen={!!printingRequest}
+        onClose={() => setPrintingRequest(null)}
+        docType="hr_leave_request"
+        record={printingRequest ? buildLeaveRequestPrintRecord(printingRequest, state.hr_employees_list || []) : null}
+        sourceRecord={printingRequest}
+      />
 
       {/* Edit Leave Request Modal — same fields + validation as the form */}
       {editingRequest && (

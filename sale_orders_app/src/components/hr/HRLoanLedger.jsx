@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useNavigate } from 'react-router-dom';
+import LoanLedgerPrintPopup from './LoanLedgerPrintPopup';
 
 export default function HRLoanLedger({ isMobile }) {
   const { state, setCollection, currencySymbol } = useApp();
@@ -12,6 +13,7 @@ export default function HRLoanLedger({ isMobile }) {
   const [departmentFilter, setDepartmentFilter] = useState('ALL');
   const [divisionFilter, setDivisionFilter] = useState('ALL');
   const [selectedLedgerItem, setSelectedLedgerItem] = useState(null);
+  const [showLedgerPrint, setShowLedgerPrint] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
 
   // Manual Repayment State
@@ -418,12 +420,22 @@ export default function HRLoanLedger({ isMobile }) {
                   {selectedLedgerItem.employeeName} ({selectedLedgerItem.employeeId}) • {selectedLedgerItem.department}
                 </p>
               </div>
-              <button 
-                onClick={() => setSelectedLedgerItem(null)}
-                className="text-on-surface-variant hover:bg-surface-container-high p-1 rounded-lg transition-colors flex items-center justify-center cursor-pointer"
-              >
-                <span className="material-symbols-outlined text-[20px]">close</span>
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setShowLedgerPrint(true)}
+                  className="px-3 py-1.5 bg-primary text-white rounded-lg text-xs font-bold hover:bg-primary-container transition-all cursor-pointer flex items-center gap-1.5"
+                  title="Print Ledger Statement"
+                >
+                  <span className="material-symbols-outlined text-[16px]">print</span>
+                  Print Ledger Statement
+                </button>
+                <button 
+                  onClick={() => setSelectedLedgerItem(null)}
+                  className="text-on-surface-variant hover:bg-surface-container-high p-1 rounded-lg transition-colors flex items-center justify-center cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-[20px]">close</span>
+                </button>
+              </div>
             </div>
 
             {/* Modal Scrollable Content */}
@@ -633,6 +645,14 @@ export default function HRLoanLedger({ isMobile }) {
           </div>
         </div>
       )}
+
+      {/* Print — Loan Ledger Statement (shared slip renderer; the statement
+          states the salary-deduction truth per payroll's own resolution) */}
+      <LoanLedgerPrintPopup
+        isOpen={showLedgerPrint && !!selectedLedgerItem}
+        onClose={() => setShowLedgerPrint(false)}
+        ledgerItem={selectedLedgerItem}
+      />
 
     </div>
   );

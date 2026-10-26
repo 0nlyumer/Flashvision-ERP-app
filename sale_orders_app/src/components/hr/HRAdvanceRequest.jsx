@@ -1,12 +1,12 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
-import { useNavigate } from 'react-router-dom';
 import { useDialog } from '../../context/DialogContext';
+import HRRequestPrintPopup from './HRRequestPrintPopup';
+import { buildAdvanceRequestPrintRecord } from '../../utils/hrPrintRecords';
 
 export default function HRAdvanceRequest({ isMobile }) {
   const { state, setCollection, startRoutingWorkflow, currencySymbol, currentUser } = useApp();
   const { appAlert } = useDialog();
-  const navigate = useNavigate();
   const currSym = currencySymbol || 'Rs.';
 
   // Employees list from global state
@@ -35,6 +35,7 @@ export default function HRAdvanceRequest({ isMobile }) {
   const [statusTabFilter, setStatusTabFilter] = useState('All');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedRequestForDetail, setSelectedRequestForDetail] = useState(null);
+  const [printingRequest, setPrintingRequest] = useState(null);
   const [toastMessage, setToastMessage] = useState('');
 
   // Selected Employee Record
@@ -236,8 +237,12 @@ export default function HRAdvanceRequest({ isMobile }) {
     setAttachedFile(null);
   };
 
+  // Print — shared slip popup (request prints final, 2026-10-26). This
+  // handler previously navigated to a '/print' route that does not exist
+  // in the router, so every Advance print button landed on the route
+  // error boundary.
   const handlePrintRequest = (req) => {
-    navigate(`/print?docType=hr_advance_request&id=${encodeURIComponent(req.id)}`);
+    if (req) setPrintingRequest(req);
   };
 
   return (
@@ -268,10 +273,12 @@ export default function HRAdvanceRequest({ isMobile }) {
           </div>
 
           <div className="flex items-center gap-3 w-full md:w-auto">
-            <button 
+            <button
               type="button"
-              onClick={() => window.print()}
-              className="flex-1 md:flex-none primary-gradient text-on-primary px-5 py-2.5 rounded-xl text-xs font-bold shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2"
+              onClick={() => handlePrintRequest(advanceRequests[0])}
+              disabled={advanceRequests.length === 0}
+              title={advanceRequests.length === 0 ? 'No advance requests to print yet' : 'Print the most recent advance request'}
+              className="flex-1 md:flex-none primary-gradient text-on-primary px-5 py-2.5 rounded-xl text-xs font-bold shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <span className="material-symbols-outlined text-[18px]">print</span>
               Print Document
@@ -649,6 +656,15 @@ export default function HRAdvanceRequest({ isMobile }) {
           </div>
         </div>
       )}
+
+      {/* Print — shared slip popup (Print Settings design for hr_advance_request) */}
+      <HRRequestPrintPopup
+        isOpen={!!printingRequest}
+        onClose={() => setPrintingRequest(null)}
+        docType="hr_advance_request"
+        record={printingRequest ? buildAdvanceRequestPrintRecord(printingRequest) : null}
+        sourceRecord={printingRequest}
+      />
     </div>
   );
 }

@@ -885,6 +885,30 @@ export const DEFAULT_DOCUMENT_SCHEMAS = {
       { key: 'recovery_month', label: 'Recovery Payroll Month', enabled: true, width: '45%', align: 'left' },
       { key: 'deduction_amount', label: 'Deduction Amount (Rs.)', enabled: true, width: '40%', align: 'right' }
     ]
+  },
+
+  // Loan Ledger statement (request prints final, 2026-10-26): schema for
+  // the shared slip renderer — deliberately NOT added to SYSTEM_DOCUMENTS,
+  // so the Print Settings document list stays at its proven 35; the layout
+  // still resolves through PrintLayout (saved layout if one is ever stored
+  // under this key, else these defaults).
+  hr_loan_ledger: {
+    ...DEFAULT_LAYOUT_SETTINGS,
+    headerFields: [
+      { key: 'ledger_id', label: 'Ledger #', enabled: true, width: 'span-1' },
+      { key: 'emp_name', label: 'Employee Name', enabled: true, width: 'span-2' },
+      { key: 'department', label: 'Department', enabled: true, width: 'span-1' },
+      { key: 'loan_type', label: 'Loan Type', enabled: true, width: 'span-1' },
+      { key: 'status', label: 'Ledger Status', enabled: true, width: 'span-1' }
+    ],
+    gridColumns: [
+      { key: 'serial_no', label: 'Sr #', enabled: true, width: '8%', align: 'center' },
+      { key: 'date', label: 'Date', enabled: true, width: '14%', align: 'center' },
+      { key: 'type', label: 'Type', enabled: true, width: '22%', align: 'left' },
+      { key: 'amount', label: 'Amount (Rs.)', enabled: true, width: '16%', align: 'right' },
+      { key: 'balance_after', label: 'Balance After (Rs.)', enabled: true, width: '16%', align: 'right' },
+      { key: 'notes', label: 'Notes', enabled: true, width: '24%', align: 'left' }
+    ]
   }
 };
 
