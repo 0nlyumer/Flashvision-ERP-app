@@ -79,6 +79,24 @@ export function buildGeneralLedgerRecord(entries = [], filters = {}) {
  *           netBalance, isDebitNormal } in final display order.
  * options:  { filteredBy, generatedOn }
  */
+// Sale Order studio record (approved batch Part 6, 2026-10-26): the record
+// shape the Universal Print Studio expects for documentType 'sale_order' —
+// the SAME enrichment getSampleRecordFromState applies to its sample:
+// customer / contact / shipping_address as display STRINGS (the studio
+// header resolver stringifies record fields directly, so object values
+// would render as "[object Object]"). Used by SaleOrderModule's Print
+// buttons now that the legacy Digital Twin renderer is removed.
+export function buildSaleOrderRecord(state, order) {
+  if (!order) return null;
+  const customer = (state?.customers || []).find((c) => c && c.id === order.customerId);
+  return {
+    ...order,
+    customer: customer?.name || order.customerName || 'Customer',
+    contact: customer?.contactPerson || order.contactPerson || 'N/A',
+    shipping_address: order.shippingAddress || 'Factory Gate, Industrial Estate'
+  };
+}
+
 export function buildChartOfAccountsRecord(accounts = [], options = {}) {
   const list = Array.isArray(accounts) ? accounts : [];
   const items = list.map((acc) => {
