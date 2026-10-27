@@ -38,6 +38,11 @@ function sampleCell(col, rowIdx) {
   if (c.includes('employee') || c.includes('user') || c.includes('chat')) return ['Sample Employee', 'Sample Employee', 'Sample Employee'][rowIdx];
   if (c.includes('item') || c.includes('material') || c.includes('cloth') || c.includes('phase') || c.includes('widget') || c.includes('binder') || c.includes('entry') || c.includes('head') || c.includes('rule') || c.includes('setting') || c.includes('type') || c.includes('account') || c.includes('description') || c.includes('name')) return ['170 PK DTY BLACK (WHITE)', '106 MISMA REGULAR (WHITE)', '173 PK DTY PURPLE (BLACK)'][rowIdx];
   if (c.includes('no') || c.includes('code') || c.includes('id') || c.includes('ref')) return ['#001', '#002', '#003'][rowIdx];
+  // Metre/packing quantities must win over the money branch below ('Total
+  // Meters' contains 'total' but is a quantity) — fix run A3, 2026-10-28.
+  if (c.includes('meters') || c.includes('metres') || c.includes('(m)')) return ['1,000', '800', '2,000'][rowIdx];
+  if (c.includes('packing')) return ['50 m', '25 m', '50 m'][rowIdx];
+  if (c === 'rolls') return ['20', '16', '40'][rowIdx];
   if (c.includes('amount') || c.includes('total') || c.includes('value') || c.includes('balance') || c.includes('rate') || c.includes('pay') || c.includes('fine') || c.includes('debit') || c.includes('credit') || c.includes('tax') || c.includes('budget') || c.includes('expense') || c.includes('loan') || c.includes('paid') || c.includes('basic') || c.includes('net') || c.includes('allowance') || c.includes('deduction') || c.includes('shortage') || c.includes('required') || c.includes('price')) return ['Rs 25,000', 'Rs 18,500', 'Rs 42,750'][rowIdx];
   if (c.includes('(m)') || c.includes('qty') || c.includes('metres') || c.includes('stock') || c.includes('kg') || c.includes('(h)') || c.includes('hours') || c.includes('count') || c.includes('documents') || c.includes('orders') || c.includes('employees') || c.includes('present') || c.includes('absent') || c.includes('in') || c.includes('out') || c.includes('change') || c.includes('ageing')) return ['1,000', '800', '2,000'][rowIdx];
   return '—';
@@ -62,6 +67,13 @@ export default function ScreenPreview({ module: mod, screen, set, onToggleAction
   const stats = screen.preview?.stats || null;
   const customToolbar = screen.preview?.toolbar || null;
   const columns = screen.columns || ['Name', 'Date', 'Status'];
+  // Layout fidelity (fix run A3, 2026-10-28): screens whose real layout is
+  // NOT a plain table declare preview.layout — 'cards' (User Directory),
+  // 'widgets' (Main Dashboard), 'terminal' (Flash AM punch) — and screens
+  // with a distinctive filter bar declare preview.filters, rendered as an
+  // inert filter row so the replica carries the real screen's regions.
+  const layout = screen.preview?.layout || 'table';
+  const filters = screen.preview?.filters || null;
 
   const controlCls = (on, primary = false, danger = false) =>
     on
@@ -158,6 +170,105 @@ export default function ScreenPreview({ module: mod, screen, set, onToggleAction
             })}
           </div>
 
+          {/* Filter bar (structural replica of the real screen's filters) */}
+          {filters && filters.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2 mb-3">
+              {filters.map((f) => (
+                <span key={f} className="flex items-center gap-1.5 bg-surface-container-low border border-outline-variant/20 rounded-lg px-2.5 py-1.5 text-[11px] font-semibold text-on-surface-variant">
+                  {f}
+                  <span className="material-symbols-outlined text-sm">expand_more</span>
+                </span>
+              ))}
+            </div>
+          )}
+
+          {layout === 'cards' ? (
+            /* User Directory replica: user cards, not a table */
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {[['UMER ALI', 'only.umer', 'Super Admin'], ['ARFAN JAMEEL', 'arfan_jameel', 'Super Admin'], ['UMAIR SHABIR', 'umair_shabir', 'Manager']].map(([nm, un, role]) => (
+                <div key={un} className="border border-outline-variant/20 rounded-2xl p-4 flex flex-col items-center text-center bg-surface-container-lowest">
+                  <div className="w-12 h-12 rounded-full bg-primary/10 text-primary flex items-center justify-center font-extrabold text-sm mb-2">
+                    {nm.split(' ').map((w) => w[0]).slice(0, 2).join('')}
+                  </div>
+                  <p className="text-xs font-extrabold text-on-surface">{nm}</p>
+                  <p className="text-[10px] text-primary font-semibold">@{un}</p>
+                  <span className="mt-2 px-2 py-0.5 rounded-full bg-primary-fixed text-primary text-[9px] font-bold uppercase tracking-wider">{role}</span>
+                  <span className="mt-1.5 flex items-center gap-1 text-[9px] font-bold text-emerald-600"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Active</span>
+                  {rowActions.length > 0 && (
+                    <div className="flex gap-1.5 mt-3 pt-3 border-t border-outline-variant/10 w-full justify-center">
+                      {rowActions.map((act) => {
+                        const on = allowed(act.id);
+                        return (
+                          <button
+                            key={act.id}
+                            onClick={(e) => { e.stopPropagation(); onToggleAction(act.id); }}
+                            title={`${act.label} — click to ${on ? 'DISABLE' : 'ENABLE'} for this user`}
+                            className={`w-7 h-7 rounded-lg flex items-center justify-center transition-all active:scale-95 cursor-pointer ${controlCls(on, false, act.id === 'delete')}`}
+                          >
+                            <span className="material-symbols-outlined text-sm">{ACTION_ICONS[act.id] || 'tune'}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : layout === 'widgets' ? (
+            /* Main Dashboard replica: widget tiles, not a table */
+            <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+              <div className="border border-outline-variant/20 rounded-2xl p-3 bg-surface-container-lowest">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">Production Target</p>
+                <p className="text-lg font-black text-on-surface mt-0.5">7,200 m</p>
+                <div className="h-1.5 rounded-full bg-surface-container-high mt-2"><div className="h-full w-2/3 rounded-full bg-primary" /></div>
+                <p className="text-[10px] text-on-surface-variant mt-1.5">Today's output vs plan</p>
+              </div>
+              <div className="border border-outline-variant/20 rounded-2xl p-3 bg-surface-container-lowest">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">October 2026</p>
+                <div className="grid grid-cols-7 gap-1 mt-2 text-center text-[9px] font-bold text-on-surface-variant">
+                  {Array.from({ length: 28 }, (_, i) => (
+                    <span key={i} className={`py-0.5 rounded ${i === 26 ? 'bg-primary text-on-primary' : ''}`}>{i + 1}</span>
+                  ))}
+                </div>
+              </div>
+              <div className="border border-outline-variant/20 rounded-2xl p-3 bg-surface-container-lowest">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">To-Do</p>
+                {['Approve leave requests', 'Review stock alerts', 'Share today\u2019s plan'].map((t) => (
+                  <p key={t} className="flex items-center gap-1.5 text-[11px] font-medium text-on-surface mt-1.5">
+                    <span className="material-symbols-outlined text-sm text-primary">check_box_outline_blank</span>{t}
+                  </p>
+                ))}
+              </div>
+              <div className="border border-outline-variant/20 rounded-2xl p-3 bg-surface-container-lowest lg:col-span-2">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">Shortcuts</p>
+                <div className="flex gap-2 mt-2">
+                  {['shopping_cart', 'inventory_2', 'local_shipping', 'badge', 'account_balance_wallet'].map((ic) => (
+                    <span key={ic} className="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
+                      <span className="material-symbols-outlined text-base">{ic}</span>
+                    </span>
+                  ))}
+                </div>
+              </div>
+              <div className="border border-outline-variant/20 rounded-2xl p-3 bg-surface-container-lowest">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">Deliveries</p>
+                <p className="text-lg font-black text-on-surface mt-0.5">36</p>
+                <p className="text-[10px] text-on-surface-variant mt-1">Challans this week</p>
+              </div>
+            </div>
+          ) : (
+          <>
+          {layout === 'terminal' && (
+            /* Flash AM replica: terminal clock panel above the punch list */
+            <div className="border border-outline-variant/20 rounded-2xl bg-surface-container-low p-4 mb-3 flex items-center justify-between">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Flash AM Terminal</p>
+                <p className="text-2xl font-black text-on-surface mt-0.5">09:41:07 AM</p>
+                <p className="text-[11px] text-on-surface-variant">Select an employee, then punch in or out</p>
+              </div>
+              <span className="material-symbols-outlined text-4xl text-primary">fingerprint</span>
+            </div>
+          )}
+
           {/* Table */}
           <div className="border border-outline-variant/20 rounded-xl overflow-hidden">
             <table className="w-full text-left text-[11px]">
@@ -206,6 +317,8 @@ export default function ScreenPreview({ module: mod, screen, set, onToggleAction
               </tbody>
             </table>
           </div>
+          </>
+          )}
 
           <p className="text-[10px] text-on-surface-variant/70 mt-3 font-medium">
             Preview mirrors the real screen's layout and controls — sample data only. Click any control to enable / disable it for this user.

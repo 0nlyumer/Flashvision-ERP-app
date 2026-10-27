@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import ArtLoginView from '../components/login/ArtLoginView';
 import { getLoginThemeById, normalizeLoginThemeSettings, resolveLoginThemeId } from '../utils/loginThemes';
+import useZoomCompensatedSize from '../utils/useZoomCompensatedSize';
 
 const DB_NAME = 'AjSyntheticSettings';
 const STORE_NAME = 'media';
@@ -299,6 +300,8 @@ export default function Login() {
 
     setIsSubmitting(true);
     setErrorMessage('');
+    setHandoverStage(null);
+    sawSignOutRef.current = false;
 
     // Platform detection
     let platform = 'Web';
@@ -360,7 +363,75 @@ export default function Login() {
     ? 'Signing out your other session…'
     : handoverStage === 'signing-in'
       ? 'Signing you in…'
-      : null;
+      : handoverStage === 'checking'
+        ? 'Checking for other active sessions…'
+        : null;
+
+  // ---- Login handover interim panel (fix run F, 2026-10-28) ----
+  // Omer's dictated flow: after clicking Login, a clean visible interim
+  // step walks the user through the sign-in sequence — credentials, the
+  // other-session check, signing the other session out (only when one
+  // exists), and signing in — instead of an instant jump. Rendered as an
+  // overlay above BOTH login themes while a login is in flight.
+  const overlaySize = useZoomCompensatedSize();
+  const sawSignOutRef = useRef(false);
+  if (handoverStage === 'signing-out-other') sawSignOutRef.current = true;
+  const stepDefs = [
+    { id: 'verify', label: 'Verifying your credentials' },
+    { id: 'check', label: 'Checking for other active sessions' },
+    ...(sawSignOutRef.current ? [{ id: 'signout', label: 'Signing out your other session' }] : []),
+    { id: 'signin', label: 'Signing you in' },
+  ];
+  const activeStepId = !handoverStage
+    ? 'verify'
+    : handoverStage === 'checking'
+      ? 'check'
+      : handoverStage === 'signing-out-other'
+        ? 'signout'
+        : 'signin';
+  const activeStepIdx = Math.max(0, stepDefs.findIndex((s) => s.id === activeStepId));
+  const handoverOverlay = isSubmitting ? (
+    <div
+      style={{ width: overlaySize.width, height: overlaySize.height }}
+      className="fixed inset-0 z-[120] bg-slate-950/55 backdrop-blur-sm flex items-center justify-center p-6 select-none"
+      role="status"
+      aria-label="Signing you in"
+    >
+      <div className="bg-surface-container-lowest text-on-surface border border-outline-variant/30 rounded-[28px] shadow-2xl w-full max-w-sm p-7 animate-in fade-in zoom-in-95 duration-200">
+        <div className="flex items-center gap-3 mb-5">
+          <div className="w-11 h-11 rounded-2xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
+            {/* Inline SVG (not the icon font): this overlay can appear
+                before the Material Symbols webfont has loaded, and a
+                ligature fallback would spill raw words across the card. */}
+            <svg viewBox="0 0 24 24" className="w-6 h-6" fill="currentColor" aria-hidden="true"><path d="M12 1 3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z"/></svg>
+          </div>
+          <div>
+            <h2 className="font-headline font-extrabold text-base leading-tight">Signing you in securely</h2>
+            <p className="text-[11px] text-on-surface-variant font-medium">One active session per account</p>
+          </div>
+        </div>
+        <ul className="space-y-3.5">
+          {stepDefs.map((step, i) => {
+            const stepState = i < activeStepIdx ? 'done' : i === activeStepIdx ? 'active' : 'todo';
+            return (
+              <li key={step.id} className="flex items-center gap-3">
+                {stepState === 'done' ? (
+                  <svg viewBox="0 0 24 24" className="w-5 h-5 text-emerald-500 shrink-0" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>
+                ) : stepState === 'active' ? (
+                  <span className="w-5 h-5 rounded-full border-2 border-primary border-t-transparent animate-spin shrink-0" />
+                ) : (
+                  <svg viewBox="0 0 24 24" className="w-5 h-5 text-outline-variant/60 shrink-0" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8z"/></svg>
+                )}
+                <span className={`text-sm ${stepState === 'active' ? 'text-on-surface font-bold' : stepState === 'done' ? 'text-on-surface-variant font-medium' : 'text-on-surface-variant/60 font-medium'}`}>
+                  {step.label}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+    </div>
+  ) : null;
 
   const toggleTheme = () => {
     const newTheme = theme === 'dark' ? 'light' : 'dark';
@@ -419,6 +490,7 @@ export default function Login() {
   // form state and handlers as Classic — auth behaviour is identical.
   if (activeLoginTheme.type === 'art') {
     return (
+      <>
       <ArtLoginView
         theme={activeLoginTheme}
         companyName={companyName}
@@ -443,6 +515,8 @@ export default function Login() {
         onKeyUp={handleKeyDown}
         usernameInputRef={usernameInputRef}
       />
+      {handoverOverlay}
+      </>
     );
   }
 
@@ -453,6 +527,7 @@ export default function Login() {
       onKeyUp={handleKeyDown}
       onKeyDown={handleKeyDown}
     >
+      {handoverOverlay}
       {/* Dynamic Background Media */}
       {bgMedia && (
         <div className="absolute inset-0 pointer-events-none z-0 overflow-hidden">

@@ -3,19 +3,23 @@ import { createPortal } from 'react-dom';
 import { exportDocumentToPdf, exportDocumentToImage } from '../../utils/printExportUtils';
 
 /**
- * Stock Report Studio — preview popup for the FG Stock Report and the
- * Stock Transactions Report (InvLedger). Modelled on SalaryPrintStudio:
- * paginated A4 pages (.print-preview-page), Portrait/Landscape switch,
- * Print / Save PDF / Save Image (high quality) / Save CSV actions.
+ * Stock Report Studio — preview popup for the Stock Reports (InvLedger).
+ * Modelled on SalaryPrintStudio: paginated A4 pages (.print-preview-page),
+ * Portrait/Landscape switch, Print / Save PDF / Save Image (high quality) /
+ * Save CSV actions.
  *
  * The report arrives as a plain model so exports always match the screen:
  * {
  *   title, companyName, scopeLines: [], generatedAtLabel,
- *   columns: [{ key, label, numeric, width }],
- *   groups: [{ label, rows: [{ kind: 'data'|'subhead'|'subtotal'|'grand',
- *                              values: { colKey: string } }] }],
+ *   sections: [{ key, title, columns: [{ key, label, numeric, width }],
+ *                groups: [{ label, rows: [{ kind, values }] }] }],
  *   footnotes: [], filenameBase, csvText
  * }
+ * Legacy single-table models ({ columns, groups }) are normalised to one
+ * unnamed section. Every SECTION renders as its own table and starts on a
+ * fresh page — in the preview, in the PDF and in the browser print alike
+ * (fix run C, 2026-10-28: Finished Goods and Raw Material never share a
+ * table or a page flow).
  * Value data is only ever present in the model when the generating user
  * holds the inventory/stockValue permission — nothing to hide here.
  */
@@ -32,27 +36,41 @@ export default function StockReportStudio({ isOpen, onClose, model }) {
 
   const paper = PAPER[orientation];
 
+  const sections = useMemo(() => {
+    if (!model) return [];
+    if (Array.isArray(model.sections) && model.sections.length > 0) return model.sections;
+    return [{ key: 'main', title: null, columns: model.columns || [], groups: model.groups || [] }];
+  }, [model]);
+
+  // Pages: [{ sectionIdx, rows }] — pagination is computed PER SECTION so a
+  // section always starts on a fresh page.
   const basePages = useMemo(() => {
     if (!model) return [];
-    const flat = [];
-    (model.groups || []).forEach((g) => {
-      if (g.label) flat.push({ kind: 'grouphead', values: { __label: g.label } });
-      (g.rows || []).forEach((r) => flat.push(r));
+    const all = [];
+    sections.forEach((sec, sectionIdx) => {
+      const flat = [];
+      (sec.groups || []).forEach((g) => {
+        if (g.label) flat.push({ kind: 'grouphead', values: { __label: g.label } });
+        (g.rows || []).forEach((r) => flat.push(r));
+      });
+      if (flat.length === 0) {
+        all.push({ sectionIdx, rows: [] });
+        return;
+      }
+      for (let i = 0; i < flat.length; i += paper.rowsPerPage) {
+        all.push({ sectionIdx, rows: flat.slice(i, i + paper.rowsPerPage) });
+      }
     });
-    if (flat.length === 0) return [[]];
-    const chunks = [];
-    for (let i = 0; i < flat.length; i += paper.rowsPerPage) {
-      chunks.push(flat.slice(i, i + paper.rowsPerPage));
-    }
-    return chunks;
-  }, [model, paper.rowsPerPage]);
+    return all.length ? all : [{ sectionIdx: 0, rows: [] }];
+  }, [model, sections, paper.rowsPerPage]);
 
   // Measured pagination (Browser Print Program, 2026-10-25): rowsPerPage is
   // an estimate — measure each rendered sheet and move data rows down from
   // any sheet taller than the printable height (group heads travel with
   // their rows; subtotal/grand rows are never moved — the grow-don't-clip
   // print CSS covers those rare edges), so every sheet is exactly one
-  // printed page and no row is dropped.
+  // printed page and no row is dropped. Rows never move ACROSS sections:
+  // an overflowing section grows its own extra page (fix run C).
   const [fittedPages, setFittedPages] = useState(null);
   const pages = fittedPages || basePages;
   const pageElsRef = useRef([]);
@@ -65,14 +83,14 @@ export default function StockReportStudio({ isOpen, onClose, model }) {
         const el = pageElsRef.current[i];
         if (!el) continue;
         const limit = parseFloat(getComputedStyle(el).minHeight) || el.clientHeight;
-        if (el.scrollHeight <= limit + 2 || pages[i].length <= 1) continue;
-        const lastKind = pages[i][pages[i].length - 1]?.kind;
+        if (el.scrollHeight <= limit + 2 || pages[i].rows.length <= 1) continue;
+        const lastKind = pages[i].rows[pages[i].rows.length - 1]?.kind;
         if (lastKind === 'subtotal' || lastKind === 'grand') continue;
-        const next = pages.map((p) => [...p]);
-        const moved = [next[i].pop()];
-        while (next[i].length > 1 && ['grouphead', 'subhead'].includes(next[i][next[i].length - 1]?.kind)) moved.unshift(next[i].pop());
-        if (i + 1 < next.length) next[i + 1] = [...moved, ...next[i + 1]];
-        else next.push(moved);
+        const next = pages.map((p) => ({ ...p, rows: [...p.rows] }));
+        const moved = [next[i].rows.pop()];
+        while (next[i].rows.length > 1 && ['grouphead', 'subhead'].includes(next[i].rows[next[i].rows.length - 1]?.kind)) moved.unshift(next[i].rows.pop());
+        if (i + 1 < next.length && next[i + 1].sectionIdx === next[i].sectionIdx) next[i + 1].rows = [...moved, ...next[i + 1].rows];
+        else next.splice(i + 1, 0, { sectionIdx: next[i].sectionIdx, rows: moved });
         setFittedPages(next);
         return;
       }
@@ -81,8 +99,6 @@ export default function StockReportStudio({ isOpen, onClose, model }) {
   }, [pages, orientation]);
 
   if (!isOpen || !model) return null;
-
-  const totalWidth = (model.columns || []).reduce((s, c) => s + (c.width || 100), 0) || 1;
 
   const handleExportCsv = () => {
     try {
@@ -257,108 +273,121 @@ export default function StockReportStudio({ isOpen, onClose, model }) {
 
       {/* PAGES */}
       <div id="fv-stock-report-pages" ref={printContainerRef} className="flex-1 w-full overflow-y-auto bg-slate-300/50 p-4 md:p-8 space-y-8">
-        {pages.map((pageRows, pageIdx) => (
-          <div
-            key={pageIdx}
-            ref={(el) => { pageElsRef.current[pageIdx] = el; }}
-            className="stock-report-page print-preview-page mx-auto bg-white shadow-2xl flex flex-col"
-            style={{ width: paper.width, minHeight: paper.height, padding: '10mm', color: '#111827', fontFamily: 'Arial, sans-serif' }}
-          >
-            {pageIdx === 0 ? (
-              <div style={{ borderBottom: '2.5px solid #4338ca', paddingBottom: '10px', marginBottom: '12px' }}>
-                <h1 style={{ margin: 0, fontSize: '21px', fontWeight: 900, color: '#1e1b4b', letterSpacing: '-0.3px', textTransform: 'uppercase', textAlign: 'center' }}>
-                  {model.companyName}
-                </h1>
-                <p style={{ margin: '4px 0 0 0', fontSize: '14px', fontWeight: 700, color: '#374151', textAlign: 'center' }}>
-                  {model.title}
-                </p>
-                <div style={{ marginTop: '8px', fontSize: '11px', color: '#374151', textAlign: 'center' }}>
-                  {(model.scopeLines || []).map((line, i) => (
-                    <div key={i}>{line}</div>
-                  ))}
-                  <div>{model.generatedAtLabel}</div>
+        {pages.map((page, pageIdx) => {
+          const sec = sections[page.sectionIdx] || sections[0] || { columns: [] };
+          const secColumns = sec.columns || [];
+          const secTotalWidth = secColumns.reduce((s, c) => s + (c.width || 100), 0) || 1;
+          const isSectionStart = pageIdx === 0 || pages[pageIdx - 1].sectionIdx !== page.sectionIdx;
+          const pageRows = page.rows;
+          return (
+            <div
+              key={pageIdx}
+              ref={(el) => { pageElsRef.current[pageIdx] = el; }}
+              className="stock-report-page print-preview-page mx-auto bg-white shadow-2xl flex flex-col"
+              style={{ width: paper.width, minHeight: paper.height, padding: '10mm', color: '#111827', fontFamily: 'Arial, sans-serif' }}
+            >
+              {pageIdx === 0 ? (
+                <div style={{ borderBottom: '2.5px solid #4338ca', paddingBottom: '10px', marginBottom: '12px' }}>
+                  <h1 style={{ margin: 0, fontSize: '21px', fontWeight: 900, color: '#1e1b4b', letterSpacing: '-0.3px', textTransform: 'uppercase', textAlign: 'center' }}>
+                    {model.companyName}
+                  </h1>
+                  <p style={{ margin: '4px 0 0 0', fontSize: '14px', fontWeight: 700, color: '#374151', textAlign: 'center' }}>
+                    {model.title}
+                  </p>
+                  <div style={{ marginTop: '8px', fontSize: '11px', color: '#374151', textAlign: 'center' }}>
+                    {(model.scopeLines || []).map((line, i) => (
+                      <div key={i}>{line}</div>
+                    ))}
+                    <div>{model.generatedAtLabel}</div>
+                  </div>
                 </div>
-              </div>
-            ) : (
-              <div style={{ borderBottom: '1.5px solid #4338ca', paddingBottom: '6px', marginBottom: '10px', display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#374151' }}>
-                <span style={{ fontWeight: 700 }}>{model.companyName} — {model.title}</span>
+              ) : (
+                <div style={{ borderBottom: '1.5px solid #4338ca', paddingBottom: '6px', marginBottom: '10px', display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#374151' }}>
+                  <span style={{ fontWeight: 700 }}>{model.companyName} — {model.title}</span>
+                  <span>Page {pageIdx + 1} of {pages.length}</span>
+                </div>
+              )}
+
+              {sec.title && isSectionStart && (
+                <div style={{ backgroundColor: '#312e81', color: '#ffffff', fontWeight: 800, fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.5px', padding: '6px 8px', marginBottom: '8px' }}>
+                  {sec.title}
+                </div>
+              )}
+
+              <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', fontSize: '10.5px' }}>
+                <colgroup>
+                  {secColumns.map((col) => (
+                    <col key={col.key} style={{ width: `${(((col.width || 100) / secTotalWidth) * 100).toFixed(2)}%` }} />
+                  ))}
+                </colgroup>
+                <thead>
+                  <tr style={{ backgroundColor: '#eef2ff' }}>
+                    {secColumns.map((col) => (
+                      <th
+                        key={col.key}
+                        style={{ border: '1px solid #c7d2fe', padding: '5px 6px', textTransform: 'uppercase', fontSize: '9px', fontWeight: 700, textAlign: col.numeric ? 'right' : 'left', overflow: 'hidden' }}
+                      >
+                        {col.label}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {pageRows.length === 0 ? (
+                    <tr>
+                      <td colSpan={secColumns.length} style={{ border: '1px solid #e5e7eb', padding: '16px', textAlign: 'center', color: '#9ca3af', fontStyle: 'italic' }}>
+                        No records in this report.
+                      </td>
+                    </tr>
+                  ) : (
+                    pageRows.map((row, rIdx) => {
+                      if (row.kind === 'grouphead') {
+                        return (
+                          <tr key={rIdx} style={{ backgroundColor: '#312e81' }}>
+                            <td colSpan={secColumns.length} style={{ padding: '5px 6px', color: '#ffffff', fontWeight: 800, fontSize: '10.5px', textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+                              {row.values.__label}
+                            </td>
+                          </tr>
+                        );
+                      }
+                      if (row.kind === 'subhead') {
+                        return (
+                          <tr key={rIdx} style={{ backgroundColor: '#e0e7ff' }}>
+                            <td colSpan={secColumns.length} style={{ padding: '4px 6px', fontWeight: 700, fontSize: '10.5px', color: '#1e1b4b' }}>
+                              {row.values.__label}
+                            </td>
+                          </tr>
+                        );
+                      }
+                      return (
+                        <tr key={rIdx} style={{ backgroundColor: row.kind === 'data' && rIdx % 2 === 1 ? '#f9fafb' : '#ffffff' }}>
+                          {secColumns.map((col) => (
+                            <td key={col.key} style={cellStyle(col, row)}>
+                              {row.values[col.key] ?? ''}
+                            </td>
+                          ))}
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+
+              {pageIdx === pages.length - 1 && (model.footnotes || []).length > 0 && (
+                <div style={{ marginTop: '12px', fontSize: '10px', color: '#6b7280' }}>
+                  {(model.footnotes || []).map((f, i) => (
+                    <div key={i}>* {f}</div>
+                  ))}
+                </div>
+              )}
+
+              <div style={{ marginTop: 'auto', paddingTop: '10px', display: 'flex', justifyContent: 'space-between', fontSize: '9.5px', color: '#9ca3af' }}>
+                <span>Powered by FlashVision ERP</span>
                 <span>Page {pageIdx + 1} of {pages.length}</span>
               </div>
-            )}
-
-            <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', fontSize: '10.5px' }}>
-              <colgroup>
-                {(model.columns || []).map((col) => (
-                  <col key={col.key} style={{ width: `${(((col.width || 100) / totalWidth) * 100).toFixed(2)}%` }} />
-                ))}
-              </colgroup>
-              <thead>
-                <tr style={{ backgroundColor: '#eef2ff' }}>
-                  {(model.columns || []).map((col) => (
-                    <th
-                      key={col.key}
-                      style={{ border: '1px solid #c7d2fe', padding: '5px 6px', textTransform: 'uppercase', fontSize: '9px', fontWeight: 700, textAlign: col.numeric ? 'right' : 'left', overflow: 'hidden' }}
-                    >
-                      {col.label}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {pageRows.length === 0 ? (
-                  <tr>
-                    <td colSpan={(model.columns || []).length} style={{ border: '1px solid #e5e7eb', padding: '16px', textAlign: 'center', color: '#9ca3af', fontStyle: 'italic' }}>
-                      No records in this report.
-                    </td>
-                  </tr>
-                ) : (
-                  pageRows.map((row, rIdx) => {
-                    if (row.kind === 'grouphead') {
-                      return (
-                        <tr key={rIdx} style={{ backgroundColor: '#312e81' }}>
-                          <td colSpan={(model.columns || []).length} style={{ padding: '5px 6px', color: '#ffffff', fontWeight: 800, fontSize: '10.5px', textTransform: 'uppercase', letterSpacing: '0.4px' }}>
-                            {row.values.__label}
-                          </td>
-                        </tr>
-                      );
-                    }
-                    if (row.kind === 'subhead') {
-                      return (
-                        <tr key={rIdx} style={{ backgroundColor: '#e0e7ff' }}>
-                          <td colSpan={(model.columns || []).length} style={{ padding: '4px 6px', fontWeight: 700, fontSize: '10.5px', color: '#1e1b4b' }}>
-                            {row.values.__label}
-                          </td>
-                        </tr>
-                      );
-                    }
-                    return (
-                      <tr key={rIdx} style={{ backgroundColor: row.kind === 'data' && rIdx % 2 === 1 ? '#f9fafb' : '#ffffff' }}>
-                        {(model.columns || []).map((col) => (
-                          <td key={col.key} style={cellStyle(col, row)}>
-                            {row.values[col.key] ?? ''}
-                          </td>
-                        ))}
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-
-            {pageIdx === pages.length - 1 && (model.footnotes || []).length > 0 && (
-              <div style={{ marginTop: '12px', fontSize: '10px', color: '#6b7280' }}>
-                {(model.footnotes || []).map((f, i) => (
-                  <div key={i}>* {f}</div>
-                ))}
-              </div>
-            )}
-
-            <div style={{ marginTop: 'auto', paddingTop: '10px', display: 'flex', justifyContent: 'space-between', fontSize: '9.5px', color: '#9ca3af' }}>
-              <span>Powered by FlashVision ERP</span>
-              <span>Page {pageIdx + 1} of {pages.length}</span>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

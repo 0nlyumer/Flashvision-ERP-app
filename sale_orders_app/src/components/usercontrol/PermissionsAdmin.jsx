@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import ReactDOM from 'react-dom';
 import { useApp } from '../../context/AppContext';
+import useZoomCompensatedSize from '../../utils/useZoomCompensatedSize';
 import { permissionsRegistry } from '../../constants/permissionsRegistry';
 import {
   normalizeSet, effectiveCounts, screenCounts, moduleEnabled, screenEnabled, actionAllowed,
@@ -49,15 +50,28 @@ function Toggle({ on, onChange, disabled = false, small = false }) {
   );
 }
 
-export default function PermissionsAdmin({ onClose, embedded = null, onSaveSet = null, focusModule = null }) {
+export default function PermissionsAdmin({ onClose, embedded = null, onSaveSet = null, focusModule = null, initialUserId = null, onEditProfile = null }) {
   const { state, updateUser } = useApp();
   const allUsers = useMemo(() => state.users || [], [state.users]);
 
   const [selectedUserId, setSelectedUserId] = useState(() => {
     if (embedded?.user) return embedded.user.id ?? 'embedded';
+    // Direct landing (fix run A1, 2026-10-28): when opened from a user card,
+    // that user is pre-selected — no intermediate profile screen.
+    if (initialUserId && (state.users || []).some((u) => String(u.id) === String(initialUserId))) {
+      return initialUserId;
+    }
     const first = (state.users || []).find((u) => u.role !== 'Super Admin') || (state.users || [])[0];
     return first?.id ?? null;
   });
+
+  // Full-screen fix (fix run A2, 2026-10-28): this screen portals into
+  // document.body, which AppContext scales with CSS `zoom` (Display
+  // Scale — 75% for only.umer). A 100vw/100vh root inside the zoomed
+  // body painted at 75%, anchored top-left, with the old screen showing
+  // behind — the reported bug. useZoomCompensatedSize sizes the root at
+  // 100/zoom vw/vh so it paints at exactly the viewport size.
+  const rootSize = useZoomCompensatedSize();
 
   const targetUser = useMemo(() => {
     if (embedded?.user) return embedded.user;
@@ -122,7 +136,7 @@ export default function PermissionsAdmin({ onClose, embedded = null, onSaveSet =
   };
 
   const content = (
-    <div className="fixed inset-0 z-[99999] bg-surface flex flex-col w-screen h-screen overflow-hidden animate-in fade-in duration-200 select-none">
+    <div style={{ width: rootSize.width, height: rootSize.height }} className="fixed inset-0 z-[99999] bg-surface flex flex-col overflow-hidden animate-in fade-in duration-200 select-none">
       {/* Header */}
       <header className="relative bg-surface-container border-b border-outline-variant/20 px-6 py-4 shrink-0">
         <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-primary via-primary-container to-secondary-fixed" />
@@ -161,6 +175,19 @@ export default function PermissionsAdmin({ onClose, embedded = null, onSaveSet =
               <span className="material-symbols-outlined text-primary text-lg">person</span>
               {targetUser?.name} (@{targetUser?.username})
             </div>
+          )}
+
+          {/* Profile editing stays one click away (fix run A1): permissions
+              are the landing screen now; the profile form opens from here. */}
+          {!embedded && onEditProfile && targetUser && (
+            <button
+              onClick={() => onEditProfile(targetUser)}
+              className="flex items-center gap-1.5 px-3.5 py-2 bg-surface-container-lowest border border-outline-variant/25 rounded-xl text-xs font-bold text-on-surface hover:border-primary/40 hover:text-primary transition-all active:scale-95 cursor-pointer"
+              title="Edit this user's profile (name, role, password, contact)"
+            >
+              <span className="material-symbols-outlined text-base">edit</span>
+              Edit Profile
+            </button>
           )}
 
           {flash && (

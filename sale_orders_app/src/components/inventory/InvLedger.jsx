@@ -31,6 +31,34 @@ const fmtMoney = (n) =>
     ? '—'
     : Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+// ---- Category sections (fix run C, 2026-10-28) ----
+// The ledger used to render every item in ONE Finished-Goods-shaped table
+// (grade columns included) — raw materials included. Now rows split by the
+// item's own category: Finished Goods first (grade columns), then Raw
+// Material (its own columns: UOM, packing size + packing UOM, no grades),
+// then any other category with the RM arrangement.
+const CATEGORY_ORDER = ['Finished Goods', 'Raw Material'];
+const uomSymbol = (uom) => {
+  const s = String(uom || '').trim();
+  if (!s) return '—';
+  const m = s.match(/\(([^)]+)\)/);
+  return m ? m[1] : s;
+};
+const categorySectionsOf = (rows) => {
+  const byCat = new Map();
+  (rows || []).forEach(r => {
+    const cat = r.item?.category || 'Other Items';
+    if (!byCat.has(cat)) byCat.set(cat, []);
+    byCat.get(cat).push(r);
+  });
+  const ordered = [];
+  CATEGORY_ORDER.forEach(c => {
+    if (byCat.has(c)) { ordered.push({ key: c, title: c, isFG: c === 'Finished Goods', rows: byCat.get(c) }); byCat.delete(c); }
+  });
+  byCat.forEach((rs, c) => ordered.push({ key: c, title: c, isFG: false, rows: rs }));
+  return ordered;
+};
+
 export default function InvLedger({ selectedDepartments = [], onBack }) {
   const { state, toggleGlobalPagination, hasPermission } = useApp();
   
@@ -321,6 +349,16 @@ export default function InvLedger({ selectedDepartments = [], onBack }) {
       [stockRows, grouping, paperCodeList, packingList],
   );
   const stockGrand = useMemo(() => sumStockRows(stockRows), [stockRows]);
+  // Per-category sections (fix run C): each section keeps the selected
+  // grouping inside itself and carries its own totals.
+  const stockSections = useMemo(
+      () => categorySectionsOf(stockRows).map(sec => ({
+          ...sec,
+          groups: groupStockRows(sec.rows, grouping, { paperCodes: paperCodeList, packings: packingList }),
+          totals: sumStockRows(sec.rows),
+      })),
+      [stockRows, grouping, paperCodeList, packingList],
+  );
   const missingRateCount = stockRows.filter(r => r.missingRate).length;
   const splitUnavailableCount = stockRows.filter(r => r.hasTypes && !r.splitExact).length;
 
@@ -330,7 +368,12 @@ export default function InvLedger({ selectedDepartments = [], onBack }) {
 
   // ---------------- Report models (studio + CSV share these) ----------------
   const buildStockReportModel = () => {
-      const columns = [
+      // Fix run C (2026-10-28): the stock report is built as per-category
+      // SECTIONS, each with its own columns — Finished Goods keeps the grade
+      // columns; Raw Material (and any other category) gets UOM / packing
+      // size / packing UOM and NO grade columns. The studio prints every
+      // section as its own table starting on a fresh page.
+      const fgColumns = [
           { key: 'name', label: 'Item Name', width: 250 },
           { key: 'sku', label: 'Item Code', width: 85 },
           { key: 'packing', label: 'Packing Size', width: 85 },
@@ -344,8 +387,17 @@ export default function InvLedger({ selectedDepartments = [], onBack }) {
           { key: 'rolls', label: 'Rolls', numeric: true, width: 75 },
           ...(valueOn ? [{ key: 'value', label: `Value (${currencyCode})`, numeric: true, width: 110 }] : []),
       ];
+      const rmColumns = [
+          { key: 'name', label: 'Item Name', width: 250 },
+          { key: 'sku', label: 'Item Code', width: 85 },
+          { key: 'uom', label: 'UOM', width: 70 },
+          { key: 'packing', label: 'Packing Size', width: 90 },
+          { key: 'packingUom', label: 'Packing UOM', width: 95 },
+          { key: 'totalQty', label: 'Total Stock', numeric: true, width: 105 },
+          ...(valueOn ? [{ key: 'value', label: `Value (${currencyCode})`, numeric: true, width: 110 }] : []),
+      ];
 
-      const rowValues = (r) => {
+      const fgRowValues = (r) => {
           const v = {
               name: r.name,
               sku: r.sku,
@@ -360,7 +412,7 @@ export default function InvLedger({ selectedDepartments = [], onBack }) {
           if (valueOn) v.value = r.value === null ? '—' : fmtMoney(r.value);
           return v;
       };
-      const totalValues = (rows, label) => {
+      const fgTotalValues = (rows, label) => {
           const s = sumStockRows(rows);
           const v = { name: label, sku: '', packing: '', totalMeters: fmt(s.totalMeters), rolls: s.rolls === null ? '—' : fmt(s.rolls) };
           stockGradeColumns.forEach(c => {
@@ -369,48 +421,90 @@ export default function InvLedger({ selectedDepartments = [], onBack }) {
           if (valueOn) v.value = s.value === null ? '—' : fmtMoney(s.value);
           return v;
       };
+      const rmRowValues = (r) => {
+          const v = {
+              name: r.name,
+              sku: r.sku,
+              uom: uomSymbol(r.item?.uom),
+              packing: r.item?.packingSizeRaw || (r.packingSize ? String(r.packingSize) : '—'),
+              packingUom: r.item?.packingType || '—',
+              totalQty: fmt(r.deptTotal),
+          };
+          if (valueOn) v.value = r.value === null ? '—' : fmtMoney(r.value);
+          return v;
+      };
+      const rmTotalValues = (rows, label) => {
+          // A quantity total is only meaningful when every row shares one
+          // UOM — otherwise the cell stays blank instead of summing kg + L.
+          const uoms = new Set(rows.map(r => uomSymbol(r.item?.uom)));
+          const s = sumStockRows(rows);
+          const v = {
+              name: label, sku: '', uom: '', packing: '', packingUom: '',
+              totalQty: uoms.size === 1 ? fmt(rows.reduce((sum, r) => sum + (r.deptTotal || 0), 0)) : '',
+          };
+          if (valueOn) v.value = s.value === null ? '—' : fmtMoney(s.value);
+          return v;
+      };
 
-      const groups = stockGroups.map(g => ({
-          label: g.label || '',
-          rows: [
-              ...g.rows.map(r => ({ kind: 'data', values: rowValues(r) })),
-              ...(g.label ? [{ kind: 'subtotal', values: totalValues(g.rows, `Subtotal — ${g.label}`) }] : []),
-          ],
-      }));
-      groups.push({ label: '', rows: [{ kind: 'grand', values: totalValues(stockRows, 'GRAND TOTAL') }] });
+      const sections = stockSections.map(sec => {
+          const columns = sec.isFG ? fgColumns : rmColumns;
+          const rowValues = sec.isFG ? fgRowValues : rmRowValues;
+          const totalValues = sec.isFG ? fgTotalValues : rmTotalValues;
+          const groups = sec.groups.map(g => ({
+              label: g.label || '',
+              rows: [
+                  ...g.rows.map(r => ({ kind: 'data', values: rowValues(r) })),
+                  ...(g.label ? [{ kind: 'subtotal', values: totalValues(g.rows, `Subtotal — ${g.label}`) }] : []),
+              ],
+          }));
+          groups.push({ label: '', rows: [{ kind: 'grand', values: totalValues(sec.rows, `TOTAL — ${sec.title.toUpperCase()}`) }] });
+          return { key: sec.key, title: sec.title, columns, groups };
+      });
+
+      const hasFG = stockSections.some(s => s.isFG);
+      const hasOther = stockSections.some(s => !s.isFG);
+      const title = hasFG && !hasOther
+          ? 'Finished Goods Stock Report'
+          : !hasFG && stockSections.length === 1
+              ? `${stockSections[0].title} Stock Report`
+              : 'Stock Report';
+      const filenameBase = hasFG && !hasOther
+          ? `FG_Stock_Report_${new Date().toISOString().slice(0, 10)}`
+          : `Stock_Report_${new Date().toISOString().slice(0, 10)}`;
 
       const footnotes = ['Current Stock at the time of generation (date range applies to the Transactions Report only).'];
       if (splitUnavailableCount > 0) footnotes.push(`${splitUnavailableCount} item(s) also hold stock in departments outside this scope — the grade split is not stored per department, so their grade columns show '—'; their totals are the exact department figures.`);
       if (valueOn && missingRateCount > 0) footnotes.push(`${missingRateCount} item(s) without a rate — value incomplete.`);
 
       const csvLines = [
-          ['Finished Goods Stock Report'],
+          [title],
           [`Departments: ${deptScopeLabel}`],
           [`Grades: ${gradeScopeLabel}`],
           [`Grouping: ${grouping === 'item' ? 'Item-wise' : grouping === 'paper' ? 'Paper-wise' : 'Packing-wise'}`],
           [],
-          columns.map(c => c.label),
       ];
-      const csvRow = (vals) => columns.map(c => vals[c.key] ?? '');
-      stockGroups.forEach(g => {
-          if (g.label) csvLines.push([`== ${g.label} ==`]);
-          g.rows.forEach(r => csvLines.push(csvRow(rowValues(r))));
-          if (g.label) csvLines.push(csvRow(totalValues(g.rows, `Subtotal — ${g.label}`)));
+      sections.forEach(sec => {
+          csvLines.push([`== ${sec.title} ==`]);
+          csvLines.push(sec.columns.map(c => c.label));
+          const csvRow = (vals) => sec.columns.map(c => vals[c.key] ?? '');
+          sec.groups.forEach(g => {
+              if (g.label) csvLines.push([`-- ${g.label} --`]);
+              g.rows.forEach(r => csvLines.push(csvRow(r.values)));
+          });
+          csvLines.push([]);
       });
-      csvLines.push(csvRow(totalValues(stockRows, 'GRAND TOTAL')));
 
       return {
-          title: 'Finished Goods Stock Report',
+          title,
           companyName: state?.adminSetup?.companyName || 'FlashVision ERP',
           scopeLines: [
               `Departments: ${deptScopeLabel}`,
               `Grades: ${gradeScopeLabel} • Grouping: ${grouping === 'item' ? 'Item-wise' : grouping === 'paper' ? 'Paper-wise' : 'Packing-wise'} • Stock: Current`,
           ],
           generatedAtLabel: `Generated: ${new Date().toLocaleString()}`,
-          columns,
-          groups,
+          sections,
           footnotes,
-          filenameBase: `FG_Stock_Report_${new Date().toISOString().slice(0, 10)}`,
+          filenameBase,
           csvText: toCsv(csvLines),
       };
   };
@@ -894,80 +988,135 @@ export default function InvLedger({ selectedDepartments = [], onBack }) {
               </div>
           ) : (
             <>
-              {stockGroups.map(g => {
-                  const gSub = sumStockRows(g.rows);
-                  return (
-                  <section key={g.key} className="bg-surface-container-lowest rounded-2xl overflow-hidden shadow-sm border border-outline-variant/10 mb-8">
-                      {g.label && (
-                          <div className="bg-surface-container-low px-6 py-3.5 flex flex-wrap items-center justify-between gap-3 border-b border-outline-variant/10">
-                              <h3 className="text-base font-black text-on-surface flex items-center gap-2">
-                                  <span className="material-symbols-outlined text-primary" style={{ fontVariationSettings: "'FILL' 1" }}>{grouping === 'paper' ? 'layers' : 'package_2'}</span>
-                                  {grouping === 'paper' ? 'Paper' : 'Packing'}: {g.label}
-                              </h3>
-                              <span className="text-xs font-bold text-on-surface-variant">{g.rows.length} items • {fmt(gSub.totalMeters)} m total</span>
-                          </div>
-                      )}
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-left border-collapse min-w-[900px]">
-                          <thead className="bg-surface-container-low/50 text-on-surface-variant border-b border-outline-variant/10">
-                            <tr>
-                              <th className="px-6 py-3 text-[11px] font-black uppercase tracking-widest">Item Name</th>
-                              <th className="px-6 py-3 text-[11px] font-black uppercase tracking-widest">Item Code</th>
-                              <th className="px-6 py-3 text-[11px] font-black uppercase tracking-widest">Packing Size</th>
-                              {stockGradeColumns.map(c => (
-                                  <th key={c.name} className="px-6 py-3 text-[11px] font-black uppercase tracking-widest text-right">{c.name} ({c.unit === 'Kgs' ? 'kg' : 'm'})</th>
-                              ))}
-                              <th className="px-6 py-3 text-[11px] font-black uppercase tracking-widest text-right">Total Meters</th>
-                              <th className="px-6 py-3 text-[11px] font-black uppercase tracking-widest text-right">Rolls</th>
-                              {valueOn && <th className="px-6 py-3 text-[11px] font-black uppercase tracking-widest text-right">Value ({currencyCode})</th>}
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-outline-variant/10">
-                            {g.rows.map(r => (
-                              <tr key={r.itemId} className="hover:bg-surface-container-low/50 transition-colors">
-                                <td className="px-6 py-3.5 text-sm font-bold text-on-surface">{r.name}</td>
-                                <td className="px-6 py-3.5 text-sm font-mono text-on-surface-variant">{r.sku}</td>
-                                <td className="px-6 py-3.5 text-sm text-on-surface-variant">{r.packingSize ? `${r.packingSize} m` : '—'}</td>
-                                {stockGradeColumns.map(c => (
-                                  <td key={c.name} className="px-6 py-3.5 text-right text-sm font-semibold text-on-surface">
-                                      {r.typeQtys[c.name] === null || r.typeQtys[c.name] === undefined ? '—' : fmt(r.typeQtys[c.name])}
-                                  </td>
+              {/* Fix run C (2026-10-28): one table family PER ITEM CATEGORY —
+                  Finished Goods (grade columns) first, then Raw Material
+                  (UOM / packing size / packing UOM, no grade columns). */}
+              {stockSections.map(sec => (
+                <div key={sec.key} className="mb-10">
+                  <div className="flex flex-wrap items-center gap-3 mb-4 px-1">
+                      <span className="material-symbols-outlined text-primary" style={{ fontVariationSettings: "'FILL' 1" }}>{sec.isFG ? 'inventory_2' : 'science'}</span>
+                      <h2 className="text-xl font-black text-on-surface tracking-tight">{sec.title}</h2>
+                      <span className="text-xs font-bold text-on-surface-variant">{sec.rows.length} items</span>
+                  </div>
+
+                  {sec.groups.map(g => {
+                      const gSub = sumStockRows(g.rows);
+                      return (
+                      <section key={g.key} className="bg-surface-container-lowest rounded-2xl overflow-hidden shadow-sm border border-outline-variant/10 mb-8">
+                          {g.label && (
+                              <div className="bg-surface-container-low px-6 py-3.5 flex flex-wrap items-center justify-between gap-3 border-b border-outline-variant/10">
+                                  <h3 className="text-base font-black text-on-surface flex items-center gap-2">
+                                      <span className="material-symbols-outlined text-primary" style={{ fontVariationSettings: "'FILL' 1" }}>{grouping === 'paper' ? 'layers' : 'package_2'}</span>
+                                      {grouping === 'paper' ? 'Paper' : 'Packing'}: {g.label}
+                                  </h3>
+                                  <span className="text-xs font-bold text-on-surface-variant">{g.rows.length} items{sec.isFG ? ` • ${fmt(gSub.totalMeters)} m total` : ''}</span>
+                              </div>
+                          )}
+                          <div className="overflow-x-auto">
+                            {sec.isFG ? (
+                            <table className="w-full text-left border-collapse min-w-[900px]">
+                              <thead className="bg-surface-container-low/50 text-on-surface-variant border-b border-outline-variant/10">
+                                <tr>
+                                  <th className="px-6 py-3 text-[11px] font-black uppercase tracking-widest">Item Name</th>
+                                  <th className="px-6 py-3 text-[11px] font-black uppercase tracking-widest">Item Code</th>
+                                  <th className="px-6 py-3 text-[11px] font-black uppercase tracking-widest">Packing Size</th>
+                                  {stockGradeColumns.map(c => (
+                                      <th key={c.name} className="px-6 py-3 text-[11px] font-black uppercase tracking-widest text-right">{c.name} ({c.unit === 'Kgs' ? 'kg' : 'm'})</th>
+                                  ))}
+                                  <th className="px-6 py-3 text-[11px] font-black uppercase tracking-widest text-right">Total Meters</th>
+                                  <th className="px-6 py-3 text-[11px] font-black uppercase tracking-widest text-right">Rolls</th>
+                                  {valueOn && <th className="px-6 py-3 text-[11px] font-black uppercase tracking-widest text-right">Value ({currencyCode})</th>}
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-outline-variant/10">
+                                {g.rows.map(r => (
+                                  <tr key={r.itemId} className="hover:bg-surface-container-low/50 transition-colors">
+                                    <td className="px-6 py-3.5 text-sm font-bold text-on-surface">{r.name}</td>
+                                    <td className="px-6 py-3.5 text-sm font-mono text-on-surface-variant">{r.sku}</td>
+                                    <td className="px-6 py-3.5 text-sm text-on-surface-variant">{r.packingSize ? `${r.packingSize} m` : '—'}</td>
+                                    {stockGradeColumns.map(c => (
+                                      <td key={c.name} className="px-6 py-3.5 text-right text-sm font-semibold text-on-surface">
+                                          {r.typeQtys[c.name] === null || r.typeQtys[c.name] === undefined ? '—' : fmt(r.typeQtys[c.name])}
+                                      </td>
+                                    ))}
+                                    <td className="px-6 py-3.5 text-right text-sm font-black text-primary">{fmt(r.totalMeters)}</td>
+                                    <td className="px-6 py-3.5 text-right text-sm font-semibold text-on-surface">{r.rolls === null ? '—' : fmt(r.rolls)}</td>
+                                    {valueOn && <td className="px-6 py-3.5 text-right text-sm font-semibold text-on-surface">{fmtMoney(r.value)}</td>}
+                                  </tr>
                                 ))}
-                                <td className="px-6 py-3.5 text-right text-sm font-black text-primary">{fmt(r.totalMeters)}</td>
-                                <td className="px-6 py-3.5 text-right text-sm font-semibold text-on-surface">{r.rolls === null ? '—' : fmt(r.rolls)}</td>
-                                {valueOn && <td className="px-6 py-3.5 text-right text-sm font-semibold text-on-surface">{fmtMoney(r.value)}</td>}
-                              </tr>
-                            ))}
-                            {g.label && (
-                              <tr className="bg-primary/5">
-                                <td className="px-6 py-3.5 text-sm font-black text-on-surface" colSpan={3}>Subtotal — {g.label}</td>
-                                {stockGradeColumns.map(c => (
-                                  <td key={c.name} className="px-6 py-3.5 text-right text-sm font-bold text-on-surface">{gSub.typeTotals[c.name] === undefined ? '—' : fmt(gSub.typeTotals[c.name])}</td>
+                                {g.label && (
+                                  <tr className="bg-primary/5">
+                                    <td className="px-6 py-3.5 text-sm font-black text-on-surface" colSpan={3}>Subtotal — {g.label}</td>
+                                    {stockGradeColumns.map(c => (
+                                      <td key={c.name} className="px-6 py-3.5 text-right text-sm font-bold text-on-surface">{gSub.typeTotals[c.name] === undefined ? '—' : fmt(gSub.typeTotals[c.name])}</td>
+                                    ))}
+                                    <td className="px-6 py-3.5 text-right text-sm font-black text-primary">{fmt(gSub.totalMeters)}</td>
+                                    <td className="px-6 py-3.5 text-right text-sm font-bold text-on-surface">{gSub.rolls === null ? '—' : fmt(gSub.rolls)}</td>
+                                    {valueOn && <td className="px-6 py-3.5 text-right text-sm font-bold text-on-surface">{gSub.value === null ? '—' : fmtMoney(gSub.value)}</td>}
+                                  </tr>
+                                )}
+                              </tbody>
+                            </table>
+                            ) : (
+                            <table className="w-full text-left border-collapse min-w-[900px]">
+                              <thead className="bg-surface-container-low/50 text-on-surface-variant border-b border-outline-variant/10">
+                                <tr>
+                                  <th className="px-6 py-3 text-[11px] font-black uppercase tracking-widest">Item Name</th>
+                                  <th className="px-6 py-3 text-[11px] font-black uppercase tracking-widest">Item Code</th>
+                                  <th className="px-6 py-3 text-[11px] font-black uppercase tracking-widest">UOM</th>
+                                  <th className="px-6 py-3 text-[11px] font-black uppercase tracking-widest">Packing Size</th>
+                                  <th className="px-6 py-3 text-[11px] font-black uppercase tracking-widest">Packing UOM</th>
+                                  <th className="px-6 py-3 text-[11px] font-black uppercase tracking-widest text-right">Total Stock</th>
+                                  {valueOn && <th className="px-6 py-3 text-[11px] font-black uppercase tracking-widest text-right">Value ({currencyCode})</th>}
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-outline-variant/10">
+                                {g.rows.map(r => (
+                                  <tr key={r.itemId} className="hover:bg-surface-container-low/50 transition-colors">
+                                    <td className="px-6 py-3.5 text-sm font-bold text-on-surface">{r.name}</td>
+                                    <td className="px-6 py-3.5 text-sm font-mono text-on-surface-variant">{r.sku}</td>
+                                    <td className="px-6 py-3.5 text-sm text-on-surface-variant">{uomSymbol(r.item?.uom)}</td>
+                                    <td className="px-6 py-3.5 text-sm text-on-surface-variant">{r.item?.packingSizeRaw || (r.packingSize ? String(r.packingSize) : '—')}</td>
+                                    <td className="px-6 py-3.5 text-sm text-on-surface-variant">{r.item?.packingType || '—'}</td>
+                                    <td className="px-6 py-3.5 text-right text-sm font-black text-primary">{fmt(r.deptTotal)}</td>
+                                    {valueOn && <td className="px-6 py-3.5 text-right text-sm font-semibold text-on-surface">{fmtMoney(r.value)}</td>}
+                                  </tr>
                                 ))}
-                                <td className="px-6 py-3.5 text-right text-sm font-black text-primary">{fmt(gSub.totalMeters)}</td>
-                                <td className="px-6 py-3.5 text-right text-sm font-bold text-on-surface">{gSub.rolls === null ? '—' : fmt(gSub.rolls)}</td>
-                                {valueOn && <td className="px-6 py-3.5 text-right text-sm font-bold text-on-surface">{gSub.value === null ? '—' : fmtMoney(gSub.value)}</td>}
-                              </tr>
+                                {g.label && (
+                                  <tr className="bg-primary/5">
+                                    <td className="px-6 py-3.5 text-sm font-black text-on-surface" colSpan={5}>Subtotal — {g.label}</td>
+                                    <td className="px-6 py-3.5 text-right text-sm font-black text-primary">{(() => { const us = new Set(g.rows.map(r => uomSymbol(r.item?.uom))); return us.size === 1 ? fmt(g.rows.reduce((s, r) => s + (r.deptTotal || 0), 0)) : '—'; })()}</td>
+                                    {valueOn && <td className="px-6 py-3.5 text-right text-sm font-bold text-on-surface">{gSub.value === null ? '—' : fmtMoney(gSub.value)}</td>}
+                                  </tr>
+                                )}
+                              </tbody>
+                            </table>
                             )}
-                          </tbody>
-                        </table>
+                          </div>
+                      </section>
+                      );
+                  })}
+
+                  {/* Section total */}
+                  <section className="bg-surface-container-lowest rounded-2xl shadow-sm border border-primary/25 mb-4 px-6 py-5">
+                      <div className="flex flex-wrap items-center gap-x-10 gap-y-3">
+                          <span className="text-sm font-black uppercase tracking-widest text-on-surface">Total — {sec.title}</span>
+                          {sec.isFG ? (
+                            <>
+                              {stockGradeColumns.map(c => (
+                                  <span key={c.name} className="text-sm font-semibold text-on-surface-variant">{c.name}: <strong className="text-on-surface">{sec.totals.typeTotals[c.name] === undefined ? '—' : fmt(sec.totals.typeTotals[c.name])}</strong></span>
+                              ))}
+                              <span className="text-sm font-semibold text-on-surface-variant">Meters: <strong className="text-primary text-base">{fmt(sec.totals.totalMeters)}</strong></span>
+                              <span className="text-sm font-semibold text-on-surface-variant">Rolls: <strong className="text-on-surface">{sec.totals.rolls === null ? '—' : fmt(sec.totals.rolls)}</strong></span>
+                            </>
+                          ) : (
+                            <span className="text-sm font-semibold text-on-surface-variant">Items: <strong className="text-on-surface">{sec.rows.length}</strong></span>
+                          )}
+                          {valueOn && <span className="text-sm font-semibold text-on-surface-variant">Value: <strong className="text-on-surface">{sec.totals.value === null ? '—' : `${currencyCode} ${fmtMoney(sec.totals.value)}`}</strong></span>}
                       </div>
                   </section>
-                  );
-              })}
-
-              {/* Grand Total */}
-              <section className="bg-surface-container-lowest rounded-2xl shadow-sm border border-primary/25 mb-4 px-6 py-5">
-                  <div className="flex flex-wrap items-center gap-x-10 gap-y-3">
-                      <span className="text-sm font-black uppercase tracking-widest text-on-surface">Grand Total</span>
-                      {stockGradeColumns.map(c => (
-                          <span key={c.name} className="text-sm font-semibold text-on-surface-variant">{c.name}: <strong className="text-on-surface">{stockGrand.typeTotals[c.name] === undefined ? '—' : fmt(stockGrand.typeTotals[c.name])}</strong></span>
-                      ))}
-                      <span className="text-sm font-semibold text-on-surface-variant">Meters: <strong className="text-primary text-base">{fmt(stockGrand.totalMeters)}</strong></span>
-                      <span className="text-sm font-semibold text-on-surface-variant">Rolls: <strong className="text-on-surface">{stockGrand.rolls === null ? '—' : fmt(stockGrand.rolls)}</strong></span>
-                      {valueOn && <span className="text-sm font-semibold text-on-surface-variant">Value: <strong className="text-on-surface">{stockGrand.value === null ? '—' : `${currencyCode} ${fmtMoney(stockGrand.value)}`}</strong></span>}
-                  </div>
-              </section>
+                </div>
+              ))}
 
               {(splitUnavailableCount > 0 || (valueOn && missingRateCount > 0)) && (
                   <div className="text-xs text-on-surface-variant space-y-1 mb-8 px-2">

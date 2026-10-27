@@ -28,6 +28,7 @@ import { buildArchiveEntry, applyFilingToBinders, findUnverifiedFilings, fileEnt
 import { findUserByLoginIdentifier } from '../utils/loginIdentifier';
 import { findProbationNotificationsDue, getProbationInfo } from '../utils/probation';
 import { isStockOutput } from '../utils/stockOutput';
+import ConcurrentKickModal from '../components/ConcurrentKickModal';
 
 const AppContext = createContext();
 const BUILD_VERSION = '20260715_v5';
@@ -658,6 +659,16 @@ export const AppProvider = ({ children }) => {
   };
 
   const sessionsChannelRef = useRef(null);
+  // Fix run E (2026-10-28): this ref is READ/WRITTEN in five places (the
+  // activity handler, the integrity probe, the heartbeat and the sync
+  // guard) but its declaration had been lost in an earlier refactor —
+  // every mousemove/keydown/click therefore threw a ReferenceError
+  // inside the activity handler BEFORE touchSessionActivity() could
+  // run. The stored session's lastActiveAt stayed frozen at login time,
+  // so the 60-minute inactivity rule fired while the user was actively
+  // working and threw them back to the login screen — the reported
+  // mid-use logout. Declaring it restores the designed behaviour.
+  const lastUserInteractionRef = useRef(Date.now());
   // Single-session handover (Part C, 2026-10-25): connection ids THIS
   // client signed out during its own login. Their late realtime events
   // (a final heartbeat can resurrect a swept row) must never kick the
@@ -732,8 +743,21 @@ export const AppProvider = ({ children }) => {
   const [activeSessions, setActiveSessions] = useState([]);
   const currentUserRef = useRef(null);
 
-  const handleForceConcurrentLogout = () => {
+  // Kicked-device countdown (fix run F, 2026-10-28): a concurrent-login
+  // kick no longer signs this device out instantly. Every detection path
+  // (realtime INSERT/DELETE, the force-logout broadcast, the integrity
+  // probe and the heartbeat check) calls handleForceConcurrentLogout,
+  // which now opens a dismiss-proof popup with a 10-second reverse
+  // countdown (ConcurrentKickModal, rendered by this provider); the
+  // actual sign-out (finalizeConcurrentLogout) runs when it hits zero.
+  const [concurrentKick, setConcurrentKick] = useState(null); // null | { secondsLeft }
+  const concurrentKickRef = useRef(false);
+  const concurrentKickTimerRef = useRef(null);
+
+  const finalizeConcurrentLogout = () => {
     const loggedUser = currentUserRef.current;
+    concurrentKickRef.current = false;
+    setConcurrentKick(null);
     if (!loggedUser) return;
     console.warn('[Security Shield] Account was logged in from another device. Forcing logout on this terminal.');
 
@@ -762,6 +786,25 @@ export const AppProvider = ({ children }) => {
     window.dispatchEvent(new CustomEvent('fv_session_expired', {
       detail: { reason: 'concurrent_device_login' }
     }));
+  };
+
+  const handleForceConcurrentLogout = () => {
+    if (concurrentKickRef.current) return; // countdown already running
+    if (!currentUserRef.current) return;
+    concurrentKickRef.current = true;
+    let left = 10;
+    setConcurrentKick({ secondsLeft: left });
+    if (concurrentKickTimerRef.current) clearInterval(concurrentKickTimerRef.current);
+    concurrentKickTimerRef.current = setInterval(() => {
+      left -= 1;
+      if (left <= 0) {
+        clearInterval(concurrentKickTimerRef.current);
+        concurrentKickTimerRef.current = null;
+        finalizeConcurrentLogout();
+      } else {
+        setConcurrentKick({ secondsLeft: left });
+      }
+    }, 1000);
   };
 
   const [state, setState] = useState(() => {
@@ -2967,6 +3010,7 @@ export const AppProvider = ({ children }) => {
   }, [state.displaySettings]);
 
   const updateActiveStatus = async () => {
+    if (concurrentKickRef.current) return; // sign-out countdown running — never resurrect this session's row
     if (!currentUserRef.current?.username) return;
     
     const connId = connectionId.current;
@@ -5055,6 +5099,10 @@ export const AppProvider = ({ children }) => {
       });
 
       try {
+        // Visible interim step (fix run F): the login screen shows a
+        // step panel — this stage tells it the other-session check is
+        // running before we know whether a prior session exists.
+        onStatus?.('checking');
         const { data: existingSessions } = await supabase
           .from('user_sessions')
           .select('connection_id, device_info')
@@ -5089,9 +5137,9 @@ export const AppProvider = ({ children }) => {
             .ilike('username', user.username)
             .neq('connection_id', myConnId);
 
-          // Brief settle so the other device can process its sign-out
-          onStatus?.('signing-in');
-          await new Promise(r => setTimeout(r, 400));
+          // (The other device now gets its own 10-second countdown
+          // notice before its sign-out completes — fix run F. The
+          // unified 'Signing you in…' hold below covers the settle.)
         }
       } catch (e) {
         // Handover mechanics must never block a valid sign-in; the
@@ -5113,6 +5161,15 @@ export const AppProvider = ({ children }) => {
             device_info: devInfoStr
           }, { onConflict: 'connection_id' });
       } catch (e) {}
+
+      // Visible final step of the handover (fix run F, 2026-10-28): the
+      // login screen's interim step panel stays up through the whole
+      // flow; hold the 'Signing you in…' step briefly so the user sees
+      // the sequence complete before the app navigates.
+      if (onStatus) {
+        onStatus('signing-in');
+        await new Promise(r => setTimeout(r, 500));
+      }
 
       setState(prev => {
         const currentLogs = prev.auditLogs || [];
@@ -6324,9 +6381,11 @@ export const AppProvider = ({ children }) => {
       isSessionValid: () => validateCurrentSession().isValid,
       getRateLimitStatus,
       validateSession: validateCurrentSession,
-      activeSessions
+      activeSessions,
+      concurrentKick
     }}>
       {children}
+      {concurrentKick && <ConcurrentKickModal secondsLeft={concurrentKick.secondsLeft} />}
     </AppContext.Provider>
   );
 };

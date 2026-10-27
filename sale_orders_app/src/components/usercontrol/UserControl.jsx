@@ -8,7 +8,12 @@ import GlobalPagination from '../ui/GlobalPagination';
 export default function UserControl() {
   const { state, deleteUser, updateUser, hasPermission } = useApp();
   const [activeUserView, setActiveUserView] = useState(null); // null, 'new', or user object
-  const [showPermissions, setShowPermissions] = useState(false);
+  // Permissions direct landing (fix run A1, 2026-10-28): clicking a user
+  // card opens the NEW Permissions & Access screen directly with that user
+  // pre-selected — the old Edit-Profile-first hop is gone. `undefined` =
+  // closed; `{ userId: null }` = opened from the header button (default
+  // selection); `{ userId }` = opened from that user's card.
+  const [permsView, setPermsView] = useState(undefined);
   const [searchTerm, setSearchTerm] = useState('');
   // Permissions redesign (2026-10-27): User Control action gates.
   const canCreateUser = hasPermission ? hasPermission('userManagement', 'userControl', 'create') : true;
@@ -57,7 +62,7 @@ export default function UserControl() {
             />
           </div>
           <button
-            onClick={() => setShowPermissions(true)}
+            onClick={() => setPermsView({ userId: null })}
             disabled={!canEditPermissions}
             className={`flex items-center justify-center gap-2 px-4 py-2.5 bg-secondary-container text-on-secondary-container rounded-xl font-bold shadow-sm hover:shadow-md transition-all active:scale-95 text-sm w-full sm:w-auto shrink-0 ${!canEditPermissions ? 'opacity-40 grayscale cursor-not-allowed pointer-events-none' : ''}`}
           >
@@ -81,9 +86,9 @@ export default function UserControl() {
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 w-full">
             {displayedUsers.map((user) => (
-              <div 
-                key={user.id} 
-                onClick={() => setActiveUserView(user)}
+              <div
+                key={user.id}
+                onClick={() => setPermsView({ userId: user.id })}
                 className="flex flex-col bg-surface-container-low hover:bg-surface-container-high border border-outline-variant/10 hover:border-primary/30 p-6 rounded-2xl transition-all duration-300 relative group shadow-sm hover:shadow-md cursor-pointer text-center items-center h-full"
               >
                 {/* Status Indicator */}
@@ -135,10 +140,10 @@ export default function UserControl() {
 
                 {/* Actions Footer */}
                 <div className="mt-5 flex gap-3 pt-4 border-t border-outline-variant/10 w-full justify-center opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity duration-300">
-                  <button 
+                  <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      setActiveUserView(user);
+                      setPermsView({ userId: user.id });
                     }}
                     className="flex items-center justify-center w-9 h-9 rounded-xl bg-primary/10 text-primary hover:bg-primary hover:text-on-primary transition-all duration-200"
                     title="Edit Permissions"
@@ -174,8 +179,15 @@ export default function UserControl() {
         </div>
       </div>
 
-      {showPermissions && (
-        <PermissionsAdmin onClose={() => setShowPermissions(false)} />
+      {permsView !== undefined && (
+        <PermissionsAdmin
+          initialUserId={permsView?.userId ?? null}
+          onClose={() => setPermsView(undefined)}
+          onEditProfile={(user) => {
+            setPermsView(undefined);
+            setActiveUserView(user);
+          }}
+        />
       )}
     </div>
   );

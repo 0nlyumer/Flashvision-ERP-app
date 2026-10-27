@@ -2,10 +2,97 @@
 import html2canvas from 'html2canvas';
 
 /**
+ * ROOT-CAUSE FIX (fix run B, 2026-10-28) — overlapping text in saved
+ * PDF/PNG exports across ALL documents (Ledger, FG Stock Report, studio
+ * prints, Telegram sends).
+ *
+ * The app scales the whole UI by setting CSS `zoom` on <body> (the user's
+ * Display Scale, e.g. 75%). html2canvas cannot measure text under a
+ * zoomed ancestor: element boxes/backgrounds come from layout metrics
+ * (correct), but glyph positions come from Range rects (zoom-scaled), so
+ * every word is painted compressed/overlapping — exactly the corruption
+ * in Omer's saved FG Stock Report (2026-10-27). Chrome's own print
+ * pipeline handles zoom correctly, which is why the print PREVIEW always
+ * looked fine while the html2canvas exports were unreadable.
+ *
+ * Fix: for the duration of every capture, the body zoom compensation is
+ * temporarily lifted (zoom/width/height cleared), the capture runs at
+ * zoom 1 where html2canvas measures consistently, and the user's scale
+ * is restored afterwards — even on error. The on-screen UI never keeps
+ * the change; it is restored in the same task sequence.
+ *
+ * Second layer (found in verification, 2026-10-28): the Universal Print
+ * Studio (PrintStudioShell) additionally wraps its preview pages in a
+ * `.fv-pages-zoom` element with a fit-width `zoom` of its own. Captures
+ * taken through it can keep a NESTED zoom (body scale × preview
+ * fit-zoom) — the browser print path is immune because the shell's print
+ * CSS already forces that wrapper to zoom 1. The neutralization below
+ * therefore also lifts the zoom on every `.fv-pages-zoom` wrapper for
+ * the duration of the capture.
+ *
+ * Third layer (found in verification, 2026-10-28, bisected on a minimal
+ * repro page against the app's own built CSS): Tailwind's preflight
+ * media rule — `img,svg,video,canvas,…{display:block;vertical-align:
+ * middle}` — makes html2canvas double-paint SMALL text (the ~6pt
+ * tracked meta labels and the page-number pill in studio documents)
+ * with a ~1px offset, even at zoom 1 with every other factor removed.
+ * The trigger needs the `img` styling combined with the sibling media
+ * rules; forcing `img` back to `display:inline;vertical-align:baseline`
+ * for the duration of the capture removes the ghost completely (proven
+ * on the minimal repro, then end-to-end). Print pages place images in
+ * flex containers, where items are blockified regardless, so the
+ * override does not change the captured layout.
+ */
+async function withCaptureZoomNeutralized(fn) {
+  const body = typeof document !== 'undefined' ? document.body : null;
+  if (!body) return fn();
+  const prev = { zoom: body.style.zoom, width: body.style.width, height: body.style.height };
+  const zoomed = !!prev.zoom && prev.zoom !== '1' && prev.zoom !== '100%';
+  const wrappers = [];
+  document.querySelectorAll('.fv-pages-zoom').forEach((el) => {
+    const z = el.style.zoom;
+    if (z && z !== '1' && z !== '100%') wrappers.push([el, z]);
+  });
+  const lifted = zoomed || wrappers.length > 0;
+  // Layer 3: neutralize the Tailwind preflight media rule's effect on
+  // <img> for the duration of the capture (see the header comment).
+  const imgFixStyle = document.createElement('style');
+  imgFixStyle.setAttribute('data-fv-capture-imgfix', '1');
+  imgFixStyle.textContent = 'img { display: inline !important; vertical-align: baseline !important; }';
+  document.head.appendChild(imgFixStyle);
+  if (lifted) {
+    if (zoomed) {
+      body.style.zoom = '';
+      body.style.width = '';
+      body.style.height = '';
+    }
+    wrappers.forEach(([el]) => { el.style.zoom = '1'; });
+    // Force the un-zoomed layout to settle before any measurement.
+    void body.offsetHeight;
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+  }
+  try {
+    return await fn();
+  } finally {
+    imgFixStyle.remove();
+    if (zoomed) {
+      body.style.zoom = prev.zoom;
+      body.style.width = prev.width;
+      body.style.height = prev.height;
+    }
+    wrappers.forEach(([el, z]) => { el.style.zoom = z; });
+  }
+}
+
+/**
  * High-definition PDF Export Engine (using jsPDF + html2canvas)
  * Renders multi-page documents seamlessly.
  */
 export async function exportDocumentToPdf(elementOrSelector, filename = 'document.pdf', options = {}) {
+  return withCaptureZoomNeutralized(() => exportDocumentToPdfImpl(elementOrSelector, filename, options));
+}
+
+async function exportDocumentToPdfImpl(elementOrSelector, filename = 'document.pdf', options = {}) {
   try {
     const rootEl = typeof elementOrSelector === 'string'
       ? document.querySelector(elementOrSelector)
@@ -68,6 +155,10 @@ export async function exportDocumentToPdf(elementOrSelector, filename = 'documen
  * Ultra High-Resolution Image Export Engine (PNG 2.5x scale)
  */
 export async function exportDocumentToImage(elementOrSelector, filename = 'document.png') {
+  return withCaptureZoomNeutralized(() => exportDocumentToImageImpl(elementOrSelector, filename));
+}
+
+async function exportDocumentToImageImpl(elementOrSelector, filename = 'document.png') {
   try {
     const rootEl = typeof elementOrSelector === 'string'
       ? document.querySelector(elementOrSelector)
@@ -104,6 +195,10 @@ export async function exportDocumentToImage(elementOrSelector, filename = 'docum
  * Blob (used by the Telegram SEND flow in print popups, 2026-10-24).
  */
 export async function buildDocumentPdfBlob(elementOrSelector, options = {}) {
+  return withCaptureZoomNeutralized(() => buildDocumentPdfBlobImpl(elementOrSelector, options));
+}
+
+async function buildDocumentPdfBlobImpl(elementOrSelector, options = {}) {
   const rootEl = typeof elementOrSelector === 'string'
     ? document.querySelector(elementOrSelector)
     : elementOrSelector;
@@ -156,6 +251,10 @@ export async function buildDocumentPdfBlob(elementOrSelector, options = {}) {
  * Multi-page documents are stacked vertically into one tall image.
  */
 export async function buildDocumentPngBlob(elementOrSelector, scale = 3) {
+  return withCaptureZoomNeutralized(() => buildDocumentPngBlobImpl(elementOrSelector, scale));
+}
+
+async function buildDocumentPngBlobImpl(elementOrSelector, scale = 3) {
   const rootEl = typeof elementOrSelector === 'string'
     ? document.querySelector(elementOrSelector)
     : elementOrSelector;

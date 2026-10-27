@@ -9,22 +9,58 @@ import PageLoadingSkeleton from './components/ui/PageLoadingSkeleton';
 import Login from './pages/Login';
 
 // High-Performance Dynamic Code Splitting for enterprise modules
-const Dashboard = lazy(() => import('./pages/Dashboard'));
-const SaleOrderModule = lazy(() => import('./pages/SaleOrderModule'));
-const SaleOrderReturn = lazy(() => import('./pages/SaleOrderReturn'));
-const DeliveryDashboard = lazy(() => import('./pages/DeliveryDashboard'));
-const InventoryDashboard = lazy(() => import('./pages/InventoryDashboard'));
-const ProductionOMS = lazy(() => import('./pages/ProductionOMS'));
-const ProductionModule = lazy(() => import('./pages/ProductionModule'));
-const UserControlDashboard = lazy(() => import('./pages/UserControlDashboard'));
-const SettingsDashboard = lazy(() => import('./pages/SettingsDashboard'));
-const ThemeSettings = lazy(() => import('./pages/ThemeSettings'));
-const HRModule = lazy(() => import('./pages/HRModule'));
-const DocumentWarehouse = lazy(() => import('./pages/DocumentWarehouse'));
-const ChatModule = lazy(() => import('./pages/ChatModule'));
-const FinanceModule = lazy(() => import('./pages/FinanceModule'));
-const FlashAM = lazy(() => import('./pages/FlashAM'));
-const UserProfile = lazy(() => import('./pages/UserProfile'));
+//
+// Chunk-load resilience (fix run D, 2026-10-28): a route chunk that
+// fails to load — the classic case is a browser holding the previous
+// deploy's index.html, whose hashed chunk URLs no longer exist after a
+// new deploy, or a momentary network drop — used to throw the user
+// straight onto the route error screen on FIRST landing after login
+// (a manual reload fixed it, exactly as reported). Each lazy import now
+// retries once after a short pause, and if it still fails, performs ONE
+// guarded full reload (which fetches the fresh index.html) before
+// giving up to the error boundary.
+const lazyWithRetry = (importFn, name) => lazy(async () => {
+  const flag = `fv_chunk_reloaded_${name}`;
+  try {
+    const mod = await importFn();
+    try { sessionStorage.removeItem(flag); } catch (e) {}
+    return mod;
+  } catch (firstError) {
+    await new Promise(r => setTimeout(r, 700));
+    try {
+      const mod = await importFn();
+      try { sessionStorage.removeItem(flag); } catch (e) {}
+      return mod;
+    } catch (secondError) {
+      let alreadyReloaded = false;
+      try { alreadyReloaded = sessionStorage.getItem(flag) === '1'; } catch (e) {}
+      if (!alreadyReloaded) {
+        try { sessionStorage.setItem(flag, '1'); } catch (e) {}
+        window.location.reload();
+        // Never resolves — the reload replaces this page.
+        return new Promise(() => {});
+      }
+      throw secondError;
+    }
+  }
+});
+
+const Dashboard = lazyWithRetry(() => import('./pages/Dashboard'), 'Dashboard');
+const SaleOrderModule = lazyWithRetry(() => import('./pages/SaleOrderModule'), 'SaleOrderModule');
+const SaleOrderReturn = lazyWithRetry(() => import('./pages/SaleOrderReturn'), 'SaleOrderReturn');
+const DeliveryDashboard = lazyWithRetry(() => import('./pages/DeliveryDashboard'), 'DeliveryDashboard');
+const InventoryDashboard = lazyWithRetry(() => import('./pages/InventoryDashboard'), 'InventoryDashboard');
+const ProductionOMS = lazyWithRetry(() => import('./pages/ProductionOMS'), 'ProductionOMS');
+const ProductionModule = lazyWithRetry(() => import('./pages/ProductionModule'), 'ProductionModule');
+const UserControlDashboard = lazyWithRetry(() => import('./pages/UserControlDashboard'), 'UserControlDashboard');
+const SettingsDashboard = lazyWithRetry(() => import('./pages/SettingsDashboard'), 'SettingsDashboard');
+const ThemeSettings = lazyWithRetry(() => import('./pages/ThemeSettings'), 'ThemeSettings');
+const HRModule = lazyWithRetry(() => import('./pages/HRModule'), 'HRModule');
+const DocumentWarehouse = lazyWithRetry(() => import('./pages/DocumentWarehouse'), 'DocumentWarehouse');
+const ChatModule = lazyWithRetry(() => import('./pages/ChatModule'), 'ChatModule');
+const FinanceModule = lazyWithRetry(() => import('./pages/FinanceModule'), 'FinanceModule');
+const FlashAM = lazyWithRetry(() => import('./pages/FlashAM'), 'FlashAM');
+const UserProfile = lazyWithRetry(() => import('./pages/UserProfile'), 'UserProfile');
 
 const RootLayout = () => {
   const { isOnline, networkQuality, syncStatus } = useApp() || { isOnline: true, networkQuality: 'good', syncStatus: 'idle' };
@@ -230,24 +266,33 @@ function RouteErrorBoundary() {
   const error = useRouteError();
   console.error('RouteErrorBoundary captured error:', error);
 
+  // Redesigned in the app's own design language (fix run G, 2026-10-28):
+  // the previous hard-coded navy/slate screen with a cyan→blue gradient
+  // button matched nothing else in the ERP. This version uses the active
+  // theme's Material tokens throughout, so it follows whatever theme
+  // the user has selected.
   return (
-    <div className="min-h-screen bg-[#090d16] text-white flex flex-col items-center justify-center p-6 text-center font-sans">
-      <div className="bg-[#121927] border border-slate-800 rounded-3xl p-8 max-w-lg shadow-2xl space-y-4 animate-fade-in">
-        <div className="w-14 h-14 rounded-2xl bg-amber-500/10 text-amber-400 mx-auto flex items-center justify-center">
-          <span className="material-symbols-outlined text-3xl">warning</span>
+    <div className="min-h-screen bg-surface text-on-surface flex flex-col items-center justify-center p-6 text-center font-sans">
+      <div className="bg-surface-container-lowest border border-outline-variant/30 rounded-[28px] p-8 max-w-lg w-full shadow-xl space-y-4 animate-in fade-in zoom-in-95 duration-200">
+        <div className="w-14 h-14 rounded-2xl bg-error-container text-on-error-container mx-auto flex items-center justify-center">
+          <span className="material-symbols-outlined text-3xl">error</span>
         </div>
-        <h2 className="text-xl font-black text-white tracking-tight">Flashvision ERP</h2>
-        <p className="text-xs text-slate-400 leading-relaxed">
-          An unexpected error occurred while loading this view.
-        </p>
+        <div className="space-y-1.5">
+          <h2 className="font-headline text-xl font-black tracking-tight">Something went wrong</h2>
+          <p className="text-xs text-on-surface-variant leading-relaxed">
+            This screen couldn&rsquo;t be loaded. Your data is safe — reloading the page usually
+            fixes it. If it keeps happening, please note what you were doing and inform your
+            administrator.
+          </p>
+        </div>
         {error && (
-          <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-3 text-left max-h-36 overflow-y-auto">
-            <p className="text-[11px] font-mono text-rose-400 font-semibold break-all">
+          <div className="bg-surface-container-low border border-outline-variant/20 rounded-xl p-3 text-left max-h-36 overflow-y-auto">
+            <p className="text-[11px] font-mono text-error font-semibold break-all">
               {error?.message || error?.statusText || String(error)}
             </p>
           </div>
         )}
-        <div className="flex justify-center gap-3 pt-3">
+        <div className="flex justify-center gap-3 pt-2">
           <button
             onClick={() => {
               if (window.caches) {
@@ -257,19 +302,20 @@ function RouteErrorBoundary() {
               }
               window.location.reload();
             }}
-            className="px-6 py-2.5 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white rounded-xl text-xs font-bold shadow-lg transition-all active:scale-95 cursor-pointer flex items-center gap-2"
+            className="px-6 py-2.5 bg-primary text-on-primary hover:opacity-90 rounded-xl text-xs font-bold shadow-sm transition-all active:scale-95 cursor-pointer flex items-center gap-2"
           >
-            <span className="material-symbols-outlined text-base">cached</span>
-            Refresh Page
+            <span className="material-symbols-outlined text-base">refresh</span>
+            Reload Page
           </button>
           <a
             href="/dashboard"
-            className="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-bold transition-all"
+            className="px-5 py-2.5 bg-secondary-container text-on-secondary-container hover:opacity-90 rounded-xl text-xs font-bold transition-all flex items-center"
           >
-            Dashboard
+            Back to Dashboard
           </a>
         </div>
       </div>
+      <p className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant/60 mt-6">FlashVision ERP</p>
     </div>
   );
 }

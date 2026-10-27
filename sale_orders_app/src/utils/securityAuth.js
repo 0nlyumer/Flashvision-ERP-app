@@ -251,18 +251,33 @@ export function validateCurrentSession() {
 
 /**
  * Updates session activity timestamp
+ *
+ * Rolling renewal (fix run E, 2026-10-28): the ABSOLUTE expiry used to
+ * kill even actively-used sessions at the 4-hour / 24-hour mark — the
+ * user was thrown back to the login screen in the middle of working.
+ * Activity now rolls the expiry forward once half the session's lifetime
+ * has elapsed (re-signed, because the signature covers expiresAt). An
+ * active session therefore never dies mid-use, while an abandoned one
+ * still ends through the 60-minute inactivity rule, and a stored token
+ * with no activity at all still hits its absolute expiry.
  */
 export function touchSessionActivity() {
   const { isValid, session } = validateCurrentSession();
   if (!isValid || !session) return;
 
-  session.lastActiveAt = Date.now();
+  const now = Date.now();
+  session.lastActiveAt = now;
+
+  const duration = session.rememberMe ? SESSION_DURATION_REMEMBER_MS : SESSION_DURATION_STANDARD_MS;
+  if (session.expiresAt - now < duration / 2) {
+    session.expiresAt = now + duration;
+    session.signature = generateSessionSignature(session);
+  }
+
   try {
     const serialized = JSON.stringify(session);
     sessionStorage.setItem(SESSION_STORAGE_KEY, serialized);
-    if (session.rememberMe) {
-      localStorage.setItem(SESSION_STORAGE_KEY, serialized);
-    }
+    localStorage.setItem(SESSION_STORAGE_KEY, serialized);
   } catch (e) {}
 }
 

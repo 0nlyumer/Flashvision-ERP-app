@@ -40,7 +40,7 @@ const registryPart1 = [
         [VIEW, a('customize', 'Customize Widgets & Layout')],
         {
           columns: ['Widget', 'Module', 'Value', 'Status'],
-          preview: { stats: ['Pending Orders', 'Production Today', 'Deliveries', 'Stock Alerts'], toolbar: [{ label: 'Customize Layout', icon: 'dashboard_customize', action: 'customize' }], filters: [] },
+          preview: { layout: 'widgets', stats: ['Pending Orders', 'Production Today', 'Deliveries', 'Stock Alerts'], toolbar: [{ label: 'Customize Layout', icon: 'dashboard_customize', action: 'customize' }], filters: [] },
         }),
     ],
   },
@@ -147,7 +147,14 @@ const registryPart1 = [
       s('ledger', 'Inventory Ledger', 'receipt_long',
         'Department-wise inventory ledger for production stock.',
         [VIEW, PRINT],
-        { columns: ['Date', 'Item', 'In', 'Out', 'Balance'] }),
+        {
+          columns: ['Item Name', 'Item Code', 'Packing Size', 'A (m)', 'A2 (m)', 'B (m)', 'Total Meters', 'Rolls'],
+          preview: {
+            stats: ['Total Current Stock', 'Total Transactions', 'Total Inward', 'Total Outward'],
+            filters: ['Departments', 'Grades / Types: All Grades', 'Grouping: Item-wise', 'Date Range', 'Transaction Types'],
+            toolbar: [{ label: 'Preview / Export Report', icon: 'print', action: 'print' }, { label: 'Print Ledger', icon: 'print', action: 'print' }],
+          },
+        }),
       s('adjustment', 'Inventory Adjustment', 'tune',
         'Manual stock adjustment for the production department.',
         [VIEW, a('adjust', 'Save Adjustment')],
@@ -197,7 +204,17 @@ const registryPart1 = [
       s('ledger', 'Inventory Ledger', 'receipt_long',
         'Complete stock movement ledger with values.',
         [VIEW, PRINT],
-        { columns: ['Date', 'Item', 'Department', 'In', 'Out', 'Balance'] }),
+        {
+          // Preview mirrors the real Multi-Item Ledger (fix run A3,
+          // 2026-10-28): stock-report columns, its four stat cards, the
+          // report filter bar and the print actions.
+          columns: ['Item Name', 'Item Code', 'Packing Size', 'A (m)', 'A2 (m)', 'B (m)', 'Total Meters', 'Rolls'],
+          preview: {
+            stats: ['Total Current Stock', 'Total Transactions', 'Total Inward', 'Total Outward'],
+            filters: ['Departments', 'Grades / Types: All Grades', 'Grouping: Item-wise', 'Date Range', 'Transaction Types'],
+            toolbar: [{ label: 'Preview / Export Report', icon: 'print', action: 'print' }, { label: 'Print Ledger', icon: 'print', action: 'print' }],
+          },
+        }),
       s('return', 'Inventory Return', 'assignment_return',
         'Return stock entries and their records.',
         [VIEW, CREATE],
@@ -424,7 +441,13 @@ const registryPart2 = [
       s('userControl', 'User Control', 'manage_accounts',
         'System users, roles and access levels.',
         [VIEW, CREATE, EDIT, DELETE],
-        { columns: ['User', 'Username', 'Role', 'Department', 'Status'] }),
+        {
+          columns: ['User', 'Username', 'Role', 'Department', 'Status'],
+          preview: {
+            layout: 'cards',
+            toolbar: [{ label: 'Permissions & Access', icon: 'shield_person', action: 'edit' }, { label: 'New User', icon: 'person_add', action: 'create' }],
+          },
+        }),
       s('permissionsAdmin', 'Permissions & Access Control', 'shield_person',
         'THIS screen: per-user module → screen → action permissions with the live preview and click-to-toggle.',
         [VIEW, a('edit', 'Edit Permissions')],
@@ -476,7 +499,7 @@ const registryPart2 = [
       s('punch', 'Attendance Punch', 'fingerprint',
         'Clock employees in / out on the Flash AM terminal and view the attendance list. (Open to every signed-in user by Omer\'s rule.)',
         [a('access', 'Punch Attendance')],
-        { columns: ['Employee', 'In', 'Out', 'Status'], preview: { toolbar: [{ label: 'Punch In', icon: 'login', action: 'access' }, { label: 'Punch Out', icon: 'logout', action: 'access' }], filters: [] } }),
+        { columns: ['Employee', 'In', 'Out', 'Status'], preview: { layout: 'terminal', toolbar: [{ label: 'Punch In', icon: 'login', action: 'access' }, { label: 'Punch Out', icon: 'logout', action: 'access' }], filters: [] } }),
       s('roster', 'Roster & Reports', 'groups',
         'Flash AM roster and attendance reports.',
         [VIEW, PRINT],
