@@ -837,7 +837,7 @@ export default function Layout({ children, hideSidebar = false, subNavigation = 
     <div 
       className={`text-on-surface overflow-hidden flex h-full min-h-full bg-background relative ${isSidebarHorizontal ? 'flex-col' : 'flex-row'}`}
       style={{
-        backgroundImage: hasDashboardBackground && state?.dashboardBackground ? `url(${state.dashboardBackground})` : 'none',
+        backgroundImage: hasDashboardBackground && state?.dashboardBackground ? `url(${state.dashboardBackground})` : 'var(--kit-body-bg, none)',
         backgroundSize: 'cover',
         backgroundPosition: 'center',
         backgroundAttachment: 'fixed'

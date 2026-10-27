@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import Layout from '../components/Layout';
 import { useApp } from '../context/AppContext';
-import { FONT_STACKS, DEFAULT_FONT_SIZE } from '../utils/theme';
+import { FONT_STACKS, DEFAULT_FONT_SIZE, KIT_THEMES } from '../utils/theme';
 
 export default function ThemeSettings() {
   const { state, updateThemeSettings } = useApp();
   const currentTheme = state?.themeSettings || { colorMode: 'dark', primaryColor: 'tradingview', fontStyle: 'inter', fontSize: DEFAULT_FONT_SIZE, borderRadius: 'rounded' };
 
+  const [kitTheme, setKitTheme] = useState(currentTheme.kitTheme || null);
   const [colorMode, setColorMode] = useState(currentTheme.colorMode || 'dark');
   const [primaryColor, setPrimaryColor] = useState(currentTheme.primaryColor || 'tradingview');
   const [fontStyle, setFontStyle] = useState(currentTheme.fontStyle || 'inter');
@@ -16,6 +17,7 @@ export default function ThemeSettings() {
 
   useEffect(() => {
     if (state?.themeSettings) {
+      setKitTheme(state.themeSettings.kitTheme || null);
       setColorMode(state.themeSettings.colorMode || 'dark');
       setPrimaryColor(state.themeSettings.primaryColor || 'tradingview');
       setFontStyle(state.themeSettings.fontStyle || 'inter');
@@ -32,41 +34,48 @@ export default function ThemeSettings() {
 
   const handleApplyTheme = () => {
     triggerMorph();
-    updateThemeSettings({ colorMode, primaryColor, fontStyle, fontSize, borderRadius });
+    updateThemeSettings({ kitTheme, colorMode, primaryColor, fontStyle, fontSize, borderRadius });
     setAppliedNotification(true);
     setTimeout(() => setAppliedNotification(false), 3000);
+  };
+
+  const handleKitThemeChange = (kitId) => {
+    triggerMorph();
+    setKitTheme(kitId);
+    updateThemeSettings({ kitTheme: kitId, colorMode, primaryColor, fontStyle, fontSize, borderRadius });
   };
 
   const handleColorModeChange = (mode) => {
     triggerMorph();
     setColorMode(mode);
-    updateThemeSettings({ colorMode: mode, primaryColor, fontStyle, fontSize, borderRadius });
+    updateThemeSettings({ kitTheme, colorMode: mode, primaryColor, fontStyle, fontSize, borderRadius });
   };
 
   const handlePrimaryColorChange = (colorId) => {
     triggerMorph();
     setPrimaryColor(colorId);
-    updateThemeSettings({ colorMode, primaryColor: colorId, fontStyle, fontSize, borderRadius });
+    updateThemeSettings({ kitTheme, colorMode, primaryColor: colorId, fontStyle, fontSize, borderRadius });
   };
 
   const handleFontStyleChange = (fontId) => {
     setFontStyle(fontId);
-    updateThemeSettings({ colorMode, primaryColor, fontStyle: fontId, fontSize, borderRadius });
+    updateThemeSettings({ kitTheme, colorMode, primaryColor, fontStyle: fontId, fontSize, borderRadius });
   };
 
   const handleFontSizeChange = (size) => {
     setFontSize(size);
-    updateThemeSettings({ colorMode, primaryColor, fontStyle, fontSize: size, borderRadius });
+    updateThemeSettings({ kitTheme, colorMode, primaryColor, fontStyle, fontSize: size, borderRadius });
   };
 
   const handleBorderRadiusChange = (radiusId) => {
     setBorderRadius(radiusId);
-    updateThemeSettings({ colorMode, primaryColor, fontStyle, fontSize, borderRadius: radiusId });
+    updateThemeSettings({ kitTheme, colorMode, primaryColor, fontStyle, fontSize, borderRadius: radiusId });
   };
 
   const handleReset = () => {
     triggerMorph();
-    const defaults = { colorMode: 'dark', primaryColor: 'tradingview', fontStyle: 'inter', fontSize: DEFAULT_FONT_SIZE, borderRadius: 'rounded' };
+    const defaults = { kitTheme: null, colorMode: 'dark', primaryColor: 'tradingview', fontStyle: 'inter', fontSize: DEFAULT_FONT_SIZE, borderRadius: 'rounded' };
+    setKitTheme(null);
     setColorMode(defaults.colorMode);
     setPrimaryColor(defaults.primaryColor);
     setFontStyle(defaults.fontStyle);
@@ -169,6 +178,52 @@ export default function ThemeSettings() {
                     Theme preferences applied live
                 </div>
             )}
+        </div>
+
+        {/* Signature UI-Kit Themes */}
+        <div className="bg-surface-container-low/40 backdrop-blur-xl rounded-[28px] border border-outline-variant/20 p-7 shadow-lg shadow-black/5">
+            <h2 className="text-base font-bold text-on-surface mb-1.5 flex items-center gap-2 font-headline">
+                <span className="material-symbols-outlined text-primary text-[20px]">style</span>
+                Signature Themes — UI Kits
+            </h2>
+            <p className="text-xs text-on-surface-variant mb-5">Complete app themes from the design kits: background, surfaces, tables, buttons and geometry change together across the whole app. Your font and size choices still apply. Pick Classic to return to the manual mode, accent and geometry controls below.</p>
+
+            <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+                <button
+                    type="button"
+                    onClick={() => handleKitThemeChange(null)}
+                    className={`flex flex-col gap-2.5 p-3 rounded-2xl border text-left transition-all cursor-pointer ${!kitTheme ? 'border-primary/80 bg-primary/10 ring-1 ring-primary/40 shadow-md' : 'border-outline-variant/20 hover:border-outline-variant/40 bg-surface-container-low/50'}`}
+                >
+                    <div className="w-full h-16 rounded-xl bg-gradient-to-br from-slate-700 via-slate-900 to-black relative overflow-hidden">
+                        <div className="absolute left-2 top-2 w-8 h-5 rounded-md bg-white/15"></div>
+                        <div className="absolute left-2 bottom-2 h-2 w-10 rounded-full bg-[#2962ff]"></div>
+                    </div>
+                    <div>
+                        <span className={`text-xs font-black block ${!kitTheme ? 'text-primary' : 'text-on-surface'}`}>Classic</span>
+                        <span className="text-[10px] text-on-surface-variant leading-tight block">Manual mode, accent & geometry</span>
+                    </div>
+                    {!kitTheme && <span className="material-symbols-outlined text-primary text-[18px]">check_circle</span>}
+                </button>
+
+                {Object.entries(KIT_THEMES).map(([kitId, kit]) => (
+                    <button
+                        key={kitId}
+                        type="button"
+                        onClick={() => handleKitThemeChange(kitId)}
+                        className={`flex flex-col gap-2.5 p-3 rounded-2xl border text-left transition-all cursor-pointer ${kitTheme === kitId ? 'border-primary/80 bg-primary/10 ring-1 ring-primary/40 shadow-md' : 'border-outline-variant/20 hover:border-outline-variant/40 bg-surface-container-low/50'}`}
+                    >
+                        <div className="w-full h-16 rounded-xl relative overflow-hidden border border-black/5" style={{ background: kit.bodyBg }}>
+                            <div className="absolute left-2 top-2 right-5 h-8 rounded-lg bg-white/85 shadow-sm"></div>
+                            <div className="absolute left-2 bottom-2 h-2.5 w-9 rounded-full shadow-sm" style={{ background: kit.primaryGradient }}></div>
+                        </div>
+                        <div>
+                            <span className={`text-xs font-black block ${kitTheme === kitId ? 'text-primary' : 'text-on-surface'}`}>{kit.label}</span>
+                            <span className="text-[10px] text-on-surface-variant leading-tight block">{kit.desc}</span>
+                        </div>
+                        {kitTheme === kitId && <span className="material-symbols-outlined text-primary text-[18px]">check_circle</span>}
+                    </button>
+                ))}
+            </div>
         </div>
 
         {/* Customization Grid */}

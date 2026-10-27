@@ -1739,3 +1739,37 @@ html:not(.dark) textarea::placeholder {
   color: var(--fv-bandtext, #ffffff) !important;
   -webkit-text-fill-color: var(--fv-bandtext, #ffffff) !important;
 }
+
+/* ─── Signature UI-Kit Themes (Omer, 2026-10-28) ────────────────────────────
+   Active only while <html data-kit="…"> is set by applyTheme (theme.js).
+   The kit palette itself rides the standard CSS variables; these rules add
+   what variables cannot express: the layered pastel page background, the
+   gradient on primary action buttons/links, and the kit table-head tint.
+   Scoped to screen rendering of the app shell — print sheets carry their
+   own inline design and are excluded via .print-root where present. */
+html[data-kit] body {
+  background-image: var(--kit-body-bg);
+  background-attachment: fixed;
+  background-size: cover;
+}
+html[data-kit] button.bg-primary,
+html[data-kit] a.bg-primary {
+  background-image: var(--kit-primary-gradient);
+  border-color: transparent;
+}
+html[data-kit] thead th {
+  background-color: var(--kit-table-head, var(--color-surface-container-high));
+}
+html[data-kit] ::selection {
+  background: var(--color-primary);
+  color: #ffffff;
+}
+@media print {
+  html[data-kit] body { background-image: none; }
+  html[data-kit] thead th { background-color: initial; }
+}
+html[data-kit] .mobile-viewport {
+  background-image: var(--kit-body-bg);
+  background-attachment: fixed;
+  background-size: cover;
+}
