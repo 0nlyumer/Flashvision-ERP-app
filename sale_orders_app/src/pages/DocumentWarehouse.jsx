@@ -5,6 +5,8 @@ import { loadOnboardingHistory } from '../utils/onboardingHistory';
 import UniversalPrintStudioModal from '../components/ui/UniversalPrintStudioModal';
 import BinderFormModal from '../components/warehouse/BinderFormModal';
 import SlipDocumentPopup from '../components/warehouse/SlipDocumentPopup';
+import DailyActivityViewer from '../components/warehouse/DailyActivityViewer';
+import { buildDailyActivity } from '../utils/dailyActivity';
 import { isSlipFamilyDocType, resolveFiledDocumentView, getFiledDocumentViewSource, resolveBinderColor, resolveBinderFrameToken } from '../utils/studioSnapshot';
 import { searchFiledDocuments } from '../utils/filedDocSearch';
 import { SYSTEM_DOCUMENTS } from '../utils/printSchemaRegistry';
@@ -15,6 +17,10 @@ export default function DocumentWarehouse({ insideDashboard = false }) {
   const canCreateBinder = hasPermission ? hasPermission('files', 'cabinet', 'createBinder') : true;
   const canEditBinder = hasPermission ? hasPermission('files', 'cabinet', 'editBinder') : true;
   const canDeleteBinder = hasPermission ? hasPermission('files', 'cabinet', 'deleteBinder') : true;
+  // Daily Activity File (2026-10-28): a virtual auto-file per date — NOT
+  // a stored binder. Its registry screen (files/dailyActivity) gates it.
+  const canViewDailyActivity = hasPermission ? hasPermission('files', 'dailyActivity', 'view') : true;
+  const [showDailyActivity, setShowDailyActivity] = useState(false);
 
   // Stage states: 'browsing' | 'grabbing' | 'opened'
   const [stage, setStage] = useState('browsing');
@@ -403,6 +409,19 @@ export default function DocumentWarehouse({ insideDashboard = false }) {
   };
   const chunkedShelves = chunkArray(filteredBinders, 15);
 
+  // Today's Daily Activity count for the pinned auto-file card (the
+  // file itself is assembled live in the viewer — this is only the
+  // card's count badge).
+  const todayLocalStr = (() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  })();
+  const todayActivityCount = React.useMemo(
+    () => buildDailyActivity(state, todayLocalStr).totalDocs,
+    [state, todayLocalStr]
+  );
+  const todayLong = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+
   // The document currently on display in the opened book (filed order is
   // the stored array order; paging moves through it one document at a time)
   const activeDoc = activeFolder && Array.isArray(activeFolder.documents)
@@ -681,10 +700,38 @@ export default function DocumentWarehouse({ insideDashboard = false }) {
         <div className="flex-grow w-full flex items-center justify-center relative overflow-hidden">
 
           {stage === 'browsing' || stage === 'grabbing' ? (
-            /* ================= VERTICALLY SCROLLABLE 2-SHELVES WOOD CABINET ================= */
+            <div className="relative w-full h-full min-h-[600px] flex flex-col">
+              {/* DAILY ACTIVITY — the pinned auto-file (2026-10-28): not a
+                  stored binder; one virtual file per date, assembled live
+                  from server data when opened. Distinct calendar styling
+                  sets it apart from the binder shelves below. */}
+              <button
+                onClick={() => canViewDailyActivity && setShowDailyActivity(true)}
+                disabled={!canViewDailyActivity}
+                title={canViewDailyActivity ? 'Open the Daily Activity file — every document of a date in one file' : 'No view permission for the Daily Activity File'}
+                className={`mx-4 mt-4 shrink-0 w-auto text-left rounded-2xl border-2 px-5 py-4 flex items-center gap-4 transition-all shadow-sm ${
+                  canViewDailyActivity
+                    ? 'bg-indigo-50 hover:bg-indigo-100/80 border-indigo-300 cursor-pointer'
+                    : 'bg-slate-50 border-slate-200 opacity-50 cursor-not-allowed'
+                }`}
+              >
+                <span className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ${canViewDailyActivity ? 'bg-indigo-600 text-white' : 'bg-slate-300 text-slate-500'}`}>
+                  <span className="material-symbols-outlined text-2xl">calendar_month</span>
+                </span>
+                <span className="min-w-0">
+                  <span className="block text-[10px] font-black uppercase tracking-[0.18em] text-indigo-500">Daily Activity File</span>
+                  <span className="block text-sm font-black text-slate-800 truncate">Daily Activity — {todayLong}</span>
+                  <span className="block text-[11px] font-semibold text-slate-500">
+                    {todayActivityCount} document{todayActivityCount === 1 ? '' : 's'} today · pick any date inside · one combined PDF for the whole day
+                  </span>
+                </span>
+                <span className="material-symbols-outlined text-indigo-400 ml-auto shrink-0">chevron_right</span>
+              </button>
+
+            {/* ================= VERTICALLY SCROLLABLE 2-SHELVES WOOD CABINET ================= */}
             <div
               ref={cabinetRef}
-              className="relative w-full h-full min-h-[600px] wood-cabinet-outer rounded-none border-x-0 border-b-0 p-4 flex flex-col gap-6 select-none z-10 overflow-y-auto cabinet-scrollbar"
+              className="relative w-full flex-1 min-h-0 mt-4 wood-cabinet-outer rounded-none border-x-0 border-b-0 p-4 flex flex-col gap-6 select-none z-10 overflow-y-auto cabinet-scrollbar"
             >
 
               {/* Chunked Cabinet Shelves row mapping - EXACTLY 2 SHELVES VISIBLE ON LOAD */}
@@ -798,6 +845,7 @@ export default function DocumentWarehouse({ insideDashboard = false }) {
                 </div>
               )}
 
+            </div>
             </div>
           ) : (
             /* ================= FULLSCREEN 3D BOOK reader OPEN VIEW ================= */
@@ -1127,6 +1175,12 @@ export default function DocumentWarehouse({ insideDashboard = false }) {
           isOpen={!!slipAttachment}
           onClose={() => setSlipAttachment(null)}
           attachment={slipAttachment}
+        />
+
+        {/* DAILY ACTIVITY FILE viewer (2026-10-28) */}
+        <DailyActivityViewer
+          isOpen={showDailyActivity}
+          onClose={() => setShowDailyActivity(false)}
         />
 
       </div>

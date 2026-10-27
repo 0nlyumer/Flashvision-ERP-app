@@ -22,6 +22,7 @@ import {
 } from '../../utils/printExportUtils';
 import PrintStudioShell from './PrintStudioShell';
 import { resolveMargins, ensurePhaseMatrixRecord, uomSymbol } from '../../utils/printDesign';
+import { resolveRecordLineItems, getPrintCellValue, getPrintNumericValue, getPrintHeaderFieldValue } from '../../utils/printSheetData';
 import { PhaseMatrixSheet, PrintTableSheet } from './PrintSheetParts';
 import { getDivisionPrintFullName } from '../../utils/divisionPrintName';
 
@@ -143,15 +144,7 @@ function UniversalPrintStudioModalInner({
   }, [documentType, resolvedRecord]);
 
   // 3. Line items.
-  const resolvedLineItems = useMemo(() => {
-    if (!resolvedRecord) return [];
-    if (Array.isArray(resolvedRecord.items)) return resolvedRecord.items;
-    if (Array.isArray(resolvedRecord.lineItems)) return resolvedRecord.lineItems;
-    if (Array.isArray(resolvedRecord.rows)) return resolvedRecord.rows;
-    if (Array.isArray(resolvedRecord.details)) return resolvedRecord.details;
-    if (Array.isArray(resolvedRecord.records)) return resolvedRecord.records;
-    return [];
-  }, [resolvedRecord]);
+  const resolvedLineItems = useMemo(() => resolveRecordLineItems(resolvedRecord), [resolvedRecord]);
 
   const updateLayout = (keyOrFn, val) => {
     setLayoutConfig((prev) => {
@@ -160,80 +153,12 @@ function UniversalPrintStudioModalInner({
     });
   };
 
-  const getCellValue = (colKey, item, index = 0) => {
-    if (!item) return '---';
-    if (colKey === 'serial_no' || colKey === 'sr' || colKey === 'sr_no') return String(index + 1).padStart(2, '0');
-    if (item[colKey] !== undefined && item[colKey] !== null) {
-      const val = item[colKey];
-      if ((colKey === 'uom' || colKey === 'unit') && typeof val === 'string') return uomSymbol(val);
-      return typeof val === 'number' ? val.toLocaleString() : String(val);
-    }
-    if (colKey === 'item_name' || colKey === 'product_name' || colKey === 'description') {
-      return item.name || item.itemName || item.productName || item.description || '---';
-    }
-    if (colKey === 'item_code' || colKey === 'sku' || colKey === 'code') {
-      return item.itemCode || item.code || item.sku || '---';
-    }
-    if (colKey === 'qty' || colKey === 'quantity') return String(item.quantity ?? item.qty ?? '0');
-    if (colKey === 'rolls' || colKey === 'roll_qty') return String(item.rolls || item.rollQty || item.rollsCount || '-');
-    if (colKey === 'uom' || colKey === 'unit') return uomSymbol(item.uom || item.unit || 'Mtr');
-    if (colKey === 'rate' || colKey === 'price') return Number(item.price || item.rate || 0).toLocaleString();
-    if (colKey === 'sub_total' || colKey === 'total') {
-      if (item.sub_total !== undefined) return Number(item.sub_total).toLocaleString();
-      const q = Number(item.quantity || item.qty || 0);
-      const r = Number(item.price || item.rate || 0);
-      const d = Number(item.discount || 0);
-      return Number(q * r - d).toLocaleString();
-    }
-    return item[colKey] !== undefined ? String(item[colKey]) : '---';
-  };
-
-  const numericValue = (colKey, item) => {
-    if (!item) return 0;
-    const direct = item[colKey];
-    if (typeof direct === 'number') return direct;
-    if (colKey === 'sub_total' || colKey === 'total') {
-      if (typeof item.sub_total === 'number') return item.sub_total;
-      const q = Number(item.quantity || item.qty || 0);
-      const r = Number(item.price || item.rate || 0);
-      const d = Number(item.discount || 0);
-      return q * r - d;
-    }
-    if (colKey === 'qty' || colKey === 'quantity') return Number(item.quantity ?? item.qty ?? 0);
-    if (colKey === 'rate' || colKey === 'price') return Number(item.price ?? item.rate ?? 0);
-    const n = Number(direct);
-    return Number.isFinite(n) ? n : 0;
-  };
-
-  const getHeaderFieldValue = (fieldKey) => {
-    if (!resolvedRecord) return '---';
-    if (resolvedRecord[fieldKey] !== undefined && resolvedRecord[fieldKey] !== null) {
-      const val = resolvedRecord[fieldKey];
-      if (fieldKey === 'date' || fieldKey.includes('_date')) {
-        const d = new Date(val);
-        return Number.isNaN(d.getTime()) ? String(val) : d.toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' });
-      }
-      return String(val);
-    }
-    if (resolvedRecord.header && resolvedRecord.header[fieldKey] !== undefined) {
-      return String(resolvedRecord.header[fieldKey]);
-    }
-    if (fieldKey === 'customer' || fieldKey === 'customer_name' || fieldKey === 'party_name') {
-      if (resolvedRecord.customerName) return resolvedRecord.customerName;
-      if (resolvedRecord.customerId) {
-        const c = state?.customers?.find((x) => x.id === resolvedRecord.customerId);
-        return c ? c.name : resolvedRecord.customerId;
-      }
-    }
-    if (fieldKey === 'contact' || fieldKey === 'contact_details') {
-      if (resolvedRecord.contactPerson) return resolvedRecord.contactPerson;
-      if (resolvedRecord.consignee?.contactNumber) return resolvedRecord.consignee.contactNumber;
-    }
-    if (fieldKey === 'shipping_address') {
-      return resolvedRecord.shippingAddress || resolvedRecord.consignee?.address || 'Standard Delivery Address';
-    }
-    return '---';
-  };
+  // Record-access helpers live in utils/printSheetData (2026-10-28) —
+  // shared with the Daily Activity File viewer so a document reads
+  // identically everywhere. These wrappers keep the modal's call sites.
+  const getCellValue = (colKey, item, index = 0) => getPrintCellValue(colKey, item, index);
+  const numericValue = (colKey, item) => getPrintNumericValue(colKey, item);
+  const getHeaderFieldValue = (fieldKey) => getPrintHeaderFieldValue(resolvedRecord, fieldKey, state);
 
   // Column / header-field / signature manipulations (same as before).
   const toggleColumn = (idx) => {

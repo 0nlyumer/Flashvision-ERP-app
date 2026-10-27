@@ -22,6 +22,7 @@
 
 import { getEffectiveDutyHours, getEffectiveOvertimeMultiplier } from './hrDutyHours';
 import { getCutSundays, normalizeSundayCutRules } from './sundayCut';
+import { ledgerEntryForRequest, isLedgerSettled } from './loanLifecycle';
 
 // Defensive number helpers to guarantee 0 crashes
 const safeNum = (val) => {
@@ -315,11 +316,23 @@ export const computePayrollRecords = (state, period, divisionToUse) => {
       if (activeLedgerItem && activeLedgerItem.monthlyInstallment) {
         loanAmount = Math.min(safeNum(activeLedgerItem.monthlyInstallment), safeNum(activeLedgerItem.remainingBalance));
       } else {
-        const activeLoanReq = loanRequests.find(r => 
+        const activeLoanReq = loanRequests.find(r =>
           (String(r.employeeId) === empIdStr || String(r.employeeCode || '') === empCodeStr || String(r.employeeName || '').toLowerCase() === empNameLower) && r.status === 'Approved'
         );
         if (activeLoanReq && activeLoanReq.monthlyInstallment) {
-          loanAmount = safeNum(activeLoanReq.monthlyInstallment);
+          // LOAN SETTLEMENT GUARD (Omer-approved fix, 2026-10-28 —
+          // loanLifecycle rule 1; hrPrintRecords' mirror applies the
+          // identical rule): the request path is ONLY a fallback for a
+          // loan with no ledger entry yet. When a ledger entry tracks
+          // this request and is settled (Completed / fully recovered),
+          // the loan is over — deducting the installment again would
+          // recover more than was lent, forever. The request itself is
+          // flipped to 'Repaid' by the reconcile (loanLifecycle rule 2);
+          // this guard holds even before that flip lands.
+          const trackingEntry = ledgerEntryForRequest(loanLedger, activeLoanReq);
+          if (!isLedgerSettled(trackingEntry)) {
+            loanAmount = safeNum(activeLoanReq.monthlyInstallment);
+          }
         }
       }
 

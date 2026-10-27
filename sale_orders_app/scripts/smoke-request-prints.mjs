@@ -134,7 +134,9 @@ const state = {
   hr_employees_list: [E1, E2, E3, E4, E5, E6, E7],
   hr_uploaded_attendance: [],
   hr_overtime_requests: [],
-  hr_loan_requests: [loanReq(E2), loanReq(E5, { id: '#LR-E5', monthlyInstallment: 4000 })],
+  // E2's request is the ledger entry's own request (same id + amount —
+  // the shape the creators always produce): the settled-loan trap.
+  hr_loan_requests: [loanReq(E2, { id: '#LR-X', amount: 60000, monthlyInstallment: 5000 }), loanReq(E5, { id: '#LR-E5', monthlyInstallment: 4000 })],
   hr_loan_ledger: [L1, L2, L4, L5, L7],
   hr_leave_requests: [], hr_advance_requests: []
 };
@@ -147,7 +149,10 @@ const payrollLoan = (emp) => {
 
 const scenarios = [
   ['E1 ledger active', E1, 5000, 'ledger'],
-  ['E2 completed ledger + approved request', E2, 3000, 'request'],
+  // E2 WAS the flaw (completed ledger + still-Approved request deducting
+  // forever). Fixed 2026-10-28 (loanLifecycle): the settled ledger blocks
+  // the request path — deduction 0. See smoke-loan-lifecycle.mjs.
+  ['E2 completed ledger + approved request (settled — no deduction)', E2, 0, null],
   ['E3 employee-record loan', E3, 2500, 'employee'],
   ['E4 installment capped at remaining', E4, 2000, 'ledger'],
   ['E5 zero-installment ledger falls to request', E5, 4000, 'request'],
@@ -165,7 +170,7 @@ for (const [label, emp, expected, source] of scenarios) {
 const st1 = buildLoanLedgerStatement(state, L1);
 check('statement E1: running via this ledger', st1.deduction.running === true && st1.deduction.viaThisLedger === true && st1.deduction.amount === 5000);
 const st2 = buildLoanLedgerStatement(state, L2);
-check('statement E2: running but NOT via this (completed) ledger', st2.deduction.running === true && st2.deduction.viaThisLedger === false && st2.deduction.source === 'request' && st2.deduction.amount === 3000);
+check('statement E2: settled loan — deduction NOT running (flaw fixed 2026-10-28)', st2.deduction.running === false && st2.deduction.viaThisLedger === false && st2.deduction.amount === 0 && /Completed/.test(st2.deduction.note), st2.deduction.note);
 const st6 = buildLoanLedgerStatement(state, ledgerItem('LED-E6', E6, { status: 'Completed', remainingBalance: 0, paidAmount: 60000 }));
 check('statement E6-style completed, no other source: NOT running', st6.deduction.running === false && /Completed/.test(st6.deduction.note), st6.deduction.note);
 const stHist = buildLoanLedgerStatement(state, { ...L1, deductionsHistory: [{ id: 'D1', date: '2026-09-01', amount: 5000, type: 'Scheduled Payroll Deduction', remainingBalanceAfter: 55000, notes: 'Auto deduction for 2026-09' }] });

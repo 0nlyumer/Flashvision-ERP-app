@@ -55,6 +55,7 @@ export const SLIP_FAMILY_DOC_TYPES = [
   'voucher_payment',
   'voucher_journal',
   'voucher_contra',
+  'daily_petty_cash',
   'hr_onboarding',
   'hr_leave_request',
   'hr_overtime_request',

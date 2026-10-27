@@ -26,6 +26,7 @@ import { invoiceSourceLabel } from '../utils/invoiceSource';
 import { buildFiledDocumentSnapshot } from '../utils/studioSnapshot';
 import { buildArchiveEntry, applyFilingToBinders, findUnverifiedFilings, fileEntryIntoBindersById } from '../utils/routingArchive';
 import { findUserByLoginIdentifier } from '../utils/loginIdentifier';
+import { settleRepaidLoanRequests, isLedgerSettled } from '../utils/loanLifecycle';
 import { findProbationNotificationsDue, getProbationInfo } from '../utils/probation';
 import { isStockOutput } from '../utils/stockOutput';
 import ConcurrentKickModal from '../components/ConcurrentKickModal';
@@ -92,6 +93,9 @@ const initialMockState = {
   hr_loan_requests: [],
   hr_loan_ledger: [],
   adminSetup: {
+    // First paint before the app_config overlay lands: the brand name is
+    // 'Flashvision' only (Omer, 2026-10-25) — never the old Logistics name.
+    companyName: 'Flashvision',
     printSettings: {
       documentLayouts: {
         delivery_challan: {
@@ -436,7 +440,10 @@ export const reconcileHRApprovalsAndLedgers = (stateObj) => {
         );
 
         if (loanReqIdx !== -1) {
-          if (loanRequests[loanReqIdx].status !== 'Approved') {
+          // A settled loan stays settled: 'Repaid' (set by §2b when the
+          // ledger entry completed) is never resurrected to 'Approved'
+          // by the approval record — a new loan is a new request.
+          if (loanRequests[loanReqIdx].status !== 'Approved' && loanRequests[loanReqIdx].status !== 'Repaid') {
             loanRequests[loanReqIdx] = { ...loanRequests[loanReqIdx], status: 'Approved', approvedAt: new Date().toISOString() };
             hasChanged = true;
           }
@@ -469,10 +476,15 @@ export const reconcileHRApprovalsAndLedgers = (stateObj) => {
   // 2. Process all Approved records in hr_loan_requests -> ensure entries in hr_loan_ledger
   loanRequests.forEach(req => {
     if (req.status === 'Approved') {
-      const existingIdx = loanLedger.findIndex(l => 
-        l.loanRequestId === req.id || 
+      const existingIdx = loanLedger.findIndex(l =>
+        l.loanRequestId === req.id ||
         (l.employeeId === req.employeeId && l.totalLoanAmount === (req.amount || req.loanAmount) && l.status === 'Active') ||
-        (l.employeeName === req.employeeName && l.totalLoanAmount === (req.amount || req.loanAmount) && l.status === 'Active')
+        (l.employeeName === req.employeeName && l.totalLoanAmount === (req.amount || req.loanAmount) && l.status === 'Active') ||
+        // A SETTLED entry for this loan also counts as "exists" — without
+        // this, a legacy entry missing its loanRequestId would spawn a
+        // phantom Active duplicate of an already-recovered loan (§2b).
+        (l.employeeId === req.employeeId && l.totalLoanAmount === (req.amount || req.loanAmount) && isLedgerSettled(l)) ||
+        (l.employeeName === req.employeeName && l.totalLoanAmount === (req.amount || req.loanAmount) && isLedgerSettled(l))
       );
 
       if (existingIdx === -1) {
@@ -504,6 +516,19 @@ export const reconcileHRApprovalsAndLedgers = (stateObj) => {
       }
     }
   });
+
+  // 2b. LOAN SETTLEMENT (Omer-approved fix, 2026-10-28 — loanLifecycle
+  // rule 2): a request whose ledger entry is fully recovered is itself
+  // settled — flip 'Approved' -> 'Repaid'. Before this rule the request
+  // stayed 'Approved' forever and payroll's request fallback kept
+  // deducting the installment every month with no cap and no end.
+  // Runs AFTER §2 so an entry created in this same pass is seen, and
+  // self-heals on every reconcile pass.
+  const settledLoanRequests = settleRepaidLoanRequests(loanRequests, loanLedger);
+  if (settledLoanRequests.changed) {
+    loanRequests = settledLoanRequests.requests;
+    hasChanged = true;
+  }
 
   // 3. Process all Approved records in hr_overtime_requests -> ensure entries in attendance lists
   overtimeRequests.forEach(req => {
@@ -623,6 +648,12 @@ const getSanitizedSyncState = (stateObj) => {
   // table copy wins on load) — never in the blob.
   delete cleanState.hr_salary_allowance_config;
   delete cleanState.hr_employee_allowance_map;
+  // COMPANY NAME (2026-10-28): adminSetup lives ONLY in app_config (key
+  // 'adminSetup', table copy wins on load) — never in the blob. Excluding
+  // it here keeps the frozen blob's stale 'Flashvision Logistics' copy out
+  // of every sync comparison and write, exactly like the other
+  // app_config-owned settings above.
+  delete cleanState.adminSetup;
   if (!Array.isArray(cleanState.documentWarehouseBinders)) {
     cleanState.documentWarehouseBinders = [];
   }
@@ -694,6 +725,12 @@ export const AppProvider = ({ children }) => {
   const step1SnapshotsRef = useRef({});
   const adminSetupLoadedRef = useRef(false);
   const adminSetupSnapshotRef = useRef(null);
+  // COMPANY NAME (2026-10-28): the blob's adminSetup copy, kept ONLY as the
+  // no-app_config-copy fallback for loadStep1TablesIntoState. It is never
+  // applied to rendered state directly (see fetchInitialState) — the frozen
+  // blob still carries the pre-rename 'Flashvision Logistics' name, which
+  // must never reach the UI (Omer's standing order, 2026-10-25).
+  const blobAdminSetupRef = useRef(null);
   const fgComboConfigLoadedRef = useRef(false);
   const fgComboConfigSnapshotRef = useRef(null);
   const flashAmConfigLoadedRef = useRef(false);
@@ -1448,7 +1485,16 @@ export const AppProvider = ({ children }) => {
             rawMaterialPhases: toArray(erpData.rawMaterialPhases),
             finishedGoodPhases: toArray(erpData.finishedGoodPhases)
           };
-          
+
+          // COMPANY NAME (2026-10-28): never let the blob's adminSetup
+          // reach rendered state — its companyName is the stale pre-rename
+          // 'Flashvision Logistics'. The app_config copy is the single
+          // source and is overlaid by loadStep1TablesIntoState below; the
+          // blob copy is stashed only as that overlay's documented
+          // fallback. prev.adminSetup stays on screen until it lands.
+          blobAdminSetupRef.current = erpData.adminSetup || null;
+          delete sanitized.adminSetup;
+
           const syncStateCopy = getSanitizedSyncState(sanitized);
           lastSyncedStateRef.current = JSON.stringify(syncStateCopy);
 
@@ -1475,6 +1521,9 @@ export const AppProvider = ({ children }) => {
             return {
               ...nextState,
               currentUser: effectiveUser,
+              // adminSetup is app_config-owned (see above) — the overlay
+              // replaces it from the table copy right after this.
+              adminSetup: prev.adminSetup,
               themeSettings: prev.themeSettings,
               displaySettings: prev.displaySettings,
               dashboardLayout: prev.dashboardLayout,
@@ -1727,6 +1776,18 @@ export const AppProvider = ({ children }) => {
             }
             salaryAllowanceLoadedRef.current = true;
           }
+          // LOAN SETTLEMENT (2026-10-28): this overlay replaces
+          // hr_loan_requests with the raw table copy, which would undo
+          // the reconcile's 'Repaid' flip (§2b in
+          // reconcileHRApprovalsAndLedgers) — re-apply the settle rule
+          // on the overlaid pair so a fully-recovered loan's request
+          // settles in state too. seedSnapshots below still seeds from
+          // the raw table copy, so the flip syncs back to the table
+          // through the normal write-through effect.
+          if (Array.isArray(next.hr_loan_requests) && Array.isArray(next.hr_loan_ledger)) {
+            const settledOverlay = settleRepaidLoanRequests(next.hr_loan_requests, next.hr_loan_ledger);
+            if (settledOverlay.changed) next.hr_loan_requests = settledOverlay.requests;
+          }
           seedSnapshots(seedSource);
           return next;
         });
@@ -1850,7 +1911,13 @@ export const AppProvider = ({ children }) => {
               rawMaterialPhases: toArray(erpData.rawMaterialPhases),
               finishedGoodPhases: toArray(erpData.finishedGoodPhases)
             };
-            
+
+            // COMPANY NAME (2026-10-28): same rule as the initial load —
+            // the blob's adminSetup (stale 'Flashvision Logistics'
+            // companyName) never reaches rendered state; app_config rules.
+            blobAdminSetupRef.current = erpData.adminSetup || blobAdminSetupRef.current;
+            delete sanitized.adminSetup;
+
             const syncStateCopy = getSanitizedSyncState(sanitized);
             const copyStr = JSON.stringify(syncStateCopy);
 
@@ -1879,6 +1946,7 @@ export const AppProvider = ({ children }) => {
               return {
                 ...nextState,
                 currentUser: nextCurrentUser,
+                adminSetup: prev.adminSetup,
                 themeSettings: prev.themeSettings,
                 displaySettings: prev.displaySettings,
                 dashboardLayout: prev.dashboardLayout,

@@ -21,6 +21,8 @@
 // smoke-request-prints.mjs cross-checks this mirror against the real
 // computePayrollRecords on fixtures covering every branch.
 
+import { ledgerEntryForRequest, isLedgerSettled } from './loanLifecycle.js';
+
 const safeNum = (v) => {
   const n = parseFloat(v);
   return Number.isFinite(n) ? n : 0;
@@ -265,9 +267,15 @@ export function resolvePayrollLoanDeduction(state, employee) {
     const loanRequests = state?.hr_loan_requests || [];
     const activeLoanReq = loanRequests.find((r) => matches(r) && r.status === 'Approved');
     if (activeLoanReq && activeLoanReq.monthlyInstallment) {
-      amount = safeNum(activeLoanReq.monthlyInstallment);
-      source = 'request';
-      item = activeLoanReq;
+      // LOAN SETTLEMENT GUARD — identical to payrollCalc (2026-10-28,
+      // loanLifecycle rule 1): a request tracked by a SETTLED ledger
+      // entry deducts nothing; the loan is fully recovered.
+      const trackingEntry = ledgerEntryForRequest(loanLedger, activeLoanReq);
+      if (!isLedgerSettled(trackingEntry)) {
+        amount = safeNum(activeLoanReq.monthlyInstallment);
+        source = 'request';
+        item = activeLoanReq;
+      }
     }
   }
   return { amount: parseFloat(amount.toFixed(2)), source, item };
@@ -352,6 +360,128 @@ export function buildLoanLedgerStatement(state, ledgerItem) {
     },
     deduction,
     history,
+    employee
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Employee-wise loan statement (Omer's order, 2026-10-27): select an
+// employee, print their FULL loan position across every loan — how much
+// was disbursed in total, how much has been recovered, how much remains.
+// Events are chronological: each loan's disbursement plus every recorded
+// deduction / repayment from its deductionsHistory, with a running
+// balance. The summary figures come from the ledger entries themselves
+// (authoritative); if itemised history does not add up to them (legacy
+// entries), one explicit adjustment event closes the gap so the printed
+// table always foots to the printed balance.
+// ---------------------------------------------------------------------------
+export function buildEmployeeLoanStatement(state, employee) {
+  if (!employee) return null;
+  const employees = state?.hr_employees_list || [];
+  const loanLedger = state?.hr_loan_ledger || [];
+  const empIdStr = String(employee.id ?? '');
+  const empNameLower = String(employee.name ?? '').toLowerCase();
+  const matchesEmp = (l) =>
+    String(l?.employeeId ?? '') === empIdStr ||
+    String(l?.employeeName ?? '').toLowerCase() === empNameLower;
+
+  const entries = loanLedger
+    .filter(matchesEmp)
+    .slice()
+    .sort((a, b) => String(a.createdAt || a.repaymentStartDate || '').localeCompare(String(b.createdAt || b.repaymentStartDate || '')));
+
+  const rawEvents = [];
+  entries.forEach((entry) => {
+    rawEvents.push({
+      date: entry.createdAt || entry.repaymentStartDate || '',
+      kind: 'loan',
+      ref: entry.id,
+      label: `Loan Disbursed — ${entry.loanType || 'Personal Loan'}`,
+      debit: safeNum(entry.totalLoanAmount),
+      credit: 0,
+      notes: entry.loanRequestId ? `Request ${entry.loanRequestId}` : ''
+    });
+    (entry.deductionsHistory || []).forEach((h) => {
+      rawEvents.push({
+        date: h.date || '',
+        kind: 'recovery',
+        ref: entry.id,
+        label: `${h.type || 'Deduction'} — ${entry.id}`,
+        debit: 0,
+        credit: safeNum(h.amount),
+        notes: h.notes || ''
+      });
+    });
+  });
+  // Chronological; a disbursement precedes same-day recoveries.
+  rawEvents.sort((a, b) =>
+    String(a.date).localeCompare(String(b.date)) ||
+    (a.kind === b.kind ? 0 : a.kind === 'loan' ? -1 : 1)
+  );
+
+  const totalLoan = entries.reduce((s, e) => s + safeNum(e.totalLoanAmount), 0);
+  const totalRecovered = entries.reduce((s, e) => s + safeNum(e.paidAmount), 0);
+  const balanceRemaining = entries.reduce((s, e) => s + safeNum(e.remainingBalance), 0);
+
+  let running = 0;
+  const events = rawEvents.map((ev, idx) => {
+    running = parseFloat((running + ev.debit - ev.credit).toFixed(2));
+    return {
+      serial_no: String(idx + 1),
+      date: formatPrintDate(ev.date),
+      description: ev.label,
+      ref: ev.ref,
+      loan_amount: ev.debit > 0 ? formatPrintMoney(ev.debit) : '—',
+      recovered: ev.credit > 0 ? formatPrintMoney(ev.credit) : '—',
+      balance_after: formatPrintMoney(running),
+      notes: ev.notes
+    };
+  });
+  if (events.length > 0 && Math.abs(running - balanceRemaining) > 0.005) {
+    const diff = parseFloat((balanceRemaining - running).toFixed(2));
+    running = balanceRemaining;
+    events.push({
+      serial_no: String(events.length + 1),
+      date: events[events.length - 1].date,
+      description: 'Adjustment — recovery recorded on the ledger without itemised history',
+      ref: '—',
+      loan_amount: diff > 0 ? formatPrintMoney(diff) : '—',
+      recovered: diff < 0 ? formatPrintMoney(-diff) : '—',
+      balance_after: formatPrintMoney(running),
+      notes: 'Balances the statement to the ledger totals'
+    });
+  }
+
+  const loans = entries.map((entry) => ({
+    id: entry.id,
+    loan_type: entry.loanType || '—',
+    date: formatPrintDate(entry.createdAt || entry.repaymentStartDate),
+    principal: formatPrintMoney(entry.totalLoanAmount),
+    recovered: formatPrintMoney(entry.paidAmount),
+    balance: formatPrintMoney(entry.remainingBalance),
+    installment: formatPrintMoney(entry.monthlyInstallment),
+    status: entry.status || '—'
+  }));
+
+  const resolution = resolvePayrollLoanDeduction(state, employee);
+
+  return {
+    header: {
+      emp_name: employee.name || '—',
+      emp_code: employee.employeeCode || employee.code || employee.id || '—',
+      department: employee.department || departmentOf({ employeeId: employee.id, employeeName: employee.name }, employees)
+    },
+    summary: {
+      totalLoan,
+      totalRecovered,
+      balanceRemaining,
+      loanCount: entries.length,
+      activeLoans: entries.filter((e) => e.status === 'Active').length,
+      settledLoans: entries.filter((e) => e.status !== 'Active').length
+    },
+    deduction: resolution,
+    loans,
+    events,
     employee
   };
 }

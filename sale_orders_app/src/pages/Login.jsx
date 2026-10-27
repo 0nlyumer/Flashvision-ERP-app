@@ -471,7 +471,7 @@ export default function Login() {
   const inputBgClass = isDark ? 'bg-slate-950/70 text-white placeholder-slate-500 border-slate-700/70 focus:border-cyan-500 focus:ring-cyan-500/20' : 'bg-slate-50 text-slate-900 placeholder-slate-400 border-slate-300 focus:border-blue-600 focus:ring-blue-600/20';
   const shakeClass = "animate-[shake_0.4s_ease-in-out] border-rose-500 shadow-[0_0_12px_rgba(244,63,94,0.4)]";
 
-  const companyName = state?.adminSetup?.companyName || 'FLASHVISION ENTERPRISE';
+  const companyName = state?.adminSetup?.companyName || 'Flashvision';
 
   const activeLoginTheme = activeLoginThemeId ? getLoginThemeById(activeLoginThemeId) : null;
 

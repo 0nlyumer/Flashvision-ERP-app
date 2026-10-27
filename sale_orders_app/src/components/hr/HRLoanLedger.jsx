@@ -2,9 +2,11 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useNavigate } from 'react-router-dom';
 import LoanLedgerPrintPopup from './LoanLedgerPrintPopup';
+import EmployeeLoanStatementPopup from './EmployeeLoanStatementPopup';
+import { settleRepaidLoanRequests } from '../../utils/loanLifecycle';
 
 export default function HRLoanLedger({ isMobile }) {
-  const { state, setCollection, currencySymbol } = useApp();
+  const { state, setCollection, currencySymbol, hasPermission } = useApp();
   const navigate = useNavigate();
   const currSym = currencySymbol || 'Rs.';
 
@@ -22,6 +24,24 @@ export default function HRLoanLedger({ isMobile }) {
   const [manualRepayNotes, setManualRepayNotes] = useState('');
 
   const rawLedgerList = state.hr_loan_ledger || [];
+
+  // Employee-wise loan statement (Omer, 2026-10-27): one print per
+  // employee covering ALL their loans — disbursed / recovered / balance.
+  const [showEmployeeStatement, setShowEmployeeStatement] = useState(false);
+  // The registry's Loan Ledger PRINT action gates both ledger prints
+  // (future-screens rule): without it the buttons render grey + dead.
+  const canPrintLedger = typeof hasPermission === 'function'
+    ? hasPermission('hr', 'hrLoanLedger', 'print')
+    : true;
+
+  // LOAN SETTLEMENT (2026-10-28): the moment a ledger entry completes,
+  // its loan request flips to 'Repaid' (loanLifecycle rule 2) so salary
+  // can never deduct it again. The AppContext reconcile self-heals the
+  // same flip on every state pass; doing it here makes it instant.
+  const settleRequestsForLedger = (ledgerList) => {
+    const settled = settleRepaidLoanRequests(state.hr_loan_requests || [], ledgerList);
+    if (settled.changed) setCollection('hr_loan_requests', settled.requests);
+  };
 
   const triggerToast = (msg) => {
     setToastMessage(msg);
@@ -81,6 +101,7 @@ export default function HRLoanLedger({ isMobile }) {
 
     if (updated) {
       setCollection('hr_loan_ledger', newList);
+      settleRequestsForLedger(newList);
       triggerToast('Scheduled loan deductions auto-processed successfully!');
     }
   }, []);
@@ -176,6 +197,7 @@ export default function HRLoanLedger({ isMobile }) {
 
     const updatedList = rawLedgerList.map(l => l.id === selectedLedgerItem.id ? updatedItem : l);
     setCollection('hr_loan_ledger', updatedList);
+    if (isDone) settleRequestsForLedger(updatedList);
     setSelectedLedgerItem(updatedItem);
 
     setManualRepayAmount('');
@@ -210,7 +232,17 @@ export default function HRLoanLedger({ isMobile }) {
         </div>
 
         <div className="flex items-center gap-3 w-full sm:w-auto">
-          <button 
+          <button
+            type="button"
+            onClick={() => canPrintLedger && setShowEmployeeStatement(true)}
+            disabled={!canPrintLedger}
+            title={canPrintLedger ? 'Print one employee\u2019s complete loan ledger — every loan, recovered amount and balance' : 'No print permission for the Loan Ledger'}
+            className={`flex-1 sm:flex-none px-4 py-2.5 rounded-xl font-bold text-xs shadow-sm transition-all flex items-center justify-center gap-2 ${canPrintLedger ? 'bg-surface-container-high text-on-surface border border-outline-variant/40 hover:bg-surface-container active:scale-[0.98] cursor-pointer' : 'bg-surface-container-high text-on-surface/40 border border-outline-variant/40 opacity-50 cursor-not-allowed'}`}
+          >
+            <span className="material-symbols-outlined text-[18px]">summarize</span>
+            Employee Loan Statement
+          </button>
+          <button
             type="button"
             onClick={() => navigate('/hr?tab=loan')}
             className="flex-1 sm:flex-none px-4 py-2.5 bg-primary text-on-primary rounded-xl font-bold text-xs shadow-sm hover:bg-primary-container active:scale-[0.98] transition-all flex items-center justify-center gap-2 cursor-pointer"
@@ -422,9 +454,10 @@ export default function HRLoanLedger({ isMobile }) {
               </div>
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => setShowLedgerPrint(true)}
-                  className="px-3 py-1.5 bg-primary text-white rounded-lg text-xs font-bold hover:bg-primary-container transition-all cursor-pointer flex items-center gap-1.5"
-                  title="Print Ledger Statement"
+                  onClick={() => canPrintLedger && setShowLedgerPrint(true)}
+                  disabled={!canPrintLedger}
+                  className={`px-3 py-1.5 bg-primary text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${canPrintLedger ? 'hover:bg-primary-container cursor-pointer' : 'opacity-40 cursor-not-allowed'}`}
+                  title={canPrintLedger ? 'Print Ledger Statement' : 'No print permission for the Loan Ledger'}
                 >
                   <span className="material-symbols-outlined text-[16px]">print</span>
                   Print Ledger Statement
@@ -652,6 +685,13 @@ export default function HRLoanLedger({ isMobile }) {
         isOpen={showLedgerPrint && !!selectedLedgerItem}
         onClose={() => setShowLedgerPrint(false)}
         ledgerItem={selectedLedgerItem}
+      />
+
+      {/* Print — Employee Loan Statement (all of one employee's loans) */}
+      <EmployeeLoanStatementPopup
+        isOpen={showEmployeeStatement}
+        onClose={() => setShowEmployeeStatement(false)}
+        canPrint={canPrintLedger}
       />
 
     </div>

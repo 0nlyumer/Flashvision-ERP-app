@@ -2,8 +2,9 @@ import React, { useMemo } from 'react';
 import PrintLayout from '../ui/PrintLayout';
 import { DEFAULT_DOCUMENT_SCHEMAS, SYSTEM_DOCUMENTS } from '../../utils/printSchemaRegistry';
 
-// SlipDocumentPopup — Files Cabinet viewer popup for the 12 slip-family
-// documents (vouchers, HR forms, inventory adjustment / return). These
+// SlipDocumentPopup — Files Cabinet viewer popup for the slip-family
+// documents (vouchers, HR forms, the Daily Petty Cash report, inventory
+// adjustment / return). These
 // documents print through the shared slip renderer (PrintLayout) — the same
 // component and the same per-document layout settings the modules' own
 // print popups use — so a filed slip re-prints in its current saved design.
@@ -17,6 +18,10 @@ import { DEFAULT_DOCUMENT_SCHEMAS, SYSTEM_DOCUMENTS } from '../../utils/printSch
 // record carries one) becomes the lines table, and long text fields
 // (reason / remarks / description) render as note blocks — exactly the
 // pieces the module popups show for these document types.
+//
+// SlipDocumentSheet (2026-10-28): the rendered sheet itself, extracted
+// from the popup so the Daily Activity File viewer shows slip documents
+// inline — same design, no popup per document.
 
 const FIELD_ALIASES = {
   employeeName: ['emp_name', 'employee_name', 'name'],
@@ -67,15 +72,7 @@ const formatValue = (value) => {
   return String(value);
 };
 
-export default function SlipDocumentPopup({ isOpen, onClose, attachment, titleSuffix = 'Filed Print' }) {
-  const docType = attachment?.docType || null;
-  const record = attachment?.studioRecord || null;
-
-  const docName = useMemo(() => {
-    const sysDoc = SYSTEM_DOCUMENTS.find((d) => d.id === docType);
-    return sysDoc?.name || attachment?.title || 'Document';
-  }, [docType, attachment]);
-
+export function SlipDocumentSheet({ docType, record, documentId, date, docName }) {
   const { metaFields, itemColumns, longTexts } = useMemo(() => {
     const schema = (docType && DEFAULT_DOCUMENT_SCHEMAS[docType]) || {};
     const fields = [];
@@ -98,9 +95,88 @@ export default function SlipDocumentPopup({ isOpen, onClose, attachment, titleSu
     return { metaFields: fields, itemColumns: columns, longTexts: texts };
   }, [docType, record]);
 
+  const items = Array.isArray(record?.items) ? record.items : [];
+
+  return (
+    <PrintLayout
+      documentTitle={(docName || 'Document').toUpperCase()}
+      documentId={documentId}
+      date={date}
+      documentType={docType}
+      customerName={formatValue(resolveFieldValue(record, 'customerName') ?? resolveFieldValue(record, 'employeeName'))}
+      extraMeta={metaFields.slice(0, 4)}
+    >
+      {metaFields.length > 0 && (
+        <div className="my-6 grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-3">
+          {metaFields.map((f, idx) => (
+            <div key={idx} className="border-b border-dashed border-slate-300 pb-1.5">
+              <div className="text-[9px] font-black uppercase tracking-widest text-slate-500">{f.label}</div>
+              <div className="text-xs font-bold text-slate-900 mt-0.5">{f.value}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {longTexts.map((t, idx) => (
+        <div key={idx} className="my-4 border border-slate-300 rounded-lg p-4 bg-white">
+          <h4 className="font-bold text-xs uppercase tracking-wider text-slate-700 mb-2">{t.label}</h4>
+          <p className="text-sm text-slate-900 leading-relaxed font-medium">{t.value}</p>
+        </div>
+      ))}
+
+      {items.length > 0 && (() => {
+        // When the document schema's first column IS the serial
+        // column, render it alone — a hardcoded extra "Sr #" used to
+        // duplicate it AND shift every PrintLayout column width one
+        // position (request prints final, 2026-10-26).
+        const cols = itemColumns.length ? itemColumns : [{ key: 'name', label: 'Description' }, { key: 'qty', label: 'Qty' }, { key: 'rate', label: 'Rate' }, { key: 'amount', label: 'Amount' }];
+        const hasSerialCol = cols[0]?.key === 'serial_no';
+        return (
+        <table className="w-full border-collapse border border-slate-300 text-xs my-4">
+          <thead>
+            <tr className="bg-slate-800 text-white font-bold">
+              {!hasSerialCol && <th className="border border-slate-300 p-2 text-center">Sr #</th>}
+              {cols.map((col) => (
+                <th key={col.key} className="border border-slate-300 p-2 text-left">{col.label || col.key}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((item, idx) => (
+              <tr key={idx}>
+                {!hasSerialCol && <td className="border border-slate-300 p-2 text-center">{idx + 1}</td>}
+                {cols.map((col) => (
+                  <td key={col.key} className="border border-slate-300 p-2">
+                    {formatValue(col.key === 'serial_no' ? (item?.[col.key] ?? idx + 1) : (item?.[col.key] ?? item?.[col.field]))}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        );
+      })()}
+
+      {metaFields.length === 0 && longTexts.length === 0 && items.length === 0 && (
+        <div className="my-6 text-center text-xs font-semibold text-slate-500">
+          This filed document carries no printable detail snapshot — its registry details are shown in the cabinet book view.
+        </div>
+      )}
+    </PrintLayout>
+  );
+}
+
+export default function SlipDocumentPopup({ isOpen, onClose, attachment, titleSuffix = 'Filed Print' }) {
+  const docType = attachment?.docType || null;
+  const record = attachment?.studioRecord || null;
+
+  const docName = useMemo(() => {
+    const sysDoc = SYSTEM_DOCUMENTS.find((d) => d.id === docType);
+    return sysDoc?.name || attachment?.title || 'Document';
+  }, [docType, attachment]);
+
   if (!isOpen || !attachment) return null;
 
-  const items = Array.isArray(record?.items) ? record.items : [];
   const filedDate = attachment.filedAt
     ? new Date(attachment.filedAt).toLocaleDateString('en-GB')
     : (attachment.date || '');
@@ -141,71 +217,13 @@ export default function SlipDocumentPopup({ isOpen, onClose, attachment, titleSu
         </div>
 
         <div className="flex-grow overflow-y-auto p-6 sm:p-10 bg-slate-100">
-          <PrintLayout
-            documentTitle={docName.toUpperCase()}
+          <SlipDocumentSheet
+            docType={docType}
+            record={record}
             documentId={attachment.docId || attachment.id}
             date={filedDate}
-            documentType={docType}
-            customerName={formatValue(resolveFieldValue(record, 'customerName') ?? resolveFieldValue(record, 'employeeName'))}
-            extraMeta={metaFields.slice(0, 4)}
-          >
-            {metaFields.length > 0 && (
-              <div className="my-6 grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-3">
-                {metaFields.map((f, idx) => (
-                  <div key={idx} className="border-b border-dashed border-slate-300 pb-1.5">
-                    <div className="text-[9px] font-black uppercase tracking-widest text-slate-500">{f.label}</div>
-                    <div className="text-xs font-bold text-slate-900 mt-0.5">{f.value}</div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {longTexts.map((t, idx) => (
-              <div key={idx} className="my-4 border border-slate-300 rounded-lg p-4 bg-white">
-                <h4 className="font-bold text-xs uppercase tracking-wider text-slate-700 mb-2">{t.label}</h4>
-                <p className="text-sm text-slate-900 leading-relaxed font-medium">{t.value}</p>
-              </div>
-            ))}
-
-            {items.length > 0 && (() => {
-              // When the document schema's first column IS the serial
-              // column, render it alone — a hardcoded extra "Sr #" used to
-              // duplicate it AND shift every PrintLayout column width one
-              // position (request prints final, 2026-10-26).
-              const cols = itemColumns.length ? itemColumns : [{ key: 'name', label: 'Description' }, { key: 'qty', label: 'Qty' }, { key: 'rate', label: 'Rate' }, { key: 'amount', label: 'Amount' }];
-              const hasSerialCol = cols[0]?.key === 'serial_no';
-              return (
-              <table className="w-full border-collapse border border-slate-300 text-xs my-4">
-                <thead>
-                  <tr className="bg-slate-800 text-white font-bold">
-                    {!hasSerialCol && <th className="border border-slate-300 p-2 text-center">Sr #</th>}
-                    {cols.map((col) => (
-                      <th key={col.key} className="border border-slate-300 p-2 text-left">{col.label || col.key}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {items.map((item, idx) => (
-                    <tr key={idx}>
-                      {!hasSerialCol && <td className="border border-slate-300 p-2 text-center">{idx + 1}</td>}
-                      {cols.map((col) => (
-                        <td key={col.key} className="border border-slate-300 p-2">
-                          {formatValue(col.key === 'serial_no' ? (item?.[col.key] ?? idx + 1) : (item?.[col.key] ?? item?.[col.field]))}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              );
-            })()}
-
-            {metaFields.length === 0 && longTexts.length === 0 && items.length === 0 && (
-              <div className="my-6 text-center text-xs font-semibold text-slate-500">
-                This filed document carries no printable detail snapshot — its registry details are shown in the cabinet book view.
-              </div>
-            )}
-          </PrintLayout>
+            docName={docName}
+          />
         </div>
       </div>
     </div>

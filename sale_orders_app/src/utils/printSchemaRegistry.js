@@ -50,6 +50,7 @@ export const SYSTEM_DOCUMENTS = [
   { id: 'voucher_payment', name: 'Payment Voucher', module: 'finance', icon: 'payments', code: 'PVR' },
   { id: 'voucher_journal', name: 'Journal Voucher', module: 'finance', icon: 'book', code: 'JVR' },
   { id: 'voucher_contra', name: 'Contra Voucher', module: 'finance', icon: 'sync_alt', code: 'CVR' },
+  { id: 'daily_petty_cash', name: 'Daily Petty Cash Report', module: 'finance', icon: 'wallet', code: 'DPC' },
 
   // 6. HR Module
   { id: 'hr_onboarding', name: 'Onboarding Wizard Slip', module: 'hr', icon: 'person_add', code: 'ONB' },
@@ -775,6 +776,28 @@ export const DEFAULT_DOCUMENT_SCHEMAS = {
       { key: 'account_head', label: 'Account Title', enabled: true, width: '40%', align: 'left' },
       { key: 'debit', label: 'Deposit / Debit ($)', enabled: true, width: '26%', align: 'right' },
       { key: 'credit', label: 'Withdrawal / Credit ($)', enabled: true, width: '26%', align: 'right' }
+    ]
+  },
+
+  // Daily Petty Cash Report (Daily Activity File, 2026-10-28): one slip
+  // per day, built live from the posted voucher lines touching the
+  // petty cash account (111020) — opening balance, the day's movements
+  // with a running balance, closing balance in the header.
+  daily_petty_cash: {
+    ...DEFAULT_LAYOUT_SETTINGS,
+    headerFields: [
+      { key: 'report_date', label: 'Report Date', enabled: true, width: 'span-1' },
+      { key: 'account', label: 'Petty Cash Account', enabled: true, width: 'span-2' },
+      { key: 'opening_balance', label: 'Opening Balance (Rs)', enabled: true, width: 'span-1' },
+      { key: 'closing_balance', label: 'Closing Balance (Rs)', enabled: true, width: 'span-1' }
+    ],
+    gridColumns: [
+      { key: 'serial_no', label: 'Sr #', enabled: true, width: '8%', align: 'center' },
+      { key: 'voucher', label: 'Voucher #', enabled: true, width: '16%', align: 'left' },
+      { key: 'narration', label: 'Particulars', enabled: true, width: '34%', align: 'left' },
+      { key: 'cash_in', label: 'Cash In (Rs)', enabled: true, width: '14%', align: 'right' },
+      { key: 'cash_out', label: 'Cash Out (Rs)', enabled: true, width: '14%', align: 'right' },
+      { key: 'balance', label: 'Balance (Rs)', enabled: true, width: '14%', align: 'right' }
     ]
   },
 

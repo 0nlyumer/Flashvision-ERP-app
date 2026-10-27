@@ -80,10 +80,11 @@ check('routing map covers the HR forms + sale order + PI + GRN + salary',
 check('unmapped types (Contract Renewal / Inventory Audit) have no studio doc',
   !('Contract Renewal' in ROUTING_DOC_STUDIO_MAP) && !('Inventory Audit' in ROUTING_DOC_STUDIO_MAP));
 
-check('slip family = exactly the 12 PrintLayout documents',
-  SLIP_FAMILY_DOC_TYPES.length === 12 &&
+check('slip family = the PrintLayout documents (13 since the Daily Petty Cash report joined, 2026-10-28)',
+  SLIP_FAMILY_DOC_TYPES.length === 13 &&
   isSlipFamilyDocType('hr_leave_request') && isSlipFamilyDocType('hr_payslip') &&
   isSlipFamilyDocType('voucher_receipt') && isSlipFamilyDocType('inventory_return') &&
+  isSlipFamilyDocType('daily_petty_cash') &&
   !isSlipFamilyDocType('sale_order') && !isSlipFamilyDocType('purchase_invoice'));
 
 const leaveRecord = { id: 'LVR-100', employeeName: 'Test Emp', status: 'Pending', nested: { a: 1 } };
